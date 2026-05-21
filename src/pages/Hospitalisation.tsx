@@ -1,6 +1,6 @@
 import PageMeta from "../components/common/PageMeta";
 import Badge from "../components/ui/badge/Badge";
-import { Calendar, Clock, MapPin, User, Heart, AlertCircle, CheckCircle2, Clock3 } from "lucide-react";
+import { Calendar, Clock, Heart, AlertCircle, CheckCircle2, Clock3 } from "lucide-react";
 
 export default function Hospitalisation() {
   // Current hospitalization data
@@ -155,7 +155,7 @@ export default function Hospitalisation() {
     if (status === "Effectué") return "success";
     if (status === "Prévu") return "warning";
     if (status === "Retardé") return "error";
-    return "default";
+    return "primary";
   };
 
   const getStatusIcon = (status: string) => {

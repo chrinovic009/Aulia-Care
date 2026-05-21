@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import PageBreadcrumb from "../components/common/PageBreadCrumb";
 import PageMeta from "../components/common/PageMeta";
-import { CheckCircleIcon, CloseIcon, AlertIcon } from "../icons";
+import { CheckCircleIcon, AlertIcon } from "../icons";
 
 const treatmentData = [
   {

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import PageBreadcrumb from "../components/common/PageBreadCrumb";
 import PageMeta from "../components/common/PageMeta";
-import { DownloadIcon, FileIcon, CloseIcon } from "../icons";
+import { DownloadIcon, FileIcon, } from "../icons";
 
 const timelineEvents = [
   { date: "12 Mai 2026", title: "Consultation générale", type: "consultation", details: "Dr Mukendi" },

@@ -7,28 +7,24 @@ import {
   ShieldCheck,
   Activity,
   FileText,
-  CheckCircle2,
   Clock,
-  ClipboardList,
   AlertTriangle,
   FileDown,
   Share2,
   QrCode,
   FolderOpen,
   Stethoscope,
-  FileSearch,
-  Loader2,
   Download,
 } from "lucide-react";
 
 const patient = {
-  fullName: "Jean-Pierre Mbala",
-  birthDate: "12 mars 1987",
+  fullName: "Chrinovic Nyembo",
+  birthDate: "15 Janvier 2024",
   gender: "Masculin",
   bloodGroup: "O+",
   weight: "72 kg",
   height: "178 cm",
-  emergencyContact: "+243 99 123 4567",
+  emergencyContact: "+243 84 862 1712",
 };
 
 const currentStatus = {

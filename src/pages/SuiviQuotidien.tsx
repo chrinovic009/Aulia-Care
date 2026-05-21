@@ -14,13 +14,13 @@ const SuiviQuotidien = () => {
   );
   const [treatments, setTreatments] = useState({ matin: true, midi: true, soir: false });
   const [painLevel, setPainLevel] = useState(3);
-  const [sleepHours, setSleepHours] = useState("7h42");
-  const [sleepQuality, setSleepQuality] = useState("Bonne");
-  const [hydration, setHydration] = useState("Correcte");
-  const [activity, setActivity] = useState("Marche légère effectuée");
-  const [activityTime, setActivityTime] = useState("15 min");
-  const [vitals, setVitals] = useState({ temperature: "36.8°C", tension: "12/8", pulse: "79 bpm" });
-  const [showAlert, setShowAlert] = useState(true);
+  const [sleepHours] = useState("7h42");
+  const [sleepQuality] = useState("Bonne");
+  const [hydration] = useState("Correcte");
+  const [activity] = useState("Marche légère effectuée");
+  const [activityTime] = useState("15 min");
+  const [vitals] = useState({ temperature: "36.8°C", tension: "12/8", pulse: "79 bpm" });
+  const [showAlert] = useState(true);
 
   const filteredTimeline = useMemo(
     () => [
