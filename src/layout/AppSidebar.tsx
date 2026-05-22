@@ -17,7 +17,6 @@ import {
   DollarLineIcon,
   LockIcon,
   PlusIcon,
-  BellIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 import SidebarWidget from "./SidebarWidget";
@@ -109,34 +108,14 @@ const receptionNavItems: NavItem[] = [
     path: "/reception/rendez-vous",
   },
   {
-    icon: <TimeIcon />,
-    name: "File d'attente",
-    path: "/reception/file-attente",
-  },
-  {
     icon: <BoxCubeIcon />,
     name: "Hospitalisations",
     path: "/reception/hospitalisations",
   },
   {
-    icon: <DocsIcon />,
-    name: "Dossiers patients",
-    path: "/reception/dossiers",
-  },
-  {
     icon: <ChatIcon />,
     name: "Messages internes",
     path: "/reception/messages",
-  },
-  {
-    icon: <DollarLineIcon />,
-    name: "Facturation & paiements",
-    path: "/reception/paiements",
-  },
-  {
-    icon: <BellIcon />,
-    name: "Urgences & alertes",
-    path: "/reception/urgences",
   },
   {
     icon: <FolderIcon />,
