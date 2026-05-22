@@ -31,6 +31,10 @@ import RendezVousRecpetion from "./pages/Reception/RendezVousRecpetion";
 import ReceptionMessages from "./pages/Reception/MessagesReception";
 import HospitalisationReception from "./pages/Reception/HospitalisationReception";
 import HistoriqueReception from "./pages/Reception/HistoriqueReception";
+import DashboardInfirmier from "./pages/Infirmier/DashboardInfirmier";
+import PatientAssignes from "./pages/Infirmier/PatientAssignes";
+import MessagesInfirmier from "./pages/Infirmier/MessagesInfirmier"
+import ProfileInfirmier from "./pages/Infirmier/ProfileInfirmier"
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Patient/Home";
@@ -69,6 +73,10 @@ export default function App() {
             <Route path="/reception/urgences" element={<ReceptionPage />} />
             <Route path="/reception/historique" element={<HistoriqueReception />} />
             <Route path="/reception/profile" element={<ReceptionProfile />} />
+            <Route path="/nurse" element={<DashboardInfirmier />} />
+            <Route path="/nurse/patients" element={<PatientAssignes />} />
+            <Route path="/nurse/messages" element={<MessagesInfirmier />} />
+            <Route path="/nurse/profile" element={<ProfileInfirmier />} />
             <Route path="/paiements" element={<FormElements />} />
             <Route path="/profil-securite" element={<UserProfiles />} />
 

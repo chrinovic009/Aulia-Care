@@ -129,6 +129,39 @@ const receptionNavItems: NavItem[] = [
   },
 ];
 
+const nurseNavItems: NavItem[] = [
+  {
+    icon: <GridIcon />,
+    name: "Dashboard soins",
+    path: "/nurse",
+  },
+  {
+    icon: <UserCircleIcon />,
+    name: "Patients assignés",
+    path: "/nurse/patients",
+  },
+  {
+    icon: <CalenderIcon />,
+    name: "Tournées & horaires",
+    path: "/nurse/rounds",
+  },
+  {
+    icon: <ChatIcon />,
+    name: "Communication médecin",
+    path: "/nurse/messages",
+  },
+  {
+    icon: <BoxCubeIcon />,
+    name: "Hospitalisations suivies",
+    path: "/nurse/hospitalized",
+  },
+  {
+    icon: <LockIcon />,
+    name: "Profil infirmier",
+    path: "/nurse/profile",
+  },
+];
+
 const othersItems: NavItem[] = [];
 
 const AppSidebar: React.FC = () => {
@@ -140,7 +173,12 @@ const AppSidebar: React.FC = () => {
     index: number;
   } | null>(null);
   const isReceptionSection = location.pathname.startsWith("/reception");
-  const activeNavItems = isReceptionSection ? receptionNavItems : navItems;
+  const isNurseSection = location.pathname.startsWith("/nurse");
+  const activeNavItems = isNurseSection
+    ? nurseNavItems
+    : isReceptionSection
+    ? receptionNavItems
+    : navItems;
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(
     {}
   );
