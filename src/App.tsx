@@ -37,6 +37,7 @@ import MessagesInfirmier from "./pages/Infirmier/MessagesInfirmier"
 import ProfileInfirmier from "./pages/Infirmier/ProfileInfirmier"
 import RoundsInfirmier from "./pages/Infirmier/Rounds"
 import HospitalisationInfirmier from "./pages/Infirmier/HospitalisationsSuivi"
+import DashboardMedecin from "./pages/Medecin/DashboardMedecin";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import Home from "./pages/Patient/Home";
@@ -81,6 +82,7 @@ export default function App() {
             <Route path="/nurse/hospitalized" element={<HospitalisationInfirmier />} />
             <Route path="/nurse/messages" element={<MessagesInfirmier />} />
             <Route path="/nurse/profile" element={<ProfileInfirmier />} />
+            <Route path="/doctor/*" element={<DashboardMedecin />} />
             <Route path="/paiements" element={<FormElements />} />
             <Route path="/profil-securite" element={<UserProfiles />} />
 

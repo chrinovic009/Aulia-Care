@@ -162,6 +162,59 @@ const nurseNavItems: NavItem[] = [
   },
 ];
 
+const doctorNavItems: NavItem[] = [
+  {
+    icon: <GridIcon />,
+    name: "Dashboard médical",
+    path: "/doctor",
+  },
+  {
+    icon: <UserCircleIcon />,
+    name: "Patients",
+    path: "/doctor/patients",
+  },
+  {
+    icon: <TaskIcon />,
+    name: "Consultations",
+    path: "/doctor/consultations",
+  },
+  {
+    icon: <DocsIcon />,
+    name: "Prescriptions",
+    path: "/doctor/prescriptions",
+  },
+  {
+    icon: <PlusIcon />,
+    name: "Examens demandés",
+    path: "/doctor/exams",
+  },
+  {
+    icon: <BoxCubeIcon />,
+    name: "Hospitalisations",
+    path: "/doctor/hospitalizations",
+  },
+  {
+    icon: <LockIcon />,
+    name: "Bloc opératoire",
+    path: "/doctor/surgery",
+  },
+  {
+    icon: <ChatIcon />,
+    name: "Messages médicaux",
+    path: "/doctor/messages",
+  },
+  {
+    icon: <CalenderIcon />,
+    name: "Agenda & rendez-vous",
+    path: "/doctor/calendar",
+  },
+  {
+    icon: <LockIcon />,
+    name: "Profil médecin",
+    path: "/doctor/profile",
+  },
+];
+
 const othersItems: NavItem[] = [];
 
 const AppSidebar: React.FC = () => {
@@ -174,7 +227,10 @@ const AppSidebar: React.FC = () => {
   } | null>(null);
   const isReceptionSection = location.pathname.startsWith("/reception");
   const isNurseSection = location.pathname.startsWith("/nurse");
-  const activeNavItems = isNurseSection
+  const isDoctorSection = location.pathname.startsWith("/doctor");
+  const activeNavItems = isDoctorSection
+    ? doctorNavItems
+    : isNurseSection
     ? nurseNavItems
     : isReceptionSection
     ? receptionNavItems
