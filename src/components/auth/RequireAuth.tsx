@@ -1,14 +1,19 @@
+import React from "react";
 import { useEffect } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { Modal } from "../ui/modal";
-import { RoleSlug, useAuth, getRedirectPath } from "../../context/AuthContext";
+import {
+  RoleSlug,
+  useAuth,
+  getRedirectPath,
+} from "../../context/AuthContext";
 
 interface RequireAuthProps {
-  children: JSX.Element;
+  children: React.ReactNode;
 }
 
 interface RoleGuardProps {
-  children: JSX.Element;
+  children: React.ReactNode;
   allowedRoles: RoleSlug[];
 }
 
