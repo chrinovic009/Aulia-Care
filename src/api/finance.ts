@@ -51,9 +51,20 @@ const read = (k: string) => {
   }
 };
 
+const dispatchPaymentRequestsUpdated = () => {
+  try {
+    window.dispatchEvent(new CustomEvent("d7:paymentRequestsUpdated"));
+  } catch {
+    // ignore browser dispatch errors
+  }
+};
+
 const write = (k: string, v: any) => {
   try {
     localStorage.setItem(k, JSON.stringify(v));
+    if (k === REQ_KEY) {
+      dispatchPaymentRequestsUpdated();
+    }
   } catch {}
 };
 

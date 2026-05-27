@@ -11,13 +11,19 @@ const MessagesCaissier: React.FC = () => {
   const [toast, setToast] = useState<{ visible: boolean; text?: string }>({ visible: false });
   const [showPaymentFields, setShowPaymentFields] = useState(false);
 
-  const load = () => setRequests(getPaymentRequests());
+  const load = () =>
+    setRequests(
+      getPaymentRequests()
+        .slice()
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    );
+
   useEffect(() => {
     load();
     const handler = (ev: any) => {
       const request = ev.detail;
       if (!request) return;
-      setRequests((prev) => [request, ...prev]);
+      setRequests((prev) => [request, ...prev].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       setSelected(request);
       setToast({ visible: true, text: `${request.patientName} doit ${request.amount} CDF pour ${request.act}` });
       setShowPaymentFields(false);
@@ -26,8 +32,21 @@ const MessagesCaissier: React.FC = () => {
       setMethod("cash");
       setTimeout(() => setToast({ visible: false }), 10000);
     };
+    const updateHandler = () => load();
+    const storageHandler = (event: StorageEvent) => {
+      if (event.key === "d7-payment-requests") {
+        load();
+      }
+    };
+
     window.addEventListener("d7:paymentRequest", handler as EventListener);
-    return () => window.removeEventListener("d7:paymentRequest", handler as EventListener);
+    window.addEventListener("d7:paymentRequestsUpdated", updateHandler as EventListener);
+    window.addEventListener("storage", storageHandler as EventListener);
+    return () => {
+      window.removeEventListener("d7:paymentRequest", handler as EventListener);
+      window.removeEventListener("d7:paymentRequestsUpdated", updateHandler as EventListener);
+      window.removeEventListener("storage", storageHandler as EventListener);
+    };
   }, []);
 
   const pick = (r:any) => { setSelected(r); setAmount(r.amount); setReference(''); setMethod('cash'); };
@@ -97,14 +116,23 @@ const MessagesCaissier: React.FC = () => {
       <div className="col-span-1 lg:col-span-1 bg-white rounded shadow p-2">
         <h2 className="font-medium mb-2">Demandes</h2>
         <div className="space-y-2">
-          {requests.map(r=> (
-            <button key={r.id} onClick={()=>pick(r)} className={`w-full text-left p-2 rounded border ${r.priority==='urgent'? 'bg-red-50':''}`}>
+          {requests.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => pick(r)}
+              className={`w-full text-left p-2 rounded border ${r.priority === 'urgent' ? 'bg-red-50' : ''}`}
+            >
               <div className="font-medium">{r.patientName}</div>
               <div className="text-xs text-gray-500">{r.act} • {r.service}</div>
-              <div className="text-sm">{r.amount} • <span className="text-xs">{new Date(r.createdAt).toLocaleTimeString()}</span></div>
+              <div className="text-xs text-gray-500">ID patient: {r.patientId || 'N/A'}</div>
+              <div className="text-sm flex items-center justify-between gap-3">
+                <span>{r.amount} CDF</span>
+                <span className="text-xs text-slate-500">{new Date(r.createdAt).toLocaleTimeString()}</span>
+              </div>
+              <div className="mt-1 text-xs font-semibold text-slate-700">Statut demande: {r.status}</div>
             </button>
           ))}
-          {requests.length===0 && <div className="text-sm text-gray-600">Aucune demande</div>}
+          {requests.length === 0 && <div className="text-sm text-gray-600">Aucune demande</div>}
         </div>
       </div>
 
@@ -112,10 +140,12 @@ const MessagesCaissier: React.FC = () => {
         <h2 className="font-medium mb-2">Détail demande</h2>
         {selected ? (
           <div>
-            <div className="mb-2"><strong>Patient:</strong> {selected.patientName} <span className="text-sm text-gray-500">{selected.dossierNumber||''}</span></div>
-            <div className="mb-2"><strong>Service:</strong> {selected.service}</div>
-            <div className="mb-2"><strong>Acte:</strong> {selected.act}</div>
-            <div className="mb-2 text-sm text-gray-600">Demande créée: {new Date(selected.createdAt).toLocaleString()}</div>
+            <div className="mb-2"><strong>Patient:</strong> {selected.patientName} <span className="text-sm text-gray-500">{selected.dossierNumber || ''}</span></div>
+            <div className="mb-2"><strong>ID patient:</strong> <span className="font-medium">{selected.patientId || 'N/A'}</span></div>
+            <div className="mb-2"><strong>Demande:</strong> {selected.act} • {selected.service}</div>
+            <div className="mb-2"><strong>Montant demandé:</strong> {selected.amount} CDF</div>
+            <div className="mb-2"><strong>Statut demande:</strong> {selected.status}</div>
+            <div className="mb-2 text-sm text-gray-600">Demandé le: {new Date(selected.createdAt).toLocaleString()}</div>
             {!showPaymentFields ? (
               <div className="mt-4 flex flex-wrap gap-2">
                 <button onClick={() => setShowPaymentFields(true)} className="px-3 py-1 bg-slate-900 text-white rounded">Confirmer le paiement</button>

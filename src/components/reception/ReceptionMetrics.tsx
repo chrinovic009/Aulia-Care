@@ -6,16 +6,34 @@ import {
   GroupIcon,
 } from "../../icons";
 import Badge from "../ui/badge/Badge";
-import { getReceptionAppointmentMetrics } from "../../api/reception";
+import { getAllPatients, getReceptionAppointmentMetrics } from "../../api/reception";
 
 export default function ReceptionMetrics() {
   const [waitingCount, setWaitingCount] = useState(0);
   const [todayAppointments, setTodayAppointments] = useState(0);
 
+  const refreshMetrics = () => {
+    const patients = getAllPatients();
+    const pending = patients.filter((patient) => patient.status === "Fiche en attente").length;
+    setWaitingCount(pending);
+    setTodayAppointments(getReceptionAppointmentMetrics().todayAppointments);
+  };
+
   useEffect(() => {
-    const metrics = getReceptionAppointmentMetrics();
-    setWaitingCount(metrics.waitingCount);
-    setTodayAppointments(metrics.todayAppointments);
+    refreshMetrics();
+    const handleUpdate = () => refreshMetrics();
+    const storageHandler = (event: StorageEvent) => {
+      if (event.key === "d7-clinic-patients" || event.key === "d7-clinic-reception-appointments") {
+        refreshMetrics();
+      }
+    };
+
+    window.addEventListener("d7:patientRecordsUpdated", handleUpdate as EventListener);
+    window.addEventListener("storage", storageHandler as EventListener);
+    return () => {
+      window.removeEventListener("d7:patientRecordsUpdated", handleUpdate as EventListener);
+      window.removeEventListener("storage", storageHandler as EventListener);
+    };
   }, []);
 
   return (

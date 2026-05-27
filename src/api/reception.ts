@@ -246,6 +246,14 @@ export type PatientRecord = {
 const PATIENTS_KEY = "d7-clinic-patients";
 const CONVERSATIONS_KEY = "d7-clinic-conversations";
 
+const dispatchPatientRecordsUpdated = () => {
+  try {
+    window.dispatchEvent(new CustomEvent("d7:patientRecordsUpdated"));
+  } catch {
+    // ignore browser dispatch errors
+  }
+};
+
 export const updatePatientRecord = (payload: Partial<PatientRecord> & { id: string }): PatientRecord | null => {
   try {
     const raw = localStorage.getItem(PATIENTS_KEY);
@@ -262,6 +270,7 @@ export const updatePatientRecord = (payload: Partial<PatientRecord> & { id: stri
     };
     store[idx] = updated;
     localStorage.setItem(PATIENTS_KEY, JSON.stringify(store));
+    dispatchPatientRecordsUpdated();
     return updated;
   } catch {
     return null;
@@ -296,6 +305,7 @@ export const savePatientRecord = (payload: Partial<PatientRecord>): PatientRecor
       const idx = store.findIndex((item) => item.id === existing.id);
       store[idx] = merged;
       localStorage.setItem(PATIENTS_KEY, JSON.stringify(store));
+      dispatchPatientRecordsUpdated();
       return merged;
     }
 
@@ -342,6 +352,7 @@ export const savePatientRecord = (payload: Partial<PatientRecord>): PatientRecor
     };
     store.unshift(rec);
     localStorage.setItem(PATIENTS_KEY, JSON.stringify(store));
+    dispatchPatientRecordsUpdated();
     return rec;
   } catch (e) {
     // fallback
