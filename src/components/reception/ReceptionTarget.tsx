@@ -1,25 +1,28 @@
 
 import { useEffect, useMemo, useState } from "react";
-import { getAllPatients, PatientRecord } from "../../api/reception";
+import { fetchPatientsFromDatabase, PatientRecord } from "../../api/reception";
 
 export default function ReceptionAssistantIA() {
   const [patients, setPatients] = useState<PatientRecord[]>([]);
 
-  const refresh = () => {
-    setPatients(getAllPatients());
+  const refresh = async () => {
+    try {
+      const dbPatients = await fetchPatientsFromDatabase();
+      setPatients(dbPatients);
+    } catch (error) {
+      console.error("Unable to load patients from Prisma DB:", error);
+      setPatients([]);
+    }
   };
 
   useEffect(() => {
     refresh();
-    const handler = () => refresh();
-    const storageHandler = (ev: StorageEvent) => {
-      if (ev.key === "d7-clinic-patients") refresh();
+    const handler = () => {
+      refresh();
     };
     window.addEventListener("d7:patientRecordsUpdated", handler as EventListener);
-    window.addEventListener("storage", storageHandler as EventListener);
     return () => {
       window.removeEventListener("d7:patientRecordsUpdated", handler as EventListener);
-      window.removeEventListener("storage", storageHandler as EventListener);
     };
   }, []);
 

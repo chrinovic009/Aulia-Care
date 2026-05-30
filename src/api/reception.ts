@@ -146,6 +146,31 @@ export const getAllPatients = (): PatientRecord[] => {
   return getStoredPatients();
 };
 
+export const fetchPatientsFromDatabase = async (): Promise<PatientRecord[]> => {
+  return fetchDbJson<PatientRecord[]>("/patients");
+};
+
+export const fetchAppointmentsFromDatabase = async () => {
+  return fetchDbJson<Array<{ priority?: string; status?: string; scheduledAt?: string; requestedAt?: string; createdAt?: string }>>("/appointments");
+};
+
+export const fetchAppointmentMetricsFromDatabase = async () => {
+  const appointments = await fetchAppointmentsFromDatabase();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const isToday = (dateValue?: string) => {
+    if (!dateValue) return false;
+    const date = new Date(dateValue);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime() === today.getTime();
+  };
+
+  return {
+    todayAppointments: appointments.filter((item) => isToday(item.scheduledAt || item.requestedAt || item.createdAt)).length,
+  };
+};
+
 export const findPatientByName = async (name: string) => {
   const normalizedName = normalizePatientName(name);
   if (!normalizedName) return null;
@@ -245,6 +270,32 @@ export type PatientRecord = {
 
 const PATIENTS_KEY = "d7-clinic-patients";
 const CONVERSATIONS_KEY = "d7-clinic-conversations";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+
+const getAuthHeaders = () => {
+  try {
+    const token = localStorage.getItem("d7-clinic-auth-token") || localStorage.getItem("d7-clinic-api-token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+};
+
+const fetchDbJson = async <T>(path: string): Promise<T> => {
+  const url = `${API_BASE_URL.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+  const response = await fetch(url, {
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`DB request failed (${response.status}): ${response.statusText}`);
+  }
+  return response.json() as Promise<T>;
+};
 
 const dispatchPatientRecordsUpdated = () => {
   try {
