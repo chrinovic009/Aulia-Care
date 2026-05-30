@@ -3,9 +3,24 @@ import { ApexOptions } from "apexcharts";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { MoreDotIcon } from "../../icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { fetchAppointmentsFromDatabase, fetchPatientsFromDatabase } from "../../api/reception";
 
 export default function ReceptionStatisticsChart() {
+  const [categories, setCategories] = useState<string[]>([]);
+  const [series, setSeries] = useState([{
+    name: "Patients reçus",
+    data: [] as number[],
+  }, {
+    name: "Rendez-vous",
+    data: [] as number[],
+  }, {
+    name: "Urgences",
+    data: [] as number[],
+  }]);
+  const [error, setError] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+
   const options: ApexOptions = {
     colors: ["#16a34a", "#2563eb", "#dc2626"],
     chart: {
@@ -37,14 +52,8 @@ export default function ReceptionStatisticsChart() {
     },
 
     xaxis: {
-      categories: [
-        "Lun",
-        "Mar",
-        "Mer",
-        "Jeu",
-        "Ven",
-        "Sam",
-        "Dim",
+      categories: categories.length ? categories : [
+        "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim",
       ],
 
       axisBorder: {
@@ -92,24 +101,62 @@ export default function ReceptionStatisticsChart() {
     },
   };
 
-  const series = [
-    {
-      name: "Patients reçus",
-      data: [45, 52, 48, 61, 58, 39, 27],
-    },
+  useEffect(() => {
+    const loadChartData = async () => {
+      setError(null);
+      const today = new Date();
+      const labels: string[] = [];
+      const dayKeys: string[] = [];
 
-    {
-      name: "Rendez-vous",
-      data: [30, 35, 28, 42, 40, 18, 12],
-    },
+      for (let index = 6; index >= 0; index -= 1) {
+        const date = new Date(today);
+        date.setDate(today.getDate() - index);
+        labels.push(date.toLocaleDateString("fr-FR", { weekday: "short" }));
+        dayKeys.push(date.toISOString().slice(0, 10));
+      }
 
-    {
-      name: "Urgences",
-      data: [5, 8, 4, 11, 7, 3, 2],
-    },
-  ];
+      try {
+        const [patients, appointments] = await Promise.all([
+          fetchPatientsFromDatabase(),
+          fetchAppointmentsFromDatabase(),
+        ]);
 
-  const [isOpen, setIsOpen] = useState(false);
+        const patientsData = dayKeys.map((key) =>
+          patients.filter((patient) => {
+            const createdAt = patient.createdAt ? new Date(patient.createdAt).toISOString().slice(0, 10) : "";
+            return createdAt === key;
+          }).length,
+        );
+
+        const appointmentsData = dayKeys.map((key) =>
+          appointments.filter((appointment) => {
+            const dateValue = appointment.scheduledAt || appointment.requestedAt || appointment.createdAt;
+            return dateValue ? new Date(dateValue).toISOString().slice(0, 10) === key : false;
+          }).length,
+        );
+
+        const urgencesData = dayKeys.map((key) =>
+          appointments.filter((appointment) => {
+            const dateValue = appointment.scheduledAt || appointment.requestedAt || appointment.createdAt;
+            const isUrgent = ["urgent", "urgence"].includes((appointment.priority || "").toLowerCase());
+            return dateValue ? new Date(dateValue).toISOString().slice(0, 10) === key && isUrgent : false;
+          }).length,
+        );
+
+        setCategories(labels);
+        setSeries([
+          { name: "Patients reçus", data: patientsData },
+          { name: "Rendez-vous", data: appointmentsData },
+          { name: "Urgences", data: urgencesData },
+        ]);
+      } catch (err) {
+        console.error("Unable to load reception stats:", err);
+        setError("Impossible de charger les statistiques depuis la base de données.");
+      }
+    };
+
+    loadChartData();
+  }, []);
 
   function toggleDropdown() {
     setIsOpen(!isOpen);
@@ -121,7 +168,6 @@ export default function ReceptionStatisticsChart() {
 
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
-      
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -165,12 +211,18 @@ export default function ReceptionStatisticsChart() {
       {/* Chart */}
       <div className="max-w-full overflow-x-auto custom-scrollbar">
         <div className="-ml-5 min-w-[650px] xl:min-w-full pl-2 min-h-[320px]">
-          <Chart
-            options={options}
-            series={series}
-            type="bar"
-            height={320}
-          />
+          {error ? (
+            <div className="flex h-[320px] items-center justify-center text-sm text-red-600 dark:text-red-400">
+              {error}
+            </div>
+          ) : (
+            <Chart
+              options={options}
+              series={series}
+              type="bar"
+              height={320}
+            />
+          )}
         </div>
       </div>
     </div>

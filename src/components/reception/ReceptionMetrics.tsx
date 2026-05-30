@@ -6,17 +6,23 @@ import {
   GroupIcon,
 } from "../../icons";
 import Badge from "../ui/badge/Badge";
-import { getAllPatients, getReceptionAppointmentMetrics } from "../../api/reception";
+import { fetchAppointmentMetricsFromDatabase, fetchPatientsFromDatabase } from "../../api/reception";
 
 export default function ReceptionMetrics() {
   const [waitingCount, setWaitingCount] = useState(0);
   const [todayAppointments, setTodayAppointments] = useState(0);
 
-  const refreshMetrics = () => {
-    const patients = getAllPatients();
-    const pending = patients.filter((patient) => patient.status === "Fiche en attente").length;
-    setWaitingCount(pending);
-    setTodayAppointments(getReceptionAppointmentMetrics().todayAppointments);
+  const refreshMetrics = async () => {
+    try {
+      const patients = await fetchPatientsFromDatabase();
+      setWaitingCount(patients.filter((patient) => patient.status === "Fiche en attente").length);
+      const appointmentMetrics = await fetchAppointmentMetricsFromDatabase();
+      setTodayAppointments(appointmentMetrics.todayAppointments);
+    } catch (error) {
+      console.error("Unable to load reception metrics from Prisma DB:", error);
+      setWaitingCount(0);
+      setTodayAppointments(0);
+    }
   };
 
   useEffect(() => {
