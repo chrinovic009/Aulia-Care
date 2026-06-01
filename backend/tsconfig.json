@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "module": "esnext",
+    "module": "CommonJS",
     "target": "ES2022",
     "lib": ["es2022"],
     "moduleResolution": "node",

@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { PatientsService } from './patients.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { CreateAdmissionDto } from './dto/create-admission.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('patients')
@@ -17,10 +18,22 @@ export class PatientsController {
     return this.patientsService.findAll();
   }
 
+  @Get('search')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  search(@Query('email') email?: string, @Query('phone') phone?: string, @Query('name') name?: string) {
+    return this.patientsService.search({ email, phone, name });
+  }
+
   @Get(':id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
   findOne(@Param('id') id: string) {
     return this.patientsService.findOne(id);
+  }
+
+  @Post('admissions')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
+  createAdmission(@Body() createAdmissionDto: CreateAdmissionDto, @Request() req: any) {
+    return this.patientsService.createAdmission(createAdmissionDto, req.user?.userId);
   }
 
   @Post()

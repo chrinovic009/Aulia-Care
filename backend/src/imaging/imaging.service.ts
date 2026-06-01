@@ -12,7 +12,7 @@ export class ImagingService {
   async findOne(id: string) {
     const imagingRequest = await this.prisma.imagingRequest.findUnique({ where: { id } });
     if (!imagingRequest) {
-      throw new NotFoundException('Demande d'imagerie introuvable');
+      throw new NotFoundException("Demande d'imagerie introuvable");
     }
     return imagingRequest;
   }

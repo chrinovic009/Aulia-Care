@@ -12,7 +12,7 @@ export class AuditService {
   async findOne(id: string) {
     const log = await this.prisma.auditLog.findUnique({ where: { id } });
     if (!log) {
-      throw new NotFoundException('Journal d'audit introuvable');
+      throw new NotFoundException("Journal d'audit introuvable");
     }
     return log;
   }

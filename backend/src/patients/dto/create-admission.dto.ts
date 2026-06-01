@@ -1,7 +1,6 @@
 import { IsDateString, IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
-import { PatientWorkflowStatus } from '@prisma/client';
 
-export class CreatePatientDto {
+export class CreateAdmissionDto {
   @IsString()
   @IsNotEmpty()
   firstName: string;
@@ -19,6 +18,7 @@ export class CreatePatientDto {
   gender: string;
 
   @IsDateString()
+  @IsNotEmpty()
   dateOfBirth: string;
 
   @IsEmail()
@@ -47,18 +47,6 @@ export class CreatePatientDto {
 
   @IsString()
   @IsOptional()
-  bloodType?: string;
-
-  @IsString()
-  @IsOptional()
-  emergencyContact?: string;
-
-  @IsString()
-  @IsOptional()
-  emergencyPhone?: string;
-
-  @IsString()
-  @IsOptional()
   insuranceProvider?: string;
 
   @IsString()
@@ -66,29 +54,22 @@ export class CreatePatientDto {
   insuranceNumber?: string;
 
   @IsString()
-  @IsOptional()
-  status?: string;
+  @IsNotEmpty()
+  service: string;
 
   @IsString()
-  @IsOptional()
-  admissionType?: string;
-
-  @IsString()
-  @IsOptional()
-  service?: string;
+  @IsNotEmpty()
+  admissionType: string;
 
   @IsString()
   @IsOptional()
   priority?: string;
 
-  @IsDateString()
-  @IsOptional()
-  arrivalAt?: string;
-
   @IsString()
   @IsOptional()
   receptionist?: string;
 
+  @IsDateString()
   @IsOptional()
-  workflowStatus?: PatientWorkflowStatus;
+  arrivalAt?: string;
 }
