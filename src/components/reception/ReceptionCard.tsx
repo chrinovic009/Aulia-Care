@@ -1,10 +1,23 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { MoreDotIcon } from "../../icons";
+import { fetchPatientsFromDatabase, type PatientRecord } from "../../api/reception";
+
+type PatientWithAddress = PatientRecord & {
+  address?: string | null;
+};
+
+type AddressCategory = {
+  label: string;
+  count: number;
+  percentage: number;
+};
 
 export default function DemographicCard() {
   const [isOpen, setIsOpen] = useState(false);
+  const [addressCategories, setAddressCategories] = useState<AddressCategory[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   function toggleDropdown() {
     setIsOpen(!isOpen);
@@ -13,6 +26,57 @@ export default function DemographicCard() {
   function closeDropdown() {
     setIsOpen(false);
   }
+
+  useEffect(() => {
+    const loadAddressStats = async () => {
+      try {
+        setError(null);
+        const patients = (await fetchPatientsFromDatabase()) as PatientWithAddress[];
+        const categoryMap = new Map<string, { label: string; count: number }>();
+
+        patients.forEach((patient) => {
+          const address = (patient.address ?? "").trim();
+          if (!address) return;
+
+          const words = address.replace(/\s+/g, " ").split(" ").filter(Boolean);
+          const twoWords = words.slice(0, 2).join(" ");
+          if (!twoWords) return;
+
+          const normalizedKey = twoWords.toLowerCase();
+          const label = categoryMap.get(normalizedKey)?.label ??
+            twoWords
+              .split(" ")
+              .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+              .join(" ");
+
+          categoryMap.set(normalizedKey, {
+            label,
+            count: (categoryMap.get(normalizedKey)?.count ?? 0) + 1,
+          });
+        });
+
+        const totalPatients = Array.from(categoryMap.values()).reduce((sum, item) => sum + item.count, 0);
+        const categories = Array.from(categoryMap.values())
+          .map((item) => ({
+            ...item,
+            percentage: totalPatients > 0 ? Math.round((item.count / totalPatients) * 100) : 0,
+          }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 4);
+
+        setAddressCategories(categories);
+      } catch (err) {
+        console.error("Impossible de charger les provenances depuis la base de données:", err);
+        setError("Impossible de charger les provenances depuis la base de données.");
+      }
+    };
+
+    loadAddressStats();
+  }, []);
+
+  const displayCategories = addressCategories.length > 0 ? addressCategories : [
+    { label: "Aucune catégorie", count: 0, percentage: 0 },
+  ];
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
@@ -55,136 +119,64 @@ export default function DemographicCard() {
         </div>
       </div>
 
+      {error ? (
+        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-700 dark:bg-red-950/20 dark:text-red-300">
+          {error}
+        </div>
+      ) : null}
+
       {/* CONTENT */}
       <div className="mt-6 space-y-5">
+        {displayCategories.map((category, index) => {
+          const colorClasses = [
+            "bg-blue-100 dark:bg-blue-500/10",
+            "bg-emerald-100 dark:bg-emerald-500/10",
+            "bg-orange-100 dark:bg-orange-500/10",
+            "bg-rose-100 dark:bg-rose-500/10",
+          ];
 
-        {/* Commune 1 */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-500/10">
-              <div className="h-4 w-4 rounded-full bg-blue-500"></div>
+          const barClasses = [
+            "bg-blue-500",
+            "bg-emerald-500",
+            "bg-orange-500",
+            "bg-rose-500",
+          ];
+
+          const colorClass = colorClasses[index] ?? "bg-slate-100 dark:bg-slate-500/10";
+          const barClass = barClasses[index] ?? "bg-slate-500";
+
+          return (
+            <div key={category.label} className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`flex h-10 w-10 items-center justify-center rounded-full ${colorClass}`}>
+                  <div className={`h-4 w-4 rounded-full ${barClass}`}></div>
+                </div>
+
+                <div>
+                  <p className="font-semibold text-gray-800 text-theme-sm dark:text-white/90">
+                    {category.label}
+                  </p>
+
+                  <span className="block text-gray-500 text-theme-xs dark:text-gray-400">
+                    {category.count} patients enregistrés
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex w-full max-w-[160px] items-center gap-3">
+                <div className="relative h-2 w-full rounded-sm bg-gray-200 dark:bg-gray-800">
+                  <div className={`absolute left-0 top-0 h-full rounded-sm ${barClass}`} style={{ width: `${category.percentage}%` }}></div>
+                </div>
+
+                <p className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
+                  {category.percentage}%
+                </p>
+              </div>
             </div>
-
-            <div>
-              <p className="font-semibold text-gray-800 text-theme-sm dark:text-white/90">
-                Jolie Site
-              </p>
-
-              <span className="block text-gray-500 text-theme-xs dark:text-gray-400">
-                142 patients enregistrés
-              </span>
-            </div>
-          </div>
-
-          <div className="flex w-full max-w-[160px] items-center gap-3">
-            <div className="relative h-2 w-full rounded-sm bg-gray-200 dark:bg-gray-800">
-              <div className="absolute left-0 top-0 h-full w-[82%] rounded-sm bg-blue-500"></div>
-            </div>
-
-            <p className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
-              82%
-            </p>
-          </div>
-        </div>
-
-        {/* Commune 2 */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/10">
-              <div className="h-4 w-4 rounded-full bg-emerald-500"></div>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-800 text-theme-sm dark:text-white/90">
-                Quartier Latin
-              </p>
-
-              <span className="block text-gray-500 text-theme-xs dark:text-gray-400">
-                98 patients enregistrés
-              </span>
-            </div>
-          </div>
-
-          <div className="flex w-full max-w-[160px] items-center gap-3">
-            <div className="relative h-2 w-full rounded-sm bg-gray-200 dark:bg-gray-800">
-              <div className="absolute left-0 top-0 h-full w-[64%] rounded-sm bg-emerald-500"></div>
-            </div>
-
-            <p className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
-              64%
-            </p>
-          </div>
-        </div>
-
-        {/* Commune 3 */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-500/10">
-              <div className="h-4 w-4 rounded-full bg-orange-500"></div>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-800 text-theme-sm dark:text-white/90">
-                Mutoshi
-              </p>
-
-              <span className="block text-gray-500 text-theme-xs dark:text-gray-400">
-                74 patients enregistrés
-              </span>
-            </div>
-          </div>
-
-          <div className="flex w-full max-w-[160px] items-center gap-3">
-            <div className="relative h-2 w-full rounded-sm bg-gray-200 dark:bg-gray-800">
-              <div className="absolute left-0 top-0 h-full w-[48%] rounded-sm bg-orange-500"></div>
-            </div>
-
-            <p className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
-              48%
-            </p>
-          </div>
-        </div>
-
-        {/* Commune 4 */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-500/10">
-              <div className="h-4 w-4 rounded-full bg-rose-500"></div>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-800 text-theme-sm dark:text-white/90">
-                Cité
-              </p>
-
-              <span className="block text-gray-500 text-theme-xs dark:text-gray-400">
-                51 patients enregistrés
-              </span>
-            </div>
-          </div>
-
-          <div className="flex w-full max-w-[160px] items-center gap-3">
-            <div className="relative h-2 w-full rounded-sm bg-gray-200 dark:bg-gray-800">
-              <div className="absolute left-0 top-0 h-full w-[35%] rounded-sm bg-rose-500"></div>
-            </div>
-
-            <p className="font-medium text-gray-800 text-theme-sm dark:text-white/90">
-              35%
-            </p>
-          </div>
-        </div>
+          );
+        })}
       </div>
 
-      {/* FOOTER IA */}
-      <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50 p-4 dark:border-blue-900/30 dark:bg-blue-900/10">
-        <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
-          Assistant IA réception
-        </p>
-
-        <p className="mt-2 text-sm leading-6 text-blue-600 dark:text-blue-200">
-          Le quartier de <span className="font-semibold">Jolie Site</span> représente actuellement la plus forte fréquentation avec une hausse de 18% depuis la semaine dernière. Prévoir une augmentation des admissions entre 08h00 et 11h00.
-        </p>
-      </div>
     </div>
   );
 }

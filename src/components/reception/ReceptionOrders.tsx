@@ -7,7 +7,7 @@ import {
   TableRow,
 } from "../ui/table";
 import Badge from "../ui/badge/Badge";
-import { getAllPatients, PatientRecord } from "../../api/reception";
+import { fetchPatientsFromDatabase, PatientRecord } from "../../api/reception";
 
 interface ReceptionRecord {
   id: number;
@@ -61,8 +61,24 @@ export default function ReceptionRecentAdmissions() {
   const [selectedContacts, setSelectedContacts] = useState<ReceptionRecord | null>(null);
 
   useEffect(() => {
-    const patients = getAllPatients();
-    setTableData(patients.map(mapPatientToReceptionRecord));
+    let isMounted = true;
+
+    const loadPatients = async () => {
+      try {
+        const patients = await fetchPatientsFromDatabase();
+        if (!isMounted) return;
+        setTableData(patients.map(mapPatientToReceptionRecord));
+      } catch (error) {
+        console.error("Impossible de charger les patients depuis la base de données:", error);
+        if (!isMounted) return;
+        setTableData([]);
+      }
+    };
+
+    loadPatients();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const filteredResults = useMemo(

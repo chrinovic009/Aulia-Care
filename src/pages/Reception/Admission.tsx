@@ -1,6 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
-import { createPaymentRequest } from "../../api/finance";
-import { findPatientByEmail, findPatientByName, findPatientByPhone, savePatientRecord, addPatientRelation, createConversationForPatient, addMessageToConversation, updatePatientRecord } from "../../api/reception";
+import { createPatientAdmission, findPatientByEmail, findPatientByName, findPatientByPhone } from "../../api/reception";
 
 const services = [
   "Médecine générale",
@@ -35,19 +34,15 @@ const doctorsByService: Record<string, string[]> = {
   Neurologie: ["Dr Aubin"],
 };
 
-type ModalStep =
-  | null
-  | "confirm-linkage"
-  | "success";
-
+type ModalStep = null | "success";
 
 const relationOptions = [
+  "parent",
+  "enfant",
   "frère",
-  "soeur",
-  "cousin",
-  "cousine",
-  "père",
-  "mère",
+  "sœur",
+  "ami",
+  "conjoint",
   "tante",
   "oncle",
   "grand-mère",
@@ -85,8 +80,6 @@ const Admission: React.FC = () => {
   const [existingPatient, setExistingPatient] = useState<any>(null);
   const [phoneMatchPatient, setPhoneMatchPatient] = useState<any>(null);
   const [emailMatchPatient, setEmailMatchPatient] = useState<any>(null);
-  const [relationshipPatient, setRelationshipPatient] = useState<any>(null);
-  const [relationship, setRelationship] = useState("");
   const [modalStep, setModalStep] = useState<ModalStep>(null);
 
 
@@ -148,8 +141,6 @@ const Admission: React.FC = () => {
     setExistingPatient(null);
     setPhoneMatchPatient(null);
     setEmailMatchPatient(null);
-    setRelationshipPatient(null);
-    setRelationship("");
     setModalStep(null);
     setForm({
       category: "P",
@@ -175,88 +166,47 @@ const Admission: React.FC = () => {
     });
   };
 
+  const conflictPatient = existingPatient || phoneMatchPatient || emailMatchPatient;
   const contactMatchPatient = phoneMatchPatient || emailMatchPatient;
 
-  const continueAdmissionAfterLinkCheck = () => {
-    registerPatientAndNotify(relationshipPatient && relationship ? relationship : undefined);
-    setModalStep("success");
+  const splitFullName = (value: string) => {
+    const parts = value.trim().split(/\s+/).filter(Boolean);
+    return {
+      firstName: parts[0] || '',
+      lastName: parts.length > 1 ? parts.slice(-1).join(' ') : parts[0] || '',
+    };
   };
 
-  const handleSaveClick = () => {
-    if (existingPatient) {
-      window.alert(`Ce patient existe déjà : ${existingPatient.name}. Vérifiez son dossier avant de créer une nouvelle admission.`);
+  const handleSaveClick = async () => {
+    if (conflictPatient) {
+      window.alert(`Un patient existe déjà avec le même nom, téléphone ou email. Vérifiez son dossier avant de créer une admission.`);
       return;
     }
 
-    if (contactMatchPatient) {
-      setRelationshipPatient(contactMatchPatient);
-      setModalStep("confirm-linkage");
-      return;
-    }
-
-    registerPatientAndNotify();
-    setModalStep("success");
-  };
-
-  const registerPatientAndNotify = async (relation?: string) => {
     try {
-      const patient = savePatientRecord({
-        name: form.name,
+      const { firstName, lastName } = splitFullName(form.name);
+      const patient = await createPatientAdmission({
+        firstName,
+        lastName,
+        gender: form.gender,
+        dateOfBirth: form.dob,
         phone: form.phone,
         email: form.email,
-        dob: form.dob,
-        gender: form.gender,
+        address: form.address,
+        nationality: form.nationality,
+        insuranceProvider: form.insurance.company,
+        insuranceNumber: form.insurance.policy,
         admissionType: form.admissionType,
-        arrival: form.arrival,
-        receptionist: form.receptionist,
         service: form.service,
-        doctor: form.doctor,
         priority: form.priority,
-        insurance: form.insurance,
-        contacts: form.contacts,
-        allergies: form.allergies,
-        status: "Fiche en attente",
-        amountDue: form.amountDue,
-        paymentStatus: "pending",
-        relations: relation && relationshipPatient ? [{ patientId: relationshipPatient.id, name: relationshipPatient.name, relation }] : [],
+        receptionist: form.receptionist,
+        arrivalAt: form.arrival,
       });
 
-      // Créer une demande de paiement immédiatement et envoyer au caissier
-      const paymentRequest = createPaymentRequest({
-        patientId: patient.id,
-        patientName: patient.name,
-        dossierNumber: form.dossierNumber,
-        service: form.service,
-        act: form.admissionType,
-        amount: form.amountDue || 0,
-        priority: form.priority === "Urgence" ? "urgent" : "normal",
-        requestedBy: form.receptionist,
-        status: "pending",
-      });
-
-      updatePatientRecord({
-        id: patient.id,
-        paymentRequestId: paymentRequest.id,
-        paymentStatus: "pending",
-        status: "Fiche en attente",
-      });
-
-      if (relation && relationshipPatient) {
-        addPatientRelation(relationshipPatient.id, {
-          patientId: patient.id,
-          name: patient.name,
-          relation,
-        });
-      }
-
-      const conv = createConversationForPatient(patient);
-      const text = `Bonjour, je suis ${patient.name}. Matricule: ${patient.matricule}. Mot de passe: ${patient.password}.`;
-      addMessageToConversation(conv.id, { from: "Patient", text });
-      try {
-        localStorage.setItem("d7-last-registered-patient", JSON.stringify({ patient, convId: conv.id }));
-      } catch {}
-    } catch (e) {
-      // ignore errors in simulation
+      setModalStep('success');
+      console.log('Admission enregistrée', patient);
+    } catch (error: any) {
+      window.alert(error?.message || 'Une erreur est survenue lors de l’enregistrement de l’admission.');
     }
   };
 
@@ -449,32 +399,6 @@ const Admission: React.FC = () => {
       {modalStep && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-xl rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-gray-200 dark:border-slate-700">
-            {modalStep === "confirm-linkage" && relationshipPatient && (
-              <>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Patient déjà connu</h3>
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Le numéro de téléphone ou l'email saisi correspond déjà à un patient existant.</p>
-                <div className="mt-4 rounded-lg border border-red-200 dark:border-red-700 bg-red-50 dark:bg-red-900/40 p-4">
-                  <div className="text-sm text-gray-800 dark:text-gray-100"><span className="font-medium">Patient existant :</span> {relationshipPatient.name}</div>
-                  <div className="text-sm text-gray-700 dark:text-gray-300"><span className="font-medium">Téléphone:</span> {relationshipPatient.phone}</div>
-                  <div className="text-sm text-gray-700 dark:text-gray-300"><span className="font-medium">Email:</span> {relationshipPatient.email}</div>
-                </div>
-                <div className="mt-4 space-y-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-900 dark:text-gray-100">Relation avec ce patient</label>
-                    <select value={relationship} onChange={(e) => setRelationship(e.target.value)} className="mt-2 w-full rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <option value="">Sélectionner une relation</option>
-                      {relationOptions.map((opt) => (<option key={opt} value={opt}>{opt}</option>))}
-                    </select>
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-300">Si le patient enregistré vient avec un membre de sa famille ou un contact référencé, enregistrez la relation.</div>
-                </div>
-                <div className="mt-4 flex flex-col sm:flex-row gap-3">
-                  <button disabled={!relationship} onClick={() => { continueAdmissionAfterLinkCheck(); }} className="rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 px-4 py-2 text-sm disabled:opacity-50">Confirmer et continuer</button>
-                  <button onClick={() => { setRelationship(""); setModalStep(null); }} className="rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 px-4 py-2 text-sm">Annuler</button>
-                </div>
-              </>
-            )}
-
             {modalStep === "success" && (
               <>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Admission enregistrée</h3>

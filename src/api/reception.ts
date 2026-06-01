@@ -147,11 +147,15 @@ export const getAllPatients = (): PatientRecord[] => {
 };
 
 export const fetchPatientsFromDatabase = async (): Promise<PatientRecord[]> => {
-  return fetchDbJson<PatientRecord[]>("/patients");
+  return fetchDbJson<PatientRecord[]>('/patients');
 };
 
 export const fetchAppointmentsFromDatabase = async () => {
   return fetchDbJson<Array<{ priority?: string; status?: string; scheduledAt?: string; requestedAt?: string; createdAt?: string }>>("/appointments");
+};
+
+export const fetchHospitalizationsFromDatabase = async () => {
+  return fetchDbJson<Array<{ id: string; patientId: string; admittedAt: string; dischargedAt?: string; status?: string }>>('/hospitalizations');
 };
 
 export const fetchAppointmentMetricsFromDatabase = async () => {
@@ -171,32 +175,45 @@ export const fetchAppointmentMetricsFromDatabase = async () => {
   };
 };
 
+const buildSearchUrl = (params: { email?: string; phone?: string; name?: string }) => {
+  const search = new URLSearchParams();
+  if (params.email) search.set('email', params.email.trim());
+  if (params.phone) search.set('phone', params.phone.trim());
+  if (params.name) search.set('name', params.name.trim());
+  return `/public/patients/search?${search.toString()}`;
+};
+
 export const findPatientByName = async (name: string) => {
   const normalizedName = normalizePatientName(name);
   if (!normalizedName) return null;
-
-  const stored = getStoredPatients().find((p) => normalizePatientName(p.name) === normalizedName);
-  if (stored) return stored;
-
-  return SAMPLE_PATIENTS.find((p) => normalizePatientName(p.name) === normalizedName) || null;
+  try {
+    const patients = await fetchDbJson<PatientRecord[]>(buildSearchUrl({ name }));
+    return patients[0] ?? null;
+  } catch {
+    return null;
+  }
 };
 
 export const findPatientByPhone = async (phone: string) => {
   const normalized = normalizePhone(phone);
   if (!normalized) return null;
-
-  const stored = getStoredPatients().find((p) => p.phone && normalizePhone(p.phone).includes(normalized));
-  if (stored) return stored;
-  return SAMPLE_PATIENTS.find((p) => p.phone && normalizePhone(p.phone).includes(normalized)) || null;
+  try {
+    const patients = await fetchDbJson<PatientRecord[]>(buildSearchUrl({ phone }));
+    return patients[0] ?? null;
+  } catch {
+    return null;
+  }
 };
 
 export const findPatientByEmail = async (email: string) => {
   const normalized = normalizeEmail(email);
   if (!normalized) return null;
-
-  const stored = getStoredPatients().find((p) => p.email && normalizeEmail(p.email) === normalized);
-  if (stored) return stored;
-  return SAMPLE_PATIENTS.find((p) => p.email && normalizeEmail(p.email) === normalized) || null;
+  try {
+    const patients = await fetchDbJson<PatientRecord[]>(buildSearchUrl({ email }));
+    return patients[0] ?? null;
+  } catch {
+    return null;
+  }
 };
 
 export const findPatientByCredentials = (identifier: string, password: string) => {
@@ -208,18 +225,33 @@ export const findPatientByCredentials = (identifier: string, password: string) =
 };
 
 export const saveAdmission = async (admission: any) => {
-  // Simulate saving — in a real app POST to backend
-  const saved = { ...admission, id: `adm-${Date.now()}` };
-  const key = "mock_admissions";
+  // Persist admission to backend hospitalizations endpoint
+  const url = `/hospitalizations`;
+  const res = await fetchDbJson<any>(url);
+  // Many backends expect POST; here we try POST explicitly
   try {
-    const raw = localStorage.getItem(key);
-    const arr = raw ? JSON.parse(raw) : [];
-    arr.unshift(saved);
-    localStorage.setItem(key, JSON.stringify(arr));
+    const fullUrl = `${API_BASE_URL.replace(/\/+$/, "")}${url.startsWith('/') ? url : `/${url}`}`;
+    const token = localStorage.getItem('d7-clinic-access-token') || localStorage.getItem('d7-clinic-api-token');
+    const response = await fetch(fullUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      credentials: 'include',
+      body: JSON.stringify(admission),
+    });
+    if (!response.ok) throw new Error('Admission save failed');
+    return await response.json();
   } catch (e) {
-    // ignore
+    // fallback simulated save for offline
+    const saved = { ...admission, id: `adm-${Date.now()}` };
+    const key = "mock_admissions";
+    try {
+      const raw = localStorage.getItem(key);
+      const arr = raw ? JSON.parse(raw) : [];
+      arr.unshift(saved);
+      localStorage.setItem(key, JSON.stringify(arr));
+    } catch {}
+    return saved;
   }
-  return saved;
 };
 
 export const uploadFileMock = async (file: File) => {
@@ -305,7 +337,22 @@ const dispatchPatientRecordsUpdated = () => {
   }
 };
 
-export const updatePatientRecord = (payload: Partial<PatientRecord> & { id: string }): PatientRecord | null => {
+export const updatePatientRecord = async (
+  payload: Partial<PatientRecord> & { id: string }
+): Promise<PatientRecord | null> => {
+  try {
+    const url = `/patients/${payload.id}`;
+    const fullUrl = `${API_BASE_URL.replace(/\/+$/, "")}${url.startsWith('/') ? url : `/${url}`}`;
+    const token = localStorage.getItem('d7-clinic-access-token') || localStorage.getItem('d7-clinic-api-token');
+    const response = await fetch(fullUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+    if (response.ok) return (await response.json()) as PatientRecord;
+  } catch {}
+
   try {
     const raw = localStorage.getItem(PATIENTS_KEY);
     const store: PatientRecord[] = raw ? JSON.parse(raw) : [];
@@ -330,6 +377,9 @@ export const updatePatientRecord = (payload: Partial<PatientRecord> & { id: stri
 
 export const getPatientById = (id: string): PatientRecord | null => {
   try {
+    // try backend first
+    // eslint-disable-next-line no-async-promise-executor
+    // Note: synchronous signature preserved for compatibility; callers should use fetchPatientsFromDatabase when possible
     const raw = localStorage.getItem(PATIENTS_KEY);
     const store: PatientRecord[] = raw ? JSON.parse(raw) : [];
     return store.find((patient) => patient.id === id) || null;
@@ -338,115 +388,20 @@ export const getPatientById = (id: string): PatientRecord | null => {
   }
 };
 
-export const savePatientRecord = (payload: Partial<PatientRecord>): PatientRecord => {
-  try {
-    const raw = localStorage.getItem(PATIENTS_KEY);
-    const store: PatientRecord[] = raw ? JSON.parse(raw) : [];
-    const normalizedName = normalizePatientName(payload.name || "");
-    const existing = store.find((patient) => normalizePatientName(patient.name) === normalizedName);
-    if (existing) {
-      const merged: PatientRecord = {
-        ...existing,
-        ...payload,
-        relations: payload.relations ?? existing.relations,
-        insurance: payload.insurance ?? existing.insurance,
-        contacts: payload.contacts ?? existing.contacts,
-        allergies: payload.allergies ?? existing.allergies,
-      };
-      const idx = store.findIndex((item) => item.id === existing.id);
-      store[idx] = merged;
-      localStorage.setItem(PATIENTS_KEY, JSON.stringify(store));
-      dispatchPatientRecordsUpdated();
-      return merged;
-    }
-
-    const id = payload.id || `patient-${Date.now()}`;
-    const names = (payload.name || "Patient").trim().split(/\s+/);
-    const firstName = names[0] || "P";
-    const lastName = names.length > 1 ? names[names.length - 1] : firstName;
-    const initials = `${lastName[0] || "X"}${firstName[0] || "X"}`.toUpperCase();
-    const suffix = id.slice(-6);
-    const matricule = payload.matricule || `P-${suffix}`;
-    const password = payload.password || `d7P-${initials}-${suffix}`;
-    const rec: PatientRecord = {
-      id,
-      matricule,
-      password,
-      name: payload.name || "Patient",
-      phone: payload.phone,
-      email: payload.email,
-      dob: payload.dob,
-      gender: payload.gender,
-      createdAt: payload.createdAt || new Date().toISOString(),
-      relations: payload.relations || [],
-      admissionType: payload.admissionType,
-      arrival: payload.arrival,
-      receptionist: payload.receptionist,
-      service: payload.service,
-      doctor: payload.doctor,
-      priority: payload.priority,
-      insurance: payload.insurance,
-      contacts: payload.contacts || [],
-      allergies: payload.allergies || [],
-      status: payload.status || "Enregistré",
-      amountDue: payload.amountDue,
-      paymentRequestId: payload.paymentRequestId,
-      paymentStatus: payload.paymentStatus,
-      paymentMethod: payload.paymentMethod,
-      temperature: payload.temperature,
-      bloodPressure: payload.bloodPressure,
-      spo2: payload.spo2,
-      heartRate: payload.heartRate,
-      nextAction: payload.nextAction,
-      lastUpdate: payload.lastUpdate,
-      avatar: payload.avatar,
-    };
-    store.unshift(rec);
-    localStorage.setItem(PATIENTS_KEY, JSON.stringify(store));
-    dispatchPatientRecordsUpdated();
-    return rec;
-  } catch (e) {
-    // fallback
-    const id = payload.id || `patient-${Date.now()}`;
-    const names = (payload.name || "Patient").trim().split(/\s+/);
-    const firstName = names[0] || "P";
-    const lastName = names.length > 1 ? names[names.length - 1] : firstName;
-    const initials = `${lastName[0] || "X"}${firstName[0] || "X"}`.toUpperCase();
-    const suffix = id.slice(-6);
-    return {
-      id,
-      matricule: payload.matricule || `P-${suffix}`,
-      password: payload.password || `d7P-${initials}-${suffix}`,
-      name: payload.name || "Patient",
-      phone: payload.phone,
-      email: payload.email,
-      dob: payload.dob,
-      gender: payload.gender,
-      relations: payload.relations || [],
-      createdAt: new Date().toISOString(),
-      admissionType: payload.admissionType,
-      arrival: payload.arrival,
-      receptionist: payload.receptionist,
-      service: payload.service,
-      doctor: payload.doctor,
-      priority: payload.priority,
-      insurance: payload.insurance,
-      contacts: payload.contacts || [],
-      allergies: payload.allergies || [],
-      status: payload.status || "Enregistré",
-      amountDue: payload.amountDue,
-      paymentRequestId: payload.paymentRequestId,
-      paymentStatus: payload.paymentStatus,
-      paymentMethod: payload.paymentMethod,
-      temperature: payload.temperature,
-      bloodPressure: payload.bloodPressure,
-      spo2: payload.spo2,
-      heartRate: payload.heartRate,
-      nextAction: payload.nextAction,
-      lastUpdate: payload.lastUpdate,
-      avatar: payload.avatar,
-    };
+export const createPatientAdmission = async (payload: Partial<PatientRecord>): Promise<PatientRecord> => {
+  const url = `/public/patients/admissions`;
+  const fullUrl = `${API_BASE_URL.replace(/\/+$/, "")}${url.startsWith('/') ? url : `/${url}`}`;
+  const response = await fetch(fullUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Admission failed (${response.status}): ${errorBody}`);
   }
+  return (await response.json()) as PatientRecord;
 };
 
 export const addPatientRelation = (patientId: string, relatedPatient: PatientRelation) => {
@@ -478,6 +433,7 @@ export type Conversation = {
 };
 
 export const createConversationForPatient = (patient: PatientRecord): Conversation => {
+  // Try backend notifications as conversation substitute
   const conv: Conversation = {
     id: `conv-${Date.now()}`,
     patientId: patient.id,
@@ -486,31 +442,50 @@ export const createConversationForPatient = (patient: PatientRecord): Conversati
     updatedAt: new Date().toISOString(),
   };
   try {
+    const url = `/notifications`;
+    const fullUrl = `${API_BASE_URL.replace(/\/+$/, "")}${url.startsWith('/') ? url : `/${url}`}`;
+    const token = localStorage.getItem('d7-clinic-access-token') || localStorage.getItem('d7-clinic-api-token');
+    fetch(fullUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      credentials: 'include',
+      body: JSON.stringify({ title: `Conversation ${patient.name}`, message: 'Conversation créée', patientId: patient.id }),
+    }).catch(() => {});
+  } catch {}
+  try {
     const raw = localStorage.getItem(CONVERSATIONS_KEY);
     const arr: Conversation[] = raw ? JSON.parse(raw) : [];
     arr.unshift(conv);
     localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(arr));
-  } catch (e) {
-    // ignore
-  }
+  } catch {}
   return conv;
 };
 
 export const addMessageToConversation = (convId: string, msg: { from: "Patient" | "Staff"; text: string }) => {
+  const message = { id: Date.now(), from: msg.from, text: msg.text, time: new Date().toLocaleTimeString(), read: false };
+  try {
+    const url = `/notifications`;
+    const fullUrl = `${API_BASE_URL.replace(/\/+$/, "")}${url.startsWith('/') ? url : `/${url}`}`;
+    const token = localStorage.getItem('d7-clinic-access-token') || localStorage.getItem('d7-clinic-api-token');
+    fetch(fullUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      credentials: 'include',
+      body: JSON.stringify({ title: `Message conv ${convId}`, message: msg.text }),
+    }).catch(() => {});
+  } catch {}
   try {
     const raw = localStorage.getItem(CONVERSATIONS_KEY);
     const arr: Conversation[] = raw ? JSON.parse(raw) : [];
     const idx = arr.findIndex((c) => c.id === convId);
-    const message = { id: Date.now(), from: msg.from, text: msg.text, time: new Date().toLocaleTimeString(), read: false };
     if (idx >= 0) {
       arr[idx].messages.push(message);
       arr[idx].updatedAt = new Date().toISOString();
     } else {
-      // create a fallback conversation
       const conv: Conversation = {
         id: convId,
-        patientId: "unknown",
-        patientName: msg.from === "Patient" ? "Patient" : "Staff",
+        patientId: 'unknown',
+        patientName: msg.from === 'Patient' ? 'Patient' : 'Staff',
         messages: [message],
         updatedAt: new Date().toISOString(),
       };
@@ -518,17 +493,14 @@ export const addMessageToConversation = (convId: string, msg: { from: "Patient" 
     }
     localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(arr));
 
-    // store a small last-incoming pointer for UI notifications
     try {
-      localStorage.setItem("d7-last-incoming", JSON.stringify({ convId, message }));
-      localStorage.setItem("d7-has-unread", "true");
+      localStorage.setItem('d7-last-incoming', JSON.stringify({ convId, message }));
+      localStorage.setItem('d7-has-unread', 'true');
     } catch {}
 
-    // emit global event for listeners
     try {
-      window.dispatchEvent(new CustomEvent("d7:incomingMessage", { detail: { convId, message } }));
+      window.dispatchEvent(new CustomEvent('d7:incomingMessage', { detail: { convId, message } }));
     } catch {}
-
     return message;
   } catch (e) {
     return { id: Date.now(), from: msg.from, text: msg.text, time: new Date().toLocaleTimeString() };

@@ -54,8 +54,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const STORAGE_KEY = "d7-clinic-auth-user";
+const ACCESS_TOKEN_KEY = "d7-clinic-access-token";
+const REFRESH_TOKEN_KEY = "d7-clinic-refresh-token";
 const PROFILE_OVERRIDES_KEY = "d7-clinic-user-profile-overrides";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
 
 const loadProfileOverrides = (userId: string): Partial<AuthUser> | null => {
   try {
@@ -403,44 +406,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
+    const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+    if (!token) return;
 
-    try {
-      const parsed = JSON.parse(raw) as AuthUser;
-      if (parsed?.username && parsed?.role) {
-        setCurrentUser(parsed);
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
+        });
+        if (!res.ok) {
+          localStorage.removeItem(ACCESS_TOKEN_KEY);
+          localStorage.removeItem(REFRESH_TOKEN_KEY);
+          return;
+        }
+        const profile = await res.json();
+        setCurrentUser(profile as AuthUser);
+      } catch {
+        localStorage.removeItem(ACCESS_TOKEN_KEY);
+        localStorage.removeItem(REFRESH_TOKEN_KEY);
       }
-    } catch {
-      localStorage.removeItem(STORAGE_KEY);
-    }
+    })();
   }, []);
 
-  const login = (identifier: string, password: string) => {
-    const found = findUser(identifier, password);
-    if (found) {
-      const baseUser = mapToUser(found);
-      const overrides = loadProfileOverrides(baseUser.id);
-      const authenticated = overrides ? { ...baseUser, ...overrides } : baseUser;
-
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(authenticated));
-      setCurrentUser(authenticated);
-      return authenticated;
-    }
-
-    const patient = findPatientByCredentials(identifier, password);
-    if (!patient) {
+  const login = async (identifier: string, password: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, password }),
+        credentials: 'include',
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const { accessToken, refreshToken, user } = data as any;
+      if (accessToken) localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+      if (refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      if (user) setCurrentUser(user as AuthUser);
+      return user as AuthUser | null;
+    } catch (e) {
+      // fallback to local static users/patients for offline dev
+      const found = findUser(identifier, password);
+      if (found) {
+        const baseUser = mapToUser(found);
+        const overrides = loadProfileOverrides(baseUser.id);
+        const authenticated = overrides ? { ...baseUser, ...overrides } : baseUser;
+        setCurrentUser(authenticated);
+        return authenticated;
+      }
+      const patient = findPatientByCredentials(identifier, password);
+      if (patient) {
+        const authPatient = mapPatientToAuthUser(patient);
+        setCurrentUser(authPatient);
+        return authPatient;
+      }
       return null;
     }
-
-    const authPatient = mapPatientToAuthUser(patient);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(authPatient));
-    setCurrentUser(authPatient);
-    return authPatient;
   };
 
   const logout = () => {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
     setCurrentUser(null);
   };
 
@@ -454,7 +480,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     setCurrentUser(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     saveProfileOverrides(updated.id, updated);
   };
 

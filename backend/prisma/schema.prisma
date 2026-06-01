@@ -162,6 +162,20 @@ enum NotificationPriority {
   CRITICAL
 }
 
+enum PatientWorkflowStatus {
+  EN_ATTENTE_DE_PAIEMENT
+  EN_ATTENTE_VALIDATION_CAISSE
+  EN_ATTENTE_INFIRMERIE
+  EN_ATTENTE_MEDECIN
+  EN_CONSULTATION
+  EN_LABORATOIRE
+  EN_RADIOLOGIE
+  EN_PHARMACIE
+  HOSPITALISE
+  TERMINE
+  ANNULE
+}
+
 enum AuditAction {
   CREATE
   UPDATE
@@ -257,7 +271,7 @@ model User {
   lastLoginAt                 DateTime?
   preferredLanguage           String?            @default("fr")
   roles                       UserRole[]
-  auditLogs                   AuditLog[]          @relation("AuditLogActor")
+  auditLogs                   AuditLog[]
   notifications               Notification[]     @relation("NotificationRecipient")
   notificationsSent           Notification[]     @relation("NotificationAuthor")
   refreshTokens               RefreshToken[]
@@ -273,7 +287,7 @@ model User {
   invoicesIssued              Invoice[]          @relation("InvoiceIssuer")
   paymentsMade                Payment[]          @relation("PaymentPayer")
   surgeriesAsSurgeon          Surgery[]          @relation("SurgerySurgeon")
-  surgeriesAsAnesthesiologist Surgery[]          @relation("SurgeryAnesthesiologist")
+  surgeriesAsAnesthesiologist Surgery[]         @relation("SurgeryAnesthesiologist")
   consultationNotesAuthored   ConsultationNote[] @relation("ConsultationNoteAuthor")
   medicalHistoriesCreated     MedicalHistory[]   @relation("MedicalHistoryCreatedBy")
   vitalSignsRecorded          VitalSign[]        @relation("VitalSignRecordedBy")
@@ -347,6 +361,12 @@ model Patient {
   insuranceProvider  String?
   insuranceNumber    String?
   status             String                 @default("ACTIVE")
+  workflowStatus     PatientWorkflowStatus  @default(EN_ATTENTE_DE_PAIEMENT)
+  admissionType      String?
+  service            String?
+  priority           String?
+  arrivalAt          DateTime?
+  receptionist       String?
   appointments       Appointment[]
   consultations      Consultation[]
   hospitalizations   Hospitalization[]
@@ -776,7 +796,7 @@ model Notification {
 
 model AuditLog {
   id           String      @id @default(uuid())
-  actor        User?       @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actor        User?       @relation(fields: [actorId], references: [id], onDelete: SetNull)
   actorId      String?
   patient      Patient?    @relation(fields: [patientId], references: [id], onDelete: SetNull)
   patientId    String?

@@ -21,6 +21,9 @@ export default function ReceptionStatisticsChart() {
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
 
+  const hasChartData = series.some((serie) => serie.data.some((value) => value > 0));
+  const noChartData = !error && categories.length > 0 && !hasChartData;
+
   const options: ApexOptions = {
     colors: ["#16a34a", "#2563eb", "#dc2626"],
     chart: {
@@ -214,6 +217,10 @@ export default function ReceptionStatisticsChart() {
           {error ? (
             <div className="flex h-[320px] items-center justify-center text-sm text-red-600 dark:text-red-400">
               {error}
+            </div>
+          ) : noChartData ? (
+            <div className="flex h-[320px] items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+              Aucune donnée disponible pour cette semaine.
             </div>
           ) : (
             <Chart

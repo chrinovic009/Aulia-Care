@@ -3,6 +3,7 @@ import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import flatpickr from "flatpickr";
 import { CalenderIcon } from "../../icons";
+import { fetchPatientsFromDatabase, fetchHospitalizationsFromDatabase, fetchAppointmentsFromDatabase } from "../../api/reception";
 
 const rangeOptions = [
   { key: "today", label: "Aujourd'hui" },
@@ -13,88 +14,25 @@ const rangeOptions = [
 
 type RangeKey = (typeof rangeOptions)[number]["key"];
 
-const chartData: Record<
-  RangeKey,
-  {
-    categories: string[];
-    series: { name: string; data: number[] }[];
-  }
-> = {
-  today: {
-    categories: ["08h", "10h", "12h", "14h", "16h", "18h"],
-    series: [
-      {
-        name: "Patients enregistrés",
-        data: [4, 7, 10, 8, 11, 6],
-      },
-      {
-        name: "Patients reçus",
-        data: [2, 5, 8, 7, 9, 5],
-      },
-    ],
-  },
-
-  week: {
-    categories: ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"],
-    series: [
-      {
-        name: "Admissions",
-        data: [24, 31, 28, 36, 40, 22, 18],
-      },
-      {
-        name: "Consultations",
-        data: [18, 24, 22, 29, 34, 17, 12],
-      },
-    ],
-  },
-
-  month: {
-    categories: ["S1", "S2", "S3", "S4"],
-    series: [
-      {
-        name: "Admissions",
-        data: [120, 145, 132, 168],
-      },
-      {
-        name: "Consultations",
-        data: [90, 110, 102, 140],
-      },
-    ],
-  },
-
-  year: {
-    categories: [
-      "Jan",
-      "Fév",
-      "Mar",
-      "Avr",
-      "Mai",
-      "Juin",
-      "Juil",
-      "Août",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Déc",
-    ],
-    series: [
-      {
-        name: "Admissions",
-        data: [420, 460, 510, 540, 600, 680, 720, 690, 710, 760, 810, 845],
-      },
-      {
-        name: "Consultations",
-        data: [320, 350, 390, 420, 470, 520, 560, 540, 575, 620, 660, 700],
-      },
-    ],
-  },
-};
 
 export default function StatisticsChart() {
   const datePickerRef = useRef<HTMLInputElement>(null);
 
   const [selectedRange, setSelectedRange] =
     useState<RangeKey>("month");
+
+  const [categories, setCategories] = useState<string[]>([]);
+  const [series, setSeries] = useState([
+    { name: "Patients ambulants", data: [] as number[] },
+    { name: "Patients hospitalisés", data: [] as number[] },
+  ]);
+  const [todayAdmissions, setTodayAdmissions] = useState(0);
+  const [averageWait, setAverageWait] = useState("—");
+  const [capacity, setCapacity] = useState("0%");
+  const [error, setError] = useState<string | null>(null);
+
+  const hasChartData = series.some((serie) => serie.data.some((value) => value > 0));
+  const noChartData = !error && categories.length > 0 && !hasChartData;
 
   useEffect(() => {
     if (!datePickerRef.current) return;
@@ -127,7 +65,152 @@ export default function StatisticsChart() {
     };
   }, []);
 
-  const { categories, series } = chartData[selectedRange];
+  useEffect(() => {
+    const getBucketLabels = (range: RangeKey) => {
+      if (range === "today") {
+        return ["00h", "04h", "08h", "12h", "16h", "20h"];
+      }
+
+      if (range === "week") {
+        return Array.from({ length: 7 }).map((_, index) => {
+          const date = new Date();
+          date.setDate(date.getDate() - (6 - index));
+          return date.toLocaleDateString("fr-FR", { weekday: "short" });
+        });
+      }
+
+      if (range === "month") {
+        return ["S1", "S2", "S3", "S4"];
+      }
+
+      return [
+        "Jan",
+        "Fév",
+        "Mar",
+        "Avr",
+        "Mai",
+        "Juin",
+        "Juil",
+        "Août",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Déc",
+      ];
+    };
+
+    const getBucketIndex = (date: Date, range: RangeKey) => {
+      const today = new Date();
+      if (range === "today") {
+        if (date.toDateString() !== today.toDateString()) return -1;
+        return Math.min(5, Math.floor(date.getHours() / 4));
+      }
+
+      if (range === "week") {
+        const keys = Array.from({ length: 7 }).map((_, index) => {
+          const d = new Date();
+          d.setDate(d.getDate() - (6 - index));
+          return d.toISOString().slice(0, 10);
+        });
+        const key = date.toISOString().slice(0, 10);
+        return keys.indexOf(key);
+      }
+
+      if (range === "month") {
+        if (date.getMonth() !== today.getMonth() || date.getFullYear() !== today.getFullYear()) return -1;
+        return Math.min(3, Math.floor((date.getDate() - 1) / 7));
+      }
+
+      if (range === "year") {
+        if (date.getFullYear() !== today.getFullYear()) return -1;
+        return date.getMonth();
+      }
+
+      return -1;
+    };
+
+    const loadChartData = async () => {
+      setError(null);
+      const labels = getBucketLabels(selectedRange);
+      const patientCounts = new Array(labels.length).fill(0);
+      const hospitalCounts = new Array(labels.length).fill(0);
+
+      try {
+        const [patients, hospitalizations, appointments] = await Promise.all([
+          fetchPatientsFromDatabase(),
+          fetchHospitalizationsFromDatabase(),
+          fetchAppointmentsFromDatabase(),
+        ]);
+
+        patients.forEach((patient) => {
+          if (!patient.createdAt) return;
+          const date = new Date(patient.createdAt);
+          const bucketIndex = getBucketIndex(date, selectedRange);
+          if (bucketIndex >= 0) {
+            patientCounts[bucketIndex] += 1;
+          }
+        });
+
+        hospitalizations.forEach((hospitalization) => {
+          if (!hospitalization.admittedAt) return;
+          const date = new Date(hospitalization.admittedAt);
+          const bucketIndex = getBucketIndex(date, selectedRange);
+          if (bucketIndex >= 0) {
+            hospitalCounts[bucketIndex] += 1;
+          }
+        });
+
+        const today = new Date();
+        const todayStart = new Date(today);
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date(today);
+        todayEnd.setHours(23, 59, 59, 999);
+
+        setCategories(labels);
+        setSeries([
+          { name: "Patients ambulants", data: patientCounts },
+          { name: "Patients hospitalisés", data: hospitalCounts },
+        ]);
+
+        setTodayAdmissions(
+          patients.filter((patient) => {
+            if (!patient.createdAt) return false;
+            const createdAt = new Date(patient.createdAt);
+            return createdAt >= todayStart && createdAt <= todayEnd;
+          }).length,
+        );
+
+        const ongoingHospitalizations = hospitalizations.filter((hospitalization) => {
+          if (!hospitalization.admittedAt) return false;
+          const dischargedAt = hospitalization.dischargedAt ? new Date(hospitalization.dischargedAt) : null;
+          return !dischargedAt || dischargedAt >= todayStart;
+        }).length;
+
+        setCapacity(
+          patients.length > 0 ? `${Math.round((ongoingHospitalizations / patients.length) * 100)}%` : "0%",
+        );
+
+        const waitTimes = appointments
+          .map((appointment) => {
+            if (!appointment.createdAt || !appointment.scheduledAt) return null;
+            const createdAt = new Date(appointment.createdAt);
+            const scheduledAt = new Date(appointment.scheduledAt);
+            const diffMinutes = (scheduledAt.getTime() - createdAt.getTime()) / 60000;
+            return Number.isFinite(diffMinutes) && diffMinutes >= 0 ? diffMinutes : null;
+          })
+          .filter((minutes): minutes is number => minutes !== null);
+
+        setAverageWait(
+          waitTimes.length > 0 ? `${Math.round(waitTimes.reduce((sum, value) => sum + value, 0) / waitTimes.length)} min` : "—",
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(`Impossible de charger les statistiques depuis la base de données. ${message}`);
+      }
+    };
+
+    loadChartData();
+  }, [selectedRange]);
 
   const options: ApexOptions = {
     legend: {
@@ -240,7 +323,7 @@ export default function StatisticsChart() {
           </h3>
 
           <p className="mt-1 text-gray-500 text-theme-sm dark:text-gray-400">
-            Admissions, consultations et activité de la réception
+            Patients ambulants vs hospitalisés
           </p>
         </div>
 
@@ -280,16 +363,26 @@ export default function StatisticsChart() {
       </div>
 
       {/* CHART */}
-      <div className="max-w-full overflow-x-auto custom-scrollbar">
-        <div className="min-w-[1000px] xl:min-w-full">
-          <Chart
-            options={options}
-            series={series}
-            type="area"
-            height={340}
-          />
+      {error ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-700 dark:bg-red-950/20 dark:text-red-300">
+          {error}
         </div>
-      </div>
+      ) : noChartData ? (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+          Aucune donnée disponible pour cette période.
+        </div>
+      ) : (
+        <div className="max-w-full overflow-x-auto custom-scrollbar">
+          <div className="min-w-[1000px] xl:min-w-full">
+            <Chart
+              options={options}
+              series={series}
+              type="area"
+              height={340}
+            />
+          </div>
+        </div>
+      )}
 
       {/* FOOTER STATS */}
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -300,7 +393,7 @@ export default function StatisticsChart() {
           </p>
 
           <h4 className="mt-2 text-2xl font-bold text-gray-800 dark:text-white/90">
-            48
+            {todayAdmissions}
           </h4>
         </div>
 
@@ -310,7 +403,7 @@ export default function StatisticsChart() {
           </p>
 
           <h4 className="mt-2 text-2xl font-bold text-amber-600 dark:text-amber-400">
-            14 min
+            {averageWait}
           </h4>
         </div>
 
@@ -320,7 +413,7 @@ export default function StatisticsChart() {
           </p>
 
           <h4 className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-            82%
+            {capacity}
           </h4>
         </div>
       </div>

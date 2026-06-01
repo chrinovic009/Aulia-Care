@@ -9,10 +9,53 @@ export default defineConfig({
     svgr({
       svgrOptions: {
         icon: true,
-        // This will transform your SVG to a React component
         exportType: "named",
         namedExport: "ReactComponent",
       },
     }),
   ],
+  server: {
+    proxy: {
+      "/auth": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+      "/patients": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+      "/appointments": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+      "/hospitalizations": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+      "/consultations": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+      "/payments": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+      "/billing": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+      "/notifications": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+    },
+  },
 });
