@@ -1,14 +1,27 @@
-import { ExecutionContext, Injectable, HttpStatus } from '@nestjs/common';
+import { ExecutionContext, Injectable } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Reflector } from '@nestjs/core';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
+  constructor(private reflector: Reflector) {
+    super();
+  }
+
   canActivate(context: ExecutionContext) {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(
+      'isPublic',
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (isPublic) {
+      return true;
+    }
+
     return super.canActivate(context);
   }
 
-  handleRequest(err: any, user: any, info: any, context: ExecutionContext, status?: any) {
-    // If there's an error or no user, throw an error with proper HTTP status
+  handleRequest(err: any, user: any, info: any) {
     if (err || !user) {
       throw err || new Error(info?.message || 'Unauthorized');
     }
