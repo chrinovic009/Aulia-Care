@@ -194,6 +194,25 @@ export const findPatientByName = async (name: string) => {
   }
 };
 
+export const searchPatients = async (name: string) => {
+  const normalizedName = normalizePatientName(name);
+  if (!normalizedName) return [];
+  try {
+    const patients = await fetchDbJson<PatientRecord[]>(buildSearchUrl({ name }));
+    return patients;
+  } catch {
+    return [];
+  }
+};
+
+export const fetchServices = async () => {
+  try {
+    return await fetchDbJson<any[]>('/services');
+  } catch {
+    return [];
+  }
+};
+
 export const findPatientByPhone = async (phone: string) => {
   const normalized = normalizePhone(phone);
   if (!normalized) return null;
@@ -307,7 +326,10 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000
 
 const getAuthHeaders = () => {
   try {
-    const token = localStorage.getItem("d7-clinic-auth-token") || localStorage.getItem("d7-clinic-api-token");
+    const token =
+      localStorage.getItem("d7-clinic-access-token") ||
+      localStorage.getItem("d7-clinic-auth-token") ||
+      localStorage.getItem("d7-clinic-api-token");
     return token ? { Authorization: `Bearer ${token}` } : {};
   } catch {
     return {};

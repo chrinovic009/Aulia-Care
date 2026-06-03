@@ -15,6 +15,7 @@ import { SurgeryModule } from './surgery/surgery.module';
 import { BillingModule } from './billing/billing.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AuditModule } from './audit/audit.module';
+import { ServicesModule } from './services/services.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { AuditModule } from './audit/audit.module';
     PharmacyModule,
     SurgeryModule,
     BillingModule,
+    ServicesModule,
     NotificationsModule,
     AuditModule,
   ],

@@ -1,5 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { findPatientByCredentials, PatientRecord } from "../api/reception";
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 
 export type RoleSlug =
   | "SUPER_ADMIN"
@@ -22,174 +21,186 @@ export interface AuthUser {
   displayName: string;
   firstName: string;
   lastName: string;
-  role: RoleSlug;
-  gender?: "M" | "F";
+  primaryRole: RoleSlug;
+  gender?: string;
   specialty?: string;
-  phone: string;
-  nationality: string;
-  addressCountry: string;
-  addressProvince: string;
-  addressCity: string;
-  addressNeighborhood: string;
-  addressStreet: string;
-  whatsappUrl: string;
-  facebookUrl: string;
-  instagramUrl: string;
+  phone?: string;
+  nationality?: string;
+  addressCountry?: string;
+  addressProvince?: string;
+  addressCity?: string;
+  addressNeighborhood?: string;
+  addressStreet?: string;
+  whatsappUrl?: string;
+  facebookUrl?: string;
+  instagramUrl?: string;
   linkedinUrl?: string;
-  bio: string;
+  bio?: string;
   profilePhotoUrl?: string;
-}
-
-interface AuthCredentials extends AuthUser {
-  password: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface AuthContextType {
   currentUser: AuthUser | null;
   isAuthenticated: boolean;
-  login: (identifier: string, password: string) => AuthUser | null;
+  isLoading: boolean;
+  login: (identifier: string, password: string) => Promise<AuthUser | null>;
   logout: () => void;
-  updateProfile: (updates: Partial<AuthUser>) => void;
+  error: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const ACCESS_TOKEN_KEY = "d7-clinic-access-token";
 const REFRESH_TOKEN_KEY = "d7-clinic-refresh-token";
-const PROFILE_OVERRIDES_KEY = "d7-clinic-user-profile-overrides";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
 
-const loadProfileOverrides = (userId: string): Partial<AuthUser> | null => {
-  try {
-    const raw = localStorage.getItem(PROFILE_OVERRIDES_KEY);
-    if (!raw) return null;
-    const store = JSON.parse(raw) as Record<string, Partial<AuthUser>>;
-    return store[userId] || null;
-  } catch {
-    return null;
-  }
-};
-
-const saveProfileOverrides = (userId: string, profile: Partial<AuthUser>) => {
-  try {
-    const raw = localStorage.getItem(PROFILE_OVERRIDES_KEY);
-    const store = raw ? (JSON.parse(raw) as Record<string, Partial<AuthUser>>) : {};
-    store[userId] = { ...store[userId], ...profile };
-    localStorage.setItem(PROFILE_OVERRIDES_KEY, JSON.stringify(store));
-  } catch {
-    // ignore write errors
-  }
-};
-
-function mapToUser(user: AuthCredentials): AuthUser {
-  const { password, ...cleanUser } = user;
-  return cleanUser;
-}
-
-function mapPatientToAuthUser(patient: PatientRecord): AuthUser {
-  const names = patient.name.trim().split(/\s+/);
-  const firstName = names[0] || "Patient";
-  const lastName = names.length > 1 ? names[names.length - 1] : firstName;
-  return {
-    id: patient.id,
-    username: patient.matricule,
-    email: patient.email || "",
-    displayName: patient.name,
-    firstName,
-    lastName,
-    role: "PATIENT",
-    gender: patient.gender as "M" | "F" | undefined,
-    phone: patient.phone || "",
-    nationality: "",
-    addressCountry: "",
-    addressProvince: "",
-    addressCity: "",
-    addressNeighborhood: "",
-    addressStreet: "",
-    whatsappUrl: "",
-    facebookUrl: "",
-    instagramUrl: "",
-    bio: "Patient connecté via la réception.",
-  };
-}
-
 export function getRedirectPath(role: RoleSlug) {
-  switch (role) {
-    case "RECEPTIONIST":
-      return "/reception";
-    case "NURSE":
-      return "/nurse";
-    case "PHYSICIAN":
-      return "/doctor";
-    case "CASHIER":
-      return "/caissier";
-    case "PATIENT":
-      return "/";
-    default:
-      return "/";
-  }
+  const rolePathMap: Record<RoleSlug, string> = {
+    RECEPTIONIST: "/reception",
+    NURSE: "/infirmier",
+    PHYSICIAN: "/medecin",
+    CASHIER: "/caissier",
+    LAB_TECHNICIAN: "/laboratoire",
+    RADIOLOGIST: "/radiologie",
+    SURGEON: "/surgery",
+    ANESTHESIOLOGIST: "/anesthesiologist",
+    PHARMACIST: "/pharmacie",
+    PATIENT: "/",
+    ADMIN: "/administration",
+    SUPER_ADMIN: "/admin",
+  };
+  return rolePathMap[role] || "/";
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-    if (!token) return;
+  // Charger le user depuis /auth/me si un token existe
+  const initializeAuth = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
 
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-          credentials: 'include',
-        });
-        if (!res.ok) {
+    try {
+      const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+      if (!token) {
+        setCurrentUser(null);
+        setIsLoading(false);
+        return;
+      }
+
+      // Créer un AbortController pour cette requête
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      const res = await fetch(`${API_BASE_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          // Token expiré ou invalide
           localStorage.removeItem(ACCESS_TOKEN_KEY);
           localStorage.removeItem(REFRESH_TOKEN_KEY);
-          return;
+          setCurrentUser(null);
         }
-        const profile = await res.json();
-        setCurrentUser(profile as AuthUser);
-      } catch {
-        localStorage.removeItem(ACCESS_TOKEN_KEY);
-        localStorage.removeItem(REFRESH_TOKEN_KEY);
+        setIsLoading(false);
+        return;
       }
-    })();
+
+      const profile = await res.json() as AuthUser;
+      setCurrentUser(profile);
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        // Requête annulée (StrictMode cleanup)
+        return;
+      }
+      setError("Erreur lors du chargement du profil");
+      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      setCurrentUser(null);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  const login = async (identifier: string, password: string) => {
+  // Initialiser l'auth au montage
+  useEffect(() => {
+    initializeAuth();
+
+    return () => {
+      // Cleanup pour StrictMode
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [initializeAuth]);
+
+  const login = async (identifier: string, password: string): Promise<AuthUser | null> => {
+    setIsLoading(true);
+    setError(null);
+
     try {
-      const res = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      // 1. Appeler POST /auth/login
+      const loginRes = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier, password }),
-        credentials: 'include',
+        credentials: "include",
       });
-      if (!res.ok) return null;
-      const data = await res.json();
-      const { accessToken, refreshToken, user } = data as any;
-      if (accessToken) localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-      if (refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
-      if (user) setCurrentUser(user as AuthUser);
-      return user as AuthUser | null;
-    } catch (e) {
-      // fallback to local static users/patients for offline dev
-      const found = findUser(identifier, password);
-      if (found) {
-        const baseUser = mapToUser(found);
-        const overrides = loadProfileOverrides(baseUser.id);
-        const authenticated = overrides ? { ...baseUser, ...overrides } : baseUser;
-        setCurrentUser(authenticated);
-        return authenticated;
+
+      if (!loginRes.ok) {
+        setError("Identifiants invalides");
+        return null;
       }
-      const patient = findPatientByCredentials(identifier, password);
-      if (patient) {
-        const authPatient = mapPatientToAuthUser(patient);
-        setCurrentUser(authPatient);
-        return authPatient;
+
+      const { accessToken, refreshToken } = await loginRes.json();
+
+      if (!accessToken || !refreshToken) {
+        setError("Réponse du serveur invalide");
+        return null;
       }
+
+      // 2. Sauvegarder les tokens
+      localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+      localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+
+      // 3. Appeler GET /auth/me pour récupérer le profil complet
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      const meRes = await fetch(`${API_BASE_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        credentials: "include",
+        signal: controller.signal,
+      });
+
+      if (!meRes.ok) {
+        setError("Erreur lors de la récupération du profil");
+        localStorage.removeItem(ACCESS_TOKEN_KEY);
+        localStorage.removeItem(REFRESH_TOKEN_KEY);
+        return null;
+      }
+
+      const profile = await meRes.json() as AuthUser;
+      setCurrentUser(profile);
+      return profile;
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        return null;
+      }
+      setError("Erreur lors de la connexion");
       return null;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -197,31 +208,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     setCurrentUser(null);
+    setError(null);
   };
 
-  const updateProfile = (updates: Partial<AuthUser>) => {
-    if (!currentUser) return;
-
-    const updated: AuthUser = {
-      ...currentUser,
-      ...updates,
-      displayName: `${updates.firstName ?? currentUser.firstName} ${updates.lastName ?? currentUser.lastName}`,
-    };
-
-    setCurrentUser(updated);
-    saveProfileOverrides(updated.id, updated);
+  const value: AuthContextType = {
+    currentUser,
+    isAuthenticated: !!currentUser,
+    isLoading,
+    login,
+    logout,
+    error,
   };
-
-  const value = useMemo(
-    () => ({
-      currentUser,
-      isAuthenticated: Boolean(currentUser),
-      login,
-      logout,
-      updateProfile,
-    }),
-    [currentUser]
-  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

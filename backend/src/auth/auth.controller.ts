@@ -5,7 +5,6 @@ import {
   HttpStatus,
   Post,
   Get,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 
@@ -14,13 +13,14 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { Public } from './public.decorator';
-import { Request } from 'express';
+import { CurrentUser } from './current-user.decorator';
+import { CurrentUserResponseDto } from './dto/current-user-response.dto';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  // 🔓 PUBLIC
+  // 🔓 PUBLIC - Connexion
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('login')
@@ -37,22 +37,29 @@ export class AuthController {
       };
     }
 
-    return this.authService.login(user);
+    return this.authService.login({
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      displayName: user.displayName,
+      primaryRole: user.primaryRole || 'PATIENT',
+    });
   }
 
-  // 🔓 PUBLIC
+  // 🔓 PUBLIC - Renouvellement du token
   @Public()
   @HttpCode(HttpStatus.OK)
   @Post('refresh')
   async refresh(@Body() payload: RefreshTokenDto) {
-    return this.authService.refreshToken(payload.refreshToken);
+    return this.authService.refreshAccessToken(payload.refreshToken);
   }
 
-  // 🔒 PROTÉGÉ
+  // 🔒 PROTÉGÉ - Récupérer le profil actuel (user complet)
   @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
   @Get('me')
-  async me(@Req() req: Request) {
-    const anyReq = req as any;
-    return anyReq.user || null;
+  async me(@CurrentUser() user: any): Promise<CurrentUserResponseDto> {
+    const fullUser = await this.authService.getUserById(user.userId);
+    return fullUser as CurrentUserResponseDto;
   }
 }

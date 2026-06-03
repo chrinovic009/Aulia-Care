@@ -8,7 +8,7 @@ import Checkbox from "../form/input/Checkbox";
 import Button from "../ui/button/Button";
 
 export default function SignInForm() {
-  const { currentUser, login } = useAuth();
+  const { currentUser, login, isLoading, error: contextError } = useAuth();
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
@@ -16,24 +16,41 @@ export default function SignInForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
+  // Redirection si déjà authentifié
   useEffect(() => {
     if (currentUser) {
-      navigate(getRedirectPath(currentUser.role), { replace: true });
+      navigate(getRedirectPath(currentUser.primaryRole), { replace: true });
     }
   }, [currentUser, navigate]);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const user = login(identifier, password);
+    setError("");
 
-    if (!user) {
-      setError("Matricule ou mot de passe invalide. Vérifiez vos informations et réessayez.");
+    if (!identifier.trim() || !password.trim()) {
+      setError("Veuillez remplir tous les champs");
       return;
     }
 
-    setError("");
-    navigate(getRedirectPath(user.role), { replace: true });
+    try {
+      const user = await login(identifier, password);
+
+      if (!user) {
+        setError(
+          "Matricule ou mot de passe invalide. Vérifiez vos informations et réessayez."
+        );
+        return;
+      }
+
+      console.log("✓ Connecté avec le rôle:", user.primaryRole);
+      navigate(getRedirectPath(user.primaryRole), { replace: true });
+    } catch (err) {
+      console.error(err);
+      setError("Une erreur est survenue lors de la connexion.");
+    }
   };
+
+  const displayError = error || contextError;
 
   return (
     <div className="flex flex-col flex-1">
@@ -67,6 +84,7 @@ export default function SignInForm() {
                     value={identifier}
                     onChange={(event) => setIdentifier(event.target.value)}
                     placeholder="d7fk01 ou failakeren04@gmail.com"
+                    disabled={isLoading}
                   />
                 </div>
                 <div>
@@ -79,6 +97,7 @@ export default function SignInForm() {
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
                       placeholder="Entrez votre mot de passe"
+                      disabled={isLoading}
                     />
                     <span
                       onClick={() => setShowPassword(!showPassword)}
@@ -92,9 +111,9 @@ export default function SignInForm() {
                     </span>
                   </div>
                 </div>
-                {error ? (
+                {displayError ? (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                    {error}
+                    {displayError}
                   </div>
                 ) : null}
                 <div className="flex items-center justify-between">
@@ -112,13 +131,17 @@ export default function SignInForm() {
                   </Link>
                 </div>
                 <div>
-                  <Button className="w-full" size="sm" type="submit">
-                    Se connecter
+                  <Button 
+                    className="w-full" 
+                    size="sm" 
+                    type="submit"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Connexion en cours..." : "Se connecter"}
                   </Button>
                 </div>
               </div>
             </form>
-
           </div>
         </div>
       </div>

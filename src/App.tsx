@@ -50,44 +50,44 @@ export default function App() {
 
             {/* Page Patient */}
             <Route index path="/" element={<HomeRedirect />} />
-            <Route path="/profile" element={<RoleGuard allowedRoles={["PATIENT"]}><UserProfiles /></RoleGuard>} />
-            <Route path="/dossier-medical" element={<RoleGuard allowedRoles={["PATIENT"]}><DossierMedical /></RoleGuard>} />
-            <Route path="/traitements" element={<RoleGuard allowedRoles={["PATIENT"]}><MesTraitements /></RoleGuard>} />
-            <Route path="/rendez-vous" element={<RoleGuard allowedRoles={["PATIENT"]}><Calendar /></RoleGuard>} />
-            <Route path="/examens-resultats" element={<RoleGuard allowedRoles={["PATIENT"]}><BasicTables /></RoleGuard>} />
-            <Route path="/hospitalisation" element={<RoleGuard allowedRoles={["PATIENT"]}><Hospitalisation /></RoleGuard>} />
-            <Route path="/suivi-quotidien" element={<RoleGuard allowedRoles={["PATIENT"]}><SuiviQuotidien /></RoleGuard>} />
-            <Route path="/messages" element={<RoleGuard allowedRoles={["PATIENT"]}><Messages /></RoleGuard>} />
-            <Route path="/historique-medical" element={<RoleGuard allowedRoles={["PATIENT"]}><HistoriqueMedical /></RoleGuard>} />
-            <Route path="/profil-securite" element={<RoleGuard allowedRoles={["PATIENT"]}><UserProfiles /></RoleGuard>} />
+            <Route path="/profile" element={<RoleGuard requiredRoles={["PATIENT"]}><UserProfiles /></RoleGuard>} />
+            <Route path="/dossier-medical" element={<RoleGuard requiredRoles={["PATIENT"]}><DossierMedical /></RoleGuard>} />
+            <Route path="/traitements" element={<RoleGuard requiredRoles={["PATIENT"]}><MesTraitements /></RoleGuard>} />
+            <Route path="/rendez-vous" element={<RoleGuard requiredRoles={["PATIENT"]}><Calendar /></RoleGuard>} />
+            <Route path="/examens-resultats" element={<RoleGuard requiredRoles={["PATIENT"]}><BasicTables /></RoleGuard>} />
+            <Route path="/hospitalisation" element={<RoleGuard requiredRoles={["PATIENT"]}><Hospitalisation /></RoleGuard>} />
+            <Route path="/suivi-quotidien" element={<RoleGuard requiredRoles={["PATIENT"]}><SuiviQuotidien /></RoleGuard>} />
+            <Route path="/messages" element={<RoleGuard requiredRoles={["PATIENT"]}><Messages /></RoleGuard>} />
+            <Route path="/historique-medical" element={<RoleGuard requiredRoles={["PATIENT"]}><HistoriqueMedical /></RoleGuard>} />
+            <Route path="/profil-securite" element={<RoleGuard requiredRoles={["PATIENT"]}><UserProfiles /></RoleGuard>} />
             
             {/* Page Receptioniste */}
-            <Route path="/reception" element={<RoleGuard allowedRoles={["RECEPTIONIST"]}><ReceptionDashboard /></RoleGuard>} />
-            <Route path="/reception/patients" element={<RoleGuard allowedRoles={["RECEPTIONIST"]}><ReceptionPatients /></RoleGuard>} />
-            <Route path="/reception/admission" element={<RoleGuard allowedRoles={["RECEPTIONIST"]}><ReceptionAdmission /></RoleGuard>} />
-            <Route path="/reception/rendez-vous" element={<RoleGuard allowedRoles={["RECEPTIONIST"]}><RendezVousRecpetion /></RoleGuard>} />
-            <Route path="/reception/hospitalisations" element={<RoleGuard allowedRoles={["RECEPTIONIST"]}><HospitalisationReception /></RoleGuard>} />
-            <Route path="/reception/messages" element={<RoleGuard allowedRoles={["RECEPTIONIST"]}><ReceptionMessages /></RoleGuard>} />
-            <Route path="/reception/historique" element={<RoleGuard allowedRoles={["RECEPTIONIST"]}><HistoriqueReception /></RoleGuard>} />
-            <Route path="/reception/profile" element={<RoleGuard allowedRoles={["RECEPTIONIST"]}><ReceptionProfile /></RoleGuard>} />
+            <Route path="/reception" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionDashboard /></RoleGuard>} />
+            <Route path="/reception/patients" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionPatients /></RoleGuard>} />
+            <Route path="/reception/admission" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionAdmission /></RoleGuard>} />
+            <Route path="/reception/rendez-vous" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><RendezVousRecpetion /></RoleGuard>} />
+            <Route path="/reception/hospitalisations" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><HospitalisationReception /></RoleGuard>} />
+            <Route path="/reception/messages" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionMessages /></RoleGuard>} />
+            <Route path="/reception/historique" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><HistoriqueReception /></RoleGuard>} />
+            <Route path="/reception/profile" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionProfile /></RoleGuard>} />
 
             {/* Page Infirmier */}
-            <Route path="/nurse" element={<RoleGuard allowedRoles={["NURSE"]}><DashboardInfirmier /></RoleGuard>} />
-            <Route path="/nurse/patients" element={<RoleGuard allowedRoles={["NURSE"]}><PatientAssignes /></RoleGuard>} />
-            <Route path="/nurse/rounds" element={<RoleGuard allowedRoles={["NURSE"]}><RoundsInfirmier /></RoleGuard>} />
-            <Route path="/nurse/hospitalized" element={<RoleGuard allowedRoles={["NURSE"]}><HospitalisationInfirmier /></RoleGuard>} />
-            <Route path="/nurse/messages" element={<RoleGuard allowedRoles={["NURSE"]}><MessagesInfirmier /></RoleGuard>} />
-            <Route path="/nurse/profile" element={<RoleGuard allowedRoles={["NURSE"]}><ProfileInfirmier /></RoleGuard>} />
+            <Route path="/nurse" element={<RoleGuard requiredRoles={["NURSE"]}><DashboardInfirmier /></RoleGuard>} />
+            <Route path="/nurse/patients" element={<RoleGuard requiredRoles={["NURSE"]}><PatientAssignes /></RoleGuard>} />
+            <Route path="/nurse/rounds" element={<RoleGuard requiredRoles={["NURSE"]}><RoundsInfirmier /></RoleGuard>} />
+            <Route path="/nurse/hospitalized" element={<RoleGuard requiredRoles={["NURSE"]}><HospitalisationInfirmier /></RoleGuard>} />
+            <Route path="/nurse/messages" element={<RoleGuard requiredRoles={["NURSE"]}><MessagesInfirmier /></RoleGuard>} />
+            <Route path="/nurse/profile" element={<RoleGuard requiredRoles={["NURSE"]}><ProfileInfirmier /></RoleGuard>} />
 
             {/* Page Médecin */}
-            <Route path="/doctor/" element={<RoleGuard allowedRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
+            <Route path="/doctor/" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
 
             {/* Page Caissier */}
-            <Route path="/caissier" element={<RoleGuard allowedRoles={["CASHIER"]}><DashboardCaissier /></RoleGuard>} />
-            <Route path="/caissier/messages" element={<RoleGuard allowedRoles={["CASHIER"]}><MessagesCaissier /></RoleGuard>} />
-            <Route path="/caissier/facturation" element={<RoleGuard allowedRoles={["CASHIER"]}><FacturationCaissier /></RoleGuard>} />
-            <Route path="/caissier/historique" element={<RoleGuard allowedRoles={["CASHIER"]}><HistoriqueCaissier /></RoleGuard>} />
-            <Route path="/caissier/profile" element={<RoleGuard allowedRoles={["CASHIER"]}><ProfileCaissier /></RoleGuard>} />
+            <Route path="/caissier" element={<RoleGuard requiredRoles={["CASHIER"]}><DashboardCaissier /></RoleGuard>} />
+            <Route path="/caissier/messages" element={<RoleGuard requiredRoles={["CASHIER"]}><MessagesCaissier /></RoleGuard>} />
+            <Route path="/caissier/facturation" element={<RoleGuard requiredRoles={["CASHIER"]}><FacturationCaissier /></RoleGuard>} />
+            <Route path="/caissier/historique" element={<RoleGuard requiredRoles={["CASHIER"]}><HistoriqueCaissier /></RoleGuard>} />
+            <Route path="/caissier/profile" element={<RoleGuard requiredRoles={["CASHIER"]}><ProfileCaissier /></RoleGuard>} />
 
           </Route>
 

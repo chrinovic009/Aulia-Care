@@ -11,6 +11,9 @@
     "prisma:studio": "npx prisma --schema ../prisma/schema.prisma studio",
     "db:seed": "npx prisma --schema ../prisma/schema.prisma db seed"
   },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
   "dependencies": {
     "@nestjs/common": "^10.4.20",
     "@nestjs/config": "^3.3.0",

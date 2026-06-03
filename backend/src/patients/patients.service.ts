@@ -19,17 +19,6 @@ interface AdmissionSearchResult {
   dateOfBirth?: Date;
 }
 
-const SERVICE_PRICING: Record<string, number> = {
-  'Médecine générale': 15000,
-  Cardiologie: 30000,
-  Pédiatrie: 12000,
-  Radiologie: 25000,
-  Laboratoire: 10000,
-  Urgences: 20000,
-  Chirurgie: 50000,
-  Neurologie: 35000,
-};
-
 const normalizePhone = (phone?: string) => phone?.replace(/[^0-9+]/g, '').trim();
 const normalizeEmail = (email?: string) => email?.trim().toLowerCase();
 
@@ -69,14 +58,24 @@ export class PatientsService {
     }
 
     if (params.name) {
-      const normalized = params.name.trim();
-      const { firstName, lastName } = splitFullName(normalized);
-      conditions.push({
-        OR: [
-          { firstName: { contains: firstName, mode: 'insensitive' } },
-          { lastName: { contains: lastName, mode: 'insensitive' } },
-        ],
-      });
+      const name = params.name.trim();
+      // Try a performant Postgres unaccent + ILIKE search via raw SQL when available
+      try {
+        const query = `SELECT id, "firstName", "lastName", "middleName", "phone", "email", "dateOfBirth" FROM "Patient" WHERE unaccent(lower(concat("firstName", ' ', "lastName"))) LIKE unaccent(lower($1)) LIMIT 10`;
+        const pattern = `%${name.replace(/%/g, '\\%')}%`;
+        const raw: any[] = await this.prisma.$queryRawUnsafe(query, pattern);
+        if (raw && raw.length > 0) return raw;
+      } catch (e) {
+        // fallback to Prisma insensitive contains search
+        const { firstName, lastName } = splitFullName(name);
+        conditions.push({
+          OR: [
+            { firstName: { contains: firstName, mode: 'insensitive' } },
+            { lastName: { contains: lastName, mode: 'insensitive' } },
+            { OR: [{ firstName: { contains: name, mode: 'insensitive' } }, { lastName: { contains: name, mode: 'insensitive' } }] },
+          ],
+        });
+      }
     }
 
     if (conditions.length === 0) {
@@ -129,7 +128,18 @@ export class PatientsService {
       }
     }
 
-    const servicePrice = SERVICE_PRICING[createAdmissionDto.service] ?? 0;
+    // Resolve service and active tarif to determine price
+    let servicePrice = 0;
+    if (createAdmissionDto.service) {
+      const service = await this.prisma.service.findUnique({ where: { name: createAdmissionDto.service } });
+      if (service) {
+        const tarif = await this.prisma.serviceTarif.findFirst({
+          where: { serviceId: service.id, actif: true },
+          orderBy: { dateDebut: 'desc' },
+        });
+        if (tarif) servicePrice = Number(tarif.prix);
+      }
+    }
     const admissionData = {
       firstName,
       lastName,

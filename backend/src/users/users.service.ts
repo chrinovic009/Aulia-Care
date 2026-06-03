@@ -8,17 +8,36 @@ import * as bcrypt from 'bcrypt';
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(createUserDto: CreateUserDto) {
-    const passwordHash = await bcrypt.hash(createUserDto.password, 10);
+  async create(dto: CreateUserDto) {
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
     return this.prisma.user.create({
       data: {
-        email: createUserDto.email.toLowerCase(),
-        username: createUserDto.username.toLowerCase(),
-        displayName: createUserDto.displayName,
-        firstName: createUserDto.firstName,
-        lastName: createUserDto.lastName,
+        email: dto.email.toLowerCase(),
+        username: dto.username.toLowerCase(),
+        displayName: dto.displayName,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
         passwordHash,
-        primaryRole: createUserDto.primaryRole,
+        primaryRole: dto.primaryRole,
+
+        specialty: dto.specialty ?? null,
+        phone: dto.phone ?? null,
+        whatsappUrl: dto.whatsappUrl ?? null,
+        facebookUrl: dto.facebookUrl ?? null,
+        instagramUrl: dto.instagramUrl ?? null,
+        linkedinUrl: dto.linkedinUrl ?? null,
+
+        nationality: dto.nationality ?? null,
+        addressCountry: dto.addressCountry ?? null,
+        addressProvince: dto.addressProvince ?? null,
+        addressCity: dto.addressCity ?? null,
+        addressNeighborhood: dto.addressNeighborhood ?? null,
+        addressStreet: dto.addressStreet ?? null,
+
+        bio: dto.bio ?? null,
+
+        status: 'ACTIVE',
       },
     });
   }
@@ -42,36 +61,26 @@ export class UsersService {
   async findOne(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        displayName: true,
-        firstName: true,
-        lastName: true,
-        primaryRole: true,
-        phone: true,
-        status: true,
-      },
     });
+
     if (!user) {
       throw new NotFoundException('Utilisateur introuvable');
     }
+
     return user;
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto) {
-    const data: any = { ...updateUserDto };
-    if (updateUserDto.password) {
-      data.passwordHash = await bcrypt.hash(updateUserDto.password, 10);
+  async update(id: string, dto: UpdateUserDto) {
+    const data: any = { ...dto };
+
+    if (dto.password) {
+      data.passwordHash = await bcrypt.hash(dto.password, 10);
       delete data.password;
     }
-    if (data.email) {
-      data.email = data.email.toLowerCase();
-    }
-    if (data.username) {
-      data.username = data.username.toLowerCase();
-    }
+
+    if (data.email) data.email = data.email.toLowerCase();
+    if (data.username) data.username = data.username.toLowerCase();
+
     return this.prisma.user.update({
       where: { id },
       data,
