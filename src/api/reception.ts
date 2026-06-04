@@ -150,12 +150,113 @@ export const fetchPatientsFromDatabase = async (): Promise<PatientRecord[]> => {
   return fetchDbJson<PatientRecord[]>('/patients');
 };
 
+export type HospitalizationRoomInventoryItem = {
+  id: string;
+  number: string;
+  service: string;
+  totalBeds: number;
+  occupiedBeds: number;
+  availableBeds: number;
+  status: string;
+};
+
+export type HospitalizationTimelineEvent = {
+  id: string;
+  date: string;
+  event: string;
+  type: string;
+};
+
+export type HospitalizationRecord = {
+  id: string;
+  admittedAt: string;
+  dischargedAt?: string;
+  status?: string;
+  admissionReason: string;
+  dischargeReason?: string;
+  bedNumber?: string;
+  patient?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    externalId?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    city?: string;
+  };
+  ServiceUnit?: {
+    id: string;
+    name: string;
+    department?: { id: string; name: string };
+  };
+  bed?: {
+    id: string;
+    code: string;
+    room?: { id: string; number: string; serviceUnit?: { name: string } };
+  };
+  physician?: { id: string; displayName?: string; firstName?: string; lastName?: string };
+  nurseInCharge?: { id: string; displayName?: string; firstName?: string; lastName?: string };
+};
+
+export type HospitalizationStats = {
+  hospitalized: number;
+  availableRooms: number;
+  capacityRate: number;
+  admissionsToday: number;
+  emergencyAdmissions: number;
+  totalBeds: number;
+  occupiedBeds: number;
+};
+
 export const fetchAppointmentsFromDatabase = async () => {
   return fetchDbJson<Array<{ priority?: string; status?: string; scheduledAt?: string; requestedAt?: string; createdAt?: string }>>("/appointments");
 };
 
 export const fetchHospitalizationsFromDatabase = async () => {
-  return fetchDbJson<Array<{ id: string; patientId: string; admittedAt: string; dischargedAt?: string; status?: string }>>('/hospitalizations');
+  return fetchDbJson<HospitalizationRecord[]>('/hospitalizations');
+};
+
+export const searchHospitalizations = async (query: string) => {
+  return fetchDbJson<HospitalizationRecord[]>(`/hospitalizations/search?q=${encodeURIComponent(query)}`);
+};
+
+export const fetchHospitalizationById = async (id: string) => {
+  return fetchDbJson<HospitalizationRecord>(`/hospitalizations/${encodeURIComponent(id)}`);
+};
+
+export const fetchHospitalizationStats = async () => {
+  return fetchDbJson<HospitalizationStats>('/hospitalizations/stats');
+};
+
+export const fetchHospitalizationRooms = async () => {
+  return fetchDbJson<HospitalizationRoomInventoryItem[]>('/hospitalizations/rooms');
+};
+
+export const fetchHospitalizationTimeline = async (id: string) => {
+  return fetchDbJson<HospitalizationTimelineEvent[]>(`/hospitalizations/${encodeURIComponent(id)}/timeline`);
+};
+
+export const createHospitalizationInDatabase = async (payload: any) => {
+  const url = `/hospitalizations`;
+  const fullUrl = `${API_BASE_URL.replace(/\/+$/, "")}${url.startsWith('/') ? url : `/${url}`}`;
+  const token = (() => {
+    try {
+      return localStorage.getItem('d7-clinic-access-token') || localStorage.getItem('d7-clinic-api-token') || localStorage.getItem('d7-clinic-auth-token');
+    } catch { return null; }
+  })();
+
+  const response = await fetch(fullUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Create hospitalization failed (${response.status}): ${text}`);
+  }
+  return await response.json();
 };
 
 export const fetchAppointmentMetricsFromDatabase = async () => {
@@ -173,6 +274,28 @@ export const fetchAppointmentMetricsFromDatabase = async () => {
   return {
     todayAppointments: appointments.filter((item) => isToday(item.scheduledAt || item.requestedAt || item.createdAt)).length,
   };
+};
+
+export const createAppointmentInDatabase = async (payload: any) => {
+  const url = `/appointments`;
+  const fullUrl = `${API_BASE_URL.replace(/\/+$/, "")}${url.startsWith('/') ? url : `/${url}`}`;
+  const token = (() => {
+    try {
+      return localStorage.getItem('d7-clinic-access-token') || localStorage.getItem('d7-clinic-api-token') || localStorage.getItem('d7-clinic-auth-token');
+    } catch { return null; }
+  })();
+
+  const response = await fetch(fullUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Create appointment failed (${response.status}): ${text}`);
+  }
+  return await response.json();
 };
 
 const buildSearchUrl = (params: { email?: string; phone?: string; name?: string }) => {
@@ -300,7 +423,11 @@ export type PatientRecord = {
   arrival?: string;
   receptionist?: string;
   service?: string;
+  firstName?: string;
+  lastName?: string;
   doctor?: string;
+  receptionist?: string;
+  workflowStatus?: string;
   priority?: string;
   insurance?: { company?: string; policy?: string; coverageType?: string; coveragePct?: number; photo?: any; pdf?: any };
   contacts?: Array<{ name: string; relation: string; phone: string; address: string }>;
@@ -415,7 +542,7 @@ export const createPatientAdmission = async (payload: Partial<PatientRecord>): P
   const fullUrl = `${API_BASE_URL.replace(/\/+$/, "")}${url.startsWith('/') ? url : `/${url}`}`;
   const response = await fetch(fullUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     credentials: 'include',
     body: JSON.stringify(payload),
   });

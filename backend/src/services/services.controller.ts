@@ -35,4 +35,20 @@ export class ServicesController {
     const items = Array.isArray(body) ? body : [body];
     return this.servicesService.addResponsables(items.map((it) => ({ ...it, serviceId: id })));
   }
+  @Post(':id/staff')
+  addStaff(
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    const items = Array.isArray(body)
+      ? body
+      : [body];
+
+    return this.servicesService.addStaff(
+      items.map((it) => ({
+        ...it,
+        serviceId: id,
+      })),
+    );
+  }
 }

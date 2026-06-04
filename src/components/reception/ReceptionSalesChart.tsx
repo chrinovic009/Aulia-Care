@@ -4,7 +4,7 @@ import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { MoreDotIcon } from "../../icons";
 import { useEffect, useState } from "react";
-import { fetchAppointmentsFromDatabase, fetchPatientsFromDatabase } from "../../api/reception";
+import { fetchPatientsFromDatabase } from "../../api/reception";
 
 export default function ReceptionStatisticsChart() {
   const [categories, setCategories] = useState<string[]>([]);
@@ -119,32 +119,38 @@ export default function ReceptionStatisticsChart() {
       }
 
       try {
-        const [patients, appointments] = await Promise.all([
-          fetchPatientsFromDatabase(),
-          fetchAppointmentsFromDatabase(),
-        ]);
+            const patients = await fetchPatientsFromDatabase();
 
-        const patientsData = dayKeys.map((key) =>
-          patients.filter((patient) => {
-            const createdAt = patient.createdAt ? new Date(patient.createdAt).toISOString().slice(0, 10) : "";
-            return createdAt === key;
-          }).length,
-        );
+            const patientsData = dayKeys.map((key) =>
+              patients.filter((patient) => {
+                const createdAt = patient.createdAt ? new Date(patient.createdAt).toISOString().slice(0, 10) : "";
+                return createdAt === key && patient.workflowStatus === "EN_ATTENTE_INFIRMERIE";
+              }).length,
+            );
 
-        const appointmentsData = dayKeys.map((key) =>
-          appointments.filter((appointment) => {
-            const dateValue = appointment.scheduledAt || appointment.requestedAt || appointment.createdAt;
-            return dateValue ? new Date(dateValue).toISOString().slice(0, 10) === key : false;
-          }).length,
-        );
+            const appointmentsData = dayKeys.map((key) =>
+              patients.filter((patient) => {
+                const createdAt = patient.createdAt ? new Date(patient.createdAt).toISOString().slice(0, 10) : "";
+                return (
+                  createdAt === key &&
+                  patient.workflowStatus === "EN_ATTENTE_INFIRMERIE" &&
+                  (patient.admissionType?.toLowerCase().includes("consult") ||
+                    patient.admissionType?.toLowerCase().includes("rendez") ||
+                    patient.admissionType === "Consultation")
+                );
+              }).length,
+            );
 
-        const urgencesData = dayKeys.map((key) =>
-          appointments.filter((appointment) => {
-            const dateValue = appointment.scheduledAt || appointment.requestedAt || appointment.createdAt;
-            const isUrgent = ["urgent", "urgence"].includes((appointment.priority || "").toLowerCase());
-            return dateValue ? new Date(dateValue).toISOString().slice(0, 10) === key && isUrgent : false;
-          }).length,
-        );
+            const urgencesData = dayKeys.map((key) =>
+              patients.filter((patient) => {
+                const createdAt = patient.createdAt ? new Date(patient.createdAt).toISOString().slice(0, 10) : "";
+                return (
+                  createdAt === key &&
+                  patient.workflowStatus === "EN_ATTENTE_INFIRMERIE" &&
+                  ["urgent", "urgence", "prioritaire"].includes((patient.priority || "").toLowerCase())
+                );
+              }).length,
+            );
 
         setCategories(labels);
         setSeries([

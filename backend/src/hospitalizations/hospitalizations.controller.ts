@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { HospitalizationsService } from './hospitalizations.service';
 import { CreateHospitalizationDto } from './dto/create-hospitalization.dto';
 import { UpdateHospitalizationDto } from './dto/update-hospitalization.dto';
@@ -10,6 +10,30 @@ import { Roles } from '../auth/roles.decorator';
 @Controller('hospitalizations')
 export class HospitalizationsController {
   constructor(private readonly hospitalizationsService: HospitalizationsService) {}
+
+  @Get('search')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  search(@Query('q') q: string) {
+    return this.hospitalizationsService.search(q || '');
+  }
+
+  @Get('stats')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  stats() {
+    return this.hospitalizationsService.getStats();
+  }
+
+  @Get('rooms')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  rooms() {
+    return this.hospitalizationsService.getRoomInventory();
+  }
+
+  @Get(':id/timeline')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  timeline(@Param('id') id: string) {
+    return this.hospitalizationsService.getTimeline(id);
+  }
 
   @Get()
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')

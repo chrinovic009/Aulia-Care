@@ -16,7 +16,6 @@ import ReceptionDashboard from "./pages/Reception/Dashboard";
 import ReceptionPatients from "./pages/Reception/Patients";
 import ReceptionAdmission from "./pages/Reception/Admission";
 import ReceptionProfile from "./pages/Reception/ProfileReception";
-import RendezVousRecpetion from "./pages/Reception/RendezVousRecpetion";
 import ReceptionMessages from "./pages/Reception/MessagesReception";
 import HospitalisationReception from "./pages/Reception/HospitalisationReception";
 import HistoriqueReception from "./pages/Reception/HistoriqueReception";
@@ -35,6 +34,7 @@ import ProfileCaissier from "./pages/Caissier/ProfileCaissier";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import { RequireAuth, RoleGuard, HomeRedirect } from "./components/auth/RequireAuth";
+import RendezVousReception from "./pages/Reception/RendezVousReception";
 
 export default function App() {
   return (
@@ -65,7 +65,7 @@ export default function App() {
             <Route path="/reception" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionDashboard /></RoleGuard>} />
             <Route path="/reception/patients" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionPatients /></RoleGuard>} />
             <Route path="/reception/admission" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionAdmission /></RoleGuard>} />
-            <Route path="/reception/rendez-vous" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><RendezVousRecpetion /></RoleGuard>} />
+            <Route path="/reception/rendez-vous" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><RendezVousReception /></RoleGuard>} />
             <Route path="/reception/hospitalisations" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><HospitalisationReception /></RoleGuard>} />
             <Route path="/reception/messages" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionMessages /></RoleGuard>} />
             <Route path="/reception/historique" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><HistoriqueReception /></RoleGuard>} />

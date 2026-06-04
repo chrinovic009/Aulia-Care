@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
@@ -30,12 +30,107 @@ export class ServicesService {
     return this.prisma.serviceTarif.create({ data: dto });
   }
 
-  async addResponsables(items: { serviceId: string; userId: string; principal?: boolean }[]) {
-    const created = [] as any[];
+  async addResponsables(
+    items: {
+      serviceId: string;
+      userId: string;
+      principal?: boolean;
+    }[],
+  ) {
+    const created = [];
+
+    const allowedChiefRoles = [
+      'PHYSICIAN',
+      'SURGEON',
+      'RADIOLOGIST',
+      'ANESTHESIOLOGIST',
+    ];
+
     for (const it of items) {
-      const rec = await this.prisma.serviceResponsable.create({ data: { serviceId: it.serviceId, userId: it.userId, principal: !!it.principal } });
+
+      const user = await this.prisma.user.findUnique({
+        where: {
+          id: it.userId,
+        },
+      });
+
+      if (!user) {
+        throw new NotFoundException(
+          'Utilisateur introuvable',
+        );
+      }
+
+      if (
+        user.primaryRole &&
+        !allowedChiefRoles.includes(
+          user.primaryRole,
+        )
+      ) {
+        throw new BadRequestException(
+          'Cet utilisateur ne peut pas être responsable de service',
+        );
+      }
+
+      const rec =
+        await this.prisma.serviceResponsable.create({
+          data: {
+            serviceId: it.serviceId,
+            userId: it.userId,
+            principal: !!it.principal,
+          },
+        });
+
       created.push(rec);
     }
+
+    return created;
+  }
+
+  async addStaff(items: any[]) {
+    const created = [];
+
+    const allowedRoles = [
+      'PHYSICIAN',
+      'SURGEON',
+      'NURSE',
+      'RADIOLOGIST',
+      'LAB_TECHNICIAN',
+      'ANESTHESIOLOGIST',
+      'PHARMACIST',
+    ];
+
+    for (const item of items) {
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: item.userId },
+      });
+
+      if (!user) {
+        throw new NotFoundException(
+          'Utilisateur introuvable',
+        );
+      }
+
+      if (
+        user.primaryRole &&
+        !allowedRoles.includes(user.primaryRole)
+      ) {
+        throw new BadRequestException(
+          'Rôle non autorisé dans un service médical'
+        );
+      }
+
+      const staff = await this.prisma.serviceStaff.create({
+        data: {
+          serviceId: item.serviceId,
+          userId: item.userId,
+          roleInService: item.roleInService,
+        },
+      });
+
+      created.push(staff);
+    }
+
     return created;
   }
 }

@@ -26,23 +26,51 @@ export default function ReceptionAssistantIA() {
     };
   }, []);
 
-  const waiting = useMemo(() => patients.filter((p) => p.status === "Fiche en attente"), [patients]);
-  const urgent = useMemo(() => patients.filter((p) => (p.priority || "").toLowerCase() === "urgence" || (p.priority || "").toLowerCase() === "urgente"), [patients]);
-  const inFollowup = useMemo(() => patients.filter((p) => p.status === "En suivi"), [patients]);
+  const waiting = useMemo(
+    () => patients.filter((p) => p.workflowStatus === "EN_ATTENTE_DE_PAIEMENT"),
+    [patients],
+  );
+  const awaitingNurse = useMemo(
+    () => patients.filter((p) => p.workflowStatus === "EN_ATTENTE_INFIRMERIE"),
+    [patients],
+  );
+  const urgent = useMemo(
+    () =>
+      patients.filter(
+        (p) =>
+          ["urgence", "urgent", "prioritaire"].includes((p.priority || "").toLowerCase()) &&
+          p.workflowStatus === "EN_ATTENTE_INFIRMERIE",
+      ),
+    [patients],
+  );
 
   const avgWaitMinutes = useMemo(() => {
-    if (!waiting.length) return 0;
-    const totalMs = waiting.reduce((acc, p) => acc + (Date.now() - new Date(p.createdAt).getTime()), 0);
-    return Math.round((totalMs / waiting.length) / 60000);
-  }, [waiting]);
+    const queue = [...waiting, ...awaitingNurse];
+    if (!queue.length) return 0;
+    const totalMs = queue.reduce((acc, p) => acc + (Date.now() - new Date(p.createdAt).getTime()), 0);
+    return Math.round((totalMs / queue.length) / 60000);
+  }, [waiting, awaitingNurse]);
 
   const satisfactionPct = useMemo(() => {
-    const a = inFollowup.length;
+    const a = awaitingNurse.length;
     const b = waiting.length;
     const denom = a + b;
     if (denom === 0) return 100;
     return Math.round((a / denom) * 100);
-  }, [inFollowup.length, waiting.length]);
+  }, [awaitingNurse.length, waiting.length]);
+
+  const statusMessage = useMemo(() => {
+    if (waiting.length === 0) {
+      return "Aucun patient n’attend actuellement le paiement. Continuez à vérifier les dossiers et à orienter les admissions vers l’infirmerie.";
+    }
+    if (waiting.length <= 2) {
+      return "Le flux paiement reste maîtrisé. Assurez-vous que les dossiers sont complets et que les règlements sont traités rapidement.";
+    }
+    if (waiting.length === 3) {
+      return "Trois patients attendent le paiement. Renforcez le guichet encaissement et suivez de près les dossiers en cours.";
+    }
+    return "Plusieurs patients attendent le règlement. Priorisez le passage au guichet de paiement et envoyez ceux qui ont réglé vers l’infirmerie le plus vite possible.";
+  }, [waiting.length]);
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03]">
@@ -87,7 +115,7 @@ export default function ReceptionAssistantIA() {
 
         {/* Footer */}
         <p className="mx-auto mt-6 max-w-[600px] text-center text-sm leading-6 text-gray-500 dark:text-gray-400">
-          L’assistant IA analyse en temps réel les admissions, les urgences, les disponibilités médicales et la charge des services afin d’aider la réception à maintenir une circulation fluide des patients.
+          {statusMessage}
         </p>
       </div>
 
@@ -95,14 +123,33 @@ export default function ReceptionAssistantIA() {
       <div className="flex flex-col gap-4 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-center sm:text-left">
           <p className="text-xs text-gray-500 dark:text-gray-400">Admissions aujourd’hui</p>
-          <p className="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{patients.length} patients</p>
+          <p className="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">
+            {patients.filter((p) => {
+              if (p.workflowStatus !== "EN_ATTENTE_INFIRMERIE") return false;
+              if (!p.createdAt) return false;
+              const createdAt = new Date(p.createdAt);
+              createdAt.setHours(0, 0, 0, 0);
+              return createdAt.getTime() === new Date().setHours(0, 0, 0, 0);
+            }).length} patients
+          </p>
         </div>
 
         <div className="hidden h-10 w-px bg-gray-200 dark:bg-gray-800 sm:block"></div>
 
         <div className="text-center sm:text-left">
           <p className="text-xs text-gray-500 dark:text-gray-400">Rendez-vous confirmés</p>
-          <p className="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{patients.filter(p => p.admissionType === 'Consultation').length}</p>
+          <p className="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">
+            {patients.filter((p) => {
+              if (p.workflowStatus !== "EN_ATTENTE_INFIRMERIE") return false;
+              if (!p.createdAt) return false;
+              const createdAt = new Date(p.createdAt);
+              createdAt.setHours(0, 0, 0, 0);
+              return (
+                createdAt.getTime() === new Date().setHours(0, 0, 0, 0) &&
+                (p.admissionType === "Consultation" || p.admissionType?.toLowerCase().includes("consult"))
+              );
+            }).length}
+          </p>
         </div>
 
         <div className="hidden h-10 w-px bg-gray-200 dark:bg-gray-800 sm:block"></div>

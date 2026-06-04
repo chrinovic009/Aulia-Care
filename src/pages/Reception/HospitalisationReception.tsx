@@ -1,128 +1,370 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
-
-const hospitalisations = [
-  {
-    id: "HOS-2026-001",
-    patient: "Grâce Ilunga",
-    room: "A-204B",
-    service: "Cardiologie",
-    doctor: "Dr Mukendi",
-    admissionDate: "16 Mai",
-    status: "En soins",
-    priority: "Stable",
-  },
-  {
-    id: "HOS-2026-002",
-    patient: "Patrick Sefu",
-    room: "B-110A",
-    service: "Chirurgie",
-    doctor: "Dr Kabasele",
-    admissionDate: "15 Mai",
-    status: "Sortie prévue",
-    priority: "Observation",
-  },
-  {
-    id: "HOS-2026-003",
-    patient: "Amina Mputu",
-    room: "C-302",
-    service: "Urgences",
-    doctor: "Dr Ndala",
-    admissionDate: "17 Mai",
-    status: "Transfert prévu",
-    priority: "Critique",
-  },
-  {
-    id: "HOS-2026-004",
-    patient: "Jean Kabila",
-    room: "D-101",
-    service: "Orthopédie",
-    doctor: "Dr Mabiala",
-    admissionDate: "14 Mai",
-    status: "En soins",
-    priority: "Stable",
-  },
-];
-
-const roomInventory = [
-  { room: "A-204", service: "Médecine interne", occupancy: "1/2", status: "Disponible" },
-  { room: "B-110", service: "Chirurgie", occupancy: "2/2", status: "Complète" },
-  { room: "C-302", service: "Urgences", occupancy: "1/1", status: "Réservation" },
-  { room: "D-101", service: "Orthopédie", occupancy: "0/1", status: "Nettoyage" },
-];
-
-const alerts = [
-  "Chambre non attribuée",
-  "Dossier incomplet",
-  "Assurance non validée",
-  "Cas critique",
-  "Autorisation manquante",
-];
+import {
+  createHospitalizationInDatabase,
+  fetchHospitalizationById,
+  fetchHospitalizationRooms,
+  fetchHospitalizationStats,
+  fetchHospitalizationsFromDatabase,
+  fetchHospitalizationTimeline,
+  searchHospitalizations,
+  HospitalizationRecord,
+  HospitalizationRoomInventoryItem,
+  HospitalizationStats,
+  HospitalizationTimelineEvent,
+} from "../../api/reception";
 
 const statusStyles: Record<string, string> = {
-  Stable: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
-  Observation: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-  Critique: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-  "Transfert prévu": "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200",
-  "Sortie validée": "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100",
+  ADMITTED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
+  TRANSFERRED: "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200",
+  DISCHARGED: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100",
 };
 
 const roomStatusStyles: Record<string, string> = {
-  Disponible: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
-  Complète: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-  Nettoyage: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-  Réservation: "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200",
+  AVAILABLE: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
+  OCCUPIED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+  CLEANING: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+  MAINTENANCE: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100",
 };
 
-const patientTimeline = [
-  { date: "12 Mai", event: "Admission urgences" },
-  { date: "13 Mai", event: "Affectation chambre B204" },
-  { date: "14 Mai", event: "Scanner" },
-  { date: "15 Mai", event: "Transfert cardiologie" },
-  { date: "16 Mai", event: "Préparation sortie" },
-];
+type NewHospitalizationForm = {
+  patientId: string;
+  admissionReason: string;
+  bedNumber: string;
+  physicianId: string;
+  serviceUnitId: string;
+};
+
+function formatPatientName(patient?: HospitalizationRecord['patient']) {
+  if (!patient) return '—';
+  return [patient.firstName, patient.lastName].filter(Boolean).join(' ') || '—';
+}
+
+function getDoctorName(record: HospitalizationRecord) {
+  return record.physician?.displayName || [record.physician?.firstName, record.physician?.lastName].filter(Boolean).join(' ') || '—';
+}
+
+function getRoomLabel(record: HospitalizationRecord) {
+  return record.bed?.room?.number || record.bedNumber || '—';
+}
+
+function HospitalizationDetails(props: {
+  hospitalization: HospitalizationRecord;
+  timeline: HospitalizationTimelineEvent[];
+  onClose: () => void;
+}) {
+  const { hospitalization, timeline, onClose } = props;
+
+  return (
+    <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-slate-900">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Détails : {formatPatientName(hospitalization.patient)}</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Coordination administrative et timeline de séjour.</p>
+        </div>
+        <button
+          onClick={onClose}
+          className="rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200"
+        >
+          Fermer
+        </button>
+      </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+              <p className="text-sm text-slate-500 dark:text-slate-400">Chambre</p>
+              <p className="mt-2 font-semibold text-slate-900 dark:text-white">{getRoomLabel(hospitalization)}</p>
+            </div>
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+              <p className="text-sm text-slate-500 dark:text-slate-400">Service</p>
+              <p className="mt-2 font-semibold text-slate-900 dark:text-white">{hospitalization.ServiceUnit?.name || '—'}</p>
+            </div>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+            <p className="text-sm text-slate-500 dark:text-slate-400">Médecin référent</p>
+            <p className="mt-2 font-semibold text-slate-900 dark:text-white">{getDoctorName(hospitalization)}</p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+            <p className="text-sm text-slate-500 dark:text-slate-400">Statut</p>
+            <p className="mt-2 font-semibold text-slate-900 dark:text-white">{hospitalization.status || '—'}</p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+            <p className="text-sm text-slate-500 dark:text-slate-400">Motif admission</p>
+            <p className="mt-2 text-slate-900 dark:text-white">{hospitalization.admissionReason || '—'}</p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+            <p className="text-sm text-slate-500 dark:text-slate-400">Info administrative</p>
+            <p className="mt-2 text-slate-900 dark:text-white">Dossier : {hospitalization.patient?.externalId || hospitalization.patient?.id || '—'}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Téléphone : {hospitalization.patient?.phone || '—'}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Adresse : {hospitalization.patient?.address || hospitalization.patient?.city || '—'}</p>
+          </div>
+          <div className="grid gap-2">
+            <a href={`mailto:${hospitalization.patient?.email ?? ''}`} className={`rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 ${!hospitalization.patient?.email ? 'opacity-50 pointer-events-none' : ''}`}>
+              Contacter famille
+            </a>
+            <button
+              onClick={() => window.print()}
+              className="rounded-2xl border border-slate-300 bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+            >
+              Imprimer fiche d'hospitalisation
+            </button>
+          </div>
+        </div>
+        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+          <h4 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">Timeline d'hospitalisation</h4>
+          <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+            {timeline.length > 0 ? (
+              timeline.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
+                  <p className="font-semibold text-slate-900 dark:text-white">{new Date(item.date).toLocaleString('fr-FR')}</p>
+                  <p className="mt-1">{item.event}</p>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+                <p className="text-sm text-slate-700 dark:text-slate-200">Aucun événement disponible pour cette hospitalisation.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NewHospitalizationModal(props: {
+  onClose: () => void;
+  onCreated: () => void;
+  rooms: HospitalizationRoomInventoryItem[];
+}) {
+  const { onClose, onCreated, rooms } = props;
+  const [form, setForm] = useState<NewHospitalizationForm>({ patientId: '', admissionReason: '', bedNumber: '', physicianId: '', serviceUnitId: '' });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!form.patientId || !form.admissionReason) {
+      setError('Patient et motif sont obligatoires');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await createHospitalizationInDatabase({
+        patientId: form.patientId,
+        admissionReason: form.admissionReason,
+        bedNumber: form.bedNumber || undefined,
+        physicianId: form.physicianId || undefined,
+        serviceUnitId: form.serviceUnitId || undefined,
+      });
+      onCreated();
+      onClose();
+    } catch (e) {
+      setError((e as Error).message || 'Échec de la création');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-2xl rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-gray-200 dark:border-slate-700">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Nouvelle hospitalisation</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-300">Enregistrez une hospitalisation via le backend.</p>
+          </div>
+          <button onClick={onClose} className="text-sm text-slate-600 dark:text-slate-400">Fermer</button>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-sm text-slate-600 dark:text-slate-300">ID patient / dossier</span>
+            <input value={form.patientId} onChange={(e) => setForm((prev) => ({ ...prev, patientId: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 bg-white text-sm text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+          </label>
+          <label className="block">
+            <span className="text-sm text-slate-600 dark:text-slate-300">Médecin (ID)</span>
+            <input value={form.physicianId} onChange={(e) => setForm((prev) => ({ ...prev, physicianId: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 bg-white text-sm text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+          </label>
+          <label className="block sm:col-span-2">
+            <span className="text-sm text-slate-600 dark:text-slate-300">Motif d'admission</span>
+            <textarea value={form.admissionReason} onChange={(e) => setForm((prev) => ({ ...prev, admissionReason: e.target.value }))} rows={3} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 bg-white text-sm text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+          </label>
+          <label className="block">
+            <span className="text-sm text-slate-600 dark:text-slate-300">Chambre / lit</span>
+            <select value={form.bedNumber} onChange={(e) => setForm((prev) => ({ ...prev, bedNumber: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 bg-white text-sm text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white">
+              <option value="">Aucun</option>
+              {rooms.map((room) => (
+                <option key={room.id} value={`${room.number}`}>
+                  {room.number} — {room.service} ({room.availableBeds} libres)
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-sm text-slate-600 dark:text-slate-300">Service unit ID (optionnel)</span>
+            <input value={form.serviceUnitId} onChange={(e) => setForm((prev) => ({ ...prev, serviceUnitId: e.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 bg-white text-sm text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+          </label>
+        </div>
+        {error && <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-700 dark:bg-red-950 dark:text-red-200">{error}</div>}
+        <div className="mt-6 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-xl border border-slate-300 px-4 py-2 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200">Annuler</button>
+          <button onClick={handleSubmit} disabled={loading} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60">
+            {loading ? 'Enregistrement...' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SearchHospitalizationModal(props: {
+  onClose: () => void;
+  query: string;
+  onQueryChange: (value: string) => void;
+  onSubmit: () => void;
+  results: HospitalizationRecord[];
+  onSelect: (id: string) => void;
+}) {
+  const { onClose, query, onQueryChange, onSubmit, results, onSelect } = props;
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/40 p-4 pt-24">
+      <div className="w-full max-w-4xl rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-gray-200 dark:border-slate-700">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recherche hospitalisation</h3>
+          <button onClick={onClose} className="text-sm text-slate-600 dark:text-slate-400">Fermer</button>
+        </div>
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <input autoFocus value={query} onChange={(e) => onQueryChange(e.target.value)} placeholder="Nom, prénom, dossier, chambre ou service" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+          <button onClick={onSubmit} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Lancer</button>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-slate-500">
+                <th className="py-2 px-2">Patient</th>
+                <th className="py-2 px-2">Chambre</th>
+                <th className="py-2 px-2">Service</th>
+                <th className="py-2 px-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.map((h) => (
+                <tr key={h.id} className="border-t">
+                  <td className="py-2 px-2">{formatPatientName(h.patient)}</td>
+                  <td className="py-2 px-2">{getRoomLabel(h)}</td>
+                  <td className="py-2 px-2">{h.ServiceUnit?.name || '—'}</td>
+                  <td className="py-2 px-2">
+                    <button onClick={() => onSelect(h.id)} className="rounded-xl bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200">
+                      Choisir
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function HospitalisationReception() {
-  const [selectedHospitalisation, setSelectedHospitalisation] = useState<typeof hospitalisations[number] | null>(null);
-  const [modal, setModal] = useState<null | 'new' | 'search' | 'urgent' | 'discharge'>(null);
+  const [hospitalizations, setHospitalizations] = useState<HospitalizationRecord[]>([]);
+  const [selectedHospitalization, setSelectedHospitalization] = useState<HospitalizationRecord | null>(null);
+  const [timeline, setTimeline] = useState<HospitalizationTimelineEvent[]>([]);
+  const [stats, setStats] = useState<HospitalizationStats>({ hospitalized: 0, availableRooms: 0, capacityRate: 0, admissionsToday: 0, emergencyAdmissions: 0, totalBeds: 0, occupiedBeds: 0 });
+  const [rooms, setRooms] = useState<HospitalizationRoomInventoryItem[]>([]);
+  const [modal, setModal] = useState<null | 'new' | 'search'>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [roomFilter, setRoomFilter] = useState<'all'|'available'|'occupied'|'cleaning'>('all');
-  const [viewFilter, setViewFilter] = useState<'all'|'admissions'|'discharges'|'services'>('all');
-  const [dischargeQuery, setDischargeQuery] = useState("");
+  const [roomFilter, setRoomFilter] = useState<'all' | 'available' | 'occupied' | 'cleaning'>('all');
+  const [viewFilter, setViewFilter] = useState<'all' | 'admissions' | 'discharges' | 'services'>('all');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const stats = useMemo(
-    () => ({
-      hospitalized: 128,
-      availableRooms: 23,
-      capacityRate: 78,
-      admissionsToday: 14,
-      emergencyAdmissions: 5,
-      plannedDischarges: 9,
-    }),
-    []
-  );
+  const loadPageData = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [hospitalizationsData, statsData, roomsData] = await Promise.all([
+        fetchHospitalizationsFromDatabase(),
+        fetchHospitalizationStats(),
+        fetchHospitalizationRooms(),
+      ]);
+
+      setHospitalizations(hospitalizationsData);
+      setStats(statsData);
+      setRooms(roomsData);
+    } catch (e) {
+      setError((e as Error)?.message || 'Impossible de charger les données');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPageData();
+  }, []);
+
+  const handleSearch = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const results = searchQuery.trim() ? await searchHospitalizations(searchQuery) : await fetchHospitalizationsFromDatabase();
+      setHospitalizations(results);
+    } catch (e) {
+      setError((e as Error)?.message || 'Recherche impossible');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectHospitalization = async (id: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [detail, timelineData] = await Promise.all([fetchHospitalizationById(id), fetchHospitalizationTimeline(id)]);
+      setSelectedHospitalization(detail);
+      setTimeline(timelineData);
+    } catch (e) {
+      setError((e as Error)?.message || 'Impossible de charger le détail');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNewHospitalizationCreated = async () => {
+    await loadPageData();
+  };
 
   const filteredRooms = useMemo(() => {
-    if (roomFilter === 'all') return roomInventory;
-    if (roomFilter === 'available') return roomInventory.filter(r => r.status === 'Disponible');
-    if (roomFilter === 'occupied') return roomInventory.filter(r => r.status === 'Complète');
-    if (roomFilter === 'cleaning') return roomInventory.filter(r => r.status === 'Nettoyage');
-    return roomInventory;
-  }, [roomFilter]);
+    if (roomFilter === 'all') return rooms;
+    if (roomFilter === 'available') return rooms.filter((room) => room.status === 'AVAILABLE');
+    if (roomFilter === 'occupied') return rooms.filter((room) => room.status === 'OCCUPIED');
+    if (roomFilter === 'cleaning') return rooms.filter((room) => room.status === 'CLEANING');
+    return rooms;
+  }, [rooms, roomFilter]);
 
-  const filteredHospitalisations = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return hospitalisations.filter(h => {
-      if (q) {
-        if (!(h.patient.toLowerCase().includes(q) || h.room.toLowerCase().includes(q) || h.service.toLowerCase().includes(q))) return false;
-      }
-      if (viewFilter === 'admissions') return h.status.toLowerCase().includes('admission') || !!h.admissionDate;
-      if (viewFilter === 'discharges') return h.status.toLowerCase().includes('sortie');
-      if (viewFilter === 'services') return !!h.service;
+  const filteredHospitalizations = useMemo(() => {
+    return hospitalizations.filter((record) => {
+      if (viewFilter === 'admissions') return record.status === 'ADMITTED' || record.status === 'TRANSFERRED';
+      if (viewFilter === 'discharges') return record.status === 'DISCHARGED';
+      if (viewFilter === 'services') return Boolean(record.ServiceUnit?.name);
       return true;
     });
-  }, [searchQuery, viewFilter]);
+  }, [hospitalizations, viewFilter]);
+
+  const alerts = useMemo(() => {
+    const items: string[] = [];
+    if (stats.availableRooms === 0) items.push('Aucune chambre disponible');
+    if (stats.capacityRate >= 90) items.push('Capacité élevée');
+    if (stats.emergencyAdmissions > 0) items.push(`Admissions urgentes : ${stats.emergencyAdmissions}`);
+    if (!items.length) items.push('Aucun signalement important');
+    return items;
+  }, [stats]);
 
   return (
     <div className="p-4 sm:p-6 bg-slate-50 dark:bg-slate-950 min-h-screen">
@@ -134,10 +376,6 @@ export default function HospitalisationReception() {
 
       <div className="space-y-6">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <button onClick={() => setModal('new')} className="rounded-3xl border border-slate-200 bg-white px-4 py-4 text-left text-sm font-medium text-slate-900 shadow-sm transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-            <div className="mb-2 text-lg">➕</div>
-            Nouvelle hospitalisation
-          </button>
           <button onClick={() => setModal('search')} className="rounded-3xl border border-slate-200 bg-white px-4 py-4 text-left text-sm font-medium text-slate-900 shadow-sm transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
             <div className="mb-2 text-lg">🔍</div>
             Rechercher un patient hospitalisé
@@ -146,10 +384,6 @@ export default function HospitalisationReception() {
             <div className="mb-2 text-lg">🛏️</div>
             Voir chambres disponibles
           </button>
-          <button onClick={() => setModal('urgent')} className="rounded-3xl border border-slate-200 bg-white px-4 py-4 text-left text-sm font-medium text-slate-900 shadow-sm transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-            <div className="mb-2 text-lg">🚑</div>
-            Admission urgence
-          </button>
           <button onClick={() => setModal('discharge')} className="rounded-3xl border border-slate-200 bg-white px-4 py-4 text-left text-sm font-medium text-slate-900 shadow-sm transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
             <div className="mb-2 text-lg">📤</div>
             Préparer sortie
@@ -157,6 +391,7 @@ export default function HospitalisationReception() {
         </div>
 
         <div className="grid gap-4 xl:grid-cols-4">
+
           <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-900">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Patients hospitalisés</p>
             <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats.hospitalized}</p>
@@ -164,6 +399,7 @@ export default function HospitalisationReception() {
               +6 aujourd'hui
             </span>
           </div>
+
           <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-900">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Chambres disponibles</p>
             <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats.availableRooms}</p>
@@ -171,6 +407,7 @@ export default function HospitalisationReception() {
               Capacité {stats.capacityRate}%
             </span>
           </div>
+
           <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-900">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Admissions aujourd'hui</p>
             <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats.admissionsToday}</p>
@@ -178,13 +415,15 @@ export default function HospitalisationReception() {
               Urgences : {stats.emergencyAdmissions}
             </span>
           </div>
+
           <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-900">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Sorties prévues</p>
-            <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats.plannedDischarges}</p>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Lits libres</p>
+            <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats.totalBeds - stats.occupiedBeds}</p>
             <span className="mt-3 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800 dark:bg-slate-800 dark:text-slate-100">
-              Avant 18h
+              Sur {stats.totalBeds} lits
             </span>
           </div>
+          
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
@@ -195,7 +434,7 @@ export default function HospitalisationReception() {
                 <p className="text-sm text-slate-500 dark:text-slate-400">Vue administrative des admissions, services et sorties.</p>
               </div>
               <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                {hospitalisations.length} dossiers actifs
+                {hospitalizations.length} dossiers actifs
               </span>
             </div>
 
@@ -231,19 +470,19 @@ export default function HospitalisationReception() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredHospitalisations.map((item) => (
+                  {filteredHospitalizations.map((item) => (
                     <tr key={item.id} className="border-b border-slate-200 dark:border-slate-700">
-                      <td className="py-3 px-3 text-slate-900 dark:text-white">{item.patient}</td>
-                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300">{item.room}</td>
-                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300">{item.service}</td>
-                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300">{item.doctor}</td>
-                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300">{item.admissionDate}</td>
+                      <td className="py-3 px-3 text-slate-900 dark:text-white">{formatPatientName(item.patient)}</td>
+                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300">{getRoomLabel(item)}</td>
+                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300">{item.ServiceUnit?.name || '—'}</td>
+                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300">{getDoctorName(item)}</td>
+                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300">{item.admittedAt ? new Date(item.admittedAt).toLocaleDateString('fr-FR') : '—'}</td>
                       <td className="py-3 px-3">
-                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[item.priority]}`}>{item.priority}</span>
+                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[item.status ?? 'ADMITTED'] ?? 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100'}`}>{item.status || 'ADMITTED'}</span>
                       </td>
                       <td className="py-3 px-3">
                         <button
-                          onClick={() => setSelectedHospitalisation(item)}
+                          onClick={() => handleSelectHospitalization(item.id)}
                           className="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                         >
                           Voir
@@ -261,14 +500,14 @@ export default function HospitalisationReception() {
               <h4 className="text-base font-semibold text-slate-900 dark:text-white">Gestion des chambres</h4>
               <div className="mt-4 space-y-3">
                 {filteredRooms.map((room) => (
-                  <div key={room.room} className="flex items-center justify-between rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+                  <div key={room.id} className="flex items-center justify-between rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
                     <div>
-                      <p className="font-semibold text-slate-900 dark:text-white">{room.room}</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">{room.number}</p>
                       <p className="text-sm text-slate-500 dark:text-slate-400">{room.service}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{room.occupancy}</p>
-                      <span className={`mt-1 inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${roomStatusStyles[room.status]}`}>{room.status}</span>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{room.occupiedBeds}/{room.totalBeds}</p>
+                      <span className={`mt-1 inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${roomStatusStyles[room.status] ?? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-100'}`}>{room.status}</span>
                     </div>
                   </div>
                 ))}
@@ -287,36 +526,6 @@ export default function HospitalisationReception() {
             </div>
           </aside>
         </div>
-
-        {/* Modals */}
-        {modal === 'new' && (
-          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-2xl rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-gray-200 dark:border-slate-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Nouvelle hospitalisation</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-300">Remplissez rapidement les champs pour enregistrer une hospitalisation.</p>
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <input placeholder="Nom patient" className="rounded border px-3 py-2" />
-                <select className="rounded border px-3 py-2">
-                  <option>Service</option>
-                  {['Cardiologie','Chirurgie','Urgences','Orthopédie'].map(s=> <option key={s}>{s}</option>)}
-                </select>
-                <select className="rounded border px-3 py-2">
-                  <option>Chambre (sélection rapide)</option>
-                  {roomInventory.filter(r=>r.status==='Disponible').map(r=> <option key={r.room}>{r.room} — {r.service}</option>)}
-                </select>
-                <select className="rounded border px-3 py-2">
-                  <option>Médecin référent</option>
-                  {['Dr Mukendi','Dr Rapid','Dr Kabasele','Dr Mabiala'].map(d=> <option key={d}>{d}</option>)}
-                </select>
-                <input type="datetime-local" className="rounded border px-3 py-2 sm:col-span-2" />
-                <div className="sm:col-span-2 flex gap-2 justify-end">
-                  <button onClick={() => setModal(null)} className="rounded border px-4 py-2">Annuler</button>
-                  <button onClick={() => { setModal(null); /* simulate save */ }} className="rounded bg-slate-900 text-white px-4 py-2">Enregistrer</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {modal === 'search' && (
           <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/40 p-4 pt-24">
@@ -337,12 +546,12 @@ export default function HospitalisationReception() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredHospitalisations.map(h => (
+                    {filteredHospitalizations.map((h) => (
                       <tr key={h.id} className="border-t">
-                        <td className="py-2 px-2">{h.patient}</td>
-                        <td className="py-2 px-2">{h.room}</td>
-                        <td className="py-2 px-2">{h.service}</td>
-                        <td className="py-2 px-2"><button onClick={()=>{ setSelectedHospitalisation(h); setModal(null); }} className="rounded px-2 py-1 bg-slate-100">Choisir</button></td>
+                        <td className="py-2 px-2">{formatPatientName(h.patient)}</td>
+                        <td className="py-2 px-2">{getRoomLabel(h)}</td>
+                        <td className="py-2 px-2">{h.ServiceUnit?.name || '—'}</td>
+                        <td className="py-2 px-2"><button onClick={() => { handleSelectHospitalization(h.id); setModal(null); }} className="rounded px-2 py-1 bg-slate-100">Choisir</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -352,120 +561,9 @@ export default function HospitalisationReception() {
           </div>
         )}
 
-        {modal === 'urgent' && (
-          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-xl rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-gray-200 dark:border-slate-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Admission urgente</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-300">Formulaire rapide pour admission en urgence.</p>
-              <div className="mt-4 grid grid-cols-1 gap-3">
-                <input placeholder="Nom patient" className="rounded border px-3 py-2" />
-                <select className="rounded border px-3 py-2">
-                  <option>Urgence ➜ service</option>
-                  <option>Urgences</option>
-                </select>
-                <select className="rounded border px-3 py-2">
-                  <option>Chambre (si disponible)</option>
-                  {roomInventory.filter(r=>r.status==='Disponible').map(r=> <option key={r.room}>{r.room}</option>)}
-                </select>
-                <div className="flex justify-end gap-2">
-                  <button onClick={()=>setModal(null)} className="rounded border px-4 py-2">Annuler</button>
-                  <button onClick={()=>{ setModal(null); /* simulate */ }} className="rounded bg-red-600 text-white px-4 py-2">Admettre</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {modal === 'discharge' && (
-          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-            <div className="w-full max-w-2xl rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-gray-200 dark:border-slate-700">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Préparer sortie</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-300">Recherchez par initiales (les 3 premières lettres) pour filtrer rapidement.</p>
-              <input value={dischargeQuery} onChange={(e)=>setDischargeQuery(e.target.value)} placeholder="Tapez 3 premières lettres" className="mt-3 w-full rounded border px-3 py-2" />
-              <div className="mt-4 max-h-60 overflow-auto">
-                <ul className="space-y-2">
-                  {hospitalisations.filter(h=>h.patient.toLowerCase().startsWith(dischargeQuery.toLowerCase())).map(h=> (
-                    <li key={h.id} className="flex items-center justify-between rounded border p-3">
-                      <div>
-                        <div className="font-semibold">{h.patient}</div>
-                        <div className="text-sm text-slate-500">{h.room} — {h.service}</div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={()=>{ /* simulate authorize */ alert(`${h.patient} : sortie autorisée (simulation)`); setModal(null); }} className="rounded bg-slate-900 text-white px-3 py-1">Autoriser</button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="mt-4 flex justify-end">
-                <button onClick={()=>setModal(null)} className="rounded border px-4 py-2">Fermer</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {selectedHospitalisation && (
-          <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-slate-900">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Détails : {selectedHospitalisation.patient}</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Coordination administrative et timeline de séjour.</p>
-              </div>
-              <button
-                onClick={() => setSelectedHospitalisation(null)}
-                className="rounded-2xl border border-slate-300 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:text-slate-200"
-              >
-                Fermer
-              </button>
-            </div>
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Chambre</p>
-                    <p className="mt-2 font-semibold text-slate-900 dark:text-white">{selectedHospitalisation.room}</p>
-                  </div>
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Service</p>
-                    <p className="mt-2 font-semibold text-slate-900 dark:text-white">{selectedHospitalisation.service}</p>
-                  </div>
-                </div>
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Médecin référent</p>
-                  <p className="mt-2 font-semibold text-slate-900 dark:text-white">{selectedHospitalisation.doctor}</p>
-                </div>
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Actions disponibles</p>
-                  <div className="mt-3 grid gap-2">
-                    {[
-                      "Modifier chambre",
-                      "Changer service",
-                      "Ajouter accompagnant",
-                      "Imprimer fiche hospitalisation",
-                      "Préparer sortie",
-                      "Voir facture",
-                      "Contacter famille",
-                    ].map((action) => (
-                      <button key={action} className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
-                        {action}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
-                <h4 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">Timeline d'hospitalisation</h4>
-                <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
-                  {patientTimeline.map((item) => (
-                    <div key={item.date} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-                      <p className="font-semibold text-slate-900 dark:text-white">{item.date}</p>
-                      <p className="mt-1">{item.event}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+        {selectedHospitalization && (
+          <HospitalizationDetails hospitalization={selectedHospitalization} timeline={timeline} onClose={() => setSelectedHospitalization(null)} />
         )}
       </div>
     </div>

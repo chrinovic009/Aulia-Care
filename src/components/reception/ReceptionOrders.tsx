@@ -14,48 +14,61 @@ interface ReceptionRecord {
   patientId: string;
   patient: string;
   department: string;
-  doctor: string;
+  receptionist: string;
   arrivalTime: string;
   contactCount: number;
   contacts: Array<{ name: string; relation: string; phone: string; address: string }>;
   amountDue: string;
   statusSummary: string;
-  status: "Enregistré" | "Fiche en attente" | "Fiche validée" | "Fiche annulé" | "En suivi";
+  status: string;
 }
 
 const mapPatientToReceptionRecord = (patient: PatientRecord, index: number): ReceptionRecord => {
   const createdAt = patient.createdAt ? new Date(patient.createdAt) : null;
-  const status = patient.status || "Enregistré";
+  const patientName = (patient.name || `${patient.firstName || ""} ${patient.lastName || ""}`).trim() || "Patient";
+  const receptionist = patient.receptionist?.trim() || "Réceptionniste";
+  const workflowStatus = patient.workflowStatus || patient.status || "Enregistré";
   const statusSummary =
-    status === "Fiche validée"
-      ? "Paiement confirmé"
-      : status === "Fiche en attente"
+    workflowStatus === "EN_ATTENTE_DE_PAIEMENT"
       ? `Paiement en attente • ${patient.amountDue ?? 0} CDF`
-      : status === "Fiche annulé"
+      : workflowStatus === "EN_ATTENTE_INFIRMERIE"
+      ? "Attente infirmière"
+      : workflowStatus === "Fiche validée"
+      ? "Paiement confirmé"
+      : workflowStatus === "Fiche en attente"
+      ? `Paiement en attente • ${patient.amountDue ?? 0} CDF`
+      : workflowStatus === "Fiche annulé"
       ? "Fiche annulée"
-      : status === "En suivi"
+      : workflowStatus === "En suivi"
       ? "En suivi clinique"
       : "Patient enregistré";
 
   return {
     id: index + 1,
     patientId: patient.id,
-    patient: patient.name,
+    patient: patientName,
     department: patient.service || patient.admissionType || "Accueil",
-    doctor: patient.doctor || "Réception",
+    receptionist,
     arrivalTime: createdAt ? createdAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--:--",
     contactCount: patient.contacts?.length || 0,
     contacts: patient.contacts || [],
     amountDue: patient.amountDue ? `${patient.amountDue} CDF` : "—",
     statusSummary,
-    status,
+    status: workflowStatus,
   };
 };
 
 export default function ReceptionRecentAdmissions() {
   const [searchValue, setSearchValue] = useState("");
   const [statusFilter, setStatusFilter] = useState<
-    "All" | "Enregistré" | "Fiche en attente" | "Fiche validée" | "Fiche annulé" | "En suivi"
+    | "All"
+    | "EN_ATTENTE_DE_PAIEMENT"
+    | "EN_ATTENTE_INFIRMERIE"
+    | "Enregistré"
+    | "Fiche en attente"
+    | "Fiche validée"
+    | "Fiche annulé"
+    | "En suivi"
   >("All");
   const [tableData, setTableData] = useState<ReceptionRecord[]>([]);
   const [selectedContacts, setSelectedContacts] = useState<ReceptionRecord | null>(null);
@@ -94,7 +107,7 @@ export default function ReceptionRecentAdmissions() {
         const textMatch = [
           record.patient,
           record.department,
-          record.doctor,
+          record.receptionist,
           record.arrivalTime,
           record.amountDue,
           record.statusSummary,
@@ -143,6 +156,8 @@ export default function ReceptionRecentAdmissions() {
               className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm text-gray-700 shadow-theme-xs outline-none transition focus:border-theme-500 focus:ring-2 focus:ring-theme-200 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
             >
               <option value="All">Tous les statuts</option>
+              <option value="EN_ATTENTE_DE_PAIEMENT">EN_ATTENTE_DE_PAIEMENT</option>
+              <option value="EN_ATTENTE_INFIRMERIE">EN_ATTENTE_INFIRMERIE</option>
               <option value="Enregistré">Enregistré</option>
               <option value="Fiche en attente">Fiche en attente</option>
               <option value="Fiche validée">Fiche validée</option>
@@ -160,7 +175,7 @@ export default function ReceptionRecentAdmissions() {
             <TableRow>
               <TableCell isHeader className="py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Patient</TableCell>
               <TableCell isHeader className="py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Service</TableCell>
-              <TableCell isHeader className="py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Médecin</TableCell>
+              <TableCell isHeader className="py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Réceptionniste</TableCell>
               <TableCell isHeader className="py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Heure</TableCell>
               <TableCell isHeader className="py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Contacts</TableCell>
               <TableCell isHeader className="py-3 text-start text-theme-xs font-medium text-gray-500 dark:text-gray-400">Statut</TableCell>
@@ -172,7 +187,7 @@ export default function ReceptionRecentAdmissions() {
               <TableRow key={record.id}>
                 <TableCell className="py-3 text-theme-sm text-gray-700 dark:text-gray-300">{record.patient}</TableCell>
                 <TableCell className="py-3 text-theme-sm text-gray-500 dark:text-gray-400">{record.department}</TableCell>
-                <TableCell className="py-3 text-theme-sm text-gray-500 dark:text-gray-400">{record.doctor}</TableCell>
+                <TableCell className="py-3 text-theme-sm text-gray-500 dark:text-gray-400">{record.receptionist}</TableCell>
                 <TableCell className="py-3 text-theme-sm text-gray-500 dark:text-gray-400">{record.arrivalTime}</TableCell>
                 <TableCell className="py-3 text-theme-sm text-gray-500 dark:text-gray-400">
                   <button
@@ -194,7 +209,7 @@ export default function ReceptionRecentAdmissions() {
                       color={
                         record.status === "Fiche validée"
                           ? "success"
-                          : record.status === "Fiche en attente"
+                          : record.status === "Fiche en attente" || record.status === "EN_ATTENTE_DE_PAIEMENT" || record.status === "EN_ATTENTE_INFIRMERIE"
                           ? "warning"
                           : record.status === "En suivi"
                           ? "primary"

@@ -1,6 +1,8 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
+import { useAuth } from "../../context/AuthContext";
+import { fetchPatientsFromDatabase, updatePatientRecord, fetchServices } from "../../api/reception";
 
 type FamilyContact = {
   name: string;
@@ -31,93 +33,11 @@ type Patient = {
   family: FamilyContact[];
   insuranceInfo: InsuranceInfo;
   history: { date: string; event: string }[];
+  workflowStatus?: string;
+  assignedNurseId?: string;
+  emergencyContact?: string;
+  emergencyPhone?: string;
 };
-
-const PATIENTS: Patient[] = [
-  {
-    id: "SI-00231",
-    name: "Sarah Ilunga",
-    phone: "+243 81 234 5678",
-    status: "En attente",
-    insurance: "Validée",
-    gender: "Femme",
-    age: 29,
-    birthDate: "12/03/1997",
-    address: "Av. Kasa-Vubu, Kinshasa",
-    profession: "Infirmière",
-    alerts: ["Allergie pénicilline", "Hypertension"],
-    family: [
-      { name: "Jean Ilunga", relation: "Père", phone: "+243 81 998 7766" },
-      { name: "Grâce Mbayo", relation: "Sœur", phone: "+243 82 445 3322" },
-    ],
-    insuranceInfo: {
-      company: "Afripolice",
-      policyNumber: "POL-452183",
-      expiryDate: "12/11/2026",
-      coverageType: "Couverture totale",
-      status: "Active",
-    },
-    history: [
-      { date: "12 Mai", event: "Consultation générale" },
-      { date: "14 Mai", event: "Radiologie" },
-      { date: "16 Mai", event: "Hospitalisation" },
-    ],
-  },
-  {
-    id: "DM-00509",
-    name: "David Mbuyi",
-    phone: "+243 99 565 1234",
-    status: "En cours",
-    insurance: "Suspendue",
-    gender: "Homme",
-    age: 42,
-    birthDate: "08/07/1983",
-    address: "Quartier Limete, Kinshasa",
-    profession: "Comptable",
-    alerts: ["Diabète"],
-    family: [
-      { name: "Marie Mbuyi", relation: "Épouse", phone: "+243 81 431 2278" },
-    ],
-    insuranceInfo: {
-      company: "SecurAssur",
-      policyNumber: "POL-882300",
-      expiryDate: "02/02/2025",
-      coverageType: "Hospitalisation + Consultations",
-      status: "Suspendue",
-    },
-    history: [
-      { date: "10 Mai", event: "Suivi diabète" },
-      { date: "13 Mai", event: "Prise de sang" },
-    ],
-  },
-  {
-    id: "FN-00742",
-    name: "Fatou Ndala",
-    phone: "+243 81 220 9900",
-    status: "Actif",
-    insurance: "En vérification",
-    gender: "Femme",
-    age: 35,
-    birthDate: "21/11/1988",
-    address: "Gombe, Kinshasa",
-    profession: "Enseignante",
-    alerts: ["Asthme"],
-    family: [
-      { name: "Pierre Ndala", relation: "Frère", phone: "+243 82 555 1188" },
-    ],
-    insuranceInfo: {
-      company: "VitalCare",
-      policyNumber: "POL-990177",
-      expiryDate: "20/09/2026",
-      coverageType: "Consultation + Urgence",
-      status: "En attente validation",
-    },
-    history: [
-      { date: "11 Mai", event: "Consultation asthme" },
-      { date: "15 Mai", event: "Spirométrie" },
-    ],
-  },
-];
 
 const statusBadge = (status: string) => {
   const base = "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold";
@@ -148,9 +68,10 @@ const badgeFromInsuranceStatus = (status: InsuranceInfo["status"]) => {
 };
 
 export default function ReceptionPatients() {
+  const { currentUser } = useAuth();
   const [search, setSearch] = useState("");
-  const [patients, setPatients] = useState<Patient[]>(PATIENTS);
-  const [selectedPatientId, setSelectedPatientId] = useState<string>(PATIENTS[0].id);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>("");
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [newContact, setNewContact] = useState<Partial<FamilyContact>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -158,31 +79,54 @@ export default function ReceptionPatients() {
   const [showInsuranceModal, setShowInsuranceModal] = useState(false);
   const [insuranceForm, setInsuranceForm] = useState<Partial<InsuranceInfo>>({});
 
-  const [showBillingModal, setShowBillingModal] = useState(false);
-  const [billingForm, setBillingForm] = useState<any>({
-    invoiceNumber: `INV-${Date.now()}`,
-    date: new Date().toISOString().slice(0, 10),
-    paymentMethod: "Cash",
-    items: [{ desc: "", qty: 1, unitPrice: 0 }],
-    note: "",
-  });
+  // billing removed: payments are handled in the billing module/caissier
 
-  const computeBillingTotal = () => {
-    return (billingForm.items || []).reduce((sum: number, it: any) => sum + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
-  };
-  const addBillingItem = () => setBillingForm((f: any) => ({ ...f, items: [...(f.items || []), { desc: "", qty: 1, unitPrice: 0 }] }));
-  const updateBillingItem = (idx: number, key: string, value: any) =>
-    setBillingForm((f: any) => {
-      const items = [...(f.items || [])];
-      items[idx] = { ...items[idx], [key]: value };
-      return { ...f, items };
-    });
-  const removeBillingItem = (idx: number) => setBillingForm((f: any) => ({ ...f, items: (f.items || []).filter((_: any, i: number) => i !== idx) }));
-
-  const [showConsultModal, setShowConsultModal] = useState(false);
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
-  const [showHospitalizeModal, setShowHospitalizeModal] = useState(false);
-  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+  
+  const [appointmentTypes, setAppointmentTypes] = useState<any[]>([]);
+  const [doctors, setDoctors] = useState<any[]>([]);
+  const [selectedApptType, setSelectedApptType] = useState<string>("");
+
+  // Helper: compute age from birthDate (ISO or dd/mm/yyyy tolerant)
+  const computeAgeFromBirthDate = (bd?: string) => {
+    if (!bd) return 0;
+    let d: Date | null = null;
+    // try ISO
+    const iso = new Date(bd);
+    if (!isNaN(iso.getTime())) d = iso;
+    // try dd/mm/yyyy
+    if (!d) {
+      const parts = bd.split(/[-\/]/).map((p) => parseInt(p, 10));
+      if (parts.length === 3) {
+        const [d1, m1, y1] = parts;
+        if (y1 > 31) d = new Date(y1, (m1 || 1) - 1, d1);
+      }
+    }
+    if (!d) return 0;
+    const now = new Date();
+    let age = now.getFullYear() - d.getFullYear();
+    const m = now.getMonth() - d.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
+    return age;
+  };
+  const [selectedApptDoctor, setSelectedApptDoctor] = useState<string>("");
+
+  const EMPTY_PATIENT: Patient = {
+    id: "",
+    name: "—",
+    phone: "",
+    status: "",
+    insurance: "",
+    gender: "",
+    age: 0,
+    birthDate: "",
+    address: "",
+    profession: "",
+    alerts: [],
+    family: [],
+    insuranceInfo: { company: "", policyNumber: "", expiryDate: "", coverageType: "", status: "En attente validation" },
+    history: [],
+  };
 
   const generateInsurancePDF = () => {
     const info = selectedPatient.insuranceInfo;
@@ -222,7 +166,133 @@ export default function ReceptionPatients() {
     setTimeout(() => w.print(), 300);
   };
 
-  const selectedPatient = patients.find((p) => p.id === selectedPatientId) || patients[0];
+  const selectedPatient = (patients && patients.length > 0)
+    ? (patients.find((p) => p.id === selectedPatientId) || patients[0])
+    : EMPTY_PATIENT;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const ps = await fetchPatientsFromDatabase();
+        const ensurePatientDefaults = (p: any): Patient => ({
+          id: p.id ?? p.patientId ?? 'unknown',
+          name: (p.name ?? `${p.firstName || ''} ${p.lastName || ''}`.trim()) || '—',
+          phone: p.phone ?? p.phoneNumber ?? '',
+          status: p.status ?? '',
+          insurance: (p.insurance && typeof p.insurance === 'string') ? p.insurance : (p.insurance?.company ? 'Validée' : '') || '',
+          gender: p.gender ?? '',
+          age: p.age ?? 0,
+          birthDate: p.dob ?? p.birthDate ?? '',
+          address: p.address ?? '',
+          profession: p.profession ?? '',
+          alerts: p.alerts ?? [],
+          family: p.family ?? p.contacts ?? [],
+          insuranceInfo: p.insuranceInfo ?? (p.insurance ? { company: p.insurance.company || '', policyNumber: p.insurance.policy || '', expiryDate: '', coverageType: p.insurance.coverageType || '', status: p.insurance.status || 'En attente validation' } : { company: '', policyNumber: '', expiryDate: '', coverageType: '', status: 'En attente validation' }),
+          history: p.history ?? [],
+          workflowStatus: p.workflowStatus ?? p.status ?? '',
+          assignedNurseId: p.assignedNurseId ?? p.doctor ?? undefined,
+        });
+
+        if (ps && ps.length > 0) {
+          const normalized = (ps as any[]).map(ensurePatientDefaults);
+          setPatients(normalized);
+          setSelectedPatientId(normalized[0].id);
+        } else {
+          // No patients from backend: use empty list and clear selection
+          setPatients([]);
+          setSelectedPatientId("");
+        }
+        // After loading, ensure ages are synchronized with birthDate and persist to DB if mismatch
+        try {
+          for (const p of (ps && ps.length > 0 ? (ps as any[]) : [])) {
+            const normalizedP = ensurePatientDefaults(p);
+            const calc = computeAgeFromBirthDate(normalizedP.birthDate);
+            if (calc && calc !== normalizedP.age) {
+              // update backend record age (best-effort, cast to any to allow flexible payload)
+              try {
+                await updatePatientRecord({ id: normalizedP.id, age: calc } as any);
+              } catch {}
+            }
+          }
+        } catch {}
+      } catch (e) {
+        // backend error: leave list empty and no selection
+        setPatients([]);
+        setSelectedPatientId("");
+      }
+
+      // load infirmiers and appointment types/doctors in background
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+        // nurse list not needed by reception actions (view-only), skipping
+
+        const services = await fetchServices();
+        setAppointmentTypes(services || []);
+
+        const docs = await fetch(`${API_BASE_URL}/users?role=PHYSICIAN`, { credentials: 'include' }).then((r) => r.ok ? r.json() : [] ).catch(() => []);
+        const docsAlt = await fetch(`${API_BASE_URL}/users?role=MEDECIN`, { credentials: 'include' }).then((r) => r.ok ? r.json() : [] ).catch(() => []);
+        setDoctors((Array.isArray(docs) ? docs : []).concat(Array.isArray(docsAlt) ? docsAlt : []));
+      } catch (e) {}
+    })();
+  }, []);
+
+  const handleAddContact = async (contact: FamilyContact) => {
+    if (!selectedPatient?.id) return alert('Aucun patient sélectionné');
+    try {
+      // Backend does not expose a contacts array; persist into emergencyContact/Phone as best-effort
+      const payload: any = { id: selectedPatient.id };
+      if (!selectedPatient.emergencyContact) payload.emergencyContact = contact.name;
+      if (!selectedPatient.emergencyPhone) payload.emergencyPhone = contact.phone;
+      const bothExist = selectedPatient.emergencyContact && selectedPatient.emergencyPhone;
+      if (bothExist) {
+        alert("Le backend actuel ne prend en charge qu'un contact d'urgence. Contactez l'administrateur pour ajouter plusieurs contacts. Le contact sera ajouté localement en attendant.");
+      }
+      if (Object.keys(payload).length > 1) {
+        await updatePatientRecord(payload as any);
+      }
+      // update local UI list for immediate feedback
+      setPatients((prev) => prev.map((p) => (p.id === selectedPatient.id ? { ...p, family: [...p.family, contact], emergencyContact: payload.emergencyContact ?? p.emergencyContact, emergencyPhone: payload.emergencyPhone ?? p.emergencyPhone } : p)));
+      setShowAddContactModal(false);
+      return;
+    } catch (e) {
+      console.error('Failed to save contact to backend', e);
+      // fallback: local update
+      setPatients((prev) => prev.map((p) => (p.id === selectedPatient.id ? { ...p, family: [...p.family, contact] } : p)));
+      setShowAddContactModal(false);
+    }
+  };
+
+  const handleCreateAppointment = async (opts: { datetime: string; type: string; doctorId?: string; notes?: string }) => {
+    if (!selectedPatient?.id) return alert('Aucun patient sélectionné');
+    const { datetime, type, doctorId, notes } = opts;
+    const payload = {
+      patientId: selectedPatient.id,
+      patientName: selectedPatient.name,
+      scheduledAt: datetime,
+      type: type || undefined,
+      doctorId: doctorId || undefined,
+      notes: notes || undefined,
+      createdBy: currentUser?.id || currentUser?.displayName || currentUser?.firstName || 'reception',
+    };
+    try {
+      const api = await import('../../api/reception');
+      const created = await api.createAppointmentInDatabase(payload);
+      // update patient history on backend
+      try {
+        const ev = { date: new Date().toLocaleDateString('fr-FR'), event: `Rendez-vous ${type} le ${datetime} ${doctorId ? `avec ${doctorId}` : ''}` };
+        await updatePatientRecord({ id: selectedPatient.id, history: [ev, ...(selectedPatient.history || [])] } as any);
+        setPatients((prev) => prev.map((p) => (p.id === selectedPatient.id ? { ...p, history: [ev, ...(p.history || [])] } : p)));
+      } catch (e) {
+        // best-effort
+      }
+      alert('Rendez-vous créé');
+      setShowAppointmentModal(false);
+      return created;
+    } catch (e) {
+      console.error('Appointment create error', e);
+      alert('Impossible de créer le rendez-vous (erreur serveur).');
+    }
+  };
 
   const filteredPatients = useMemo(
     () =>
@@ -294,17 +364,17 @@ export default function ReceptionPatients() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white dark:divide-gray-800 dark:bg-slate-950">
-                  {filteredPatients.map((patient) => (
+                  {filteredPatients.map((patient, idx) => (
                     <tr
                       key={patient.id}
                       className={`cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-900 ${patient.id === selectedPatient.id ? "bg-slate-100 dark:bg-slate-900" : ""}`}
                       onClick={() => setSelectedPatientId(patient.id)}
                     >
-                      <td className="px-4 py-4 font-medium text-slate-800 dark:text-white">{patient.id}</td>
+                      <td className="px-4 py-4 font-medium text-slate-800 dark:text-white">{idx + 1}</td>
                       <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{patient.name}</td>
                       <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{patient.phone}</td>
                       <td className="px-4 py-4">
-                        <span className={statusBadge(patient.status)}>{patient.status}</span>
+                        <span className={statusBadge(patient.workflowStatus || patient.status)}>{patient.workflowStatus || patient.status}</span>
                       </td>
                       <td className="px-4 py-4">
                         <span className={statusBadge(patient.insurance)}>{patient.insurance}</span>
@@ -323,10 +393,12 @@ export default function ReceptionPatients() {
                   <p className="text-sm text-slate-500 dark:text-slate-400">Fiche patient</p>
                   <h2 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{selectedPatient.name}</h2>
                 </div>
-                <div className="rounded-3xl bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm dark:bg-slate-950 dark:text-white">{selectedPatient.id}</div>
+                {filteredPatients.map((patient, idx) => (
+                  <div className="rounded-3xl bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm dark:bg-slate-950 dark:text-white">{idx + 1}</div>
+                ))}
               </div>
 
-              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <div className="mt-6 grid gap-4 ">
                 <div className="rounded-3xl bg-white p-4 shadow-sm dark:bg-slate-950">
                   <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Informations personnelles</h3>
                   <dl className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
@@ -355,17 +427,6 @@ export default function ReceptionPatients() {
                       <dd>{selectedPatient.profession}</dd>
                     </div>
                   </dl>
-                </div>
-                <div className="rounded-3xl bg-white p-4 shadow-sm dark:bg-slate-950">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Alertes médicales</h3>
-                    <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 dark:bg-red-900/20 dark:text-red-200">Prioritaire</span>
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    {selectedPatient.alerts.map((alert) => (
-                      <div key={alert} className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-700/40 dark:bg-red-950/40 dark:text-red-200">{alert}</div>
-                    ))}
-                  </div>
                 </div>
               </div>
             </div>
@@ -430,40 +491,42 @@ export default function ReceptionPatients() {
 
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-950">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Assurance</h3>
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Carte dédiée et état de couverture.</p>
+            {selectedPatient.insuranceInfo?.company && (
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-950">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Assurance</h3>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Carte dédiée et état de couverture.</p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeFromInsuranceStatus(selectedPatient.insuranceInfo.status)}`}>{selectedPatient.insuranceInfo.status}</span>
                 </div>
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeFromInsuranceStatus(selectedPatient.insuranceInfo.status)}`}>{selectedPatient.insuranceInfo.status}</span>
-              </div>
 
-              <div className="mt-5 grid gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-800 dark:bg-slate-900">
-                <div className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
-                  <span className="font-semibold text-slate-900 dark:text-white">Compagnie</span>
-                  <span>{selectedPatient.insuranceInfo.company}</span>
+                <div className="mt-5 grid gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-gray-800 dark:bg-slate-900">
+                  <div className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    <span className="font-semibold text-slate-900 dark:text-white">Compagnie</span>
+                    <span>{selectedPatient.insuranceInfo.company}</span>
+                  </div>
+                  <div className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    <span className="font-semibold text-slate-900 dark:text-white">Numéro police</span>
+                    <span>{selectedPatient.insuranceInfo.policyNumber}</span>
+                  </div>
+                  <div className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    <span className="font-semibold text-slate-900 dark:text-white">Date expiration</span>
+                    <span>{selectedPatient.insuranceInfo.expiryDate}</span>
+                  </div>
+                  <div className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    <span className="font-semibold text-slate-900 dark:text-white">Type couverture</span>
+                    <span>{selectedPatient.insuranceInfo.coverageType}</span>
+                  </div>
                 </div>
-                <div className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
-                  <span className="font-semibold text-slate-900 dark:text-white">Numéro police</span>
-                  <span>{selectedPatient.insuranceInfo.policyNumber}</span>
-                </div>
-                <div className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
-                  <span className="font-semibold text-slate-900 dark:text-white">Date expiration</span>
-                  <span>{selectedPatient.insuranceInfo.expiryDate}</span>
-                </div>
-                <div className="grid gap-2 text-sm text-slate-600 dark:text-slate-300">
-                  <span className="font-semibold text-slate-900 dark:text-white">Type couverture</span>
-                  <span>{selectedPatient.insuranceInfo.coverageType}</span>
-                </div>
-              </div>
 
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button onClick={generateInsurancePDF} className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 dark:border-gray-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800">Télécharger PDF</button>
-                <button onClick={() => { setInsuranceForm(selectedPatient.insuranceInfo); setShowInsuranceModal(true); }} className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 dark:border-gray-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800">Modifier</button>
-                <input ref={fileInputRef} type="file" onChange={(e) => { const f = e.target.files?.[0]; if (f) alert(`Document sélectionné : ${f.name} (simulation de scan)`); }} className="hidden" />
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button onClick={generateInsurancePDF} className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 dark:border-gray-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800">Télécharger PDF</button>
+                  <button onClick={() => { setInsuranceForm(selectedPatient.insuranceInfo); setShowInsuranceModal(true); }} className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 dark:border-gray-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800">Modifier</button>
+                  <input ref={fileInputRef} type="file" onChange={(e) => { const f = e.target.files?.[0]; if (f) alert(`Document sélectionné : ${f.name} (simulation de scan)`); }} className="hidden" />
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 dark:border-gray-800 dark:bg-slate-900">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Historique rapide</h3>
@@ -481,12 +544,8 @@ export default function ReceptionPatients() {
 
             <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-950">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Actions d’orientation</h3>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <button onClick={() => setShowConsultModal(true)} className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700">Envoyer vers consultation</button>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <button onClick={() => setShowAppointmentModal(true)} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 dark:border-gray-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800">Créer rendez-vous</button>
-                <button onClick={() => setShowHospitalizeModal(true)} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 dark:border-gray-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800">Hospitaliser</button>
-                <button onClick={() => setShowBillingModal(true)} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 dark:border-gray-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800">Facturation</button>
-                <button onClick={() => setShowEmergencyModal(true)} className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 dark:border-red-700 dark:bg-red-950/40 dark:text-red-200 dark:hover:bg-red-900/40">Urgence</button>
               </div>
             </div>
           </section>
@@ -514,11 +573,10 @@ export default function ReceptionPatients() {
             </div>
             <div className="mt-6 flex justify-end gap-3">
               <button onClick={() => setShowAddContactModal(false)} className="rounded-2xl border px-4 py-2 text-sm font-semibold">Annuler</button>
-              <button onClick={() => {
+              <button onClick={async () => {
                 if (!newContact.name || !newContact.phone) { alert("Remplissez le nom et le téléphone"); return; }
                 const contact: FamilyContact = { name: newContact.name!, relation: newContact.relation || "", phone: newContact.phone! };
-                setPatients((prev) => prev.map((p) => (p.id === selectedPatient.id ? { ...p, family: [...p.family, contact] } : p)));
-                setShowAddContactModal(false);
+                await handleAddContact(contact);
               }} className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Ajouter</button>
             </div>
           </div>
@@ -557,174 +615,35 @@ export default function ReceptionPatients() {
         </div>
       )}
 
-      {/* Billing & Action Modals */}
-      {showBillingModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-lg dark:bg-slate-900">
-            <h3 className="text-lg font-semibold">Facturation — {selectedPatient.name}</h3>
-            <div className="mt-4 grid gap-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm">Facture #</label>
-                  <input value={billingForm.invoiceNumber} onChange={(e) => setBillingForm((s: any) => ({ ...s, invoiceNumber: e.target.value }))} className="w-full rounded-md border px-3 py-2" />
-                </div>
-                <div>
-                  <label className="text-sm">Date</label>
-                  <input type="date" value={billingForm.date} onChange={(e) => setBillingForm((s: any) => ({ ...s, date: e.target.value }))} className="w-full rounded-md border px-3 py-2" />
-                </div>
-              </div>
-
-              <label className="text-sm">Moyen paiement</label>
-              <select value={billingForm.paymentMethod} onChange={(e) => setBillingForm((s: any) => ({ ...s, paymentMethod: e.target.value }))} className="w-full rounded-md border px-3 py-2">
-                <option>Cash</option>
-                <option>Carte</option>
-                <option>Assurance</option>
-                <option>Mobile Money</option>
-              </select>
-
-              <label className="text-sm">Lignes de facturation</label>
-              <div className="space-y-2">
-                {(billingForm.items || []).map((it: any, idx: number) => (
-                  <div key={idx} className="grid grid-cols-6 gap-2 items-center">
-                    <input value={it.desc} onChange={(e) => updateBillingItem(idx, "desc", e.target.value)} placeholder="Description" className="col-span-3 rounded-md border px-2 py-1" />
-                    <input type="number" value={it.qty} onChange={(e) => updateBillingItem(idx, "qty", Number(e.target.value))} className="col-span-1 rounded-md border px-2 py-1" />
-                    <input type="number" value={it.unitPrice} onChange={(e) => updateBillingItem(idx, "unitPrice", Number(e.target.value))} className="col-span-1 rounded-md border px-2 py-1" />
-                    <button onClick={() => removeBillingItem(idx)} className="col-span-1 rounded-md bg-red-50 text-red-700 px-2 py-1">Suppr</button>
-                  </div>
-                ))}
-                <button onClick={addBillingItem} className="rounded-2xl border px-3 py-1 w-full text-sm">Ajouter une ligne</button>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm">Note</label>
-                  <textarea value={billingForm.note} onChange={(e) => setBillingForm((s: any) => ({ ...s, note: e.target.value }))} className="w-full rounded-md border px-3 py-2" />
-                </div>
-                <div className="rounded-md border p-3">
-                  <div className="flex justify-between"><span>Sous-total</span><span>{computeBillingTotal().toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span>Assurance couvre</span><span>{"0.00"}</span></div>
-                  <div className="flex justify-between font-semibold"><span>Total dû</span><span>{computeBillingTotal().toFixed(2)}</span></div>
-                </div>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => setShowBillingModal(false)} className="rounded-2xl border px-4 py-2">Annuler</button>
-              <button onClick={() => {
-                const total = computeBillingTotal();
-                setPatients((prev) => prev.map((p) => p.id === selectedPatient.id ? { ...p, history: [{ date: new Date().toLocaleDateString('fr-FR'), event: `Facture ${billingForm.invoiceNumber} : ${total.toFixed(2)} USD` }, ...p.history] } : p));
-                alert(`Facturation créée (simulation) — Total: ${total.toFixed(2)}`);
-                setShowBillingModal(false);
-              }} className="rounded-2xl bg-slate-900 px-4 py-2 text-white">Facturer</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showConsultModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lg dark:bg-slate-900">
-            <h3 className="text-lg font-semibold">Envoyer vers consultation — {selectedPatient.name}</h3>
-            <div className="mt-4 grid gap-3">
-              <label className="text-sm">Service / Département</label>
-              <input id="consult-dept" className="w-full rounded-md border px-3 py-2" />
-              <label className="text-sm">Urgence</label>
-              <select id="consult-priority" className="w-full rounded-md border px-3 py-2"><option>Normal</option><option>Urgent</option></select>
-              <label className="text-sm">Médecin référent</label>
-              <input id="consult-doctor" className="w-full rounded-md border px-3 py-2" />
-              <label className="text-sm">Notes</label>
-              <textarea id="consult-notes" className="w-full rounded-md border px-3 py-2" />
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => setShowConsultModal(false)} className="rounded-2xl border px-4 py-2">Annuler</button>
-              <button onClick={() => {
-                const dept = (document.getElementById('consult-dept') as HTMLInputElement).value;
-                const priority = (document.getElementById('consult-priority') as HTMLSelectElement).value;
-                setPatients((prev) => prev.map((p) => p.id === selectedPatient.id ? { ...p, history: [{ date: new Date().toLocaleDateString('fr-FR'), event: `Envoyé vers consultation ${dept} (${priority})` }, ...p.history] } : p));
-                alert('Consultation envoyée (simulation)');
-                setShowConsultModal(false);
-              }} className="rounded-2xl bg-slate-900 px-4 py-2 text-white">Envoyer</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {showAppointmentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lg dark:bg-slate-900">
-            <h3 className="text-lg font-semibold">Créer rendez-vous — {selectedPatient.name}</h3>
+            <h3 className="text-lg font-semibold">Créer rendez-vous — {selectedPatient?.name}</h3>
             <div className="mt-4 grid gap-3">
               <label className="text-sm">Date & Heure</label>
               <input id="appt-datetime" type="datetime-local" className="w-full rounded-md border px-3 py-2" />
               <label className="text-sm">Type</label>
-              <input id="appt-type" className="w-full rounded-md border px-3 py-2" />
+              <select id="appt-type" value={selectedApptType} onChange={(e) => setSelectedApptType(e.target.value)} className="w-full rounded-md border px-3 py-2">
+                <option value="">Sélectionner un type</option>
+                {appointmentTypes.map((t: any) => (<option key={t.id || t.name} value={t.name || t.id}>{t.name || t.title}</option>))}
+              </select>
               <label className="text-sm">Médecin</label>
-              <input id="appt-doctor" className="w-full rounded-md border px-3 py-2" />
+              <select id="appt-doctor" value={selectedApptDoctor} onChange={(e) => setSelectedApptDoctor(e.target.value)} className="w-full rounded-md border px-3 py-2">
+                <option value="">Sélectionner un médecin</option>
+                {doctors.map((d: any) => (<option key={d.id} value={d.id}>{d.firstName ? `${d.firstName} ${d.lastName || ''}` : d.displayName || d.username}</option>))}
+              </select>
               <label className="text-sm">Notes</label>
               <textarea id="appt-notes" className="w-full rounded-md border px-3 py-2" />
             </div>
             <div className="mt-6 flex justify-end gap-3">
               <button onClick={() => setShowAppointmentModal(false)} className="rounded-2xl border px-4 py-2">Annuler</button>
-              <button onClick={() => {
+              <button onClick={async () => {
                 const dt = (document.getElementById('appt-datetime') as HTMLInputElement).value;
-                const type = (document.getElementById('appt-type') as HTMLInputElement).value;
-                setPatients((prev) => prev.map((p) => p.id === selectedPatient.id ? { ...p, history: [{ date: new Date().toLocaleDateString('fr-FR'), event: `Rendez-vous ${type} le ${dt}` }, ...p.history] } : p));
-                alert('Rendez-vous créé (simulation)');
-                setShowAppointmentModal(false);
+                const type = selectedApptType || (document.getElementById('appt-type') as HTMLSelectElement).value;
+                const docId = selectedApptDoctor || (document.getElementById('appt-doctor') as HTMLSelectElement).value;
+                const notes = (document.getElementById('appt-notes') as HTMLTextAreaElement).value;
+                await handleCreateAppointment({ datetime: dt, type, doctorId: docId, notes });
               }} className="rounded-2xl bg-slate-900 px-4 py-2 text-white">Créer</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showHospitalizeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lg dark:bg-slate-900">
-            <h3 className="text-lg font-semibold">Hospitaliser — {selectedPatient.name}</h3>
-            <div className="mt-4 grid gap-3">
-              <label className="text-sm">Unité / Service</label>
-              <input id="hosp-unit" className="w-full rounded-md border px-3 py-2" />
-              <label className="text-sm">N° lit</label>
-              <input id="hosp-bed" className="w-full rounded-md border px-3 py-2" />
-              <label className="text-sm">Date admission</label>
-              <input id="hosp-date" type="date" className="w-full rounded-md border px-3 py-2" />
-              <label className="text-sm">Motif</label>
-              <textarea id="hosp-reason" className="w-full rounded-md border px-3 py-2" />
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => setShowHospitalizeModal(false)} className="rounded-2xl border px-4 py-2">Annuler</button>
-              <button onClick={() => {
-                const unit = (document.getElementById('hosp-unit') as HTMLInputElement).value;
-                const bed = (document.getElementById('hosp-bed') as HTMLInputElement).value;
-                setPatients((prev) => prev.map((p) => p.id === selectedPatient.id ? { ...p, history: [{ date: new Date().toLocaleDateString('fr-FR'), event: `Hospitalisé en ${unit} - lit ${bed}` }, ...p.history] } : p));
-                alert('Hospitalisation enregistrée (simulation)');
-                setShowHospitalizeModal(false);
-              }} className="rounded-2xl bg-slate-900 px-4 py-2 text-white">Hospitaliser</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showEmergencyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lg dark:bg-slate-900">
-            <h3 className="text-lg font-semibold">Urgence — {selectedPatient.name}</h3>
-            <div className="mt-4 grid gap-3">
-              <label className="text-sm">Priorité</label>
-              <select id="em-priority" className="w-full rounded-md border px-3 py-2"><option>Rouge</option><option>Orange</option><option>Jaune</option></select>
-              <label className="text-sm">Départements à notifier (virgule)</label>
-              <input id="em-depts" className="w-full rounded-md border px-3 py-2" />
-              <label className="text-sm">Notes</label>
-              <textarea id="em-notes" className="w-full rounded-md border px-3 py-2" />
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => setShowEmergencyModal(false)} className="rounded-2xl border px-4 py-2">Annuler</button>
-              <button onClick={() => {
-                const prio = (document.getElementById('em-priority') as HTMLSelectElement).value;
-                const depts = (document.getElementById('em-depts') as HTMLInputElement).value;
-                setPatients((prev) => prev.map((p) => p.id === selectedPatient.id ? { ...p, history: [{ date: new Date().toLocaleDateString('fr-FR'), event: `Urgence ${prio} - Notifier: ${depts}` }, ...p.history] } : p));
-                alert('Alerte urgence envoyée (simulation)');
-                setShowEmergencyModal(false);
-              }} className="rounded-2xl bg-red-600 px-4 py-2 text-white">Confirmer</button>
             </div>
           </div>
         </div>

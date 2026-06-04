@@ -172,37 +172,38 @@ export default function StatisticsChart() {
           { name: "Patients hospitalisés", data: hospitalCounts },
         ]);
 
-        setTodayAdmissions(
-          patients.filter((patient) => {
-            if (!patient.createdAt) return false;
+        const todayNurseAdmissions = patients.filter((patient) => {
+          if (patient.workflowStatus !== "EN_ATTENTE_INFIRMERIE") return false;
+          if (!patient.createdAt) return false;
+          const createdAt = new Date(patient.createdAt);
+          createdAt.setHours(0, 0, 0, 0);
+          return createdAt.getTime() === todayStart.getTime();
+        });
+
+        setTodayAdmissions(todayNurseAdmissions.length);
+
+        const queuePatients = patients.filter((patient) =>
+          ["EN_ATTENTE_DE_PAIEMENT", "EN_ATTENTE_INFIRMERIE"].includes(patient.workflowStatus || ""),
+        );
+
+        const waitMinutes = queuePatients
+          .map((patient) => {
+            if (!patient.createdAt) return null;
             const createdAt = new Date(patient.createdAt);
-            return createdAt >= todayStart && createdAt <= todayEnd;
-          }).length,
-        );
-
-        const ongoingHospitalizations = hospitalizations.filter((hospitalization) => {
-          if (!hospitalization.admittedAt) return false;
-          const dischargedAt = hospitalization.dischargedAt ? new Date(hospitalization.dischargedAt) : null;
-          return !dischargedAt || dischargedAt >= todayStart;
-        }).length;
-
-        setCapacity(
-          patients.length > 0 ? `${Math.round((ongoingHospitalizations / patients.length) * 100)}%` : "0%",
-        );
-
-        const waitTimes = appointments
-          .map((appointment) => {
-            if (!appointment.createdAt || !appointment.scheduledAt) return null;
-            const createdAt = new Date(appointment.createdAt);
-            const scheduledAt = new Date(appointment.scheduledAt);
-            const diffMinutes = (scheduledAt.getTime() - createdAt.getTime()) / 60000;
-            return Number.isFinite(diffMinutes) && diffMinutes >= 0 ? diffMinutes : null;
+            const diff = (Date.now() - createdAt.getTime()) / 60000;
+            return Number.isFinite(diff) && diff >= 0 ? diff : null;
           })
           .filter((minutes): minutes is number => minutes !== null);
 
         setAverageWait(
-          waitTimes.length > 0 ? `${Math.round(waitTimes.reduce((sum, value) => sum + value, 0) / waitTimes.length)} min` : "—",
+          waitMinutes.length > 0 ? `${Math.round(waitMinutes.reduce((sum, value) => sum + value, 0) / waitMinutes.length)} min` : "—",
         );
+
+        const openingMinutes = 8 * 60;
+        const averageProcessingMinutes = 5;
+        const openDesks = 2;
+        const theoreticalCapacity = Math.floor((openingMinutes / averageProcessingMinutes) * openDesks);
+        setCapacity(`${theoreticalCapacity} patients`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setError(`Impossible de charger les statistiques depuis la base de données. ${message}`);

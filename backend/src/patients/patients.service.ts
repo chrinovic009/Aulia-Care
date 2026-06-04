@@ -128,18 +128,22 @@ export class PatientsService {
       }
     }
 
-    // Resolve service and active tarif to determine price
+    // Resolve service (by id or name) and active tarif to determine price
     let servicePrice = 0;
-    if (createAdmissionDto.service) {
-      const service = await this.prisma.service.findUnique({ where: { name: createAdmissionDto.service } });
-      if (service) {
-        const tarif = await this.prisma.serviceTarif.findFirst({
-          where: { serviceId: service.id, actif: true },
-          orderBy: { dateDebut: 'desc' },
-        });
-        if (tarif) servicePrice = Number(tarif.prix);
-      }
+    let resolvedService: any = null;
+    if (createAdmissionDto.serviceId) {
+      resolvedService = await this.prisma.service.findUnique({ where: { id: createAdmissionDto.serviceId } });
+    } else if (createAdmissionDto.service) {
+      resolvedService = await this.prisma.service.findUnique({ where: { name: createAdmissionDto.service } });
     }
+    if (resolvedService) {
+      const tarif = await this.prisma.serviceTarif.findFirst({
+        where: { serviceId: resolvedService.id, actif: true },
+        orderBy: { dateDebut: 'desc' },
+      });
+      if (tarif) servicePrice = Number(tarif.prix);
+    }
+
     const admissionData = {
       firstName,
       lastName,
@@ -156,7 +160,7 @@ export class PatientsService {
       insuranceNumber: createAdmissionDto.insuranceNumber,
       workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
       admissionType: createAdmissionDto.admissionType,
-      service: createAdmissionDto.service,
+      serviceId: resolvedService ? resolvedService.id : createAdmissionDto.serviceId ?? null,
       priority: createAdmissionDto.priority,
       arrivalAt: createAdmissionDto.arrivalAt ? new Date(createAdmissionDto.arrivalAt) : new Date(),
       receptionist: createAdmissionDto.receptionist,
@@ -173,7 +177,7 @@ export class PatientsService {
           totalAmount: servicePrice,
           balanceDue: servicePrice,
           dueDate: new Date(),
-          remarks: `Admission ${createAdmissionDto.admissionType} - ${createAdmissionDto.service}`,
+          remarks: `Admission ${createAdmissionDto.admissionType} - ${resolvedService?.name || createAdmissionDto.service || ''}`,
         },
       });
 
@@ -187,7 +191,8 @@ export class PatientsService {
           summary: 'Admission enregistrée et facture créée.',
           metadata: {
             admissionType: createAdmissionDto.admissionType,
-            service: createAdmissionDto.service,
+            service: resolvedService?.name || createAdmissionDto.service || null,
+            serviceId: resolvedService?.id || createAdmissionDto.serviceId || null,
             invoiceId: invoice.id,
           },
         },

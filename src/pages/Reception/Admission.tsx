@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
-import { createPatientAdmission, findPatientByEmail, findPatientByName, findPatientByPhone, searchPatients, fetchServices } from "../../api/reception";
+import { useAuth } from "../../context/AuthContext";
+import { createPatientAdmission, findPatientByEmail, findPatientByPhone, searchPatients, fetchServices, fetchPatientsFromDatabase } from "../../api/reception";
 
 type ModalStep = null | "success";
 
@@ -29,11 +30,11 @@ const Admission: React.FC = () => {
     email: "",
     address: "",
     profession: "",
-    nationality: "",
+    nationality: "Congolaise",
     dossierNumber: `D-${Date.now().toString().slice(-6)}`,
     admissionType: "Consultation",
     arrival: new Date().toISOString().slice(0, 16),
-    receptionist: "Recep. Deborah Tel",
+    receptionist: "",
     service: "",
     doctor: "",
     priority: "Normal",
@@ -45,7 +46,9 @@ const Admission: React.FC = () => {
     paymentRequestId: "",
   });
   const [existingPatient, setExistingPatient] = useState<any>(null);
+  const { currentUser } = useAuth();
   const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [professionSuggestions, setProfessionSuggestions] = useState<string[]>([]);
   const [phoneMatchPatient, setPhoneMatchPatient] = useState<any>(null);
   const [emailMatchPatient, setEmailMatchPatient] = useState<any>(null);
   const [servicesList, setServicesList] = useState<any[]>([]);
@@ -59,6 +62,28 @@ const Admission: React.FC = () => {
   }, [form.dob]);
 
   useEffect(() => {
+    // If we have a logged in receptionist, set default receptionist and compute dossier number
+    (async () => {
+      try {
+        if (currentUser) {
+          const name = currentUser.firstName ? `${currentUser.firstName} ${currentUser.lastName || ""}`.trim() : currentUser.displayName || currentUser.username || "Réceptionniste";
+          setForm((f: any) => ({ ...f, receptionist: name }));
+
+          // compute position as number of patients in db + 1
+          try {
+            const patients = await fetchPatientsFromDatabase();
+            const position = (patients?.length || 0) + 1;
+            const year = new Date().getFullYear();
+            const firstInitial = (currentUser.firstName || name || "R")[0] || "R";
+            const dossier = `D7-${firstInitial}${position}${year}`;
+            setForm((f: any) => ({ ...f, dossierNumber: dossier }));
+          } catch (e) {
+            // fallback: keep existing dossier
+          }
+        }
+      } catch (e) {}
+    })();
+
     const timeout = setTimeout(async () => {
       const nameSearch = form.name.trim();
       if (nameSearch.length >= 2) {
@@ -86,6 +111,21 @@ const Admission: React.FC = () => {
     return () => clearTimeout(timeout);
   }, [form.name, form.phone, form.email]);
 
+  const PROFESSIONS = [
+    'Infirmier', 'Médecin', 'Secrétaire', 'Enseignant', 'Ingénieur', 'Étudiant', 'Commerçant', 'Retraité', 'Artisan', 'Conducteur',
+    'Agriculteur', 'Cadre', 'Technicien', 'Pharmacien', 'Laborantin', 'Infirmière', 'Sage-femme', 'Architecte', 'Banquier', 'Avocat'
+  ];
+
+  useEffect(() => {
+    const q = (form.profession || '').trim();
+    if (q.length >= 2) {
+      const found = PROFESSIONS.filter((p) => p.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
+      setProfessionSuggestions(found);
+    } else {
+      setProfessionSuggestions([]);
+    }
+  }, [form.profession]);
+
   // load services catalog on mount
   useEffect(() => {
     (async () => {
@@ -93,7 +133,7 @@ const Admission: React.FC = () => {
         const svcs = await fetchServices();
         setServicesList(svcs || []);
         if (svcs && svcs.length > 0 && !form.service) {
-          setForm((f: any) => ({ ...f, service: svcs[0].name }));
+          setForm((f: any) => ({ ...f, service: svcs[0].id }));
         }
       } catch (e) {
         // ignore
@@ -102,7 +142,7 @@ const Admission: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const svc = servicesList.find((s) => s.name === form.service) || servicesList[0];
+    const svc = servicesList.find((s) => s.id === form.service) || servicesList[0];
     const responsables = svc?.responsables?.map((r: any) => r.user?.displayName || r.user?.username).filter(Boolean) || [];
     if (!form.doctor && responsables.length > 0) {
       setForm((f: any) => ({ ...f, doctor: responsables[0] }));
@@ -142,8 +182,8 @@ const Admission: React.FC = () => {
       dossierNumber: `D-${Date.now().toString().slice(-6)}`,
       admissionType: "Consultation",
       arrival: new Date().toISOString().slice(0, 16),
-      receptionist: "Recep. Deborah Tel",
-      service: servicesList[0]?.name || '',
+      receptionist: currentUser?.firstName ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() : currentUser?.displayName || currentUser?.username || "Réceptionniste",
+      service: servicesList[0]?.id || '',
       doctor: servicesList[0]?.responsables?.[0]?.user?.displayName || '',
       priority: "Normal",
       insurance: { company: "", policy: "", coverageType: "", coveragePct: 0, photo: null, pdf: null },
@@ -172,6 +212,10 @@ const Admission: React.FC = () => {
 
     try {
       const { firstName, lastName } = splitFullName(form.name);
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+      const token = localStorage.getItem('d7-clinic-access-token') || localStorage.getItem('d7-clinic-api-token');
+
+      // 1. Create patient admission
       const patient = await createPatientAdmission({
         firstName,
         lastName,
@@ -184,11 +228,49 @@ const Admission: React.FC = () => {
         insuranceProvider: form.insurance.company,
         insuranceNumber: form.insurance.policy,
         admissionType: form.admissionType,
-        service: form.service,
+        serviceId: form.service,
         priority: form.priority,
         receptionist: form.receptionist,
         arrivalAt: form.arrival,
-      });
+      } as any);
+
+      // 2. Get patient position and create user account
+      try {
+        const patientsRes = await fetch(`${API_BASE_URL}/patients`, {
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          credentials: 'include',
+        });
+        const allPatients = patientsRes.ok ? await patientsRes.json() : [];
+        const position = (allPatients?.length || 0);
+        const year = new Date().getFullYear();
+        const patientPassword = `D7P-${position}${year}`;
+
+        // Create user for patient
+        const userRes = await fetch(`${API_BASE_URL}/users`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            username: form.name || `${firstName} ${lastName}`,
+            email: form.email,
+            password: patientPassword,
+            displayName: form.name || `${firstName} ${lastName}`,
+            firstName,
+            lastName,
+            primaryRole: 'PATIENT',
+            phone: form.phone,
+          }),
+        });
+
+        if (!userRes.ok) {
+          console.warn('User creation warning:', await userRes.text());
+        }
+      } catch (userError) {
+        console.warn('Could not create user account:', userError);
+      }
 
       setModalStep('success');
       console.log('Admission enregistrée', patient);
@@ -271,7 +353,18 @@ const Admission: React.FC = () => {
                     ) : null}
                   </div>
                   <input placeholder="Adresse" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="col-span-1 sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input placeholder="Profession" value={form.profession} onChange={(e) => setForm({ ...form, profession: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <div className="relative">
+                    <input placeholder="Profession" value={form.profession} onChange={(e) => setForm({ ...form, profession: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full" />
+                    {professionSuggestions.length > 0 && (
+                      <div className="absolute z-50 left-0 right-0 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded mt-1 max-h-40 overflow-auto">
+                        {professionSuggestions.map((p) => (
+                          <div key={p} onClick={() => setForm((f:any) => ({ ...f, profession: p }))} className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-slate-800 cursor-pointer text-sm">
+                            {p}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <input placeholder="Nationalité" value={form.nationality} onChange={(e) => setForm({ ...form, nationality: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   {form.category === "S" ? (
                     <>
@@ -295,7 +388,7 @@ const Admission: React.FC = () => {
                     <option>Contrôle</option>
                   </select>
                   <input type="datetime-local" value={form.arrival} onChange={(e) => setForm({ ...form, arrival: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input placeholder="Réceptionniste" value={form.receptionist} onChange={(e) => setForm({ ...form, receptionist: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input placeholder="Réceptionniste" value={form.receptionist} readOnly className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
 
@@ -303,10 +396,10 @@ const Admission: React.FC = () => {
                 <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">4. Orientation médicale</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
                   <select value={form.service} onChange={(e) => setForm({ ...form, service: e.target.value })} className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {servicesList.map((s) => (<option key={s.id} value={s.name}>{s.name}</option>))}
+                    {servicesList.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
                   </select>
                   <select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {(servicesList.find((s) => s.name === form.service)?.responsables || []).map((r: any) => (<option key={r.id} value={r.user?.displayName || r.user?.username}>{r.user?.displayName || r.user?.username}</option>))}
+                    {(servicesList.find((s) => s.id === form.service)?.responsables || []).map((r: any) => (<option key={r.id} value={r.user?.displayName || r.user?.username}>{r.user?.displayName || r.user?.username}</option>))}
                   </select>
                 </div>
               </div>
@@ -355,7 +448,7 @@ const Admission: React.FC = () => {
             <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">Résumé admission</h3>
             <div className="mt-3 text-sm space-y-2">
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Patient:</span> {form.name || (existingPatient ? existingPatient.name : '—')}</div>
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Service:</span> {existingPatient ? existingPatient.service : form.service}</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Service:</span> {existingPatient ? (existingPatient.service || (existingPatient.serviceId ? servicesList.find((s)=>s.id===existingPatient.serviceId)?.name : '—')) : (servicesList.find((s)=>s.id===form.service)?.name || '—')}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Médecin:</span> {existingPatient ? existingPatient.doctor : form.doctor}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Priorité:</span> {existingPatient ? existingPatient.priority : form.priority}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Assurance:</span> {existingPatient ? (existingPatient.insurance?.company ? '✅ Validée' : '—') : (form.insurance.company ? '✅ Validée' : '—')}</div>

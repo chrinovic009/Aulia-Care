@@ -6,7 +6,7 @@ import {
   GroupIcon,
 } from "../../icons";
 import Badge from "../ui/badge/Badge";
-import { fetchAppointmentMetricsFromDatabase, fetchPatientsFromDatabase } from "../../api/reception";
+import { fetchPatientsFromDatabase } from "../../api/reception";
 
 export default function ReceptionMetrics() {
   const [waitingCount, setWaitingCount] = useState(0);
@@ -15,9 +15,24 @@ export default function ReceptionMetrics() {
   const refreshMetrics = async () => {
     try {
       const patients = await fetchPatientsFromDatabase();
-      setWaitingCount(patients.filter((patient) => patient.status === "Fiche en attente").length);
-      const appointmentMetrics = await fetchAppointmentMetricsFromDatabase();
-      setTodayAppointments(appointmentMetrics.todayAppointments);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const isToday = (dateString?: string) => {
+        if (!dateString) return false;
+        const date = new Date(dateString);
+        date.setHours(0, 0, 0, 0);
+        return date.getTime() === today.getTime();
+      };
+
+      setWaitingCount(
+        patients.filter((patient) => patient.workflowStatus === "EN_ATTENTE_DE_PAIEMENT").length,
+      );
+      setTodayAppointments(
+        patients.filter(
+          (patient) =>
+            patient.workflowStatus === "EN_ATTENTE_INFIRMERIE" && isToday(patient.createdAt),
+        ).length,
+      );
     } catch (error) {
       console.error("Unable to load reception metrics from Prisma DB:", error);
       setWaitingCount(0);
