@@ -144,7 +144,16 @@ export class PatientsService {
       if (tarif) servicePrice = Number(tarif.prix);
     }
 
-    const admissionData = {
+    console.log(createAdmissionDto);
+    console.log("Receptionist ID:", createAdmissionDto.receptionistId);
+    console.log("Receptionist Name:", createAdmissionDto.receptionist);
+    const receptionistConnect = actorId
+      ? { connect: { id: actorId } }
+      : createAdmissionDto.receptionistId
+        ? { connect: { id: createAdmissionDto.receptionistId } }
+        : undefined;
+
+    const admissionData: any = {
       firstName,
       lastName,
       middleName: createAdmissionDto.middleName,
@@ -160,10 +169,10 @@ export class PatientsService {
       insuranceNumber: createAdmissionDto.insuranceNumber,
       workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
       admissionType: createAdmissionDto.admissionType,
-      serviceId: resolvedService ? resolvedService.id : createAdmissionDto.serviceId ?? null,
       priority: createAdmissionDto.priority,
       arrivalAt: createAdmissionDto.arrivalAt ? new Date(createAdmissionDto.arrivalAt) : new Date(),
-      receptionist: createAdmissionDto.receptionist,
+      ...(resolvedService ? { service: { connect: { id: resolvedService.id } } } : {}),
+      ...(receptionistConnect ? { receptionist: receptionistConnect } : {}),
     };
 
     const result = await this.prisma.$transaction(async (prisma) => {
@@ -181,54 +190,54 @@ export class PatientsService {
         },
       });
 
-      const audit = await prisma.auditLog.create({
-        data: {
-          actorId,
-          patientId: patient.id,
-          action: AuditAction.CREATE,
-          entity: 'Patient',
-          entityId: patient.id,
-          summary: 'Admission enregistrée et facture créée.',
-          metadata: {
-            admissionType: createAdmissionDto.admissionType,
-            service: resolvedService?.name || createAdmissionDto.service || null,
-            serviceId: resolvedService?.id || createAdmissionDto.serviceId || null,
-            invoiceId: invoice.id,
-          },
-        },
-      });
-
-      const cashierUsers = await prisma.user.findMany({
-        where: {
-          OR: [
-            { primaryRole: 'CASHIER' },
-            { roles: { some: { role: { slug: 'CASHIER' } } } },
-          ],
-        },
-      });
-
-      const notifications = await Promise.all(
-        cashierUsers.map((cashier) =>
-          prisma.notification.create({
-            data: {
-              recipientId: cashier.id,
-              type: 'ALERT',
-              status: 'UNREAD',
-              priority: 'HIGH',
-              title: 'Nouveau paiement en attente',
-              message: `Le patient ${patient.firstName} ${patient.lastName} attend le règlement de ${servicePrice} FC.`,
-              relatedEntity: 'Invoice',
-              relatedId: invoice.id,
-              sendAt: new Date(),
-            },
-          }),
-        ),
-      );
-
-      return { patient, invoice, notifications, audit };
+      return { patient, invoice };
     });
 
-    result.notifications.forEach((notification) => {
+    const audit = await this.prisma.auditLog.create({
+      data: {
+        actorId,
+        patientId: result.patient.id,
+        action: AuditAction.CREATE,
+        entity: 'Patient',
+        entityId: result.patient.id,
+        summary: 'Admission enregistrée et facture créée.',
+        metadata: {
+          admissionType: createAdmissionDto.admissionType,
+          service: resolvedService?.name || createAdmissionDto.service || null,
+          serviceId: resolvedService?.id || createAdmissionDto.serviceId || null,
+          invoiceId: result.invoice.id,
+        },
+      },
+    });
+
+    const cashierUsers = await this.prisma.user.findMany({
+      where: {
+        OR: [
+          { primaryRole: 'CASHIER' },
+          { roles: { some: { role: { slug: 'CASHIER' } } } },
+        ],
+      },
+    });
+
+    const notifications = await Promise.all(
+      cashierUsers.map((cashier) =>
+        this.prisma.notification.create({
+          data: {
+            recipientId: cashier.id,
+            type: 'ALERT',
+            status: 'UNREAD',
+            priority: 'HIGH',
+            title: 'Nouveau paiement en attente',
+            message: `Le patient ${result.patient.firstName} ${result.patient.lastName} attend le règlement de ${servicePrice} FC.`,
+            relatedEntity: 'Invoice',
+            relatedId: result.invoice.id,
+            sendAt: new Date(),
+          },
+        }),
+      ),
+    );
+
+    notifications.forEach((notification) => {
       this.notificationsGateway.notify('notification.created', notification);
     });
 
