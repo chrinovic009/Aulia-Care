@@ -22,6 +22,7 @@ export interface AuthUser {
   firstName: string;
   lastName: string;
   primaryRole: RoleSlug;
+  role?: RoleSlug; // Alias for primaryRole for backward compatibility
   gender?: string;
   specialty?: string;
   phone?: string;
@@ -48,6 +49,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (identifier: string, password: string) => Promise<AuthUser | null>;
   logout: () => void;
+  updateProfile: (updates: Partial<AuthUser>) => Promise<AuthUser | null>;
   error: string | null;
 }
 
@@ -211,12 +213,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
   };
 
+  const updateProfile = async (updates: Partial<AuthUser>): Promise<AuthUser | null> => {
+    if (!currentUser) {
+      setError("Aucun utilisateur connecté");
+      return null;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+      if (!token) {
+        setError("Token manquant");
+        return null;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: JSON.stringify(updates),
+      });
+
+      if (!response.ok) {
+        setError("Erreur lors de la mise à jour du profil");
+        return null;
+      }
+
+      const updatedUser = await response.json() as AuthUser;
+      setCurrentUser(updatedUser);
+      return updatedUser;
+    } catch (err) {
+      setError("Erreur lors de la mise à jour du profil");
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const value: AuthContextType = {
     currentUser,
     isAuthenticated: !!currentUser,
     isLoading,
     login,
     logout,
+    updateProfile,
     error,
   };
 

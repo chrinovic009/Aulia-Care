@@ -393,7 +393,7 @@ export default function ReceptionPatients() {
                   <p className="text-sm text-slate-500 dark:text-slate-400">Fiche patient</p>
                   <h2 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{selectedPatient.name}</h2>
                 </div>
-                {filteredPatients.map((patient, idx) => (
+                {filteredPatients.map((_, idx) => (
                   <div className="rounded-3xl bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm dark:bg-slate-950 dark:text-white">{idx + 1}</div>
                 ))}
               </div>

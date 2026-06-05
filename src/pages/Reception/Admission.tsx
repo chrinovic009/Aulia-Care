@@ -33,9 +33,9 @@ const Admission: React.FC = () => {
     nationality: "Congolaise",
     dossierNumber: `D-${Date.now().toString().slice(-6)}`,
     admissionType: "Consultation",
-    arrival: new Date().toISOString().slice(0, 16),
+    arrival: new Date().toISOString(),
     receptionist: "",
-    service: "",
+    serviceId: "",
     doctor: "",
     priority: "Normal",
     insurance: { company: "", policy: "", coverageType: "", coveragePct: 0, photo: null, pdf: null },
@@ -132,8 +132,8 @@ const Admission: React.FC = () => {
       try {
         const svcs = await fetchServices();
         setServicesList(svcs || []);
-        if (svcs && svcs.length > 0 && !form.service) {
-          setForm((f: any) => ({ ...f, service: svcs[0].id }));
+        if (svcs && svcs.length > 0 && !form.serviceId) {
+          setForm((f: any) => ({ ...f, serviceId: svcs[0].id }));
         }
       } catch (e) {
         // ignore
@@ -142,15 +142,14 @@ const Admission: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const svc = servicesList.find((s) => s.id === form.service) || servicesList[0];
+    const svc = servicesList.find((s) => s.id === form.serviceId) || servicesList[0];
     const responsables = svc?.responsables?.map((r: any) => r.user?.displayName || r.user?.username).filter(Boolean) || [];
-    if (!form.doctor && responsables.length > 0) {
-      setForm((f: any) => ({ ...f, doctor: responsables[0] }));
-    }
-    const prix = svc?.tarifs?.length ? svc.tarifs[0].prix : 0;
-    setForm((f: any) => ({ ...f, amountDue: Number(prix || 0) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.service, servicesList]);
+    setForm((f: any) => ({
+      ...f,
+      doctor: responsables.length > 0 ? responsables[0] : "",
+      amountDue: Number(svc?.tarifs?.length ? svc.tarifs[0].prix : 0) || 0,
+    }));
+  }, [form.serviceId, servicesList]);
 
   const toggleAllergy = (a: string) => {
     setForm((f: any) => ({ ...f, allergies: f.allergies.includes(a) ? f.allergies.filter((x: string) => x !== a) : [...f.allergies, a] }));
@@ -183,7 +182,7 @@ const Admission: React.FC = () => {
       admissionType: "Consultation",
       arrival: new Date().toISOString().slice(0, 16),
       receptionist: currentUser?.firstName ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() : currentUser?.displayName || currentUser?.username || "Réceptionniste",
-      service: servicesList[0]?.id || '',
+      serviceId: servicesList[0]?.id || '',
       doctor: servicesList[0]?.responsables?.[0]?.user?.displayName || '',
       priority: "Normal",
       insurance: { company: "", policy: "", coverageType: "", coveragePct: 0, photo: null, pdf: null },
@@ -228,7 +227,7 @@ const Admission: React.FC = () => {
         insuranceProvider: form.insurance.company,
         insuranceNumber: form.insurance.policy,
         admissionType: form.admissionType,
-        serviceId: form.service,
+        serviceId: form.serviceId,
         priority: form.priority,
         receptionist: form.receptionist,
         arrivalAt: form.arrival,
@@ -395,11 +394,11 @@ const Admission: React.FC = () => {
               <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700 mt-4">
                 <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">4. Orientation médicale</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
-                  <select value={form.service} onChange={(e) => setForm({ ...form, service: e.target.value })} className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <select value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })} className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                     {servicesList.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
                   </select>
                   <select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {(servicesList.find((s) => s.id === form.service)?.responsables || []).map((r: any) => (<option key={r.id} value={r.user?.displayName || r.user?.username}>{r.user?.displayName || r.user?.username}</option>))}
+                    {(servicesList.find((s) => s.id === form.serviceId)?.responsables || []).map((r: any) => (<option key={r.id} value={r.user?.displayName || r.user?.username}>{r.user?.displayName || r.user?.username}</option>))}
                   </select>
                 </div>
               </div>
@@ -448,7 +447,7 @@ const Admission: React.FC = () => {
             <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">Résumé admission</h3>
             <div className="mt-3 text-sm space-y-2">
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Patient:</span> {form.name || (existingPatient ? existingPatient.name : '—')}</div>
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Service:</span> {existingPatient ? (existingPatient.service || (existingPatient.serviceId ? servicesList.find((s)=>s.id===existingPatient.serviceId)?.name : '—')) : (servicesList.find((s)=>s.id===form.service)?.name || '—')}</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Service:</span> {existingPatient ? (existingPatient.service || (existingPatient.serviceId ? servicesList.find((s)=>s.id===existingPatient.serviceId)?.name : '—')) : (servicesList.find((s)=>s.id===form.serviceId)?.name || '—')}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Médecin:</span> {existingPatient ? existingPatient.doctor : form.doctor}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Priorité:</span> {existingPatient ? existingPatient.priority : form.priority}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Assurance:</span> {existingPatient ? (existingPatient.insurance?.company ? '✅ Validée' : '—') : (form.insurance.company ? '✅ Validée' : '—')}</div>

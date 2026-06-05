@@ -120,7 +120,7 @@ export default DashboardCaissier;
 const UserHeader: React.FC = () => {
   const { currentUser } = useAuth();
   if (!currentUser) return null;
-  const roleLabel = currentUser.role === "CASHIER" ? (currentUser.gender === "F" ? "Caissière" : "Caissier") : currentUser.role;
+  const roleLabel = currentUser.primaryRole === "CASHIER" ? (currentUser.gender === "F" ? "Caissière" : "Caissier") : currentUser.primaryRole;
   return (
     <div className="text-right">
       <div className="text-sm text-gray-500">Connecté en tant que</div>

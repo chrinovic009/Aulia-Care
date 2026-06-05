@@ -6,11 +6,6 @@ export type PatientSummary = {
   dob?: string;
 };
 
-const SAMPLE_PATIENTS: PatientSummary[] = [
-  { id: "p-001", name: "Sarah Ilunga", phone: "+243812345678", dob: "1990-05-12" },
-  { id: "p-002", name: "Jean Kabila", phone: "+243820112233", dob: "1982-11-02" },
-];
-
 export type ReceptionAppointment = {
   id: string;
   patientName: string;
@@ -246,9 +241,14 @@ export const createHospitalizationInDatabase = async (payload: any) => {
     } catch { return null; }
   })();
 
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const response = await fetch(fullUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers,
     credentials: 'include',
     body: JSON.stringify(payload),
   });
@@ -285,9 +285,14 @@ export const createAppointmentInDatabase = async (payload: any) => {
     } catch { return null; }
   })();
 
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const response = await fetch(fullUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers,
     credentials: 'include',
     body: JSON.stringify(payload),
   });
@@ -369,7 +374,6 @@ export const findPatientByCredentials = (identifier: string, password: string) =
 export const saveAdmission = async (admission: any) => {
   // Persist admission to backend hospitalizations endpoint
   const url = `/hospitalizations`;
-  const res = await fetchDbJson<any>(url);
   // Many backends expect POST; here we try POST explicitly
   try {
     const fullUrl = `${API_BASE_URL.replace(/\/+$/, "")}${url.startsWith('/') ? url : `/${url}`}`;
@@ -426,7 +430,6 @@ export type PatientRecord = {
   firstName?: string;
   lastName?: string;
   doctor?: string;
-  receptionist?: string;
   workflowStatus?: string;
   priority?: string;
   insurance?: { company?: string; policy?: string; coverageType?: string; coveragePct?: number; photo?: any; pdf?: any };
@@ -451,7 +454,7 @@ const CONVERSATIONS_KEY = "d7-clinic-conversations";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
 
-const getAuthHeaders = () => {
+const getAuthHeaders = (): Record<string, string> => {
   try {
     const token =
       localStorage.getItem("d7-clinic-access-token") ||
@@ -594,9 +597,13 @@ export const createConversationForPatient = (patient: PatientRecord): Conversati
     const url = `/notifications`;
     const fullUrl = `${API_BASE_URL.replace(/\/+$/, "")}${url.startsWith('/') ? url : `/${url}`}`;
     const token = localStorage.getItem('d7-clinic-access-token') || localStorage.getItem('d7-clinic-api-token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
     fetch(fullUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers,
       credentials: 'include',
       body: JSON.stringify({ title: `Conversation ${patient.name}`, message: 'Conversation créée', patientId: patient.id }),
     }).catch(() => {});
@@ -616,9 +623,13 @@ export const addMessageToConversation = (convId: string, msg: { from: "Patient" 
     const url = `/notifications`;
     const fullUrl = `${API_BASE_URL.replace(/\/+$/, "")}${url.startsWith('/') ? url : `/${url}`}`;
     const token = localStorage.getItem('d7-clinic-access-token') || localStorage.getItem('d7-clinic-api-token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
     fetch(fullUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers,
       credentials: 'include',
       body: JSON.stringify({ title: `Message conv ${convId}`, message: msg.text }),
     }).catch(() => {});

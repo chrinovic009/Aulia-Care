@@ -3,7 +3,7 @@ import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import flatpickr from "flatpickr";
 import { CalenderIcon } from "../../icons";
-import { fetchPatientsFromDatabase, fetchHospitalizationsFromDatabase, fetchAppointmentsFromDatabase } from "../../api/reception";
+import { fetchPatientsFromDatabase, fetchHospitalizationsFromDatabase } from "../../api/reception";
 
 const rangeOptions = [
   { key: "today", label: "Aujourd'hui" },
@@ -136,10 +136,9 @@ export default function StatisticsChart() {
       const hospitalCounts = new Array(labels.length).fill(0);
 
       try {
-        const [patients, hospitalizations, appointments] = await Promise.all([
+        const [patients, hospitalizations] = await Promise.all([
           fetchPatientsFromDatabase(),
           fetchHospitalizationsFromDatabase(),
-          fetchAppointmentsFromDatabase(),
         ]);
 
         patients.forEach((patient) => {

@@ -1,4 +1,4 @@
-import React, { createContext, useEffect, useState, PropsWithChildren } from 'react';
+import { createContext, useEffect, useState, PropsWithChildren } from 'react';
 import { io, Socket } from 'socket.io-client';
 
 type RealtimeContextType = {
