@@ -3,11 +3,11 @@ import { IsDateString, IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-v
 export class CreateAdmissionDto {
   @IsString()
   @IsNotEmpty()
-  firstName: string;
+  firstName!: string;
 
   @IsString()
   @IsNotEmpty()
-  lastName: string;
+  lastName!: string;
 
   @IsString()
   @IsOptional()
@@ -15,11 +15,11 @@ export class CreateAdmissionDto {
 
   @IsString()
   @IsNotEmpty()
-  gender: string;
+  gender!: string;
 
   @IsDateString()
   @IsNotEmpty()
-  dateOfBirth: string;
+  dateOfBirth!: string;
 
   @IsEmail()
   @IsOptional()
@@ -55,15 +55,19 @@ export class CreateAdmissionDto {
 
   @IsString()
   @IsNotEmpty()
-  service: string;
+  serviceId!: string;
 
   @IsString()
   @IsNotEmpty()
-  admissionType: string;
+  admissionType!: string;
 
   @IsString()
   @IsOptional()
   priority?: string;
+
+  @IsString()
+  @IsOptional()
+  receptionistId?: string;
 
   @IsString()
   @IsOptional()
