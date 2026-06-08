@@ -1,0 +1,92 @@
+﻿src/appointments/dto/create-appointment.dto.ts(7,3): error TS2564: Property 'patientId' has no initializer and is not definitely assigned in the constructor.
+src/appointments/dto/create-appointment.dto.ts(19,3): error TS2564: Property 'scheduledAt' has no initializer and is not definitely assigned in the constructor.
+src/appointments/dto/create-appointment.dto.ts(30,3): error TS2564: Property 'durationMinutes' has no initializer and is not definitely assigned in the constructor.
+src/auth/auth.service.ts(17,22): error TS6138: Property 'configService' is declared but its value is never read.
+src/auth/auth.service.ts(103,48): error TS2345: Argument of type '{ id: string; email: string; username: string; displayName: string; firstName: string; lastName: string; passwordHash: string; status: UserStatus; primaryRole: RoleSlug | null; ... 18 more ...; deletedAt: Date | null; }' is not assignable to parameter of type '{ id: string; email: string; username: string; primaryRole: string; }'.
+  Types of property 'primaryRole' are incompatible.
+    Type 'string | null' is not assignable to type 'string'.
+      Type 'null' is not assignable to type 'string'.
+src/auth/current-user.decorator.ts(4,4): error TS6133: 'data' is declared but its value is never read.
+src/auth/dto/current-user-response.dto.ts(6,3): error TS2564: Property 'id' has no initializer and is not definitely assigned in the constructor.
+src/auth/dto/current-user-response.dto.ts(9,3): error TS2564: Property 'email' has no initializer and is not definitely assigned in the constructor.
+src/auth/dto/current-user-response.dto.ts(12,3): error TS2564: Property 'username' has no initializer and is not definitely assigned in the constructor.
+src/auth/dto/current-user-response.dto.ts(15,3): error TS2564: Property 'displayName' has no initializer and is not definitely assigned in the constructor.
+src/auth/dto/current-user-response.dto.ts(18,3): error TS2564: Property 'firstName' has no initializer and is not definitely assigned in the constructor.
+src/auth/dto/current-user-response.dto.ts(21,3): error TS2564: Property 'lastName' has no initializer and is not definitely assigned in the constructor.
+src/auth/dto/current-user-response.dto.ts(24,3): error TS2564: Property 'primaryRole' has no initializer and is not definitely assigned in the constructor.
+src/auth/dto/current-user-response.dto.ts(72,3): error TS2564: Property 'status' has no initializer and is not definitely assigned in the constructor.
+src/auth/dto/current-user-response.dto.ts(75,3): error TS2564: Property 'createdAt' has no initializer and is not definitely assigned in the constructor.
+src/auth/dto/current-user-response.dto.ts(78,3): error TS2564: Property 'updatedAt' has no initializer and is not definitely assigned in the constructor.
+src/auth/dto/login.dto.ts(6,3): error TS2564: Property 'identifier' has no initializer and is not definitely assigned in the constructor.
+src/auth/dto/login.dto.ts(10,3): error TS2564: Property 'password' has no initializer and is not definitely assigned in the constructor.
+src/auth/dto/refresh-token.dto.ts(6,3): error TS2564: Property 'refreshToken' has no initializer and is not definitely assigned in the constructor.
+src/auth/jwt.strategy.ts(8,32): error TS6138: Property 'configService' is declared but its value is never read.
+src/auth/optional-jwt-auth.guard.ts(6,17): error TS6133: 'err' is declared but its value is never read.
+src/auth/optional-jwt-auth.guard.ts(6,38): error TS6133: 'info' is declared but its value is never read.
+src/auth/optional-jwt-auth.guard.ts(6,49): error TS6133: 'context' is declared but its value is never read.
+src/auth/optional-jwt-auth.guard.ts(6,76): error TS6133: 'status' is declared but its value is never read.
+src/billing/dto/create-payment.dto.ts(7,3): error TS2564: Property 'invoiceId' has no initializer and is not definitely assigned in the constructor.
+src/billing/dto/create-payment.dto.ts(10,3): error TS2564: Property 'amount' has no initializer and is not definitely assigned in the constructor.
+src/billing/dto/create-payment.dto.ts(13,3): error TS2564: Property 'method' has no initializer and is not definitely assigned in the constructor.
+src/billing/payments.service.ts(2,10): error TS6133: 'Prisma' is declared but its value is never read.
+src/billing/payments.service.ts(2,54): error TS6133: 'PaymentMethod' is declared but its value is never read.
+src/billing/payments.service.ts(95,13): error TS2353: Object literal may only specify known properties, and 'createdAt' does not exist in type 'Without<HospitalizationCreateInput, HospitalizationUncheckedCreateInput> & HospitalizationUncheckedCreateInput'.
+src/consultations/consultations.service.ts(11,46): error TS2322: Type 'CreateConsultationDto' is not assignable to type '(Without<ConsultationCreateInput, ConsultationUncheckedCreateInput> & ConsultationUncheckedCreateInput) | (Without<...> & ConsultationCreateInput)'.
+  Type 'CreateConsultationDto' is not assignable to type 'Without<ConsultationCreateInput, ConsultationUncheckedCreateInput> & ConsultationUncheckedCreateInput'.
+    Type 'CreateConsultationDto' is not assignable to type 'ConsultationUncheckedCreateInput'.
+      Types of property 'appointmentId' are incompatible.
+        Type 'string | undefined' is not assignable to type 'string'.
+          Type 'undefined' is not assignable to type 'string'.
+src/consultations/dto/create-consultation.dto.ts(1,10): error TS6133: 'IsDateString' is declared but its value is never read.
+src/consultations/dto/create-consultation.dto.ts(7,3): error TS2564: Property 'patientId' has no initializer and is not definitely assigned in the constructor.
+src/hospitalizations/dto/create-hospitalization.dto.ts(6,3): error TS2564: Property 'patientId' has no initializer and is not definitely assigned in the constructor.
+src/hospitalizations/dto/create-hospitalization.dto.ts(18,3): error TS2564: Property 'admissionReason' has no initializer and is not definitely assigned in the constructor.
+src/hospitalizations/hospitalizations.service.ts(20,64): error TS2322: Type 'CreateHospitalizationDto' is not assignable to type '(Without<HospitalizationCreateInput, HospitalizationUncheckedCreateInput> & HospitalizationUncheckedCreateInput) | (Without<...> & HospitalizationCreateInput)'.
+  Type 'CreateHospitalizationDto' is not assignable to type 'Without<HospitalizationCreateInput, HospitalizationUncheckedCreateInput> & HospitalizationUncheckedCreateInput'.
+    Type 'CreateHospitalizationDto' is not assignable to type 'HospitalizationUncheckedCreateInput'.
+      Types of property 'status' are incompatible.
+        Type 'string | undefined' is not assignable to type 'HospitalizationStatus | undefined'.
+          Type 'string' is not assignable to type 'HospitalizationStatus | undefined'.
+src/hospitalizations/hospitalizations.service.ts(133,79): error TS2322: Type 'UpdateHospitalizationDto' is not assignable to type '(Without<HospitalizationUpdateInput, HospitalizationUncheckedUpdateInput> & HospitalizationUncheckedUpdateInput) | (Without<...> & HospitalizationUpdateInput)'.
+  Type 'UpdateHospitalizationDto' is not assignable to type 'Without<HospitalizationUncheckedUpdateInput, HospitalizationUpdateInput> & HospitalizationUpdateInput'.
+    Type 'UpdateHospitalizationDto' is not assignable to type 'Without<HospitalizationUncheckedUpdateInput, HospitalizationUpdateInput>'.
+      Types of property 'patientId' are incompatible.
+        Type 'string | undefined' is not assignable to type 'undefined'.
+          Type 'string' is not assignable to type 'undefined'.
+src/notifications/notifications.gateway.ts(7,3): error TS2564: Property 'server' has no initializer and is not definitely assigned in the constructor.
+src/patients/dto/create-patient.dto.ts(7,3): error TS2564: Property 'firstName' has no initializer and is not definitely assigned in the constructor.
+src/patients/dto/create-patient.dto.ts(11,3): error TS2564: Property 'lastName' has no initializer and is not definitely assigned in the constructor.
+src/patients/dto/create-patient.dto.ts(19,3): error TS2564: Property 'gender' has no initializer and is not definitely assigned in the constructor.
+src/patients/dto/create-patient.dto.ts(22,3): error TS2564: Property 'dateOfBirth' has no initializer and is not definitely assigned in the constructor.
+src/patients/patients.service.ts(14,11): error TS6196: 'AdmissionSearchResult' is declared but never used.
+src/patients/patients.service.ts(39,56): error TS2322: Type 'CreatePatientDto' is not assignable to type '(Without<PatientCreateInput, PatientUncheckedCreateInput> & PatientUncheckedCreateInput) | (Without<...> & PatientCreateInput)'.
+  Type 'CreatePatientDto' is not assignable to type 'Without<PatientUncheckedCreateInput, PatientCreateInput> & PatientCreateInput'.
+    Types of property 'receptionist' are incompatible.
+      Type 'string | undefined' is not assignable to type 'UserCreateNestedOneWithoutRegisteredPatientsInput | undefined'.
+        Type 'string' has no properties in common with type 'UserCreateNestedOneWithoutRegisteredPatientsInput'.
+src/patients/patients.service.ts(189,11): error TS2353: Object literal may only specify known properties, and 'invoiceType' does not exist in type 'Without<InvoiceCreateInput, InvoiceUncheckedCreateInput> & InvoiceUncheckedCreateInput'.
+src/patients/patients.service.ts(197,11): error TS6133: 'audit' is declared but its value is never read.
+src/patients/patients.service.ts(254,71): error TS2322: Type 'UpdatePatientDto' is not assignable to type '(Without<PatientUpdateInput, PatientUncheckedUpdateInput> & PatientUncheckedUpdateInput) | (Without<...> & PatientUpdateInput)'.
+  Type 'UpdatePatientDto' is not assignable to type 'Without<PatientUncheckedUpdateInput, PatientUpdateInput> & PatientUpdateInput'.
+    Types of property 'receptionist' are incompatible.
+      Type 'string | undefined' is not assignable to type 'UserUpdateOneWithoutRegisteredPatientsNestedInput | undefined'.
+        Type 'string' has no properties in common with type 'UserUpdateOneWithoutRegisteredPatientsNestedInput'.
+src/patients/public-patients.controller.ts(32,69): error TS2345: Argument of type 'null' is not assignable to parameter of type 'string | undefined'.
+src/roles/dto/create-role.dto.ts(6,3): error TS2564: Property 'slug' has no initializer and is not definitely assigned in the constructor.
+src/roles/dto/create-role.dto.ts(10,3): error TS2564: Property 'name' has no initializer and is not definitely assigned in the constructor.
+src/roles/dto/create-role.dto.ts(14,3): error TS2564: Property 'description' has no initializer and is not definitely assigned in the constructor.
+src/services/dto/create-service-responsable.dto.ts(5,3): error TS2564: Property 'serviceId' has no initializer and is not definitely assigned in the constructor.
+src/services/dto/create-service-responsable.dto.ts(8,3): error TS2564: Property 'userId' has no initializer and is not definitely assigned in the constructor.
+src/services/dto/create-service-responsable.dto.ts(11,3): error TS2564: Property 'principal' has no initializer and is not definitely assigned in the constructor.
+src/services/dto/create-service-tarif.dto.ts(5,3): error TS2564: Property 'serviceId' has no initializer and is not definitely assigned in the constructor.
+src/services/dto/create-service-tarif.dto.ts(9,3): error TS2564: Property 'prix' has no initializer and is not definitely assigned in the constructor.
+src/services/dto/create-service.dto.ts(6,3): error TS2564: Property 'name' has no initializer and is not definitely assigned in the constructor.
+src/services/dto/update-service.dto.ts(1,29): error TS2307: Cannot find module '@nestjs/mapped-types' or its corresponding type declarations.
+src/users/dto/create-user.dto.ts(13,3): error TS2564: Property 'email' has no initializer and is not definitely assigned in the constructor.
+src/users/dto/create-user.dto.ts(17,3): error TS2564: Property 'username' has no initializer and is not definitely assigned in the constructor.
+src/users/dto/create-user.dto.ts(21,3): error TS2564: Property 'displayName' has no initializer and is not definitely assigned in the constructor.
+src/users/dto/create-user.dto.ts(25,3): error TS2564: Property 'firstName' has no initializer and is not definitely assigned in the constructor.
+src/users/dto/create-user.dto.ts(29,3): error TS2564: Property 'lastName' has no initializer and is not definitely assigned in the constructor.
+src/users/dto/create-user.dto.ts(33,3): error TS2564: Property 'password' has no initializer and is not definitely assigned in the constructor.
+src/users/dto/create-user.dto.ts(36,3): error TS2564: Property 'primaryRole' has no initializer and is not definitely assigned in the constructor.
+src/users/users.controller.ts(1,61): error TS6133: 'UseGuards' is declared but its value is never read.

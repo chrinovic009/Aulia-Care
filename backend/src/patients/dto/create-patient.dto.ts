@@ -89,6 +89,10 @@ export class CreatePatientDto {
   @IsOptional()
   receptionist?: string;
 
+  @IsString()
+  @IsOptional()
+  profession?: string;
+
   @IsOptional()
   workflowStatus?: PatientWorkflowStatus;
 }
