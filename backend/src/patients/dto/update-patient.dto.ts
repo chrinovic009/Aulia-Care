@@ -90,6 +90,10 @@ export class UpdatePatientDto {
   @IsOptional()
   receptionist?: string;
 
+  @IsString()
+  @IsOptional()
+  profession?: string;
+
   @IsEnum(PatientWorkflowStatus)
   @IsOptional()
   workflowStatus?: PatientWorkflowStatus;

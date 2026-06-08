@@ -433,7 +433,9 @@ export type PatientRecord = {
   workflowStatus?: string;
   priority?: string;
   insurance?: { company?: string; policy?: string; coverageType?: string; coveragePct?: number; photo?: any; pdf?: any };
+  profession?: string;
   contacts?: Array<{ name: string; relation: string; phone: string; address: string }>;
+  familyContacts?: Array<{ name: string; relation: string; phone: string; address: string }>;
   allergies?: string[];
   status?: "Enregistré" | "Fiche en attente" | "Fiche validée" | "Fiche annulé" | "En suivi";
   amountDue?: number;

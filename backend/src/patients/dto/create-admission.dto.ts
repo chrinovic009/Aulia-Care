@@ -76,4 +76,11 @@ export class CreateAdmissionDto {
   @IsDateString()
   @IsOptional()
   arrivalAt?: string;
+
+  @IsString()
+  @IsOptional()
+  profession?: string;
+
+  @IsOptional()
+  familyContacts?: any;
 }

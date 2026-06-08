@@ -29,6 +29,7 @@ type Patient = {
   birthDate: string;
   address: string;
   profession: string;
+  nationality?: string;
   alerts: string[];
   family: FamilyContact[];
   insuranceInfo: InsuranceInfo;
@@ -109,6 +110,26 @@ export default function ReceptionPatients() {
     if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
     return age;
   };
+
+  const formatBirthDateForDisplay = (value?: string) => {
+    if (!value) return "";
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(parsed);
+    }
+    const parts = value.split(/[-\/]/).map((p) => p.trim());
+    if (parts.length === 3) {
+      let [d, m, y] = parts;
+      if (parts[0].length === 4) {
+        y = parts[0];
+        m = parts[1];
+        d = parts[2];
+      }
+      return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
+    }
+    return value;
+  };
+
   const [selectedApptDoctor, setSelectedApptDoctor] = useState<string>("");
 
   const EMPTY_PATIENT: Patient = {
@@ -122,6 +143,7 @@ export default function ReceptionPatients() {
     birthDate: "",
     address: "",
     profession: "",
+    nationality: "",
     alerts: [],
     family: [],
     insuranceInfo: { company: "", policyNumber: "", expiryDate: "", coverageType: "", status: "En attente validation" },
@@ -166,6 +188,149 @@ export default function ReceptionPatients() {
     setTimeout(() => w.print(), 300);
   };
 
+  const generatePatientFilePDF = () => {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Fiche Patient - ${selectedPatient.name}</title>
+          <style>
+            @media print {
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { font-family: "Calibri", Arial, sans-serif; font-size: 11pt; line-height: 1.3; color: #333; }
+              .page { page-break-after: always; min-height: 29.7cm; position: relative; padding: 1.5cm; }
+              .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 20px; }
+              .clinic-logo { font-weight: bold; font-size: 16pt; color: #1e3a8a; }
+              .clinic-tagline { font-size: 9pt; color: #666; margin-top: 4px; }
+              .clinic-contact { font-size: 8pt; color: #666; margin-top: 4px; }
+              .section { margin-bottom: 16px; }
+              .section-title { font-weight: bold; font-size: 11pt; border-bottom: 1px solid #999; padding-bottom: 4px; margin-bottom: 8px; }
+              table { width: 100%; border-collapse: collapse; font-size: 10pt; margin-top: 8px; }
+              td, th { border: 1px solid #ccc; padding: 6px 4px; text-align: left; }
+              th { background-color: #f0f0f0; font-weight: bold; }
+              .label { font-weight: bold; width: 30%; }
+              .value { width: 70%; }
+              .footer { position: absolute; bottom: 1.5cm; left: 1.5cm; right: 1.5cm; border-top: 1px solid #999; padding-top: 8px; text-align: center; font-size: 8pt; color: #666; }
+              .patient-header { display: flex; justify-content: space-between; margin-bottom: 12px; }
+              .patient-name { font-size: 14pt; font-weight: bold; color: #1e3a8a; }
+              .patient-id { font-size: 9pt; color: #666; }
+            }
+            body { font-family: "Calibri", Arial, sans-serif; font-size: 11pt; color: #333; }
+            .page { min-height: 29.7cm; padding: 1.5cm; border: 1px solid #ddd; }
+            .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 20px; }
+            .clinic-logo { font-weight: bold; font-size: 16pt; color: #1e3a8a; }
+            .clinic-tagline { font-size: 9pt; color: #666; margin-top: 4px; }
+            .clinic-contact { font-size: 8pt; color: #666; margin-top: 4px; }
+            .section { margin-bottom: 16px; }
+            .section-title { font-weight: bold; font-size: 11pt; border-bottom: 1px solid #999; padding-bottom: 4px; margin-bottom: 8px; }
+            table { width: 100%; border-collapse: collapse; font-size: 10pt; margin-top: 8px; }
+            td, th { border: 1px solid #ccc; padding: 6px 4px; text-align: left; }
+            th { background-color: #f0f0f0; font-weight: bold; }
+            .label { font-weight: bold; width: 30%; }
+            .value { width: 70%; }
+            .footer { border-top: 1px solid #999; padding-top: 8px; text-align: center; font-size: 8pt; color: #666; margin-top: 20px; }
+            .patient-header { display: flex; justify-content: space-between; margin-bottom: 12px; }
+            .patient-name { font-size: 14pt; font-weight: bold; color: #1e3a8a; }
+            .patient-id { font-size: 9pt; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="page">
+            <!-- Header -->
+            <div class="header">
+              <img src="../../../public/images/favicon.png" alt="" width="40">
+              <div class="clinic-logo">D7 CLINIQUE</div>
+              <div class="clinic-tagline">Centre de santé intégré - Service de qualité</div>
+              <div class="clinic-contact">Zone de santé : Dilala | Tel : +243987299227 | Email : fondationd7clinic@gmail.com</div>
+            </div>
+
+            <!-- Patient Header -->
+            <div class="patient-header">
+              <div>
+                <div class="patient-name">${selectedPatient.name}</div>
+                <div class="patient-id">ID Patient: ${selectedPatient.id}</div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-weight: bold; font-size: 12pt;">FICHE PATIENT</div>
+                <div style="font-size: 9pt; color: #666;">Établie le: ${new Date().toLocaleDateString('fr-FR')}</div>
+              </div>
+            </div>
+
+            <!-- Informations Personnelles -->
+            <div class="section">
+              <div class="section-title">Informations Personnelles</div>
+              <table>
+                <tr><td class="label">Sexe</td><td class="value">${selectedPatient.gender || '—'}</td></tr>
+                <tr><td class="label">Âge</td><td class="value">${selectedPatient.age || 0} ans</td></tr>
+                <tr><td class="label">Date de naissance</td><td class="value">${selectedPatient.birthDate || '—'}</td></tr>
+                <tr><td class="label">Téléphone</td><td class="value">${selectedPatient.phone || '—'}</td></tr>
+                <tr><td class="label">Adresse</td><td class="value">${selectedPatient.address || '—'}</td></tr>
+                <tr><td class="label">Profession</td><td class="value">${selectedPatient.profession || '—'}</td></tr>
+                <tr><td class="label">Nationalité</td><td class="value">${selectedPatient.nationality || '—'}</td></tr>
+              </table>
+            </div>
+
+            <!-- Contacts Famille -->
+            ${selectedPatient.family && selectedPatient.family.length > 0 ? `
+            <div class="section">
+              <div class="section-title">Contacts Famille</div>
+              <table>
+                <thead>
+                  <tr><th>Nom</th><th>Relation</th><th>Téléphone</th></tr>
+                </thead>
+                <tbody>
+                  ${selectedPatient.family.map(c => `<tr><td>${c.name || '—'}</td><td>${c.relation || '—'}</td><td>${c.phone || '—'}</td></tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+            ` : ''}
+
+            <!-- Assurance -->
+            ${selectedPatient.insuranceInfo?.company ? `
+            <div class="section">
+              <div class="section-title">Information Assurance</div>
+              <table>
+                <tr><td class="label">Compagnie</td><td class="value">${selectedPatient.insuranceInfo.company}</td></tr>
+                <tr><td class="label">Numéro Police</td><td class="value">${selectedPatient.insuranceInfo.policyNumber || '—'}</td></tr>
+                <tr><td class="label">Date Expiration</td><td class="value">${selectedPatient.insuranceInfo.expiryDate || '—'}</td></tr>
+                <tr><td class="label">Type Couverture</td><td class="value">${selectedPatient.insuranceInfo.coverageType || '—'}</td></tr>
+                <tr><td class="label">État</td><td class="value">${selectedPatient.insuranceInfo.status || '—'}</td></tr>
+              </table>
+            </div>
+            ` : ''}
+
+            <!-- Historique -->
+            ${selectedPatient.history && selectedPatient.history.length > 0 ? `
+            <div class="section">
+              <div class="section-title">Historique Médical</div>
+              <table>
+                <thead>
+                  <tr><th>Date</th><th>Événement</th></tr>
+                </thead>
+                <tbody>
+                  ${selectedPatient.history.map(h => `<tr><td>${h.date}</td><td>${h.event}</td></tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+            ` : ''}
+
+            <!-- Footer -->
+            <div class="footer">
+              <div style="margin-bottom: 4px;">N°7 Avenue de l'aéroport coin Avenue D7 | Commune de Dilala | Q/RVA3 | Kolwezi</div>
+              <div>Zone de santé : Dilala | Tel : +243987299227 | Email : fondationd7clinic@gmail.com</div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 500);
+  };
+
   const selectedPatient = (patients && patients.length > 0)
     ? (patients.find((p) => p.id === selectedPatientId) || patients[0])
     : EMPTY_PATIENT;
@@ -174,27 +339,63 @@ export default function ReceptionPatients() {
     (async () => {
       try {
         const ps = await fetchPatientsFromDatabase();
-        const ensurePatientDefaults = (p: any): Patient => ({
-          id: p.id ?? p.patientId ?? 'unknown',
-          name: (p.name ?? `${p.firstName || ''} ${p.lastName || ''}`.trim()) || '—',
-          phone: p.phone ?? p.phoneNumber ?? '',
-          status: p.status ?? '',
-          insurance: (p.insurance && typeof p.insurance === 'string') ? p.insurance : (p.insurance?.company ? 'Validée' : '') || '',
-          gender: p.gender ?? '',
-          age: p.age ?? 0,
-          birthDate: p.dob ?? p.birthDate ?? '',
-          address: p.address ?? '',
-          profession: p.profession ?? '',
-          alerts: p.alerts ?? [],
-          family: p.family ?? p.contacts ?? [],
-          insuranceInfo: p.insuranceInfo ?? (p.insurance ? { company: p.insurance.company || '', policyNumber: p.insurance.policy || '', expiryDate: '', coverageType: p.insurance.coverageType || '', status: p.insurance.status || 'En attente validation' } : { company: '', policyNumber: '', expiryDate: '', coverageType: '', status: 'En attente validation' }),
-          history: p.history ?? [],
-          workflowStatus: p.workflowStatus ?? p.status ?? '',
-          assignedNurseId: p.assignedNurseId ?? p.doctor ?? undefined,
-        });
+        console.log('Raw API Response:', ps);
+        
+        const ensurePatientDefaults = (p: any): Patient => {
+          // Map API fields: API returns dateOfBirth, firstName, lastName, etc.
+          const birthDateStr = p.dateOfBirth ?? p.dob ?? p.birthDate ?? '';
+          const calculatedAge = computeAgeFromBirthDate(birthDateStr);
+          
+          // Extract admission metadata from MedicalHistory if available
+          let profession = '';
+          let family: FamilyContact[] = [];
+          if (p.medicalHistories && p.medicalHistories.length > 0) {
+            try {
+              const metadata = JSON.parse(p.medicalHistories[0].details || '{}');
+              profession = metadata.profession || '';
+              family = metadata.familyContacts || [];
+            } catch (e) {
+              console.warn('Failed to parse admission metadata:', e);
+            }
+          }
+          
+          console.log('Patient mapping:', {
+            originalId: p.id,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            gender: p.gender,
+            dateOfBirth: p.dateOfBirth,
+            calculatedAge,
+            address: p.address,
+            profession,
+            nationality: p.nationality,
+            medicalHistories: p.medicalHistories,
+          });
+          
+          return {
+            id: p.id ?? p.patientId ?? 'unknown',
+            name: (p.name ?? `${p.firstName || ''} ${p.lastName || ''}`.trim()) || '—',
+            phone: p.phone ?? p.phoneNumber ?? '',
+            status: p.status ?? '',
+            insurance: (p.insurance && typeof p.insurance === 'string') ? p.insurance : (p.insurance?.company ? 'Validée' : '') || '',
+            gender: p.gender ?? '',
+            age: calculatedAge || p.age || 0,
+            birthDate: formatBirthDateForDisplay(birthDateStr),
+            address: p.address ?? '',
+            profession: profession || p.profession || '',
+            nationality: p.nationality ?? '',
+            alerts: p.alerts ?? [],
+            family: family && family.length > 0 ? family : (p.family ?? p.contacts ?? []),
+            insuranceInfo: p.insuranceInfo ?? (p.insurance ? { company: p.insurance.company || '', policyNumber: p.insurance.policy || '', expiryDate: '', coverageType: p.insurance.coverageType || '', status: p.insurance.status || 'En attente validation' } : { company: '', policyNumber: '', expiryDate: '', coverageType: '', status: 'En attente validation' }),
+            history: p.history ?? [],
+            workflowStatus: p.workflowStatus ?? p.status ?? '',
+            assignedNurseId: p.assignedNurseId ?? p.doctor ?? undefined,
+          };
+        };
 
         if (ps && ps.length > 0) {
           const normalized = (ps as any[]).map(ensurePatientDefaults);
+          console.log('Normalized patients:', normalized);
           setPatients(normalized);
           setSelectedPatientId(normalized[0].id);
         } else {
@@ -393,38 +594,40 @@ export default function ReceptionPatients() {
                   <p className="text-sm text-slate-500 dark:text-slate-400">Fiche patient</p>
                   <h2 className="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{selectedPatient.name}</h2>
                 </div>
-                {filteredPatients.map((_, idx) => (
-                  <div className="rounded-3xl bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm dark:bg-slate-950 dark:text-white">{idx + 1}</div>
-                ))}
+                  <div className="rounded-3xl bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm dark:bg-slate-950 dark:text-white">{selectedPatient.name.charAt(0)}</div>
               </div>
 
               <div className="mt-6 grid gap-4 ">
-                <div className="rounded-3xl bg-white p-4 shadow-sm dark:bg-slate-950">
+                <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-slate-950">
                   <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Informations personnelles</h3>
                   <dl className="mt-4 space-y-3 text-sm text-slate-600 dark:text-slate-300">
                     <div className="flex justify-between">
                       <dt>Sexe</dt>
-                      <dd>{selectedPatient.gender}</dd>
+                      <dd>{selectedPatient.gender || '—'}</dd>
                     </div>
                     <div className="flex justify-between">
                       <dt>Âge</dt>
-                      <dd>{selectedPatient.age} ans</dd>
+                      <dd>{selectedPatient.age || 0} ans</dd>
                     </div>
                     <div className="flex justify-between">
                       <dt>Date de naissance</dt>
-                      <dd>{selectedPatient.birthDate}</dd>
+                      <dd>{formatBirthDateForDisplay(selectedPatient.birthDate) || '—'}</dd>
                     </div>
                     <div className="flex justify-between">
                       <dt>Téléphone</dt>
-                      <dd>{selectedPatient.phone}</dd>
+                      <dd>{selectedPatient.phone || '—'}</dd>
                     </div>
                     <div className="flex justify-between">
                       <dt>Adresse</dt>
-                      <dd>{selectedPatient.address}</dd>
+                      <dd>{selectedPatient.address || '—'}</dd>
                     </div>
                     <div className="flex justify-between">
                       <dt>Profession</dt>
-                      <dd>{selectedPatient.profession}</dd>
+                      <dd>{selectedPatient.profession || '—'}</dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt>Nationalité</dt>
+                      <dd>{selectedPatient.nationality || '—'}</dd>
                     </div>
                   </dl>
                 </div>
@@ -544,8 +747,9 @@ export default function ReceptionPatients() {
 
             <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-950">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Actions d’orientation</h3>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <button onClick={() => setShowAppointmentModal(true)} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 dark:border-gray-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800">Créer rendez-vous</button>
+                <button onClick={generatePatientFilePDF} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 dark:border-gray-700 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800">🖨️ Imprimer fiche</button>
               </div>
             </div>
           </section>

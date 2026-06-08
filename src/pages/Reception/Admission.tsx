@@ -20,6 +20,8 @@ const relationOptions = [
   "collègue",
 ];
 
+const ADMISSION_FEE_AMOUNT = 5;
+
 const Admission: React.FC = () => {
   const [form, setForm] = useState<any>({
     category: "P",
@@ -42,7 +44,7 @@ const Admission: React.FC = () => {
     contacts: [] as any[],
     allergies: [] as string[],
     documents: [] as any[],
-    amountDue: 0,
+    amountDue: ADMISSION_FEE_AMOUNT,
     paymentRequestId: "",
   });
   const [existingPatient, setExistingPatient] = useState<any>(null);
@@ -147,7 +149,6 @@ const Admission: React.FC = () => {
     setForm((f: any) => ({
       ...f,
       doctor: responsables.length > 0 ? responsables[0] : "",
-      amountDue: Number(svc?.tarifs?.length ? svc.tarifs[0].prix : 0) || 0,
     }));
   }, [form.serviceId, servicesList]);
 
@@ -189,6 +190,7 @@ const Admission: React.FC = () => {
       contacts: [],
       allergies: [],
       documents: [],
+      amountDue: ADMISSION_FEE_AMOUNT,
     });
   };
 
@@ -211,15 +213,18 @@ const Admission: React.FC = () => {
 
     try {
       const { firstName, lastName } = splitFullName(form.name);
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
-      const token = localStorage.getItem('d7-clinic-access-token') || localStorage.getItem('d7-clinic-api-token');
+      const familyContacts = (form.contacts || []).filter((contact: any) =>
+        contact && (contact.name || contact.relation || contact.phone || contact.address)
+      );
 
-      // 1. Create patient admission
-      const patient = await createPatientAdmission({
+      // 1. Create patient admission without generating a user account.
+      const result = await createPatientAdmission({
         firstName,
         lastName,
         gender: form.gender,
         dateOfBirth: form.dob,
+        profession: form.profession,
+        familyContacts,
         phone: form.phone,
         email: form.email,
         address: form.address,
@@ -229,50 +234,13 @@ const Admission: React.FC = () => {
         admissionType: form.admissionType,
         serviceId: form.serviceId,
         priority: form.priority,
+        receptionistId: currentUser?.id,
         receptionist: form.receptionist,
         arrivalAt: form.arrival,
       } as any);
 
-      // 2. Get patient position and create user account
-      try {
-        const patientsRes = await fetch(`${API_BASE_URL}/patients`, {
-          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          credentials: 'include',
-        });
-        const allPatients = patientsRes.ok ? await patientsRes.json() : [];
-        const position = (allPatients?.length || 0);
-        const year = new Date().getFullYear();
-        const patientPassword = `D7P-${position}${year}`;
-
-        // Create user for patient
-        const userRes = await fetch(`${API_BASE_URL}/users`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            username: form.name || `${firstName} ${lastName}`,
-            email: form.email,
-            password: patientPassword,
-            displayName: form.name || `${firstName} ${lastName}`,
-            firstName,
-            lastName,
-            primaryRole: 'PATIENT',
-            phone: form.phone,
-          }),
-        });
-
-        if (!userRes.ok) {
-          console.warn('User creation warning:', await userRes.text());
-        }
-      } catch (userError) {
-        console.warn('Could not create user account:', userError);
-      }
-
       setModalStep('success');
-      console.log('Admission enregistrée', patient);
+      console.log('Admission enregistrée', result);
     } catch (error: any) {
       window.alert(error?.message || 'Une erreur est survenue lors de l’enregistrement de l’admission.');
     }
@@ -448,6 +416,7 @@ const Admission: React.FC = () => {
             <div className="mt-3 text-sm space-y-2">
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Patient:</span> {form.name || (existingPatient ? existingPatient.name : '—')}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Service:</span> {existingPatient ? (existingPatient.service || (existingPatient.serviceId ? servicesList.find((s)=>s.id===existingPatient.serviceId)?.name : '—')) : (servicesList.find((s)=>s.id===form.serviceId)?.name || '—')}</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Frais de fiche:</span> {ADMISSION_FEE_AMOUNT} CDF</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Médecin:</span> {existingPatient ? existingPatient.doctor : form.doctor}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Priorité:</span> {existingPatient ? existingPatient.priority : form.priority}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Assurance:</span> {existingPatient ? (existingPatient.insurance?.company ? '✅ Validée' : '—') : (form.insurance.company ? '✅ Validée' : '—')}</div>
