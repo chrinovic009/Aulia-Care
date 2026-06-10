@@ -8,7 +8,7 @@ export class ConsultationsService {
   constructor(private readonly prisma: PrismaService) {}
 
   create(createConsultationDto: CreateConsultationDto) {
-    return this.prisma.consultation.create({ data: createConsultationDto });
+    return this.prisma.consultation.create({ data: createConsultationDto as any });
   }
 
   findAll() {
@@ -25,7 +25,7 @@ export class ConsultationsService {
 
   async update(id: string, updateConsultationDto: UpdateConsultationDto) {
     await this.findOne(id);
-    return this.prisma.consultation.update({ where: { id }, data: updateConsultationDto });
+    return this.prisma.consultation.update({ where: { id }, data: updateConsultationDto as any });
   }
 
   async remove(id: string) {

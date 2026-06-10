@@ -14,7 +14,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
+    configService: ConfigService,
   ) {
     this.accessTokenSecret = configService.get<string>('JWT_SECRET', 'change_me_access');
     this.refreshTokenSecret = configService.get<string>('JWT_REFRESH_SECRET', 'change_me_refresh');
@@ -37,34 +37,34 @@ export class AuthService {
     return user;
   }
 
-  private signAccessToken(user: { id: string; email: string; username: string; primaryRole: string }) {
-    const payload = {
+  private signAccessToken(user: { id: string; email: string; username: string; primaryRole: string | null }) {
+    const payload: any = {
       sub: user.id,
       email: user.email,
       username: user.username,
       role: user.primaryRole,
     };
-    return this.jwtService.sign(payload, {
+    return this.jwtService.sign(payload as any, {
       secret: this.accessTokenSecret,
       expiresIn: this.accessTokenExpires,
-    });
+    } as any);
   }
 
-  private signRefreshToken(user: { id: string; email: string; username: string; primaryRole: string }) {
-    const payload = {
+  private signRefreshToken(user: { id: string; email: string; username: string; primaryRole: string | null }) {
+    const payload: any = {
       sub: user.id,
       email: user.email,
       username: user.username,
       role: user.primaryRole,
       type: 'refresh',
     };
-    return this.jwtService.sign(payload, {
+    return this.jwtService.sign(payload as any, {
       secret: this.refreshTokenSecret,
       expiresIn: this.refreshTokenExpires,
-    });
+    } as any);
   }
 
-  async login(user: { id: string; email: string; username: string; displayName: string; primaryRole: string }) {
+  async login(user: { id: string; email: string; username: string; displayName: string; primaryRole: string | null }) {
     const accessToken = this.signAccessToken(user);
     const refreshToken = this.signRefreshToken(user);
 

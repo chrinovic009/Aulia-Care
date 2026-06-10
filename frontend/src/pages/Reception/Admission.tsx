@@ -20,7 +20,7 @@ const relationOptions = [
   "collègue",
 ];
 
-const ADMISSION_FEE_AMOUNT = 5;
+const ADMISSION_FEE_AMOUNT = 20;
 
 const Admission: React.FC = () => {
   const [form, setForm] = useState<any>({
@@ -416,7 +416,7 @@ const Admission: React.FC = () => {
             <div className="mt-3 text-sm space-y-2">
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Patient:</span> {form.name || (existingPatient ? existingPatient.name : '—')}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Service:</span> {existingPatient ? (existingPatient.service || (existingPatient.serviceId ? servicesList.find((s)=>s.id===existingPatient.serviceId)?.name : '—')) : (servicesList.find((s)=>s.id===form.serviceId)?.name || '—')}</div>
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Frais de fiche:</span> {ADMISSION_FEE_AMOUNT} CDF</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Frais de fiche:</span> {ADMISSION_FEE_AMOUNT} USD</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Médecin:</span> {existingPatient ? existingPatient.doctor : form.doctor}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Priorité:</span> {existingPatient ? existingPatient.priority : form.priority}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Assurance:</span> {existingPatient ? (existingPatient.insurance?.company ? '✅ Validée' : '—') : (form.insurance.company ? '✅ Validée' : '—')}</div>

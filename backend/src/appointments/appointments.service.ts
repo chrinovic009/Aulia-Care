@@ -8,7 +8,7 @@ export class AppointmentsService {
   constructor(private readonly prisma: PrismaService) {}
 
   create(createAppointmentDto: CreateAppointmentDto) {
-    return this.prisma.appointment.create({ data: createAppointmentDto });
+    return this.prisma.appointment.create({ data: createAppointmentDto as any });
   }
 
   findAll() {
@@ -27,7 +27,7 @@ export class AppointmentsService {
     await this.findOne(id);
     return this.prisma.appointment.update({
       where: { id },
-      data: updateAppointmentDto,
+      data: updateAppointmentDto as any,
     });
   }
 

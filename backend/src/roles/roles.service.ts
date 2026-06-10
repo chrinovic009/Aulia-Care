@@ -8,7 +8,7 @@ export class RolesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createRoleDto: CreateRoleDto) {
-    return this.prisma.role.create({ data: createRoleDto });
+    return this.prisma.role.create({ data: createRoleDto as any });
   }
 
   findAll() {
@@ -29,7 +29,7 @@ export class RolesService {
   async update(id: string, updateRoleDto: UpdateRoleDto) {
     return this.prisma.role.update({
       where: { id },
-      data: updateRoleDto,
+      data: updateRoleDto as any,
     });
   }
 

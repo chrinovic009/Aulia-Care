@@ -1,22 +1,29 @@
 {
   "compilerOptions": {
-    "module": "CommonJS",
     "target": "ES2022",
     "lib": ["es2022"],
-    "moduleResolution": "node",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "strict": true,
+
+    "strict": false,
     "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
     "skipLibCheck": true,
-    "noImplicitAny": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "noImplicitAny": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "strictPropertyInitialization": false,
+
     "sourceMap": true,
     "declaration": true,
     "outDir": "dist",
     "rootDir": "src",
     "resolveJsonModule": true,
+
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],

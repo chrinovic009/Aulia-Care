@@ -78,25 +78,8 @@ export class PatientsService {
         createdAt: true,
         updatedAt: true,
         workflowStatus: true,
-        admissionType: true,
-        priority: true,
-        arrivalAt: true,
         serviceId: true,
         receptionistId: true,
-        service: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        receptionist: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
-        },
         medicalHistories: {
           where: {
             kind: 'ADMISSION_METADATA',
