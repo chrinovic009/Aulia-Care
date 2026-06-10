@@ -16,7 +16,7 @@
     "prisma:studio": "prisma studio --schema backend/prisma/schema.prisma",
     "db:seed": "prisma db seed --schema backend/prisma/schema.prisma",
     "prisma:db:push": "prisma db push --schema backend/prisma/schema.prisma",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate --schema=backend/prisma/schema.prisma"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.15",
