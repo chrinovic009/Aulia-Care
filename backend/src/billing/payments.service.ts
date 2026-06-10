@@ -92,8 +92,6 @@ export class PaymentsService {
             admittedAt: new Date(),
             status: 'ADMITTED',
             admissionReason: 'Admission hospitalière validée après paiement',
-            createdAt: new Date(),
-            updatedAt: new Date(),
           },
         });
       }

@@ -17,7 +17,7 @@ export class HospitalizationsService {
   } as const;
 
   async create(createHospitalizationDto: CreateHospitalizationDto) {
-    const created = await this.prisma.hospitalization.create({ data: createHospitalizationDto });
+    const created = await this.prisma.hospitalization.create({ data: createHospitalizationDto as any });
     try {
       await this.notifications.createAndEmit({
         title: `Hospitalisation: ${created.id}`,
@@ -130,7 +130,7 @@ export class HospitalizationsService {
 
   async update(id: string, updateHospitalizationDto: UpdateHospitalizationDto) {
     await this.findOne(id);
-    const updated = await this.prisma.hospitalization.update({ where: { id }, data: updateHospitalizationDto });
+    const updated = await this.prisma.hospitalization.update({ where: { id }, data: updateHospitalizationDto as any });
     try {
       await this.notifications.createAndEmit({
         title: `Hospitalisation mise à jour: ${updated.id}`,

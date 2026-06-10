@@ -2,8 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import svgr from "vite-plugin-svgr";
 
-// https://vite.dev/config/
 export default defineConfig({
+  root: "./frontend",
   plugins: [
     react(),
     svgr({
@@ -14,6 +14,7 @@ export default defineConfig({
       },
     }),
   ],
+
   server: {
     proxy: {
       "/auth": {
@@ -57,5 +58,10 @@ export default defineConfig({
         rewrite: (path) => path,
       },
     },
+  },
+
+  build: {
+    outDir: "../dist-frontend",
+    emptyOutDir: true,
   },
 });

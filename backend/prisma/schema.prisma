@@ -18,6 +18,10 @@ model Role {
   deletedAt   DateTime?
   permissions RolePermission[]
   userRoles   UserRole[]
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 model Permission {
@@ -29,6 +33,9 @@ model Permission {
   updatedAt   DateTime         @updatedAt
   deletedAt   DateTime?
   roles       RolePermission[]
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 
   @@unique([action, resource])
 }
@@ -40,6 +47,9 @@ model RolePermission {
   createdAt    DateTime   @default(now())
   permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
   role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 
   @@unique([roleId, permissionId])
 }
@@ -98,6 +108,9 @@ model User {
   surgeriesAsSurgeon          Surgery[]            @relation("SurgerySurgeon")
   roles                       UserRole[]
   vitalSignsRecorded          VitalSign[]          @relation("VitalSignRecordedBy")
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 
   @@index([primaryRole])
 }
@@ -110,6 +123,10 @@ model UserRole {
   assignedAt DateTime @default(now())
   role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 
   @@unique([userId, roleId])
 }
@@ -124,6 +141,10 @@ model Department {
   updatedAt   DateTime       @updatedAt
   deletedAt   DateTime?
   services    ServiceUnit[]
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 model ServiceUnit {
@@ -141,6 +162,10 @@ model ServiceUnit {
   rooms            Room[]
   department       Department        @relation(fields: [departmentId], references: [id])
 
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
+
   @@unique([departmentId, name])
 }
 
@@ -156,6 +181,10 @@ model Service {
   responsables ServiceResponsable[]
   staff        ServiceStaff[]
   tarifs       ServiceTarif[]
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 /// ServiceTarif allows historisation of service prices
@@ -169,6 +198,10 @@ model ServiceTarif {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   service   Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 model AdmissionFee {
@@ -179,6 +212,10 @@ model AdmissionFee {
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 model ServiceStaff {
@@ -191,6 +228,10 @@ model ServiceStaff {
   updatedAt     DateTime @updatedAt
   service       Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 
   @@unique([serviceId, userId])
 }
@@ -205,6 +246,10 @@ model ServiceResponsable {
   createdAt DateTime @default(now())
   service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 /// Patients and clinical records.
@@ -254,6 +299,10 @@ model Patient {
   vitalSigns        VitalSign[]
   familyContacts    PatientContact[]
 
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
+
   @@index([lastName, firstName])
   @@index([dateOfBirth])
 }
@@ -271,6 +320,10 @@ model PatientContact {
   deletedAt   DateTime?
   patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
+
   @@index([patientId])
 }
 
@@ -283,6 +336,10 @@ model Room {
   updatedAt     DateTime    @updatedAt
   beds          Bed[]
   serviceUnit   ServiceUnit @relation(fields: [serviceUnitId], references: [id])
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 model Bed {
@@ -294,6 +351,10 @@ model Bed {
   createdAt         DateTime         @default(now())
   hospitalization   Hospitalization? @relation("HospitalizationBed", fields: [hospitalizationId], references: [id])
   room              Room             @relation(fields: [roomId], references: [id])
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 model MedicalHistory {
@@ -308,6 +369,10 @@ model MedicalHistory {
   deletedAt   DateTime?
   createdBy   User?     @relation("MedicalHistoryCreatedBy", fields: [createdById], references: [id])
   patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 /// Appointments and scheduling.
@@ -327,6 +392,10 @@ model Appointment {
   requestedBy     User?             @relation("AppointmentRequester", fields: [requestedById], references: [id])
   serviceUnit     ServiceUnit?      @relation(fields: [serviceUnitId], references: [id])
   consultation    Consultation?     @relation("AppointmentConsultation")
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 
   @@index([scheduledAt])
   @@index([status])
@@ -350,6 +419,10 @@ model Hospitalization {
   patient         Patient               @relation(fields: [patientId], references: [id], onDelete: Cascade)
   physician       User?                 @relation("HospitalizationPhysician", fields: [physicianId], references: [id])
   ServiceUnit     ServiceUnit?          @relation(fields: [serviceUnitId], references: [id])
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 /// Vital signs recorded by nurses.
@@ -369,6 +442,10 @@ model VitalSign {
   consultation   Consultation? @relation(fields: [consultationId], references: [id])
   patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
   recordedBy     User?         @relation("VitalSignRecordedBy", fields: [recordedById], references: [id])
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 
   @@index([patientId, type, recordedAt])
 }
@@ -401,6 +478,10 @@ model Consultation {
   surgicalPlanned   Surgery[]
   vitalSigns        VitalSign[]
 
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
+
   @@index([patientId, status])
   @@index([providerId])
 }
@@ -416,6 +497,10 @@ model ConsultationNote {
   deletedAt      DateTime?
   author         User?        @relation("ConsultationNoteAuthor", fields: [authorId], references: [id])
   consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 /// Prescriptions and pharmacy workflow.
@@ -436,6 +521,10 @@ model Prescription {
   prescriber        User?              @relation("PrescriptionPrescriber", fields: [prescriberId], references: [id])
   lineItems         PrescriptionLine[]
 
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
+
   @@index([patientId, status])
 }
 
@@ -454,6 +543,10 @@ model PrescriptionLine {
   deletedAt      DateTime?
   medication     Medication          @relation(fields: [medicationId], references: [id])
   prescription   Prescription        @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 model Medication {
@@ -470,6 +563,10 @@ model Medication {
   deletedAt             DateTime?
   pharmacyDispenseLines PharmacyDispenseLine[]
   prescriptionLines     PrescriptionLine[]
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 model PharmacyDispense {
@@ -486,6 +583,10 @@ model PharmacyDispense {
   dispensedBy    User?                  @relation("PharmacyDispenseDispenser", fields: [dispensedById], references: [id])
   prescription   Prescription           @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
   lines          PharmacyDispenseLine[]
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 model PharmacyDispenseLine {
@@ -500,6 +601,10 @@ model PharmacyDispenseLine {
   deletedAt          DateTime?
   medication         Medication       @relation(fields: [medicationId], references: [id])
   pharmacyDispense   PharmacyDispense @relation(fields: [pharmacyDispenseId], references: [id], onDelete: Cascade)
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 /// Laboratory workflow.
@@ -523,6 +628,10 @@ model LabRequest {
   requestedBy    User?            @relation("LabRequestRequester", fields: [requestedById], references: [id])
   results        LabResult[]
 
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
+
   @@index([status])
 }
 
@@ -544,6 +653,10 @@ model LabResult {
   deletedAt      DateTime?
   labRequest     LabRequest @relation(fields: [labRequestId], references: [id], onDelete: Cascade)
   reportedBy     User?      @relation("LabResultReporter", fields: [reportedById], references: [id])
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 
   @@index([resultCode])
 }
@@ -569,6 +682,10 @@ model ImagingRequest {
   patient        Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
   requestedBy    User?                @relation("ImagingRequestRequester", fields: [requestedById], references: [id])
 
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
+
   @@index([status])
 }
 
@@ -587,6 +704,10 @@ model ImagingReport {
   deletedAt        DateTime?
   imagingRequest   ImagingRequest @relation(fields: [imagingRequestId], references: [id], onDelete: Cascade)
   interpretedBy    User?          @relation("ImagingReportInterpreter", fields: [interpretedById], references: [id])
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 /// Surgery and bloc op�ratoire.
@@ -600,6 +721,10 @@ model OperatingRoom {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
   surgeries Surgery[]
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 model Surgery {
@@ -626,6 +751,10 @@ model Surgery {
   patient            Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
   surgeon            User?          @relation("SurgerySurgeon", fields: [surgeonId], references: [id])
 
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
+
   @@index([status])
   @@index([scheduledAt])
 }
@@ -649,6 +778,10 @@ model Invoice {
   patient     Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
   payments    Payment[]
 
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
+
   @@index([status])
 }
 
@@ -666,6 +799,10 @@ model Payment {
   deletedAt DateTime?
   invoice   Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   paidBy    User?         @relation("PaymentPayer", fields: [paidById], references: [id])
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 model RefreshToken {
@@ -675,6 +812,10 @@ model RefreshToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 }
 
 model Notification {
@@ -697,6 +838,10 @@ model Notification {
   patient       Patient?             @relation(fields: [patientId], references: [id], onDelete: Cascade)
   recipient     User?                @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
 
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
+
   @@index([recipientId, status])
 }
 
@@ -712,6 +857,10 @@ model AuditLog {
   createdAt DateTime    @default(now())
   actor     User?       @relation(fields: [actorId], references: [id])
   patient   Patient?    @relation(fields: [patientId], references: [id])
+
+  syncedAt DateTime?
+  sourceNode String?
+  version Int @default(1)
 
   @@index([actorId])
   @@index([patientId])
@@ -940,4 +1089,20 @@ enum DepartmentType {
   PHARMACY
   BILLING
   ADMINISTRATION
+}
+
+model SyncEvent {
+  id String @id @default(uuid())
+
+  tableName String
+
+  recordId String
+
+  operation String
+
+  payload Json
+
+  synced Boolean @default(false)
+
+  createdAt DateTime @default(now())
 }

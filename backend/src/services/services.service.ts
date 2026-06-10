@@ -8,7 +8,7 @@ export class ServicesService {
   constructor(private readonly prisma: PrismaService) {}
 
   create(data: CreateServiceDto) {
-    return this.prisma.service.create({ data });
+    return this.prisma.service.create({ data: data as any });
   }
 
   findAll() {
@@ -23,7 +23,7 @@ export class ServicesService {
 
   async update(id: string, dto: UpdateServiceDto) {
     await this.findOne(id);
-    return this.prisma.service.update({ where: { id }, data: dto });
+    return this.prisma.service.update({ where: { id }, data: dto as any });
   }
 
   async addTarif(dto: any) {
