@@ -16,12 +16,11 @@ model Role {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   deletedAt   DateTime?
+  syncedAt    DateTime?
+  sourceNode  String?
+  version     Int              @default(1)
   permissions RolePermission[]
   userRoles   UserRole[]
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 model Permission {
@@ -32,10 +31,10 @@ model Permission {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   deletedAt   DateTime?
+  syncedAt    DateTime?
+  sourceNode  String?
+  version     Int              @default(1)
   roles       RolePermission[]
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@unique([action, resource])
 }
@@ -45,11 +44,11 @@ model RolePermission {
   roleId       String
   permissionId String
   createdAt    DateTime   @default(now())
+  syncedAt     DateTime?
+  sourceNode   String?
+  version      Int        @default(1)
   permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
   role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@unique([roleId, permissionId])
 }
@@ -83,6 +82,9 @@ model User {
   createdAt                   DateTime             @default(now())
   updatedAt                   DateTime             @updatedAt
   deletedAt                   DateTime?
+  syncedAt                    DateTime?
+  sourceNode                  String?
+  version                     Int                  @default(1)
   appointmentsRequested       Appointment[]        @relation("AppointmentRequester")
   auditLogs                   AuditLog[]
   providedConsultations       Consultation[]       @relation("ConsultationProvider")
@@ -108,25 +110,21 @@ model User {
   surgeriesAsSurgeon          Surgery[]            @relation("SurgerySurgeon")
   roles                       UserRole[]
   vitalSignsRecorded          VitalSign[]          @relation("VitalSignRecordedBy")
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@index([primaryRole])
 }
 
 model UserRole {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   userId     String
   roleId     String
-  active     Boolean  @default(true)
-  assignedAt DateTime @default(now())
-  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  syncedAt DateTime?
+  active     Boolean   @default(true)
+  assignedAt DateTime  @default(now())
+  syncedAt   DateTime?
   sourceNode String?
-  version Int @default(1)
+  version    Int       @default(1)
+  role       Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, roleId])
 }
@@ -140,11 +138,10 @@ model Department {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   deletedAt   DateTime?
+  syncedAt    DateTime?
+  sourceNode  String?
+  version     Int            @default(1)
   services    ServiceUnit[]
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 model ServiceUnit {
@@ -157,14 +154,13 @@ model ServiceUnit {
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   deletedAt        DateTime?
+  syncedAt         DateTime?
+  sourceNode       String?
+  version          Int               @default(1)
   appointments     Appointment[]
   hospitalizations Hospitalization[]
   rooms            Room[]
   department       Department        @relation(fields: [departmentId], references: [id])
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@unique([departmentId, name])
 }
@@ -177,79 +173,74 @@ model Service {
   active       Boolean              @default(true)
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
+  syncedAt     DateTime?
+  sourceNode   String?
+  version      Int                  @default(1)
   patients     Patient[]
   responsables ServiceResponsable[]
   staff        ServiceStaff[]
   tarifs       ServiceTarif[]
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 /// ServiceTarif allows historisation of service prices
 model ServiceTarif {
-  id        String    @id @default(uuid())
-  serviceId String
-  prix      Decimal   @db.Decimal(12, 2)
-  dateDebut DateTime  @default(now())
-  dateFin   DateTime?
-  actif     Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  service   Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-
-  syncedAt DateTime?
+  id         String    @id @default(uuid())
+  serviceId  String
+  prix       Decimal   @db.Decimal(12, 2)
+  dateDebut  DateTime  @default(now())
+  dateFin    DateTime?
+  actif      Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  syncedAt   DateTime?
   sourceNode String?
-  version Int @default(1)
+  version    Int       @default(1)
+  service    Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 }
 
 model AdmissionFee {
-  id          String   @id @default(uuid())
-  label       String   @default("Frais de fiche d'admission")
-  amount      Decimal  @db.Decimal(12, 2)
-  currency    String   @default("USD")
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  syncedAt DateTime?
+  id         String    @id @default(uuid())
+  label      String    @default("Frais de fiche d'admission")
+  amount     Decimal   @db.Decimal(12, 2)
+  currency   String    @default("USD")
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  syncedAt   DateTime?
   sourceNode String?
-  version Int @default(1)
+  version    Int       @default(1)
 }
 
 model ServiceStaff {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   serviceId     String
   userId        String
   roleInService String?
-  actif         Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  service       Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
+  actif         Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  syncedAt      DateTime?
+  sourceNode    String?
+  version       Int       @default(1)
+  service       Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([serviceId, userId])
 }
 
 /// ServiceResponsable links services to users (physicians)
 model ServiceResponsable {
-  id        String   @id @default(uuid())
-  serviceId String
-  userId    String
-  principal Boolean  @default(false)
-  actif     Boolean  @default(true)
-  createdAt DateTime @default(now())
-  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  syncedAt DateTime?
+  id         String    @id @default(uuid())
+  serviceId  String
+  userId     String
+  principal  Boolean   @default(false)
+  actif      Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  syncedAt   DateTime?
   sourceNode String?
-  version Int @default(1)
+  version    Int       @default(1)
+  service    Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 /// Patients and clinical records.
@@ -283,6 +274,9 @@ model Patient {
   deletedAt         DateTime?
   receptionistId    String?
   serviceId         String?
+  syncedAt          DateTime?
+  sourceNode        String?
+  version           Int                   @default(1)
   appointments      Appointment[]
   auditLogs         AuditLog[]
   consultations     Consultation[]
@@ -294,35 +288,30 @@ model Patient {
   notifications     Notification[]
   receptionist      User?                 @relation("PatientReceptionist", fields: [receptionistId], references: [id])
   service           Service?              @relation(fields: [serviceId], references: [id])
+  familyContacts    PatientContact[]
   prescriptions     Prescription[]
   surgeries         Surgery[]
   vitalSigns        VitalSign[]
-  familyContacts    PatientContact[]
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@index([lastName, firstName])
   @@index([dateOfBirth])
 }
 
 model PatientContact {
-  id          String   @id @default(uuid())
-  patientId   String
-  name        String
+  id           String    @id @default(uuid())
+  patientId    String
+  name         String
   relationship String?
-  phone       String?
-  email       String?
-  address     String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  deletedAt   DateTime?
-  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
+  phone        String?
+  email        String?
+  address      String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+  syncedAt     DateTime?
+  sourceNode   String?
+  version      Int       @default(1)
+  patient      Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@index([patientId])
 }
@@ -334,12 +323,11 @@ model Room {
   status        RoomStatus  @default(AVAILABLE)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+  syncedAt      DateTime?
+  sourceNode    String?
+  version       Int         @default(1)
   beds          Bed[]
   serviceUnit   ServiceUnit @relation(fields: [serviceUnitId], references: [id])
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 model Bed {
@@ -349,12 +337,11 @@ model Bed {
   status            BedStatus        @default(FREE)
   hospitalizationId String?          @unique
   createdAt         DateTime         @default(now())
+  syncedAt          DateTime?
+  sourceNode        String?
+  version           Int              @default(1)
   hospitalization   Hospitalization? @relation("HospitalizationBed", fields: [hospitalizationId], references: [id])
   room              Room             @relation(fields: [roomId], references: [id])
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 model MedicalHistory {
@@ -367,12 +354,11 @@ model MedicalHistory {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
+  syncedAt    DateTime?
+  sourceNode  String?
+  version     Int       @default(1)
   createdBy   User?     @relation("MedicalHistoryCreatedBy", fields: [createdById], references: [id])
   patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 /// Appointments and scheduling.
@@ -388,14 +374,13 @@ model Appointment {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   deletedAt       DateTime?
+  syncedAt        DateTime?
+  sourceNode      String?
+  version         Int               @default(1)
   patient         Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
   requestedBy     User?             @relation("AppointmentRequester", fields: [requestedById], references: [id])
   serviceUnit     ServiceUnit?      @relation(fields: [serviceUnitId], references: [id])
   consultation    Consultation?     @relation("AppointmentConsultation")
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@index([scheduledAt])
   @@index([status])
@@ -413,16 +398,15 @@ model Hospitalization {
   bedNumber       String?
   physicianId     String?
   nurseInChargeId String?
+  syncedAt        DateTime?
+  sourceNode      String?
+  version         Int                   @default(1)
   bed             Bed?                  @relation("HospitalizationBed")
   Consultation    Consultation[]
   nurseInCharge   User?                 @relation("HospitalizationNurse", fields: [nurseInChargeId], references: [id])
   patient         Patient               @relation(fields: [patientId], references: [id], onDelete: Cascade)
   physician       User?                 @relation("HospitalizationPhysician", fields: [physicianId], references: [id])
   ServiceUnit     ServiceUnit?          @relation(fields: [serviceUnitId], references: [id])
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 /// Vital signs recorded by nurses.
@@ -439,13 +423,12 @@ model VitalSign {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   deletedAt      DateTime?
+  syncedAt       DateTime?
+  sourceNode     String?
+  version        Int           @default(1)
   consultation   Consultation? @relation(fields: [consultationId], references: [id])
   patient        Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
   recordedBy     User?         @relation("VitalSignRecordedBy", fields: [recordedById], references: [id])
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@index([patientId, type, recordedAt])
 }
@@ -467,6 +450,9 @@ model Consultation {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   deletedAt         DateTime?
+  syncedAt          DateTime?
+  sourceNode        String?
+  version           Int                @default(1)
   appointment       Appointment        @relation("AppointmentConsultation", fields: [appointmentId], references: [id], onDelete: Cascade)
   hospitalization   Hospitalization?   @relation(fields: [hospitalizationId], references: [id])
   patient           Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
@@ -477,10 +463,6 @@ model Consultation {
   prescriptions     Prescription[]
   surgicalPlanned   Surgery[]
   vitalSigns        VitalSign[]
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@index([patientId, status])
   @@index([providerId])
@@ -495,12 +477,11 @@ model ConsultationNote {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   deletedAt      DateTime?
+  syncedAt       DateTime?
+  sourceNode     String?
+  version        Int          @default(1)
   author         User?        @relation("ConsultationNoteAuthor", fields: [authorId], references: [id])
   consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 /// Prescriptions and pharmacy workflow.
@@ -515,15 +496,14 @@ model Prescription {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   deletedAt         DateTime?
+  syncedAt          DateTime?
+  sourceNode        String?
+  version           Int                @default(1)
   pharmacyDispenses PharmacyDispense[]
   consultation      Consultation       @relation(fields: [consultationId], references: [id], onDelete: Cascade)
   patient           Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
   prescriber        User?              @relation("PrescriptionPrescriber", fields: [prescriberId], references: [id])
   lineItems         PrescriptionLine[]
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@index([patientId, status])
 }
@@ -541,12 +521,11 @@ model PrescriptionLine {
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
   deletedAt      DateTime?
+  syncedAt       DateTime?
+  sourceNode     String?
+  version        Int                 @default(1)
   medication     Medication          @relation(fields: [medicationId], references: [id])
   prescription   Prescription        @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 model Medication {
@@ -561,12 +540,11 @@ model Medication {
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   deletedAt             DateTime?
+  syncedAt              DateTime?
+  sourceNode            String?
+  version               Int                    @default(1)
   pharmacyDispenseLines PharmacyDispenseLine[]
   prescriptionLines     PrescriptionLine[]
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 model PharmacyDispense {
@@ -580,13 +558,12 @@ model PharmacyDispense {
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
   deletedAt      DateTime?
+  syncedAt       DateTime?
+  sourceNode     String?
+  version        Int                    @default(1)
   dispensedBy    User?                  @relation("PharmacyDispenseDispenser", fields: [dispensedById], references: [id])
   prescription   Prescription           @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
   lines          PharmacyDispenseLine[]
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 model PharmacyDispenseLine {
@@ -599,12 +576,11 @@ model PharmacyDispenseLine {
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   deletedAt          DateTime?
+  syncedAt           DateTime?
+  sourceNode         String?
+  version            Int              @default(1)
   medication         Medication       @relation(fields: [medicationId], references: [id])
   pharmacyDispense   PharmacyDispense @relation(fields: [pharmacyDispenseId], references: [id], onDelete: Cascade)
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 /// Laboratory workflow.
@@ -623,14 +599,13 @@ model LabRequest {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   deletedAt      DateTime?
+  syncedAt       DateTime?
+  sourceNode     String?
+  version        Int              @default(1)
   consultation   Consultation     @relation(fields: [consultationId], references: [id], onDelete: Cascade)
   patient        Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
   requestedBy    User?            @relation("LabRequestRequester", fields: [requestedById], references: [id])
   results        LabResult[]
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@index([status])
 }
@@ -651,12 +626,11 @@ model LabResult {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   deletedAt      DateTime?
+  syncedAt       DateTime?
+  sourceNode     String?
+  version        Int        @default(1)
   labRequest     LabRequest @relation(fields: [labRequestId], references: [id], onDelete: Cascade)
   reportedBy     User?      @relation("LabResultReporter", fields: [reportedById], references: [id])
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@index([resultCode])
 }
@@ -677,14 +651,13 @@ model ImagingRequest {
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
   deletedAt      DateTime?
+  syncedAt       DateTime?
+  sourceNode     String?
+  version        Int                  @default(1)
   report         ImagingReport?
   consultation   Consultation         @relation(fields: [consultationId], references: [id], onDelete: Cascade)
   patient        Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
   requestedBy    User?                @relation("ImagingRequestRequester", fields: [requestedById], references: [id])
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@index([status])
 }
@@ -702,29 +675,27 @@ model ImagingReport {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   deletedAt        DateTime?
+  syncedAt         DateTime?
+  sourceNode       String?
+  version          Int            @default(1)
   imagingRequest   ImagingRequest @relation(fields: [imagingRequestId], references: [id], onDelete: Cascade)
   interpretedBy    User?          @relation("ImagingReportInterpreter", fields: [interpretedById], references: [id])
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 }
 
 /// Surgery and bloc op�ratoire.
 model OperatingRoom {
-  id        String    @id @default(uuid())
-  name      String    @unique
-  location  String?
-  capacity  Int       @default(1)
-  active    Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  surgeries Surgery[]
-
-  syncedAt DateTime?
+  id         String    @id @default(uuid())
+  name       String    @unique
+  location   String?
+  capacity   Int       @default(1)
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+  syncedAt   DateTime?
   sourceNode String?
-  version Int @default(1)
+  version    Int       @default(1)
+  surgeries  Surgery[]
 }
 
 model Surgery {
@@ -745,15 +716,14 @@ model Surgery {
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
   deletedAt          DateTime?
+  syncedAt           DateTime?
+  sourceNode         String?
+  version            Int            @default(1)
   anesthesiologist   User?          @relation("SurgeryAnesthesiologist", fields: [anesthesiologistId], references: [id])
   consultation       Consultation?  @relation(fields: [consultationId], references: [id])
   operatingRoom      OperatingRoom? @relation(fields: [operatingRoomId], references: [id])
   patient            Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
   surgeon            User?          @relation("SurgerySurgeon", fields: [surgeonId], references: [id])
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@index([status])
   @@index([scheduledAt])
@@ -774,48 +744,45 @@ model Invoice {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   deletedAt   DateTime?
+  syncedAt    DateTime?
+  sourceNode  String?
+  version     Int           @default(1)
   issuedBy    User?         @relation("InvoiceIssuer", fields: [issuedById], references: [id])
   patient     Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
   payments    Payment[]
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@index([status])
 }
 
 model Payment {
-  id        String        @id @default(uuid())
-  invoiceId String
-  paidById  String?
-  amount    Decimal       @db.Decimal(12, 2)
-  method    PaymentMethod
-  paidAt    DateTime      @default(now())
-  reference String?
-  note      String?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  deletedAt DateTime?
-  invoice   Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  paidBy    User?         @relation("PaymentPayer", fields: [paidById], references: [id])
-
-  syncedAt DateTime?
+  id         String        @id @default(uuid())
+  invoiceId  String
+  paidById   String?
+  amount     Decimal       @db.Decimal(12, 2)
+  method     PaymentMethod
+  paidAt     DateTime      @default(now())
+  reference  String?
+  note       String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  deletedAt  DateTime?
+  syncedAt   DateTime?
   sourceNode String?
-  version Int @default(1)
+  version    Int           @default(1)
+  invoice    Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  paidBy     User?         @relation("PaymentPayer", fields: [paidById], references: [id])
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
-  tokenHash String
-  userId    String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  syncedAt DateTime?
+  id         String    @id @default(uuid())
+  tokenHash  String
+  userId     String
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  syncedAt   DateTime?
   sourceNode String?
-  version Int @default(1)
+  version    Int       @default(1)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Notification {
@@ -834,37 +801,45 @@ model Notification {
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
   deletedAt     DateTime?
+  syncedAt      DateTime?
+  sourceNode    String?
+  version       Int                  @default(1)
   author        User?                @relation("NotificationAuthor", fields: [authorId], references: [id])
   patient       Patient?             @relation(fields: [patientId], references: [id], onDelete: Cascade)
   recipient     User?                @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
-
-  syncedAt DateTime?
-  sourceNode String?
-  version Int @default(1)
 
   @@index([recipientId, status])
 }
 
 model AuditLog {
-  id        String      @id @default(uuid())
-  actorId   String?
-  patientId String?
-  action    AuditAction
-  entity    String
-  entityId  String
-  summary   String
-  metadata  Json?
-  createdAt DateTime    @default(now())
-  actor     User?       @relation(fields: [actorId], references: [id])
-  patient   Patient?    @relation(fields: [patientId], references: [id])
-
-  syncedAt DateTime?
+  id         String      @id @default(uuid())
+  actorId    String?
+  patientId  String?
+  action     AuditAction
+  entity     String
+  entityId   String
+  summary    String
+  metadata   Json?
+  createdAt  DateTime    @default(now())
+  syncedAt   DateTime?
   sourceNode String?
-  version Int @default(1)
+  version    Int         @default(1)
+  actor      User?       @relation(fields: [actorId], references: [id])
+  patient    Patient?    @relation(fields: [patientId], references: [id])
 
   @@index([actorId])
   @@index([patientId])
   @@index([entity, entityId])
+}
+
+model SyncEvent {
+  id        String   @id @default(uuid())
+  tableName String
+  recordId  String
+  operation String
+  payload   Json
+  synced    Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
 /// Shared enums for RBAC and workflows.
@@ -1089,20 +1064,4 @@ enum DepartmentType {
   PHARMACY
   BILLING
   ADMINISTRATION
-}
-
-model SyncEvent {
-  id String @id @default(uuid())
-
-  tableName String
-
-  recordId String
-
-  operation String
-
-  payload Json
-
-  synced Boolean @default(false)
-
-  createdAt DateTime @default(now())
 }
