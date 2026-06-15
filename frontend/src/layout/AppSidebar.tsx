@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation } from "react-router-dom";
 
 // Assume these icons are imported from an icon library
 import {
@@ -223,7 +223,7 @@ const cashierNavItems: NavItem[] = [
   },
   {
     icon: <ChatIcon />,
-    name: "Messages / Autorisations",
+    name: "Autorisations",
     path: "/caissier/messages",
   },
   {
@@ -236,6 +236,32 @@ const cashierNavItems: NavItem[] = [
     name: "Profil caissier",
     path: "/caissier/profile",
   },
+];
+
+const administrationNavItems: NavItem[] = [
+  { icon: <GridIcon />, name: "Dashboard admin", path: "/administration" },
+  { icon: <UserCircleIcon />, name: "Personnel", path: "/administration/personnel" },
+  { icon: <BoxCubeIcon />, name: "Services", path: "/administration/services" },
+  { icon: <FolderIcon />, name: "Departements", path: "/administration/departements" },
+  { icon: <CalenderIcon />, name: "Salles & lits", path: "/administration/salles" },
+  { icon: <DocsIcon />, name: "Rapports", path: "/administration/rapports" },
+  { icon: <TaskIcon />, name: "Stock pharmacie", path: "/administration/stock" },
+  { icon: <LockIcon />, name: "Profil admin", path: "/administration/profile" },
+];
+
+const pharmacyNavItems: NavItem[] = [
+  { icon: <GridIcon />, name: "Dashboard pharmacie", path: "/pharmacie" },
+  { icon: <DocsIcon />, name: "Ordonnances", path: "/pharmacie/ordonnances" },
+  { icon: <TaskIcon />, name: "Delivrance", path: "/pharmacie/delivrance" },
+  { icon: <FolderIcon />, name: "Historique", path: "/pharmacie/historique" },
+  { icon: <BoxCubeIcon />, name: "Stock", path: "/pharmacie/stock" },
+  { icon: <ChatIcon />, name: "Messages", path: "/pharmacie/messages" },
+  { icon: <LockIcon />, name: "Profil pharmacie", path: "/pharmacie/profile" },
+];
+
+const superAdminNavItems: NavItem[] = [
+  { icon: <GridIcon />, name: "Dashboard DG", path: "/admin" },
+  { icon: <LockIcon />, name: "Profil super admin", path: "/admin/profile" },
 ];
 
 const othersItems: NavItem[] = [];
@@ -252,6 +278,9 @@ const AppSidebar: React.FC = () => {
   const isNurseSection = location.pathname.startsWith("/nurse");
   const isDoctorSection = location.pathname.startsWith("/doctor");
   const isCashierSection = location.pathname.startsWith("/caissier");
+  const isAdministrationSection = location.pathname.startsWith("/administration");
+  const isPharmacySection = location.pathname.startsWith("/pharmacie");
+  const isSuperAdminSection = location.pathname.startsWith("/admin");
   const activeNavItems = isDoctorSection
     ? doctorNavItems
     : isNurseSection
@@ -260,6 +289,12 @@ const AppSidebar: React.FC = () => {
     ? receptionNavItems
     : isCashierSection
     ? cashierNavItems
+    : isAdministrationSection
+    ? administrationNavItems
+    : isPharmacySection
+    ? pharmacyNavItems
+    : isSuperAdminSection
+    ? superAdminNavItems
     : navItems;
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(
     {}
@@ -504,7 +539,15 @@ const AppSidebar: React.FC = () => {
                 }`}
               >
                 {isExpanded || isHovered || isMobileOpen ? (
-                  isReceptionSection ? "INTERFACE RÉCEPTION" : "PATIENT INTERFACE"
+                  isReceptionSection
+                    ? "INTERFACE RÉCEPTION"
+                    : isAdministrationSection
+                    ? "ADMINISTRATION"
+                    : isPharmacySection
+                    ? "PHARMACIE"
+                    : isSuperAdminSection
+                    ? "SUPER ADMIN"
+                    : "PATIENT INTERFACE"
                 ) : (
                   <HorizontaLDots className="size-6" />
                 )}

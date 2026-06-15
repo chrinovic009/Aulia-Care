@@ -16,6 +16,7 @@ import { BillingModule } from './billing/billing.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AuditModule } from './audit/audit.module';
 import { ServicesModule } from './services/services.module';
+import { MessagesModule } from './messages/messages.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { ServicesModule } from './services/services.module';
     SurgeryModule,
     BillingModule,
     ServicesModule,
+    MessagesModule,
     NotificationsModule,
     AuditModule,
   ],

@@ -1,9 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-//import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-//import { RolesGuard } from '../auth/roles.guard';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 
 //@UseGuards(JwtAuthGuard, RolesGuard)
@@ -15,6 +15,23 @@ export class UsersController {
   @Roles('SUPER_ADMIN', 'ADMIN')
   findAll() {
     return this.usersService.findAll();
+  }
+
+  @Get('contacts')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(
+    'SUPER_ADMIN',
+    'ADMIN',
+    'RECEPTIONIST',
+    'NURSE',
+    'PHYSICIAN',
+    'LAB_TECHNICIAN',
+    'RADIOLOGIST',
+    'PHARMACIST',
+    'PATIENT',
+  )
+  findContacts(@Request() req: any) {
+    return this.usersService.findContactsForRole(req.user?.role, req.user?.userId);
   }
 
   @Get(':id')

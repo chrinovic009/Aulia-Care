@@ -6,7 +6,7 @@ import {
   GroupIcon,
 } from "../../icons";
 import Badge from "../ui/badge/Badge";
-import { fetchPatientsFromDatabase } from "../../api/reception";
+import { fetchAppointmentsFromDatabase, fetchPatientsFromDatabase } from "../../api/reception";
 
 export default function ReceptionMetrics() {
   const [waitingCount, setWaitingCount] = useState(0);
@@ -14,7 +14,10 @@ export default function ReceptionMetrics() {
 
   const refreshMetrics = async () => {
     try {
-      const patients = await fetchPatientsFromDatabase();
+      const [patients, appointments] = await Promise.all([
+        fetchPatientsFromDatabase(),
+        fetchAppointmentsFromDatabase(),
+      ]);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const isToday = (dateString?: string) => {
@@ -25,13 +28,10 @@ export default function ReceptionMetrics() {
       };
 
       setWaitingCount(
-        patients.filter((patient) => patient.workflowStatus === "EN_ATTENTE_DE_PAIEMENT").length,
+        patients.filter((patient) => isToday(patient.createdAt)).length,
       );
       setTodayAppointments(
-        patients.filter(
-          (patient) =>
-            patient.workflowStatus === "EN_ATTENTE_INFIRMERIE" && isToday(patient.createdAt),
-        ).length,
+        appointments.filter((appointment) => isToday(appointment.scheduledAt || appointment.requestedAt || appointment.createdAt)).length,
       );
     } catch (error) {
       console.error("Unable to load reception metrics from Prisma DB:", error);
@@ -68,7 +68,7 @@ export default function ReceptionMetrics() {
         <div className="flex items-end justify-between mt-5">
           <div>
             <span className="text-sm text-gray-500 dark:text-gray-400">
-              Patients en attente
+              Patients reÃ§us
             </span>
             <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-white/90">
               {waitingCount} Patients

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useLocation } from "react-router";
+import { useLocation } from "react-router-dom";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 

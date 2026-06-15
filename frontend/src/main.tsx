@@ -7,14 +7,22 @@ import App from "./App.tsx";
 import { AppWrapper } from "./components/common/PageMeta.tsx";
 import { ThemeProvider } from "./context/ThemeContext.tsx";
 import { AuthProvider } from "./context/AuthContext.tsx";
+import { RealtimeProvider } from "./context/RealtimeContext.tsx";
+import { registerSW } from "virtual:pwa-register";
+
+registerSW({
+  immediate: true,
+});
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
       <AuthProvider>
-        <AppWrapper>
-          <App />
-        </AppWrapper>
+        <RealtimeProvider>
+          <AppWrapper>
+            <App />
+          </AppWrapper>
+        </RealtimeProvider>
       </AuthProvider>
     </ThemeProvider>
   </StrictMode>,

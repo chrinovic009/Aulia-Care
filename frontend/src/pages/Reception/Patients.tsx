@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { useAuth } from "../../context/AuthContext";
@@ -70,6 +71,8 @@ const badgeFromInsuranceStatus = (status: InsuranceInfo["status"]) => {
 
 export default function ReceptionPatients() {
   const { currentUser } = useAuth();
+  const location = useLocation();
+  const navigationState = location.state as { patientId?: string; openAppointment?: boolean } | undefined;
   const [search, setSearch] = useState("");
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string>("");
@@ -201,7 +204,7 @@ export default function ReceptionPatients() {
               body { font-family: "Calibri", Arial, sans-serif; font-size: 11pt; line-height: 1.3; color: #333; }
               .page { page-break-after: always; min-height: 29.7cm; position: relative; padding: 1.5cm; }
               .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 20px; }
-              .clinic-logo { font-weight: bold; font-size: 16pt; color: #1e3a8a; }
+              .clinic-logo { font-weight: bold; font-size: 16pt; color: #b41d1d; }
               .clinic-tagline { font-size: 9pt; color: #666; margin-top: 4px; }
               .clinic-contact { font-size: 8pt; color: #666; margin-top: 4px; }
               .section { margin-bottom: 16px; }
@@ -213,13 +216,13 @@ export default function ReceptionPatients() {
               .value { width: 70%; }
               .footer { position: absolute; bottom: 1.5cm; left: 1.5cm; right: 1.5cm; border-top: 1px solid #999; padding-top: 8px; text-align: center; font-size: 8pt; color: #666; }
               .patient-header { display: flex; justify-content: space-between; margin-bottom: 12px; }
-              .patient-name { font-size: 14pt; font-weight: bold; color: #1e3a8a; }
+              .patient-name { font-size: 14pt; font-weight: bold; color: #1e8a58; }
               .patient-id { font-size: 9pt; color: #666; }
             }
             body { font-family: "Calibri", Arial, sans-serif; font-size: 11pt; color: #333; }
             .page { min-height: 29.7cm; padding: 1.5cm; border: 1px solid #ddd; }
             .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 20px; }
-            .clinic-logo { font-weight: bold; font-size: 16pt; color: #1e3a8a; }
+            .clinic-logo { font-weight: bold; font-size: 16pt; color: #b41d1d; }
             .clinic-tagline { font-size: 9pt; color: #666; margin-top: 4px; }
             .clinic-contact { font-size: 8pt; color: #666; margin-top: 4px; }
             .section { margin-bottom: 16px; }
@@ -231,7 +234,7 @@ export default function ReceptionPatients() {
             .value { width: 70%; }
             .footer { border-top: 1px solid #999; padding-top: 8px; text-align: center; font-size: 8pt; color: #666; margin-top: 20px; }
             .patient-header { display: flex; justify-content: space-between; margin-bottom: 12px; }
-            .patient-name { font-size: 14pt; font-weight: bold; color: #1e3a8a; }
+            .patient-name { font-size: 14pt; font-weight: bold; color: #1e8a58; }
             .patient-id { font-size: 9pt; color: #666; }
           </style>
         </head>
@@ -240,7 +243,7 @@ export default function ReceptionPatients() {
             <!-- Header -->
             <div class="header">
               <img src="../../../public/images/favicon.png" alt="" width="40">
-              <div class="clinic-logo">D7 CLINIQUE</div>
+              <div class="clinic-logo">D7 CLINIC</div>
               <div class="clinic-tagline">Centre de santé intégré - Service de qualité</div>
               <div class="clinic-contact">Zone de santé : Dilala | Tel : +243987299227 | Email : fondationd7clinic@gmail.com</div>
             </div>
@@ -318,7 +321,6 @@ export default function ReceptionPatients() {
             <!-- Footer -->
             <div class="footer">
               <div style="margin-bottom: 4px;">N°7 Avenue de l'aéroport coin Avenue D7 | Commune de Dilala | Q/RVA3 | Kolwezi</div>
-              <div>Zone de santé : Dilala | Tel : +243987299227 | Email : fondationd7clinic@gmail.com</div>
             </div>
           </div>
         </body>
@@ -397,7 +399,13 @@ export default function ReceptionPatients() {
           const normalized = (ps as any[]).map(ensurePatientDefaults);
           console.log('Normalized patients:', normalized);
           setPatients(normalized);
-          setSelectedPatientId(normalized[0].id);
+          const requestedPatient = navigationState?.patientId
+            ? normalized.find((patient) => patient.id === navigationState.patientId)
+            : null;
+          setSelectedPatientId((requestedPatient || normalized[0]).id);
+          if (requestedPatient && navigationState?.openAppointment) {
+            setShowAppointmentModal(true);
+          }
         } else {
           // No patients from backend: use empty list and clear selection
           setPatients([]);
@@ -435,7 +443,7 @@ export default function ReceptionPatients() {
         setDoctors((Array.isArray(docs) ? docs : []).concat(Array.isArray(docsAlt) ? docsAlt : []));
       } catch (e) {}
     })();
-  }, []);
+  }, [navigationState?.openAppointment, navigationState?.patientId]);
 
   const handleAddContact = async (contact: FamilyContact) => {
     if (!selectedPatient?.id) return alert('Aucun patient sélectionné');
@@ -466,14 +474,19 @@ export default function ReceptionPatients() {
   const handleCreateAppointment = async (opts: { datetime: string; type: string; doctorId?: string; notes?: string }) => {
     if (!selectedPatient?.id) return alert('Aucun patient sélectionné');
     const { datetime, type, doctorId, notes } = opts;
+    const selectedService = appointmentTypes.find((item: any) => {
+      const id = item.id || "";
+      const name = item.name || item.title || "";
+      return id === type || name === type;
+    });
     const payload = {
       patientId: selectedPatient.id,
-      patientName: selectedPatient.name,
+      requestedById: currentUser?.id || undefined,
+      serviceUnitId: selectedService?.id || undefined,
       scheduledAt: datetime,
-      type: type || undefined,
-      doctorId: doctorId || undefined,
-      notes: notes || undefined,
-      createdBy: currentUser?.id || currentUser?.displayName || currentUser?.firstName || 'reception',
+      reason: [notes || type || "Nouvelle visite", doctorId ? `Medecin: ${doctorId}` : ""].filter(Boolean).join(" - "),
+      status: "SCHEDULED",
+      durationMinutes: 30,
     };
     try {
       const api = await import('../../api/reception');
@@ -829,7 +842,7 @@ export default function ReceptionPatients() {
               <label className="text-sm">Type</label>
               <select id="appt-type" value={selectedApptType} onChange={(e) => setSelectedApptType(e.target.value)} className="w-full rounded-md border px-3 py-2">
                 <option value="">Sélectionner un type</option>
-                {appointmentTypes.map((t: any) => (<option key={t.id || t.name} value={t.name || t.id}>{t.name || t.title}</option>))}
+                {appointmentTypes.map((t: any) => (<option key={t.id || t.name} value={t.id || t.name}>{t.name || t.title}</option>))}
               </select>
               <label className="text-sm">Médecin</label>
               <select id="appt-doctor" value={selectedApptDoctor} onChange={(e) => setSelectedApptDoctor(e.target.value)} className="w-full rounded-md border px-3 py-2">

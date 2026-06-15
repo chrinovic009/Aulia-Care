@@ -1,4 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { createPatientAdmission, findPatientByEmail, findPatientByPhone, searchPatients, fetchServices, fetchPatientsFromDatabase } from "../../api/reception";
 
@@ -9,20 +10,28 @@ const relationOptions = [
   "enfant",
   "frère",
   "sœur",
-  "ami",
-  "conjoint",
+  "ami(e)",
   "tante",
   "oncle",
-  "grand-mère",
-  "grand-père",
+  "grand-parent",
   "époux",
   "épouse",
   "collègue",
 ];
 
 const ADMISSION_FEE_AMOUNT = 20;
+const EMAIL_DOMAINS = ["@gmail.com", "@outlook.com", "@hotmail.com", "@yahoo.com"];
+
+const normalizeEmailLocalPart = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "");
 
 const Admission: React.FC = () => {
+  const navigate = useNavigate();
+  const [emailDomain, setEmailDomain] = useState("@gmail.com");
   const [form, setForm] = useState<any>({
     category: "P",
     name: "",
@@ -115,7 +124,8 @@ const Admission: React.FC = () => {
 
   const PROFESSIONS = [
     'Infirmier', 'Médecin', 'Secrétaire', 'Enseignant', 'Ingénieur', 'Étudiant', 'Commerçant', 'Retraité', 'Artisan', 'Conducteur',
-    'Agriculteur', 'Cadre', 'Technicien', 'Pharmacien', 'Laborantin', 'Infirmière', 'Sage-femme', 'Architecte', 'Banquier', 'Avocat'
+    'Agriculteur', 'Cadre', 'Technicien', 'Pharmacien', 'Laborantin', 'Infirmière', 'Sage-femme', 'Architecte', 'Banquier', 'Avocat',
+    'Informaticien', 'Elève', 'Etudiant', 'Babysitter'
   ];
 
   useEffect(() => {
@@ -205,6 +215,25 @@ const Admission: React.FC = () => {
     };
   };
 
+  const buildDefaultEmail = (firstName: string, lastName: string) => {
+    const local = normalizeEmailLocalPart(`${firstName}${lastName}`);
+    return `${local || `patient${Date.now()}`}@gmail.com`;
+  };
+
+  const emailLocalPart = useMemo(() => {
+    const currentEmail = form.email || "";
+    const atIndex = currentEmail.indexOf("@");
+    return atIndex >= 0 ? currentEmail.slice(0, atIndex) : currentEmail;
+  }, [form.email]);
+
+  const updateEmailFromParts = (localPart: string, domain = emailDomain) => {
+    const cleanLocal = normalizeEmailLocalPart(localPart);
+    setForm((current: any) => ({
+      ...current,
+      email: cleanLocal ? `${cleanLocal}${domain}` : "",
+    }));
+  };
+
   const handleSaveClick = async () => {
     if (conflictPatient) {
       window.alert(`Un patient existe déjà avec le même nom, téléphone ou email. Vérifiez son dossier avant de créer une admission.`);
@@ -213,6 +242,7 @@ const Admission: React.FC = () => {
 
     try {
       const { firstName, lastName } = splitFullName(form.name);
+      const finalEmail = form.email?.trim() || buildDefaultEmail(firstName, lastName);
       const familyContacts = (form.contacts || []).filter((contact: any) =>
         contact && (contact.name || contact.relation || contact.phone || contact.address)
       );
@@ -226,7 +256,7 @@ const Admission: React.FC = () => {
         profession: form.profession,
         familyContacts,
         phone: form.phone,
-        email: form.email,
+        email: finalEmail,
         address: form.address,
         nationality: form.nationality,
         insuranceProvider: form.insurance.company,
@@ -263,7 +293,8 @@ const Admission: React.FC = () => {
       </div>
       <div className="mt-4 flex flex-col sm:flex-row gap-2">
         <button onClick={resetForm} className="w-full sm:w-auto rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 px-3 py-2 text-sm font-medium">Nouvelle admission</button>
-        <button onClick={() => alert("Ouvrir dossier (simulation)")} className="w-full sm:w-auto rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 px-3 py-2 text-sm font-medium">Ouvrir dossier</button>
+        <button onClick={() => navigate("/reception/patients", { state: { patientId: existingPatient.id } })} className="w-full sm:w-auto rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 px-3 py-2 text-sm font-medium">Ouvrir dossier</button>
+        <button onClick={() => navigate("/reception/patients", { state: { patientId: existingPatient.id, openAppointment: true } })} className="w-full sm:w-auto rounded border border-blue-300 text-blue-700 px-3 py-2 text-sm font-medium">Nouvelle visite</button>
       </div>
     </div>
   );
@@ -314,7 +345,27 @@ const Admission: React.FC = () => {
                     ) : null}
                   </div>
                   <div className="space-y-1">
-                    <input placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <div className="flex overflow-hidden rounded-md border border-gray-300 bg-white dark:border-slate-600 dark:bg-slate-800">
+                      <input
+                        placeholder="email patient"
+                        value={emailLocalPart}
+                        onChange={(e) => updateEmailFromParts(e.target.value)}
+                        className="min-w-0 flex-1 px-3 py-2 text-gray-900 outline-none placeholder-gray-500 dark:bg-slate-800 dark:text-white dark:placeholder-gray-400"
+                      />
+                      <select
+                        value={emailDomain}
+                        onChange={(e) => {
+                          setEmailDomain(e.target.value);
+                          updateEmailFromParts(emailLocalPart, e.target.value);
+                        }}
+                        className="border-l border-gray-300 bg-gray-50 px-2 text-sm text-gray-700 outline-none dark:border-slate-600 dark:bg-slate-900 dark:text-gray-200"
+                      >
+                        {EMAIL_DOMAINS.map((domain) => (
+                          <option key={domain} value={domain}>{domain}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Vide: l'email sera genere en prenomnom@gmail.com.</p>
                     {emailMatchPatient && !existingPatient ? (
                       <p className="text-xs text-red-600 dark:text-red-400">Cet email correspond déjà à : {emailMatchPatient.name}</p>
                     ) : null}
@@ -349,10 +400,7 @@ const Admission: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
                   <div className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm">N° dossier: {form.dossierNumber}</div>
                   <select value={form.admissionType} onChange={(e) => setForm({ ...form, admissionType: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option>Consultation</option>
-                    <option>Urgence</option>
-                    <option>Hospitalisation</option>
-                    <option>Contrôle</option>
+                    {servicesList.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
                   </select>
                   <input type="datetime-local" value={form.arrival} onChange={(e) => setForm({ ...form, arrival: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   <input placeholder="Réceptionniste" value={form.receptionist} readOnly className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -430,7 +478,6 @@ const Admission: React.FC = () => {
               >
                 Enregistrer & Envoyez
               </button>
-              <button onClick={() => window.print()} className="w-full rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 px-3 py-2 font-medium hover:bg-gray-50 dark:hover:bg-slate-800 transition text-sm">Imprimer fiche</button>
               <button onClick={resetForm} className="w-full rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 px-3 py-2 font-medium hover:bg-gray-50 dark:hover:bg-slate-800 transition text-sm">Annuler</button>
             </div>
           </div>
@@ -444,7 +491,7 @@ const Admission: React.FC = () => {
                 <div className="mt-3 text-sm text-gray-700 dark:text-gray-300">Patient trouvé. Tous les champs sont remplacés par ses détails.</div>
                 <div className="mt-3 flex flex-col sm:flex-row gap-2">
                   <button onClick={resetForm} className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 text-xs font-medium">Nouvelle admission</button>
-                  <button onClick={() => alert("Nouvelle visite (simulation)")} className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 text-xs font-medium">Nouvelle visite</button>
+                  <button onClick={() => navigate("/reception/patients", { state: { patientId: existingPatient.id, openAppointment: true } })} className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 text-xs font-medium">Nouvelle visite</button>
                 </div>
               </div>
             ) : (
