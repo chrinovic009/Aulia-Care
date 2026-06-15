@@ -35,12 +35,7 @@ export default function ReceptionAssistantIA() {
     [patients],
   );
   const urgent = useMemo(
-    () =>
-      patients.filter(
-        (p) =>
-          ["urgence", "urgent", "prioritaire"].includes((p.priority || "").toLowerCase()) &&
-          p.workflowStatus === "EN_ATTENTE_INFIRMERIE",
-      ),
+    () => patients.filter((p) => ["urgence", "urgent", "prioritaire"].includes((p.priority || "").toLowerCase())),
     [patients],
   );
 

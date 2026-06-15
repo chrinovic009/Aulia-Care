@@ -63,15 +63,15 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000
 export function getRedirectPath(role: RoleSlug) {
   const rolePathMap: Record<RoleSlug, string> = {
     RECEPTIONIST: "/reception",
-    NURSE: "/infirmier",
-    PHYSICIAN: "/medecin",
+    NURSE: "/nurse",
+    PHYSICIAN: "/doctor",
     CASHIER: "/caissier",
     LAB_TECHNICIAN: "/laboratoire",
     RADIOLOGIST: "/radiologie",
     SURGEON: "/surgery",
     ANESTHESIOLOGIST: "/anesthesiologist",
     PHARMACIST: "/pharmacie",
-    PATIENT: "/",
+    PATIENT: "/dossier-medical",
     ADMIN: "/administration",
     SUPER_ADMIN: "/admin",
   };

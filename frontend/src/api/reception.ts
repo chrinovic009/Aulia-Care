@@ -426,7 +426,7 @@ export type PatientRecord = {
   admissionType?: string;
   arrival?: string;
   receptionist?: string;
-  service?: string;
+  service?: string | { id?: string; name?: string };
   firstName?: string;
   lastName?: string;
   doctor?: string;

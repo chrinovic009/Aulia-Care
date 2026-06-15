@@ -10,13 +10,13 @@ export class PharmacyController {
   constructor(private readonly pharmacyService: PharmacyService) {}
 
   @Get()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'PHARMACIST')
   findAll() {
     return this.pharmacyService.findAll();
   }
 
   @Get(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'PHARMACIST')
   findOne(@Param('id') id: string) {
     return this.pharmacyService.findOne(id);
   }

@@ -99,6 +99,8 @@ model User {
   medicalHistoriesCreated     MedicalHistory[]     @relation("MedicalHistoryCreatedBy")
   notificationsSent           Notification[]       @relation("NotificationAuthor")
   notifications               Notification[]       @relation("NotificationRecipient")
+  sentChatMessages            ChatMessage[]        @relation("ChatMessageSender")
+  receivedChatMessages        ChatMessage[]        @relation("ChatMessageRecipient")
   registeredPatients          Patient[]            @relation("PatientReceptionist")
   paymentsMade                Payment[]            @relation("PaymentPayer")
   pharmacyDispenses           PharmacyDispense[]   @relation("PharmacyDispenseDispenser")
@@ -773,6 +775,137 @@ model Payment {
   paidBy     User?         @relation("PaymentPayer", fields: [paidById], references: [id])
 }
 
+model Clinic {
+  id          String    @id @default(uuid())
+  name        String
+  legalName   String?
+  phone       String?
+  email       String?
+  address     String?
+  city        String?
+  country     String?
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+model Supplier {
+  id          String    @id @default(uuid())
+  name        String
+  phone       String?
+  email       String?
+  address     String?
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+}
+
+model MedicationStock {
+  id             String    @id @default(uuid())
+  medicationId   String
+  batchNumber    String?
+  quantity       Int       @default(0)
+  lowStockLevel  Int       @default(10)
+  criticalLevel  Int       @default(3)
+  purchasePrice  Decimal?  @db.Decimal(12, 2)
+  expiryDate     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  @@index([medicationId])
+  @@index([expiryDate])
+}
+
+model StockMovement {
+  id            String    @id @default(uuid())
+  medicationId  String
+  supplierId    String?
+  type          String
+  quantity      Int
+  unitPrice     Decimal?  @db.Decimal(12, 2)
+  reason        String?
+  reference     String?
+  performedById String?
+  createdAt     DateTime  @default(now())
+
+  @@index([medicationId, createdAt])
+  @@index([supplierId])
+}
+
+model InvoiceLine {
+  id          String    @id @default(uuid())
+  invoiceId   String
+  serviceId   String?
+  label       String
+  quantity    Int       @default(1)
+  unitPrice   Decimal   @db.Decimal(12, 2)
+  totalAmount Decimal   @db.Decimal(12, 2)
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
+
+  @@index([invoiceId])
+  @@index([serviceId])
+}
+
+model PaymentValidation {
+  id           String    @id @default(uuid())
+  paymentId    String?
+  invoiceId    String?
+  validatorId  String?
+  status       String    @default("PENDING")
+  note         String?
+  validatedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([invoiceId, status])
+  @@index([paymentId])
+}
+
+model CashRegister {
+  id          String    @id @default(uuid())
+  cashierId   String?
+  label       String
+  openedAt    DateTime  @default(now())
+  closedAt    DateTime?
+  openingCash Decimal   @default(0) @db.Decimal(12, 2)
+  closingCash Decimal?  @db.Decimal(12, 2)
+  status      String    @default("OPEN")
+  createdAt   DateTime  @default(now())
+
+  @@index([cashierId, status])
+}
+
+model Expense {
+  id          String    @id @default(uuid())
+  category    String
+  label       String
+  amount      Decimal   @db.Decimal(12, 2)
+  paidAt      DateTime  @default(now())
+  paidById    String?
+  note        String?
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
+
+  @@index([paidAt])
+}
+
+model Revenue {
+  id          String    @id @default(uuid())
+  source      String
+  serviceId   String?
+  invoiceId   String?
+  paymentId   String?
+  amount      Decimal   @db.Decimal(12, 2)
+  receivedAt  DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+
+  @@index([receivedAt])
+  @@index([serviceId])
+}
+
 model RefreshToken {
   id         String    @id @default(uuid())
   tokenHash  String
@@ -808,6 +941,25 @@ model Notification {
   patient       Patient?             @relation(fields: [patientId], references: [id], onDelete: Cascade)
   recipient     User?                @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
 
+  @@index([recipientId, status])
+}
+
+model ChatMessage {
+  id              String        @id @default(uuid())
+  senderId        String
+  recipientId     String
+  recipientType   String        @default("USER")
+  text            String
+  status          MessageStatus @default(SENT)
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+  sender          User          @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient       User          @relation("ChatMessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, recipientId, createdAt])
   @@index([recipientId, status])
 }
 
@@ -861,6 +1013,13 @@ enum RoleSlug {
   ANESTHESIOLOGIST
   PHARMACIST
   CASHIER
+  PATIENT
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
 }
 
 enum PermissionAction {

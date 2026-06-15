@@ -12,11 +12,50 @@ export class ConsultationsService {
   }
 
   findAll() {
-    return this.prisma.consultation.findMany({ include: { patient: true, provider: true } });
+    return this.prisma.consultation.findMany({
+      include: {
+        patient: true,
+        provider: true,
+        prescriptions: {
+          include: {
+            prescriber: true,
+            lineItems: {
+              include: {
+                medication: true,
+              },
+            },
+            pharmacyDispenses: {
+              include: {
+                dispensedBy: true,
+                lines: {
+                  include: {
+                    medication: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async findOne(id: string) {
-    const consultation = await this.prisma.consultation.findUnique({ where: { id }, include: { patient: true, provider: true } });
+    const consultation = await this.prisma.consultation.findUnique({
+      where: { id },
+      include: {
+        patient: true,
+        provider: true,
+        prescriptions: {
+          include: {
+            prescriber: true,
+            lineItems: { include: { medication: true } },
+            pharmacyDispenses: { include: { dispensedBy: true, lines: { include: { medication: true } } } },
+          },
+        },
+      },
+    });
     if (!consultation) {
       throw new NotFoundException('Consultation introuvable');
     }

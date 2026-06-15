@@ -3,6 +3,7 @@ import { Prisma, AuditAction, PatientWorkflowStatus, PaymentMethod } from '@pris
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class PaymentsService {
@@ -57,6 +58,46 @@ export class PaymentsService {
         },
       });
 
+      const patientUserAccess = await this.ensurePatientUserAccess(prisma, updatedPatient);
+
+      let receptionistMessage = null;
+      if (updatedPatient.receptionistId) {
+        const accessText = [
+          `Acces patient crees pour ${updatedPatient.firstName} ${updatedPatient.lastName}.`,
+          `Nom utilisateur: ${patientUserAccess.username}`,
+          `Mot de passe: ${patientUserAccess.password}`,
+          `Veuillez remettre ces acces au patient pour son espace personnel.`,
+        ].join('\n');
+
+        receptionistMessage = await prisma.chatMessage.create({
+          data: {
+            senderId: patientUserAccess.user.id,
+            recipientId: updatedPatient.receptionistId,
+            recipientType: 'USER',
+            text: accessText,
+            status: 'SENT',
+          },
+          include: {
+            sender: { select: { id: true, displayName: true, username: true } },
+          },
+        });
+
+        await prisma.notification.create({
+          data: {
+            recipientId: updatedPatient.receptionistId,
+            patientId: updatedPatient.id,
+            type: 'SYSTEM',
+            status: 'UNREAD',
+            priority: 'HIGH',
+            title: 'Acces patient disponibles',
+            message: `Les acces du patient ${updatedPatient.firstName} ${updatedPatient.lastName} sont disponibles dans vos messages.`,
+            relatedEntity: 'Patient',
+            relatedId: updatedPatient.id,
+            sendAt: new Date(),
+          },
+        });
+      }
+
       const nurseUsers = await prisma.user.findMany({
         where: {
           OR: [
@@ -108,16 +149,33 @@ export class PaymentsService {
             paymentId: payment.id,
             invoiceId: invoice.id,
             hospitalizationId: hospitalization?.id,
+            patientUserId: patientUserAccess.user.id,
           },
         },
       });
 
-      return { payment, updatedInvoice, updatedPatient, notifications, hospitalization };
+      return { payment, updatedInvoice, updatedPatient, notifications, hospitalization, receptionistMessage };
     });
 
     result.notifications.forEach((notification) => {
       this.notificationsGateway.notify('notification.created', notification);
     });
+    this.notificationsGateway.notify('patient.updated', result.updatedPatient);
+
+    if (result.receptionistMessage) {
+      this.notificationsGateway.notifyToUser(result.receptionistMessage.recipientId, 'message.received', {
+        id: result.receptionistMessage.id,
+        senderId: result.receptionistMessage.senderId,
+        senderName:
+          result.receptionistMessage.sender?.displayName ||
+          result.receptionistMessage.sender?.username ||
+          'Patient',
+        recipientId: result.receptionistMessage.recipientId,
+        recipientType: 'USER',
+        text: result.receptionistMessage.text,
+        sentAt: result.receptionistMessage.createdAt.toISOString(),
+      });
+    }
 
     return {
       payment: result.payment,
@@ -125,5 +183,131 @@ export class PaymentsService {
       patient: result.updatedPatient,
       hospitalization: result.hospitalization,
     };
+  }
+
+  private async ensurePatientUserAccess(prisma: Prisma.TransactionClient, patient: any) {
+    const usernameBase = this.normalizeUsername(`${patient.firstName}_${patient.lastName}`);
+    const email = patient.email?.trim().toLowerCase() || `${patient.id}@patients.d7.local`;
+    const existing = await prisma.user.findFirst({
+      where: {
+        OR: [{ email }, { username: usernameBase }],
+      },
+    });
+
+    const patientPosition = await prisma.patient.count({
+      where: {
+        createdAt: { lte: patient.createdAt },
+      },
+    });
+    const initials = `${patient.firstName?.[0] || 'P'}${patient.lastName?.[0] || 'D'}`.toUpperCase();
+    const year = new Date().getFullYear();
+    const password = `D7P-${initials}${patientPosition}${year}`;
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    if (existing) {
+      const updated = await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          passwordHash,
+          primaryRole: 'PATIENT',
+          firstName: patient.firstName,
+          lastName: patient.lastName,
+          displayName: `${patient.firstName} ${patient.lastName}`.trim(),
+          phone: patient.phone,
+          nationality: patient.nationality,
+          addressCity: patient.city,
+          addressStreet: patient.address,
+          status: 'ACTIVE',
+        },
+      });
+      return {
+        user: updated,
+        username: updated.username,
+        password,
+      };
+    }
+
+    const username = await this.makeUniqueUsername(prisma, usernameBase);
+    const user = await prisma.user.create({
+      data: {
+        email,
+        username,
+        displayName: `${patient.firstName} ${patient.lastName}`.trim(),
+        firstName: patient.firstName,
+        lastName: patient.lastName,
+        passwordHash,
+        primaryRole: 'PATIENT',
+        phone: patient.phone,
+        nationality: patient.nationality,
+        addressCity: patient.city,
+        addressStreet: patient.address,
+        status: 'ACTIVE',
+      },
+    });
+
+    return { user, username, password };
+  }
+
+  private normalizeUsername(value: string) {
+    const normalized = value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    return normalized || `patient_${Date.now()}`;
+  }
+
+  private async makeUniqueUsername(prisma: Prisma.TransactionClient, base: string) {
+    let username = base;
+    let suffix = 1;
+    while (await prisma.user.findUnique({ where: { username } })) {
+      suffix += 1;
+      username = `${base}_${suffix}`;
+    }
+    return username;
+  }
+
+  async findAll() {
+    const payments = await this.prisma.payment.findMany({
+      include: {
+        invoice: {
+          select: {
+            id: true,
+            type: true,
+            patientId: true,
+            patient: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                phone: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        paidAt: 'desc',
+      },
+    });
+
+    return payments.map((payment) => ({
+      id: payment.id,
+      patientId: payment.invoice?.patientId,
+      patientName: payment.invoice?.patient
+        ? `${payment.invoice.patient.firstName} ${payment.invoice.patient.lastName}`
+        : 'Unknown',
+      patientPhone: payment.invoice?.patient?.phone,
+      patientEmail: payment.invoice?.patient?.email,
+      invoiceId: payment.invoiceId,
+      invoiceType: payment.invoice?.type,
+      amount: payment.amount,
+      method: payment.method,
+      reference: payment.reference,
+      paidAt: payment.paidAt,
+      createdAt: payment.createdAt,
+    }));
   }
 }

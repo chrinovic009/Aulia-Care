@@ -4,7 +4,7 @@ import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { MoreDotIcon } from "../../icons";
 import { useEffect, useState } from "react";
-import { fetchPatientsFromDatabase } from "../../api/reception";
+import { fetchAppointmentsFromDatabase, fetchPatientsFromDatabase } from "../../api/reception";
 
 export default function ReceptionStatisticsChart() {
   const [categories, setCategories] = useState<string[]>([]);
@@ -119,25 +119,23 @@ export default function ReceptionStatisticsChart() {
       }
 
       try {
-            const patients = await fetchPatientsFromDatabase();
+            const [patients, appointments] = await Promise.all([
+              fetchPatientsFromDatabase(),
+              fetchAppointmentsFromDatabase(),
+            ]);
 
             const patientsData = dayKeys.map((key) =>
               patients.filter((patient) => {
                 const createdAt = patient.createdAt ? new Date(patient.createdAt).toISOString().slice(0, 10) : "";
-                return createdAt === key && patient.workflowStatus === "EN_ATTENTE_INFIRMERIE";
+                return createdAt === key;
               }).length,
             );
 
             const appointmentsData = dayKeys.map((key) =>
-              patients.filter((patient) => {
-                const createdAt = patient.createdAt ? new Date(patient.createdAt).toISOString().slice(0, 10) : "";
-                return (
-                  createdAt === key &&
-                  patient.workflowStatus === "EN_ATTENTE_INFIRMERIE" &&
-                  (patient.admissionType?.toLowerCase().includes("consult") ||
-                    patient.admissionType?.toLowerCase().includes("rendez") ||
-                    patient.admissionType === "Consultation")
-                );
+              appointments.filter((appointment) => {
+                const scheduledAt = appointment.scheduledAt || appointment.requestedAt || appointment.createdAt;
+                const createdAt = scheduledAt ? new Date(scheduledAt).toISOString().slice(0, 10) : "";
+                return createdAt === key;
               }).length,
             );
 
@@ -146,7 +144,6 @@ export default function ReceptionStatisticsChart() {
                 const createdAt = patient.createdAt ? new Date(patient.createdAt).toISOString().slice(0, 10) : "";
                 return (
                   createdAt === key &&
-                  patient.workflowStatus === "EN_ATTENTE_INFIRMERIE" &&
                   ["urgent", "urgence", "prioritaire"].includes((patient.priority || "").toLowerCase())
                 );
               }).length,

@@ -32,6 +32,12 @@ export const API_CONFIG = {
     CREATE_ADMISSION: "/patients/admissions",
   },
 
+  // Nurse endpoints
+  NURSE: {
+    AWAITING_VITALS: "/patients/nurse/awaiting-vitals",
+    RECORD_VITAL_SIGNS: (patientId: string) => `/patients/${patientId}/vital-signs`,
+  },
+
   // Appointment endpoints
   APPOINTMENTS: {
     GET_ALL: "/appointments",
