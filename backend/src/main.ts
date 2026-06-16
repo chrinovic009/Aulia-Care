@@ -7,6 +7,8 @@ import { ValidationPipe } from '@nestjs/common';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.setGlobalPrefix("api");
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -22,9 +24,9 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') || 3000;
 
-  await app.listen(port);
+  await app.listen(port, "0.0.0.0");
 
-  console.log(`Backend running on http://localhost:${port}`);
+  console.log(`Backend running on port ${port}`);
 }
 
 bootstrap();

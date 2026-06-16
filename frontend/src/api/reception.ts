@@ -454,7 +454,7 @@ export type PatientRecord = {
 const PATIENTS_KEY = "d7-clinic-patients";
 const CONVERSATIONS_KEY = "d7-clinic-conversations";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 const getAuthHeaders = (): Record<string, string> => {
   try {

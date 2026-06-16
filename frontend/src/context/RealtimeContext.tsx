@@ -18,9 +18,13 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
       return;
     }
 
-    const base = (import.meta.env.VITE_API_BASE_URL as string) || '';
-    const url = base.replace(/\/+$/, '') || window.location.origin;
-    const s = io(url, {
+    const socketUrl = import.meta.env.DEV
+      ? "http://localhost:3000"
+      : window.location.origin;
+
+    console.log("SOCKET URL =", socketUrl);
+
+    const s = io(socketUrl, {
       autoConnect: true,
       withCredentials: true,
       transports: ['websocket', 'polling'],
