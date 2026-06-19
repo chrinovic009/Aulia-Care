@@ -23,6 +23,22 @@ export class RecordVitalSignsDto {
 
   @IsString()
   @IsOptional()
+  weight?: string;
+
+  @IsString()
+  @IsOptional()
+  height?: string;
+
+  @IsString()
+  @IsOptional()
+  chestCircumference?: string;
+
+  @IsString()
+  @IsOptional()
+  armCircumference?: string;
+
+  @IsString()
+  @IsOptional()
   notes?: string;
 
   @IsString()

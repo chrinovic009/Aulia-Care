@@ -17,6 +17,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AuditModule } from './audit/audit.module';
 import { ServicesModule } from './services/services.module';
 import { MessagesModule } from './messages/messages.module';
+import { AdministrationModule } from './administration/administration.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { MessagesModule } from './messages/messages.module';
     SurgeryModule,
     BillingModule,
     ServicesModule,
+    AdministrationModule,
     MessagesModule,
     NotificationsModule,
     AuditModule,

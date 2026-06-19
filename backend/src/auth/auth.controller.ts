@@ -3,6 +3,7 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
+  Patch,
   Post,
   Get,
   UseGuards,
@@ -15,6 +16,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { Public } from './public.decorator';
 import { CurrentUser } from './current-user.decorator';
 import { CurrentUserResponseDto } from './dto/current-user-response.dto';
+import { UpdateUserDto } from '../users/dto/update-user.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -43,6 +45,7 @@ export class AuthController {
       username: user.username,
       displayName: user.displayName,
       primaryRole: user.primaryRole || 'PATIENT',
+      status: user.status,
     });
   }
 
@@ -61,5 +64,12 @@ export class AuthController {
   async me(@CurrentUser() user: any): Promise<CurrentUserResponseDto> {
     const fullUser = await this.authService.getUserById(user.userId);
     return fullUser as CurrentUserResponseDto;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Patch('profile')
+  async updateProfile(@CurrentUser() user: any, @Body() payload: UpdateUserDto): Promise<CurrentUserResponseDto> {
+    return this.authService.updateProfile(user.userId, payload) as Promise<CurrentUserResponseDto>;
   }
 }

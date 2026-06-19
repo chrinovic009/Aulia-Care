@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateUserDto } from '../users/dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -64,7 +65,7 @@ export class AuthService {
     } as any);
   }
 
-  async login(user: { id: string; email: string; username: string; displayName: string; primaryRole: string | null }) {
+  async login(user: { id: string; email: string; username: string; displayName: string; primaryRole: string | null; status?: string }) {
     const accessToken = this.signAccessToken(user);
     const refreshToken = this.signRefreshToken(user);
 
@@ -77,6 +78,7 @@ export class AuthService {
         username: user.username,
         displayName: user.displayName,
         primaryRole: user.primaryRole,
+        status: user.status,
       },
     };
   }
@@ -143,5 +145,37 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  async updateProfile(id: string, dto: UpdateUserDto) {
+    const allowed: any = {};
+    for (const key of [
+      'displayName',
+      'firstName',
+      'lastName',
+      'email',
+      'username',
+      'phone',
+      'specialty',
+      'nationality',
+      'addressCountry',
+      'addressProvince',
+      'addressCity',
+      'addressNeighborhood',
+      'addressStreet',
+      'bio',
+    ]) {
+      if ((dto as any)[key] !== undefined) allowed[key] = (dto as any)[key];
+    }
+
+    if (dto.password) {
+      allowed.passwordHash = await bcrypt.hash(dto.password, 10);
+    }
+
+    if (allowed.email) allowed.email = String(allowed.email).toLowerCase();
+    if (allowed.username) allowed.username = String(allowed.username).toLowerCase();
+
+    await this.prisma.user.update({ where: { id }, data: allowed });
+    return this.getUserById(id);
   }
 }

@@ -8,13 +8,14 @@ import Checkbox from "../form/input/Checkbox";
 import Button from "../ui/button/Button";
 
 export default function SignInForm() {
-  const { currentUser, login, isLoading, error: contextError } = useAuth();
+  const { currentUser, login, logout, isLoading, error: contextError, restrictedAccount, clearRestrictedAccount } = useAuth();
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [blockedAccount, setBlockedAccount] = useState<typeof restrictedAccount>(null);
 
   // Redirection si déjà authentifié
   useEffect(() => {
@@ -42,6 +43,12 @@ export default function SignInForm() {
         return;
       }
 
+      if (user.status && user.status !== "ACTIVE") {
+        setBlockedAccount(user);
+        logout();
+        return;
+      }
+
       console.log("✓ Connecté avec le rôle:", user.primaryRole);
       navigate(getRedirectPath(user.primaryRole), { replace: true });
     } catch (err) {
@@ -51,6 +58,14 @@ export default function SignInForm() {
   };
 
   const displayError = error || contextError;
+  const restriction = blockedAccount || restrictedAccount;
+
+  const closeRestriction = () => {
+    setBlockedAccount(null);
+    clearRestrictedAccount();
+    logout();
+    navigate("/signin", { replace: true });
+  };
 
   return (
     <div className="flex flex-col flex-1">
@@ -145,6 +160,24 @@ export default function SignInForm() {
           </div>
         </div>
       </div>
+      {restriction ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-slate-950">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 9v4m0 4h.01M10.3 4.3 2.9 17.1A2 2 0 0 0 4.6 20h14.8a2 2 0 0 0 1.7-2.9L13.7 4.3a2 2 0 0 0-3.4 0Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <h2 className="mt-4 text-center text-xl font-semibold text-gray-900 dark:text-white">Compte non actif</h2>
+            <p className="mt-2 text-center text-sm leading-6 text-gray-600 dark:text-gray-300">
+              Votre compte est {restriction.status === "SUSPENDED" ? "suspendu" : "désactivé"}. Contactez l’administrateur de la clinique pour demander la réactivation de votre accès.
+            </p>
+            <button onClick={closeRestriction} className="mt-6 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700">
+              OK
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

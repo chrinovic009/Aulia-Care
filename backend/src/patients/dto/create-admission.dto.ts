@@ -83,4 +83,16 @@ export class CreateAdmissionDto {
 
   @IsOptional()
   familyContacts?: any;
+
+  @IsString()
+  @IsOptional()
+  voucherNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  voucherIssuer?: string;
+
+  @IsString()
+  @IsOptional()
+  voucherNotes?: string;
 }

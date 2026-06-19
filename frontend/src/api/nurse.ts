@@ -22,6 +22,10 @@ export type NursePatient = {
     spo2?: string | null;
     heartRate?: string | null;
     respiratoryRate?: string | null;
+    weight?: string | null;
+    height?: string | null;
+    chestCircumference?: string | null;
+    armCircumference?: string | null;
   };
   lastVitalRecordedAt?: string | null;
 };
@@ -32,6 +36,10 @@ export type RecordVitalSignsPayload = {
   spo2?: string;
   heartRate?: string;
   respiratoryRate?: string;
+  weight?: string;
+  height?: string;
+  chestCircumference?: string;
+  armCircumference?: string;
   notes?: string;
   physicianId?: string;
 };

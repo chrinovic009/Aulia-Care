@@ -48,13 +48,13 @@ export class HospitalizationsController {
   }
 
   @Post()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')
   create(@Body() dto: CreateHospitalizationDto) {
     return this.hospitalizationsService.create(dto);
   }
 
   @Patch(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')
   update(@Param('id') id: string, @Body() dto: UpdateHospitalizationDto) {
     return this.hospitalizationsService.update(id, dto);
   }
