@@ -1,12 +1,14 @@
 import {
   IsEmail,
+  IsDateString,
   IsEnum,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   MinLength,
 } from 'class-validator';
-import { RoleSlug } from '@prisma/client';
+import { RoleSlug, UserStatus } from '@prisma/client';
 
 export class CreateUserDto {
   @IsEmail()
@@ -35,6 +37,10 @@ export class CreateUserDto {
   @IsEnum(RoleSlug)
   primaryRole: RoleSlug;
 
+  @IsEnum(UserStatus)
+  @IsOptional()
+  status?: UserStatus;
+
   // 🔥 AJOUTS POUR TON SUPER ADMIN
   @IsOptional() @IsString() specialty?: string;
   @IsOptional() @IsString() phone?: string;
@@ -51,4 +57,17 @@ export class CreateUserDto {
   @IsOptional() @IsString() addressStreet?: string;
 
   @IsOptional() @IsString() bio?: string;
+
+  @IsOptional() @IsString() gender?: string;
+  @IsOptional() @IsDateString() dateOfBirth?: string;
+  @IsOptional() @IsString() position?: string;
+  @IsOptional() @IsString() employeeNumber?: string;
+  @IsOptional() @IsString() departmentId?: string;
+  @IsOptional() @IsString() serviceUnitId?: string;
+  @IsOptional() @IsString() contractType?: string;
+  @IsOptional() @IsNumber() salary?: number;
+  @IsOptional() @IsString() salaryFrequency?: string;
+  @IsOptional() @IsDateString() shiftStartAt?: string;
+  @IsOptional() @IsDateString() shiftEndAt?: string;
+  @IsOptional() @IsString() shiftType?: string;
 }

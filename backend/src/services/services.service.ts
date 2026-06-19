@@ -12,11 +12,25 @@ export class ServicesService {
   }
 
   findAll() {
-    return this.prisma.service.findMany({ include: { tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' } }, responsables: { include: { user: true } } } });
+    return this.prisma.service.findMany({
+      include: {
+        tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' } },
+        responsables: { where: { actif: true }, include: { user: true } },
+        staff: { where: { actif: true }, include: { user: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
   }
 
   async findOne(id: string) {
-    const svc = await this.prisma.service.findUnique({ where: { id }, include: { tarifs: true, responsables: { include: { user: true } } } });
+    const svc = await this.prisma.service.findUnique({
+      where: { id },
+      include: {
+        tarifs: true,
+        responsables: { include: { user: true } },
+        staff: { include: { user: true } },
+      },
+    });
     if (!svc) throw new NotFoundException('Service introuvable');
     return svc;
   }
@@ -44,6 +58,11 @@ export class ServicesService {
       'SURGEON',
       'RADIOLOGIST',
       'ANESTHESIOLOGIST',
+      'LAB_TECHNICIAN',
+      'PHARMACIST',
+      'NURSE',
+      'RECEPTIONIST',
+      'CASHIER',
     ];
 
     for (const it of items) {
@@ -71,14 +90,29 @@ export class ServicesService {
         );
       }
 
-      const rec =
-        await this.prisma.serviceResponsable.create({
-          data: {
-            serviceId: it.serviceId,
-            userId: it.userId,
-            principal: !!it.principal,
-          },
-        });
+      const existing = await this.prisma.serviceResponsable.findFirst({
+        where: {
+          serviceId: it.serviceId,
+          userId: it.userId,
+        },
+      });
+
+      const rec = existing
+        ? await this.prisma.serviceResponsable.update({
+            where: { id: existing.id },
+            data: {
+              principal: !!it.principal,
+              actif: true,
+            },
+          })
+        : await this.prisma.serviceResponsable.create({
+            data: {
+              serviceId: it.serviceId,
+              userId: it.userId,
+              principal: !!it.principal,
+              actif: true,
+            },
+          });
 
       created.push(rec);
     }
@@ -97,6 +131,9 @@ export class ServicesService {
       'LAB_TECHNICIAN',
       'ANESTHESIOLOGIST',
       'PHARMACIST',
+      'ADMIN',
+      'RECEPTIONIST',
+      'CASHIER',
     ];
 
     for (const item of items) {
@@ -120,11 +157,31 @@ export class ServicesService {
         );
       }
 
-      const staff = await this.prisma.serviceStaff.create({
-        data: {
+      await this.prisma.serviceStaff.updateMany({
+        where: {
+          userId: item.userId,
+          serviceId: { not: item.serviceId },
+          actif: true,
+        },
+        data: { actif: false },
+      });
+
+      const staff = await this.prisma.serviceStaff.upsert({
+        where: {
+          serviceId_userId: {
+            serviceId: item.serviceId,
+            userId: item.userId,
+          },
+        },
+        create: {
           serviceId: item.serviceId,
           userId: item.userId,
           roleInService: item.roleInService,
+          actif: true,
+        },
+        update: {
+          roleInService: item.roleInService,
+          actif: true,
         },
       });
 

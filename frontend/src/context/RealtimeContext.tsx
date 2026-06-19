@@ -44,6 +44,8 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
     s.on('patient.updated', (payload: any) => window.dispatchEvent(new CustomEvent('d7:patient.updated', { detail: payload })));
     s.on('hospitalization.created', (payload: any) => window.dispatchEvent(new CustomEvent('d7:hospitalization.created', { detail: payload })));
     s.on('notification.created', (payload: any) => window.dispatchEvent(new CustomEvent('d7:notification.created', { detail: payload })));
+    s.on('lab.request.created', (payload: any) => window.dispatchEvent(new CustomEvent('d7:lab.request.created', { detail: payload })));
+    s.on('lab.result.created', (payload: any) => window.dispatchEvent(new CustomEvent('d7:lab.result.created', { detail: payload })));
     s.on('message.received', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.received', { detail: payload })));
     s.on('message.sent', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.sent', { detail: payload })));
     s.on('message.status', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.status', { detail: payload })));
@@ -67,6 +69,9 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
       if (['VitalSign', 'Consultation', 'Prescription', 'LabRequest', 'LabResult', 'ImagingRequest', 'ImagingReport', 'Hospitalization'].includes(payload?.model)) {
         window.dispatchEvent(new CustomEvent('d7:clinicalDataUpdated', { detail: payload }));
         window.dispatchEvent(new CustomEvent('d7:patientRecordsUpdated', { detail: payload }));
+      }
+      if (['User', 'Employee', 'EmployeeContract', 'Service', 'ServiceStaff', 'ServiceResponsable', 'ServiceTarif', 'Department', 'ServiceUnit', 'Room', 'Bed', 'OperatingRoom', 'Surgery', 'Medication', 'MedicationStock', 'StockLot', 'StockMovement', 'StockTransaction', 'Supplier', 'PurchaseOrder', 'GoodsReceipt', 'PharmacyDispense', 'Attendance', 'LeaveRequest', 'Payroll', 'AuditTrail'].includes(payload?.model)) {
+        window.dispatchEvent(new CustomEvent('d7:administrationUpdated', { detail: payload }));
       }
     });
 

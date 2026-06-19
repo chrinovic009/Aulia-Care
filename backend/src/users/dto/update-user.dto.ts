@@ -1,5 +1,5 @@
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
-import { RoleSlug } from '@prisma/client';
+import { IsDateString, IsEmail, IsEnum, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
+import { RoleSlug, UserStatus } from '@prisma/client';
 
 export class UpdateUserDto {
   @IsString()
@@ -34,4 +34,88 @@ export class UpdateUserDto {
   @IsString()
   @IsOptional()
   phone?: string;
+
+  @IsEnum(UserStatus)
+  @IsOptional()
+  status?: UserStatus;
+
+  @IsString()
+  @IsOptional()
+  specialty?: string;
+
+  @IsString()
+  @IsOptional()
+  nationality?: string;
+
+  @IsString()
+  @IsOptional()
+  addressCountry?: string;
+
+  @IsString()
+  @IsOptional()
+  addressProvince?: string;
+
+  @IsString()
+  @IsOptional()
+  addressCity?: string;
+
+  @IsString()
+  @IsOptional()
+  addressNeighborhood?: string;
+
+  @IsString()
+  @IsOptional()
+  addressStreet?: string;
+
+  @IsString()
+  @IsOptional()
+  bio?: string;
+
+  @IsString()
+  @IsOptional()
+  gender?: string;
+
+  @IsDateString()
+  @IsOptional()
+  dateOfBirth?: string;
+
+  @IsString()
+  @IsOptional()
+  position?: string;
+
+  @IsString()
+  @IsOptional()
+  employeeNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  departmentId?: string;
+
+  @IsString()
+  @IsOptional()
+  serviceUnitId?: string;
+
+  @IsString()
+  @IsOptional()
+  contractType?: string;
+
+  @IsNumber()
+  @IsOptional()
+  salary?: number;
+
+  @IsString()
+  @IsOptional()
+  salaryFrequency?: string;
+
+  @IsDateString()
+  @IsOptional()
+  shiftStartAt?: string;
+
+  @IsDateString()
+  @IsOptional()
+  shiftEndAt?: string;
+
+  @IsString()
+  @IsOptional()
+  shiftType?: string;
 }

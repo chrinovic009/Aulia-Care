@@ -275,12 +275,9 @@ export class PatientsService {
       resolvedService = await this.prisma.service.findUnique({ where: { name: createAdmissionDto.service } });
     }
 
-    // Use a fixed admission fee of $20 as requested
-    const admissionFee = 20;
+    const isParamedicalVoucher = String(createAdmissionDto.admissionType || '').toUpperCase() === 'BON_PARAMEDICAL';
+    const admissionFee = isParamedicalVoucher ? Number(createAdmissionDto.amountDue || 0) : 20;
 
-    console.log(createAdmissionDto);
-    console.log("Receptionist ID:", createAdmissionDto.receptionistId);
-    console.log("Receptionist Name:", createAdmissionDto.receptionist);
     const receptionistConnect = actorId
       ? { connect: { id: actorId } }
       : createAdmissionDto.receptionistId
@@ -338,8 +335,10 @@ export class PatientsService {
           totalAmount: admissionFee,
           balanceDue: admissionFee,
           dueDate: new Date(),
-            type: 'ADMISSION_FEE',
-          remarks: `Frais de fiche d'admission - ${resolvedService?.name || createAdmissionDto.service || ''}`,
+          type: isParamedicalVoucher ? 'SERVICE' : 'ADMISSION_FEE',
+          remarks: isParamedicalVoucher
+            ? `Bon paramedical ${createAdmissionDto.voucherNumber || 'sans numero'} - ${resolvedService?.name || createAdmissionDto.service || ''}`
+            : `Frais de fiche d'admission - ${resolvedService?.name || createAdmissionDto.service || ''}`,
         },
       });
 
@@ -372,6 +371,15 @@ export class PatientsService {
           profession: createAdmissionDto.profession || null,
           familyContacts: createAdmissionDto.familyContacts || null,
           receptionistName,
+          voucher: isParamedicalVoucher
+            ? {
+                number: createAdmissionDto.voucherNumber || null,
+                issuer: createAdmissionDto.voucherIssuer || null,
+                notes: createAdmissionDto.voucherNotes || null,
+                serviceId: resolvedService?.id || createAdmissionDto.serviceId || null,
+                serviceName: resolvedService?.name || createAdmissionDto.service || null,
+              }
+            : null,
         }),
         createdById: actorId || createAdmissionDto.receptionistId || null,
       },
@@ -387,6 +395,7 @@ export class PatientsService {
         summary: 'Admission enregistrée et facture créée.',
         metadata: {
           admissionType: createAdmissionDto.admissionType,
+          voucherNumber: createAdmissionDto.voucherNumber || null,
           service: resolvedService?.name || createAdmissionDto.service || null,
           serviceId: resolvedService?.id || createAdmissionDto.serviceId || null,
           invoiceId: result.invoice.id,
@@ -412,7 +421,9 @@ export class PatientsService {
             status: 'UNREAD',
             priority: 'HIGH',
             title: 'Nouveau paiement en attente',
-            message: `Le patient ${result.patient.firstName} ${result.patient.lastName} attend le règlement des frais de fiche d'admission de ${admissionFee} FC.`,
+            message: isParamedicalVoucher
+              ? `Le patient ${result.patient.firstName} ${result.patient.lastName} attend le paiement du bon paramedical ${createAdmissionDto.voucherNumber || ''}.`
+              : `Le patient ${result.patient.firstName} ${result.patient.lastName} attend le reglement des frais de fiche d'admission de ${admissionFee} FC.`,
             relatedEntity: 'Invoice',
             relatedId: result.invoice.id,
             sendAt: new Date(),
@@ -745,6 +756,10 @@ export class PatientsService {
           spo2: latestVitals[VitalType.OXYGEN_SATURATION] || null,
           heartRate: latestVitals[VitalType.HEART_RATE] || null,
           respiratoryRate: latestVitals[VitalType.RESPIRATORY_RATE] || null,
+          weight: latestVitals[VitalType.WEIGHT] || null,
+          height: latestVitals[VitalType.HEIGHT] || null,
+          chestCircumference: latestVitals['CHEST_CIRCUMFERENCE'] || null,
+          armCircumference: latestVitals['ARM_CIRCUMFERENCE'] || null,
         },
         lastVitalRecordedAt: patient.vitalSigns[0]?.recordedAt || null,
       };
@@ -760,6 +775,10 @@ export class PatientsService {
       { type: VitalType.OXYGEN_SATURATION, value: dto.spo2, unit: '%' },
       { type: VitalType.HEART_RATE, value: dto.heartRate, unit: 'bpm' },
       { type: VitalType.RESPIRATORY_RATE, value: dto.respiratoryRate, unit: '/min' },
+      { type: VitalType.WEIGHT, value: dto.weight, unit: 'kg' },
+      { type: VitalType.HEIGHT, value: dto.height, unit: 'cm' },
+      { type: 'CHEST_CIRCUMFERENCE' as any, value: dto.chestCircumference, unit: 'cm' },
+      { type: 'ARM_CIRCUMFERENCE' as any, value: dto.armCircumference, unit: 'cm' },
     ]
       .filter((row) => Boolean(row.value?.trim()))
       .map((row) => ({
@@ -802,7 +821,6 @@ export class PatientsService {
           data: {
             patientId,
             requestedById: recordedById,
-            serviceUnitId: patient?.serviceId || undefined,
             scheduledAt: new Date(),
             reason: `Orientation apres signes vitaux${dto.notes ? ` - ${dto.notes.trim()}` : ''}`,
             status: 'CHECKED_IN',
@@ -897,5 +915,128 @@ export class PatientsService {
       prescriptions: patient.prescriptions,
       latestConsultation: patient.consultations[0] || null,
     }));
+  }
+
+  async getPatientsVisibleToDoctors(doctorId?: string) {
+    if (!doctorId) return [];
+
+    const patients = await this.prisma.patient.findMany({
+      where: {
+        deletedAt: null,
+        consultations: {
+          some: {
+            deletedAt: null,
+          },
+        },
+      },
+      include: {
+        service: true,
+        familyContacts: true,
+        vitalSigns: {
+          orderBy: { recordedAt: 'desc' },
+          take: 20,
+          include: { recordedBy: { select: { id: true, displayName: true, firstName: true, lastName: true } } },
+        },
+        medicalHistories: {
+          orderBy: { eventDate: 'desc' },
+          take: 30,
+          include: { createdBy: { select: { id: true, displayName: true, firstName: true, lastName: true, primaryRole: true } } },
+        },
+        consultations: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            provider: { select: { id: true, displayName: true, firstName: true, lastName: true, specialty: true } },
+            prescriptions: { include: { lineItems: { include: { medication: true } } } },
+            labRequests: { include: { results: true, requestedBy: true } },
+            imagingRequests: { include: { report: true } },
+          },
+        },
+        labRequests: { orderBy: { requestedAt: 'desc' }, take: 10, include: { results: true, requestedBy: true } },
+        imagingRequests: { orderBy: { createdAt: 'desc' }, take: 10, include: { report: true, requestedBy: true } },
+        prescriptions: { orderBy: { prescribingDate: 'desc' }, take: 10, include: { lineItems: { include: { medication: true } }, prescriber: true } },
+        hospitalizations: { orderBy: { admittedAt: 'desc' }, take: 5, include: { physician: true, nurseInCharge: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    const accessByConsultationId = await Promise.all(
+      patients.map(async (patient) => {
+        const latestConsultation = patient.consultations[0] || null;
+        const canWrite = latestConsultation ? await this.canDoctorWriteConsultation(latestConsultation.providerId, doctorId) : false;
+        return [patient.id, { latestConsultation, canWrite }] as const;
+      }),
+    );
+    const accessMap = new Map(accessByConsultationId);
+
+    return patients.map((patient) => {
+      const access = accessMap.get(patient.id);
+      const latestConsultation = access?.latestConsultation || null;
+      const assignedDoctor = latestConsultation?.provider || null;
+
+      return {
+        id: patient.id,
+        externalId: patient.externalId,
+        firstName: patient.firstName,
+        lastName: patient.lastName,
+        middleName: patient.middleName,
+        gender: patient.gender,
+        dateOfBirth: patient.dateOfBirth,
+        phone: patient.phone,
+        email: patient.email,
+        address: patient.address,
+        profession: patient.profession,
+        nationality: patient.nationality,
+        bloodType: patient.bloodType,
+        workflowStatus: patient.workflowStatus,
+        priority: patient.priority,
+        admissionType: patient.admissionType,
+        service: patient.service,
+        familyContacts: patient.familyContacts,
+        vitalSigns: patient.vitalSigns,
+        medicalHistories: patient.medicalHistories,
+        consultations: patient.consultations,
+        labRequests: patient.labRequests,
+        imagingRequests: patient.imagingRequests,
+        prescriptions: patient.prescriptions,
+        hospitalizations: patient.hospitalizations,
+        latestConsultation,
+        assignedDoctor,
+        access: {
+          mode: access?.canWrite ? 'WRITE' : 'READ_ONLY',
+          canWrite: Boolean(access?.canWrite),
+          reason: access?.canWrite
+            ? latestConsultation?.providerId === doctorId
+              ? 'MEDECIN_ASSIGNE'
+              : 'REMPLACEMENT_SHIFT_ACTIF'
+            : 'LECTURE_MEDICALE_PARTAGEE',
+        },
+      };
+    });
+  }
+
+  async canDoctorWriteConsultation(assignedDoctorId?: string | null, doctorId?: string | null) {
+    if (!assignedDoctorId || !doctorId) return false;
+    if (assignedDoctorId === doctorId) return true;
+
+    const now = new Date();
+    const [assignedActiveShift, replacementActiveShift] = await Promise.all([
+      this.prisma.shift.findFirst({
+        where: {
+          employee: { userId: assignedDoctorId, status: 'ACTIVE' },
+          startAt: { lte: now },
+          endAt: { gte: now },
+        },
+      }),
+      this.prisma.shift.findFirst({
+        where: {
+          employee: { userId: doctorId, status: 'ACTIVE' },
+          startAt: { lte: now },
+          endAt: { gte: now },
+        },
+      }),
+    ]);
+
+    return !assignedActiveShift && Boolean(replacementActiveShift);
   }
 }

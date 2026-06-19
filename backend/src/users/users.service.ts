@@ -11,6 +11,14 @@ export class UsersService {
 
   async create(dto: CreateUserDto) {
     const passwordHash = await bcrypt.hash(dto.password, 10);
+    const employeeDetails = {
+      gender: dto.gender ?? null,
+      dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null,
+      position: dto.position ?? dto.primaryRole,
+      employeeNumber: dto.employeeNumber ?? null,
+      departmentId: dto.departmentId ?? null,
+      serviceUnitId: dto.serviceUnitId ?? null,
+    };
 
     return this.prisma.user.create({
       data: {
@@ -38,13 +46,56 @@ export class UsersService {
 
         bio: dto.bio ?? null,
 
-        status: 'ACTIVE',
+        status: dto.status ?? 'ACTIVE',
+        Employee: {
+          create: {
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            hireDate: new Date(),
+            status: 'ACTIVE',
+            ...employeeDetails,
+            contracts:
+              dto.salary || dto.contractType || dto.salaryFrequency
+                ? {
+                    create: {
+                      type: (dto.contractType as any) ?? 'PERMANENT',
+                      startDate: new Date(),
+                      salary: dto.salary ?? null,
+                      frequency: dto.salaryFrequency ?? 'MONTHLY',
+                    },
+                  }
+                : undefined,
+            shifts:
+              dto.shiftStartAt && dto.shiftEndAt
+                ? {
+                    create: {
+                      startAt: new Date(dto.shiftStartAt),
+                      endAt: new Date(dto.shiftEndAt),
+                      type: (dto.shiftType as any) ?? 'DAY',
+                    },
+                  }
+                : undefined,
+          },
+        },
+      },
+      include: {
+        Employee: {
+          include: {
+            department: true,
+            serviceUnit: true,
+            contracts: { where: { active: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+            shifts: { orderBy: { startAt: 'desc' }, take: 5 },
+          },
+        },
+        staff: { include: { service: true } },
+        serviceResponsabilites: { include: { service: true } },
       },
     });
   }
 
   findAll() {
     return this.prisma.user.findMany({
+      where: { deletedAt: null },
       select: {
         id: true,
         email: true,
@@ -53,9 +104,37 @@ export class UsersService {
         firstName: true,
         lastName: true,
         primaryRole: true,
+        specialty: true,
+        profilePhotoUrl: true,
         phone: true,
+        nationality: true,
+        addressCountry: true,
+        addressProvince: true,
+        addressCity: true,
+        addressNeighborhood: true,
+        addressStreet: true,
+        bio: true,
         status: true,
+        lastLoginAt: true,
+        createdAt: true,
+        Employee: {
+          include: {
+            department: true,
+            serviceUnit: true,
+            contracts: { where: { active: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+            shifts: { orderBy: { startAt: 'desc' }, take: 5 },
+          },
+        },
+        staff: {
+          where: { actif: true },
+          include: { service: true },
+        },
+        serviceResponsabilites: {
+          where: { actif: true },
+          include: { service: true },
+        },
       },
+      orderBy: [{ primaryRole: 'asc' }, { displayName: 'asc' }],
     });
   }
   async findContactsForRole(role?: RoleSlug | 'PATIENT', userId?: string) {
@@ -221,19 +300,133 @@ export class UsersService {
 
   async update(id: string, dto: UpdateUserDto) {
     const data: any = { ...dto };
+    const employeeData: any = {};
+    const contractData: any = {};
 
     if (dto.password) {
       data.passwordHash = await bcrypt.hash(dto.password, 10);
       delete data.password;
     }
 
+    for (const key of [
+      'gender',
+      'dateOfBirth',
+      'position',
+      'employeeNumber',
+      'departmentId',
+      'serviceUnitId',
+      'contractType',
+      'salary',
+      'salaryFrequency',
+      'shiftStartAt',
+      'shiftEndAt',
+      'shiftType',
+    ]) {
+      delete data[key];
+    }
+
+    if (dto.gender !== undefined) employeeData.gender = dto.gender;
+    if (dto.dateOfBirth !== undefined) employeeData.dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : null;
+    if (dto.position !== undefined) employeeData.position = dto.position;
+    if (dto.employeeNumber !== undefined) employeeData.employeeNumber = dto.employeeNumber;
+    if (dto.departmentId !== undefined) employeeData.departmentId = dto.departmentId || null;
+    if (dto.serviceUnitId !== undefined) employeeData.serviceUnitId = dto.serviceUnitId || null;
+    if (dto.salary !== undefined) contractData.salary = dto.salary;
+    if (dto.salaryFrequency !== undefined) contractData.frequency = dto.salaryFrequency;
+    if (dto.contractType !== undefined) contractData.type = dto.contractType as any;
+
     if (data.email) data.email = data.email.toLowerCase();
     if (data.username) data.username = data.username.toLowerCase();
 
-    return this.prisma.user.update({
+    const user = await this.prisma.user.update({
       where: { id },
       data,
+      include: { Employee: { include: { contracts: { where: { active: true }, take: 1 } } } },
     });
+
+    if (Object.keys(employeeData).length || Object.keys(contractData).length) {
+      const employee = user.Employee[0]
+        ? await this.prisma.employee.update({
+            where: { id: user.Employee[0].id },
+            data: {
+              ...employeeData,
+              firstName: data.firstName ?? user.firstName,
+              lastName: data.lastName ?? user.lastName,
+            },
+          })
+        : await this.prisma.employee.create({
+            data: {
+              userId: id,
+              firstName: data.firstName ?? user.firstName,
+              lastName: data.lastName ?? user.lastName,
+              hireDate: new Date(),
+              ...employeeData,
+            },
+          });
+
+      if (Object.keys(contractData).length) {
+        const activeContract = user.Employee[0]?.contracts?.[0];
+        if (activeContract) {
+          await this.prisma.employeeContract.update({ where: { id: activeContract.id }, data: contractData });
+        } else {
+          await this.prisma.employeeContract.create({
+            data: {
+              employeeId: employee.id,
+              startDate: new Date(),
+              type: (contractData.type as any) ?? 'PERMANENT',
+              salary: contractData.salary ?? null,
+              frequency: contractData.frequency ?? 'MONTHLY',
+            },
+          });
+        }
+      }
+
+      if (dto.shiftStartAt && dto.shiftEndAt) {
+        await this.prisma.shift.create({
+          data: {
+            employeeId: employee.id,
+            startAt: new Date(dto.shiftStartAt),
+            endAt: new Date(dto.shiftEndAt),
+            type: (dto.shiftType as any) ?? 'DAY',
+          },
+        });
+      }
+    }
+
+    return this.findOne(id);
+  }
+
+  async clockIn(userId: string) {
+    const employee = await this.prisma.employee.findFirst({ where: { userId } });
+    if (!employee) throw new NotFoundException('Employe introuvable');
+    const today = new Date().toISOString().slice(0, 10);
+    const existing = await this.prisma.attendance.findFirst({
+      where: {
+        employeeId: employee.id,
+        createdAt: { gte: new Date(`${today}T00:00:00.000Z`) },
+      },
+    });
+    if (existing) {
+      return this.prisma.attendance.update({ where: { id: existing.id }, data: { clockInAt: existing.clockInAt ?? new Date(), status: 'PRESENT' } });
+    }
+    return this.prisma.attendance.create({ data: { employeeId: employee.id, clockInAt: new Date(), status: 'PRESENT' } });
+  }
+
+  async clockOut(userId: string) {
+    const employee = await this.prisma.employee.findFirst({ where: { userId } });
+    if (!employee) throw new NotFoundException('Employe introuvable');
+    const today = new Date().toISOString().slice(0, 10);
+    const attendance = await this.prisma.attendance.findFirst({
+      where: {
+        employeeId: employee.id,
+        createdAt: { gte: new Date(`${today}T00:00:00.000Z`) },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!attendance) {
+      return this.prisma.attendance.create({ data: { employeeId: employee.id, clockInAt: new Date(), clockOutAt: new Date(), status: 'PRESENT' } });
+    }
+    return this.prisma.attendance.update({ where: { id: attendance.id }, data: { clockOutAt: new Date() } });
   }
 
   async remove(id: string) {

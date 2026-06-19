@@ -18,6 +18,9 @@
     "prisma:db:push": "prisma db push --schema backend/prisma/schema.prisma",
     "postinstall": "prisma generate --schema=backend/prisma/schema.prisma"
   },
+  "prisma": {
+    "schema": "backend/prisma/schema.prisma"
+  },
   "dependencies": {
     "@fullcalendar/core": "^6.1.15",
     "@fullcalendar/daygrid": "^6.1.20",

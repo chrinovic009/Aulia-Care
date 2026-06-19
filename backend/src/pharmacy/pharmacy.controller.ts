@@ -15,6 +15,12 @@ export class PharmacyController {
     return this.pharmacyService.findAll();
   }
 
+  @Get('available')
+  @Roles('SUPER_ADMIN', 'PHYSICIAN', 'PHARMACIST')
+  findAvailable() {
+    return this.pharmacyService.findAvailable();
+  }
+
   @Get(':id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'PHARMACIST')
   findOne(@Param('id') id: string) {

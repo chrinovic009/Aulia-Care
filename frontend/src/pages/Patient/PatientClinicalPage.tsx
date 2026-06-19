@@ -100,6 +100,11 @@ export default function PatientClinicalPage({ mode }: PatientClinicalPageProps) 
                 <Info label="Tension" value={latestVitals.BLOOD_PRESSURE || "-"} />
                 <Info label="SpO2" value={latestVitals.OXYGEN_SATURATION || "-"} />
                 <Info label="Pouls" value={latestVitals.HEART_RATE || "-"} />
+                <Info label="Respiration" value={latestVitals.RESPIRATORY_RATE || "-"} />
+                <Info label="Poids" value={latestVitals.WEIGHT || "-"} />
+                <Info label="Taille" value={latestVitals.HEIGHT || "-"} />
+                <Info label="Perimetre thoracique" value={latestVitals.CHEST_CIRCUMFERENCE || "-"} />
+                <Info label="Perimetre brachial" value={latestVitals.ARM_CIRCUMFERENCE || "-"} />
               </Panel>
               <ListPanel title="Consultations" items={(profile.consultations || []).map((item) => ({
                 title: item.diagnosis || item.clinicalSummary || "Consultation",

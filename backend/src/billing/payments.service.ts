@@ -51,10 +51,15 @@ export class PaymentsService {
         },
       });
 
+      const nextWorkflowStatus =
+        invoice.type === 'PHARMACY'
+          ? PatientWorkflowStatus.EN_PHARMACIE
+          : PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE;
+
       const updatedPatient = await prisma.patient.update({
         where: { id: invoice.patientId },
         data: {
-          workflowStatus: PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE,
+          workflowStatus: nextWorkflowStatus,
         },
       });
 
@@ -98,25 +103,29 @@ export class PaymentsService {
         });
       }
 
-      const nurseUsers = await prisma.user.findMany({
+      const targetRole = invoice.type === 'PHARMACY' ? 'PHARMACIST' : 'NURSE';
+      const targetUsers = await prisma.user.findMany({
         where: {
           OR: [
-            { primaryRole: 'NURSE' },
-            { roles: { some: { role: { slug: 'NURSE' } } } },
+            { primaryRole: targetRole as any },
+            { roles: { some: { role: { slug: targetRole as any } } } },
           ],
         },
       });
 
       const notifications = await Promise.all(
-        nurseUsers.map((user) =>
+        targetUsers.map((user) =>
           prisma.notification.create({
             data: {
               recipientId: user.id,
               type: 'ALERT',
               status: 'UNREAD',
               priority: 'HIGH',
-              title: 'Patient prêt pour l’infirmerie',
-              message: `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} est en attente de l’infirmerie après paiement.`,
+              title: invoice.type === 'PHARMACY' ? 'Prescription payee' : 'Patient pret pour infirmerie',
+              message:
+                invoice.type === 'PHARMACY'
+                  ? `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} a paye sa prescription et attend la pharmacie.`
+                  : `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} est en attente de l'infirmerie apres paiement.`,
               relatedEntity: 'Patient',
               relatedId: updatedPatient.id,
               sendAt: new Date(),

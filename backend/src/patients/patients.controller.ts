@@ -43,6 +43,12 @@ export class PatientsController {
     return this.patientsService.getPatientsAssignedToDoctor(req.user?.userId);
   }
 
+  @Get('doctor/visible')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
+  getPatientsVisibleToDoctors(@Request() req: any) {
+    return this.patientsService.getPatientsVisibleToDoctors(req.user?.userId);
+  }
+
   @Get('me/profile')
   @Roles('PATIENT')
   getMyPatientProfile(@Request() req: any) {

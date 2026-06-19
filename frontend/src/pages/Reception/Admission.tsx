@@ -33,6 +33,7 @@ const Admission: React.FC = () => {
   const navigate = useNavigate();
   const [emailDomain, setEmailDomain] = useState("@gmail.com");
   const [form, setForm] = useState<any>({
+    admissionMode: "ORDINARY",
     category: "P",
     name: "",
     gender: "F",
@@ -55,6 +56,10 @@ const Admission: React.FC = () => {
     documents: [] as any[],
     amountDue: ADMISSION_FEE_AMOUNT,
     paymentRequestId: "",
+    voucherNumber: "",
+    voucherIssuer: "",
+    voucherNotes: "",
+    voucherAmount: "",
   });
   const [existingPatient, setExistingPatient] = useState<any>(null);
   const { currentUser } = useAuth();
@@ -143,9 +148,10 @@ const Admission: React.FC = () => {
     (async () => {
       try {
         const svcs = await fetchServices();
-        setServicesList(svcs || []);
-        if (svcs && svcs.length > 0 && !form.serviceId) {
-          setForm((f: any) => ({ ...f, serviceId: svcs[0].id }));
+        const patientServices = (svcs || []).filter((service: any) => !["reception", "réception", "caisse"].includes(String(service.name || "").trim().toLowerCase()));
+        setServicesList(patientServices);
+        if (patientServices.length > 0 && !form.serviceId) {
+          setForm((f: any) => ({ ...f, serviceId: patientServices[0].id }));
         }
       } catch (e) {
         // ignore
@@ -180,6 +186,7 @@ const Admission: React.FC = () => {
     setEmailMatchPatient(null);
     setModalStep(null);
     setForm({
+      admissionMode: "ORDINARY",
       category: "P",
       name: "",
       gender: "F",
@@ -201,6 +208,10 @@ const Admission: React.FC = () => {
       allergies: [],
       documents: [],
       amountDue: ADMISSION_FEE_AMOUNT,
+      voucherNumber: "",
+      voucherIssuer: "",
+      voucherNotes: "",
+      voucherAmount: "",
     });
   };
 
@@ -235,24 +246,30 @@ const Admission: React.FC = () => {
   };
 
   const handleSaveClick = async () => {
-    if (conflictPatient) {
+    const isVoucherAdmission = form.admissionMode === "PARAMEDICAL_VOUCHER";
+    if (!isVoucherAdmission && conflictPatient) {
       window.alert(`Un patient existe déjà avec le même nom, téléphone ou email. Vérifiez son dossier avant de créer une admission.`);
       return;
     }
 
     try {
       const { firstName, lastName } = splitFullName(form.name);
-      const finalEmail = form.email?.trim() || buildDefaultEmail(firstName, lastName);
+      const safeFirstName = firstName || "Patient";
+      const safeLastName = lastName || form.voucherNumber || "Externe";
+      const finalEmail = form.email?.trim() || (
+        isVoucherAdmission
+          ? `bon-${normalizeEmailLocalPart(form.voucherNumber || String(Date.now()))}@external.d7.local`
+          : buildDefaultEmail(safeFirstName, safeLastName)
+      );
       const familyContacts = (form.contacts || []).filter((contact: any) =>
         contact && (contact.name || contact.relation || contact.phone || contact.address)
       );
 
-      // 1. Create patient admission without generating a user account.
       const result = await createPatientAdmission({
-        firstName,
-        lastName,
-        gender: form.gender,
-        dateOfBirth: form.dob,
+        firstName: safeFirstName,
+        lastName: safeLastName,
+        gender: form.gender || "O",
+        dateOfBirth: form.dob || "1900-01-01",
         profession: form.profession,
         familyContacts,
         phone: form.phone,
@@ -261,12 +278,16 @@ const Admission: React.FC = () => {
         nationality: form.nationality,
         insuranceProvider: form.insurance.company,
         insuranceNumber: form.insurance.policy,
-        admissionType: form.admissionType,
+        admissionType: isVoucherAdmission ? "BON_PARAMEDICAL" : form.admissionType,
         serviceId: form.serviceId,
         priority: form.priority,
         receptionistId: currentUser?.id,
         receptionist: form.receptionist,
         arrivalAt: form.arrival,
+        amountDue: isVoucherAdmission ? Number(form.voucherAmount || 0) : ADMISSION_FEE_AMOUNT,
+        voucherNumber: form.voucherNumber,
+        voucherIssuer: form.voucherIssuer,
+        voucherNotes: form.voucherNotes,
       } as any);
 
       setModalStep('success');
@@ -302,6 +323,32 @@ const Admission: React.FC = () => {
   return (
     <div className="p-4 sm:p-6 bg-gray-50 dark:bg-slate-950 min-h-screen">
       <h2 className="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">Nouvelle admission</h2>
+      <div className="mb-4 grid gap-3 md:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => setForm((current: any) => ({ ...current, admissionMode: "ORDINARY" }))}
+          className={`rounded-lg border p-4 text-left transition ${
+            form.admissionMode === "ORDINARY"
+              ? "border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-100"
+              : "border-gray-200 bg-white text-gray-700 dark:border-slate-700 dark:bg-slate-900 dark:text-gray-300"
+          }`}
+        >
+          <p className="font-semibold">Admission classique</p>
+          <p className="mt-1 text-sm opacity-80">Patient reçu avec fiche complète, paiement de fiche puis infirmerie.</p>
+        </button>
+        <button
+          type="button"
+          onClick={() => setForm((current: any) => ({ ...current, admissionMode: "PARAMEDICAL_VOUCHER", admissionType: "BON_PARAMEDICAL" }))}
+          className={`rounded-lg border p-4 text-left transition ${
+            form.admissionMode === "PARAMEDICAL_VOUCHER"
+              ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-100"
+              : "border-gray-200 bg-white text-gray-700 dark:border-slate-700 dark:bg-slate-900 dark:text-gray-300"
+          }`}
+        >
+          <p className="font-semibold">Bon paramédical externe</p>
+          <p className="mt-1 text-sm opacity-80">Patient orienté directement vers un service paramédical, avec paiement et traçabilité.</p>
+        </button>
+      </div>
       <div className="grid grid-cols-12 gap-4 sm:gap-6">
         <div className="col-span-12 lg:col-span-8">
           {existingPatient ? (
@@ -406,6 +453,18 @@ const Admission: React.FC = () => {
                   <input placeholder="Réceptionniste" value={form.receptionist} readOnly className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
+
+              {form.admissionMode === "PARAMEDICAL_VOUCHER" ? (
+                <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-emerald-200 dark:border-emerald-800 mt-4">
+                  <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">3. Bon paramédical</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
+                    <input placeholder="Numero du bon" value={form.voucherNumber} onChange={(e) => setForm({ ...form, voucherNumber: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <input placeholder="Institution / medecin emetteur" value={form.voucherIssuer} onChange={(e) => setForm({ ...form, voucherIssuer: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <input type="number" placeholder="Montant a payer" value={form.voucherAmount} onChange={(e) => setForm({ ...form, voucherAmount: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <textarea placeholder="Besoin inscrit sur le bon / notes" value={form.voucherNotes} onChange={(e) => setForm({ ...form, voucherNotes: e.target.value })} rows={3} className="sm:col-span-2 lg:col-span-3 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                  </div>
+                </div>
+              ) : null}
 
               <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700 mt-4">
                 <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">4. Orientation médicale</h3>

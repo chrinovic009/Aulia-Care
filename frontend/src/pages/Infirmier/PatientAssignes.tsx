@@ -21,6 +21,10 @@ const emptyVitalsForm: VitalsForm = {
   spo2: "",
   heartRate: "",
   respiratoryRate: "",
+  weight: "",
+  height: "",
+  chestCircumference: "",
+  armCircumference: "",
   notes: "",
   physicianId: "",
 };
@@ -119,6 +123,10 @@ export default function PatientAssignes() {
       spo2: patient.vitals.spo2 || "",
       heartRate: patient.vitals.heartRate || "",
       respiratoryRate: patient.vitals.respiratoryRate || "",
+      weight: patient.vitals.weight || "",
+      height: patient.vitals.height || "",
+      chestCircumference: patient.vitals.chestCircumference || "",
+      armCircumference: patient.vitals.armCircumference || "",
       notes: "",
       physicianId: "",
     });
@@ -329,6 +337,10 @@ export default function PatientAssignes() {
                   <VitalCard label="SpO2" value={patient.vitals.spo2} />
                   <VitalCard label="Frequence cardiaque" value={patient.vitals.heartRate} />
                   <VitalCard label="Frequence respiratoire" value={patient.vitals.respiratoryRate} />
+                  <VitalCard label="Poids" value={patient.vitals.weight} />
+                  <VitalCard label="Taille" value={patient.vitals.height} />
+                  <VitalCard label="Perimetre thoracique" value={patient.vitals.chestCircumference} />
+                  <VitalCard label="Perimetre brachial" value={patient.vitals.armCircumference} />
                 </div>
               </article>
             );
@@ -386,6 +398,10 @@ export default function PatientAssignes() {
               <VitalInput label="SpO2 (%)" value={vitalsForm.spo2} onChange={(value) => updateVitalsField("spo2", value)} />
               <VitalInput label="Frequence cardiaque (bpm)" value={vitalsForm.heartRate} onChange={(value) => updateVitalsField("heartRate", value)} />
               <VitalInput label="Frequence respiratoire (/min)" value={vitalsForm.respiratoryRate} onChange={(value) => updateVitalsField("respiratoryRate", value)} />
+              <VitalInput label="Poids (kg)" value={vitalsForm.weight} onChange={(value) => updateVitalsField("weight", value)} />
+              <VitalInput label="Taille (cm)" value={vitalsForm.height} onChange={(value) => updateVitalsField("height", value)} />
+              <VitalInput label="Perimetre thoracique (cm)" value={vitalsForm.chestCircumference} onChange={(value) => updateVitalsField("chestCircumference", value)} />
+              <VitalInput label="Perimetre brachial (cm)" value={vitalsForm.armCircumference} onChange={(value) => updateVitalsField("armCircumference", value)} />
               <label className="block sm:col-span-2">
                 <span className="text-sm font-semibold text-slate-900 dark:text-white">Medecin destinataire</span>
                 <select

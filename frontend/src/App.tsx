@@ -26,6 +26,7 @@ import ProfileInfirmier from "./pages/Infirmier/ProfileInfirmier";
 import RoundsInfirmier from "./pages/Infirmier/Rounds";
 import HospitalisationInfirmier from "./pages/Infirmier/HospitalisationsSuivi";
 import DashboardMedecin from "./pages/Medecin/DashboardMedecin";
+import PatientsMedecin from "./pages/Medecin/PatientsMedecin";
 import MessagesMedecin from "./pages/Medecin/MessagesMedecin";
 import DashboardCaissier from "./pages/Caissier/DashboardCaissier";
 import MessagesCaissier from "./pages/Caissier/MessagesCaissier";
@@ -50,6 +51,8 @@ import DelivrancePharmacie from "./pages/Pharmacie/DelivrancePharmacie";
 import HistoriquePharmacie from "./pages/Pharmacie/HistoriquePharmacie";
 import GestionStockPharmacie from "./pages/Pharmacie/GestionStockPharmacie";
 import MessagesPharmacie from "./pages/Pharmacie/MessagesPharmacie";
+import DashboardLaboratoire from "./pages/Laboratoire/DashboardLaboratoire";
+import MessagesLaboratoire from "./pages/Laboratoire/MessagesLaboratoire";
 import DashboardSupAdmin from "./pages/SuperAdmin/DashboardSupAdmin";
 import ProfileSupAdmin from "./pages/SuperAdmin/ProfileSupAdmin";
 import ProfilePharmacie from "./pages/Pharmacie/ProfilePharmacie";
@@ -99,7 +102,7 @@ export default function App() {
 
             {/* Page Médecin */}
             <Route path="/doctor/" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
-            <Route path="/doctor/patients" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
+            <Route path="/doctor/patients" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><PatientsMedecin /></RoleGuard>} />
             <Route path="/doctor/consultations" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
             <Route path="/doctor/prescriptions" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
             <Route path="/doctor/exams" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
@@ -132,6 +135,11 @@ export default function App() {
             <Route path="/pharmacie/stock" element={<RoleGuard requiredRoles={["PHARMACIST"]}><GestionStockPharmacie /></RoleGuard>} />
             <Route path="/pharmacie/messages" element={<RoleGuard requiredRoles={["PHARMACIST"]}><MessagesPharmacie /></RoleGuard>} />
             <Route path="/pharmacie/profile" element={<RoleGuard requiredRoles={["PHARMACIST"]}><ProfilePharmacie /></RoleGuard>} />
+
+            {/* Laboratoire */}
+            <Route path="/laboratoire" element={<RoleGuard requiredRoles={["LAB_TECHNICIAN"]}><DashboardLaboratoire /></RoleGuard>} />
+            <Route path="/laboratoire/examens" element={<RoleGuard requiredRoles={["LAB_TECHNICIAN"]}><DashboardLaboratoire /></RoleGuard>} />
+            <Route path="/laboratoire/messages" element={<RoleGuard requiredRoles={["LAB_TECHNICIAN"]}><MessagesLaboratoire /></RoleGuard>} />
 
             {/* Super Admin */}
             <Route path="/admin" element={<RoleGuard requiredRoles={["SUPER_ADMIN"]}><DashboardSupAdmin /></RoleGuard>} />

@@ -259,6 +259,12 @@ const pharmacyNavItems: NavItem[] = [
   { icon: <LockIcon />, name: "Profil pharmacie", path: "/pharmacie/profile" },
 ];
 
+const laboratoryNavItems: NavItem[] = [
+  { icon: <GridIcon />, name: "Dashboard laboratoire", path: "/laboratoire" },
+  { icon: <DocsIcon />, name: "Examens", path: "/laboratoire/examens" },
+  { icon: <ChatIcon />, name: "Messages", path: "/laboratoire/messages" },
+];
+
 const superAdminNavItems: NavItem[] = [
   { icon: <GridIcon />, name: "Dashboard DG", path: "/admin" },
   { icon: <LockIcon />, name: "Profil super admin", path: "/admin/profile" },
@@ -280,6 +286,7 @@ const AppSidebar: React.FC = () => {
   const isCashierSection = location.pathname.startsWith("/caissier");
   const isAdministrationSection = location.pathname.startsWith("/administration");
   const isPharmacySection = location.pathname.startsWith("/pharmacie");
+  const isLaboratorySection = location.pathname.startsWith("/laboratoire");
   const isSuperAdminSection = location.pathname.startsWith("/admin");
   const activeNavItems = isDoctorSection
     ? doctorNavItems
@@ -293,6 +300,8 @@ const AppSidebar: React.FC = () => {
     ? administrationNavItems
     : isPharmacySection
     ? pharmacyNavItems
+    : isLaboratorySection
+    ? laboratoryNavItems
     : isSuperAdminSection
     ? superAdminNavItems
     : navItems;

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { ConsultationsService } from './consultations.service';
 import { CreateConsultationDto } from './dto/create-consultation.dto';
 import { UpdateConsultationDto } from './dto/update-consultation.dto';
@@ -31,8 +31,26 @@ export class ConsultationsController {
 
   @Patch(':id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')
-  update(@Param('id') id: string, @Body() dto: UpdateConsultationDto) {
-    return this.consultationsService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateConsultationDto, @Request() req: any) {
+    return this.consultationsService.update(id, dto, req.user?.userId);
+  }
+
+  @Post(':id/clinical-sections')
+  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  saveClinicalSections(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+    return this.consultationsService.saveClinicalSections(id, body, req.user?.userId);
+  }
+
+  @Post(':id/lab-requests')
+  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  createLabRequest(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+    return this.consultationsService.createLabRequest(id, body, req.user?.userId);
+  }
+
+  @Post(':id/prescriptions')
+  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  createPrescription(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+    return this.consultationsService.createPrescription(id, body, req.user?.userId);
   }
 
   @Delete(':id')

@@ -57,4 +57,16 @@ export class UsersController {
   remove(@Param('id') id: string) {
     return this.usersService.remove(id);
   }
+
+  @Post('me/clock-in')
+  @UseGuards(JwtAuthGuard)
+  clockIn(@Request() req: any) {
+    return this.usersService.clockIn(req.user?.userId);
+  }
+
+  @Post('me/clock-out')
+  @UseGuards(JwtAuthGuard)
+  clockOut(@Request() req: any) {
+    return this.usersService.clockOut(req.user?.userId);
+  }
 }

@@ -51,6 +51,8 @@ interface AuthContextType {
   logout: () => void;
   updateProfile: (updates: Partial<AuthUser>) => Promise<AuthUser | null>;
   error: string | null;
+  restrictedAccount: AuthUser | null;
+  clearRestrictedAccount: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -80,6 +82,7 @@ export function getRedirectPath(role: RoleSlug) {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [restrictedAccount, setRestrictedAccount] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -119,6 +122,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const profile = await res.json() as AuthUser;
+      if (profile.status && profile.status !== "ACTIVE") {
+        localStorage.removeItem(ACCESS_TOKEN_KEY);
+        localStorage.removeItem(REFRESH_TOKEN_KEY);
+        setRestrictedAccount(profile);
+        setCurrentUser(null);
+        setIsLoading(false);
+        return;
+      }
       setCurrentUser(profile);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -164,7 +175,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
 
-      const { accessToken, refreshToken } = await loginRes.json();
+      const loginPayload = await loginRes.json();
+      const { accessToken, refreshToken, user: loginUser } = loginPayload;
+
+      if (loginUser?.status && loginUser.status !== "ACTIVE") {
+        const blockedUser = loginUser as AuthUser;
+        setRestrictedAccount(blockedUser);
+        setCurrentUser(null);
+        return blockedUser;
+      }
 
       if (!accessToken || !refreshToken) {
         setError("Réponse du serveur invalide");
@@ -193,6 +212,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const profile = await meRes.json() as AuthUser;
+      if (profile.status && profile.status !== "ACTIVE") {
+        localStorage.removeItem(ACCESS_TOKEN_KEY);
+        localStorage.removeItem(REFRESH_TOKEN_KEY);
+        setCurrentUser(null);
+        setRestrictedAccount(profile);
+        return profile;
+      }
       setCurrentUser(profile);
       return profile;
     } catch (err) {
@@ -263,6 +289,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logout,
     updateProfile,
     error,
+    restrictedAccount,
+    clearRestrictedAccount: () => setRestrictedAccount(null),
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
