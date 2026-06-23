@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -128,14 +128,55 @@ export class AdministrationService {
     return { medications, stocks, suppliers, movements, lots, transactions, purchaseOrders, goodsReceipts, dispenses };
   }
 
-  createMedication(data: any) {
+  async createMedication(data: any) {
+    const code = String(data.code || '').trim();
+    const name = String(data.name || '').trim();
+    const unit = String(data.unit || '').trim();
+    const strength = String(data.strength || '').trim() || null;
+
+    if (!code || !name || !unit) {
+      throw new BadRequestException('Le code, le nom et l\'unité du médicament sont requis.');
+    }
+
+    let existing = await (this.prisma as any).medication.findUnique({
+      where: { code },
+      include: { StockLot: true },
+    });
+    if (!existing) {
+      existing = await (this.prisma as any).medication.findFirst({
+        where: {
+          deletedAt: null,
+          name,
+          unit,
+          strength,
+        },
+        include: { StockLot: true },
+      });
+    }
+
+    if (existing) {
+      const currentQuantity = (existing.StockLot || []).reduce((sum: number, lot: any) => sum + Number(lot.quantity || 0), 0);
+      throw new ConflictException({
+        message: 'Un médicament identique existe déjà dans le stock.',
+        medication: {
+          id: existing.id,
+          code: existing.code,
+          name: existing.name,
+          unit: existing.unit,
+          strength: existing.strength,
+          manufacturer: existing.manufacturer,
+          currentQuantity,
+        },
+      });
+    }
+
     return (this.prisma as any).medication.create({
       data: {
-        code: data.code,
-        name: data.name,
+        code,
+        name,
         description: data.description ?? null,
-        unit: data.unit,
-        strength: data.strength ?? null,
+        unit,
+        strength,
         manufacturer: data.manufacturer ?? null,
       },
     });
@@ -184,7 +225,7 @@ export class AdministrationService {
         (this.prisma as any).attendance.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
         (this.prisma as any).leaveRequest.findMany({ orderBy: { requestedAt: 'desc' }, take: 200 }),
         (this.prisma as any).payroll.findMany({ orderBy: { createdAt: 'desc' }, take: 100 }),
-        (this.prisma as any).auditTrail.findMany({ orderBy: { createdAt: 'desc' }, take: 100 }),
+        (this.prisma as any).auditTrail.findMany({ orderBy: { changedAt: 'desc' }, take: 100 }),
       ]);
 
     return {

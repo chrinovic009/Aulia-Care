@@ -198,21 +198,22 @@ model ServiceUnit {
 
 /// Central services catalog (e.g. Cardiologie, Radiologie)
 model Service {
-  id           String               @id @default(uuid())
-  name         String               @unique
-  description  String?
-  active       Boolean              @default(true)
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
-  syncedAt     DateTime?
-  sourceNode   String?
-  version      Int                  @default(1)
-  clinicId     String?
-  clinic       Clinic?              @relation(fields: [clinicId], references: [id])
-  patients     Patient[]
-  responsables ServiceResponsable[]
-  staff        ServiceStaff[]
-  tarifs       ServiceTarif[]
+  id              String               @id @default(uuid())
+  name            String               @unique
+  description     String?
+  active          Boolean              @default(true)
+  isParamedical   Boolean              @default(false)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  syncedAt        DateTime?
+  sourceNode      String?
+  version         Int                  @default(1)
+  clinicId        String?
+  clinic          Clinic?              @relation(fields: [clinicId], references: [id])
+  patients        Patient[]
+  responsables    ServiceResponsable[]
+  staff           ServiceStaff[]
+  tarifs          ServiceTarif[]
 
   @@index([clinicId])
 }

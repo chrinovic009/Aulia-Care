@@ -206,9 +206,18 @@ function PatientRecord({ patient }: { patient: DoctorPatient }) {
           </p>
           <p className="mt-1 text-sm text-slate-500">Medecin responsable: {doctorLabel(patient.assignedDoctor)}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <StatusBadge label={patient.workflowStatus || "STATUT"} />
-          <AccessBadge access={patient.access} />
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => printPatientRecord(patient)}
+            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800"
+          >
+            🖨️ Imprimer le dossier
+          </button>
+          <div className="flex flex-wrap gap-2">
+            <StatusBadge label={patient.workflowStatus || "STATUT"} />
+            <AccessBadge access={patient.access} />
+          </div>
         </div>
       </div>
 
@@ -458,6 +467,256 @@ function Metric({ label, value, tone = "default" }: { label: string; value: numb
     red: "text-red-700 dark:text-red-300",
   };
   return <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950"><p className="text-xs text-slate-500">{label}</p><p className={`mt-2 text-2xl font-semibold ${colors[tone]}`}>{value}</p></div>;
+}
+
+function printPatientRecord(patient: DoctorPatient) {
+  const formatDateString = (value?: string | null) => {
+    if (!value) return "—";
+    return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  };
+
+  const familyRows = (patient.familyContacts || []).map((contact) => `
+      <tr>
+        <td>${contact.name || "—"}</td>
+        <td>${contact.relationship || "—"}</td>
+        <td>${contact.phone || "—"}</td>
+      </tr>
+    `).join("");
+
+  const consultationRows = (patient.consultations || []).map((consultation) => `
+      <tr>
+        <td>${formatDateString(consultation.createdAt)}</td>
+        <td>${consultation.chiefComplaint || "Consultation medicale"}</td>
+        <td>${consultation.provider?.displayName || "Medecin"}</td>
+        <td>${consultation.diagnosis || "-"}</td>
+      </tr>
+    `).join("");
+
+  const prescriptionRows = (patient.prescriptions || []).map((prescription) => `
+      <tr>
+        <td>${formatDateString(prescription.prescribingDate)}</td>
+        <td>${prescription.prescriber?.displayName || "-"}</td>
+        <td>${prescription.lineItems?.map((line) => `${line.medication?.name || "Medicament"} ${line.dosage || ""} ${line.frequency || ""}`).join(" | ") || prescription.instruction || "-"}</td>
+        <td>${prescription.status}</td>
+      </tr>
+    `).join("");
+
+  const historyKindLabel = (kind: string) => {
+    const labels: Record<string, string> = {
+      MEDICAL_CONSULTATION: "Consultation médicale",
+      NURSE_ORIENTATION: "Orientation infirmière",
+      ADMISSION_METADATA: "Admission réception",
+    };
+    return labels[kind] ?? kind.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+  };
+
+  const formatHistoryDetails = (kind: string, details: string) => {
+    const parsed = (() => {
+      try {
+        return JSON.parse(details);
+      } catch {
+        return null;
+      }
+    })();
+
+    if (!parsed || typeof parsed !== "object") {
+      return details || "-";
+    }
+
+    const toLine = (label: string, value?: string | number | null) =>
+      value ? `<div><strong>${label} :</strong> ${value}</div>` : "";
+
+    if (kind === "MEDICAL_CONSULTATION") {
+      const rows: string[] = [];
+      if (parsed.diagnosis?.principal) rows.push(toLine("Diagnostic", parsed.diagnosis.principal));
+      if (parsed.treatmentPlan?.notes) rows.push(toLine("Traitement", parsed.treatmentPlan.notes));
+      if (parsed.followUp?.notes) rows.push(toLine("Suivi", parsed.followUp.notes));
+      if (parsed.clinicalExam?.generalState) rows.push(toLine("État général", parsed.clinicalExam.generalState));
+      if (parsed.currentSymptoms?.onset) rows.push(toLine("Début des symptômes", parsed.currentSymptoms.onset));
+      return rows.length > 0 ? rows.join("") : details || "-";
+    }
+
+    if (kind === "NURSE_ORIENTATION") {
+      const rows: string[] = [];
+      if (parsed.physicianName) rows.push(toLine("Médecin orienté", parsed.physicianName));
+      if (parsed.consultationId) rows.push(toLine("Consultation", parsed.consultationId));
+      if (parsed.notes) rows.push(toLine("Observations infirmières", parsed.notes));
+      return rows.length > 0 ? rows.join("") : details || "-";
+    }
+
+    if (kind === "ADMISSION_METADATA") {
+      const rows: string[] = [];
+      if (parsed.dateOfBirth) rows.push(toLine("Date de naissance", parsed.dateOfBirth));
+      if (parsed.age) rows.push(toLine("Âge", String(parsed.age)));
+      if (parsed.profession) rows.push(toLine("Profession", parsed.profession));
+      if (parsed.receptionistName) rows.push(toLine("Réceptionniste", parsed.receptionistName));
+      if (Array.isArray(parsed.familyContacts) && parsed.familyContacts.length) {
+        rows.push(`<div><strong>Contacts familiaux :</strong> ${parsed.familyContacts.map((contact: any) => `${contact.name || "-"} (${contact.relation || "-"}) ${contact.phone || ""}`).join(" • ")}</div>`);
+      }
+      return rows.length > 0 ? rows.join("") : details || "-";
+    }
+
+    return Object.entries(parsed)
+      .filter(([, value]) => value !== null && value !== undefined && value !== "")
+      .map(([key, value]) => {
+        const prettyKey = key.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());
+        if (typeof value === "object") {
+          return `<div><strong>${prettyKey} :</strong> ${JSON.stringify(value)}</div>`;
+        }
+        return `<div><strong>${prettyKey} :</strong> ${String(value)}</div>`;
+      })
+      .join("") || details || "-";
+  };
+
+  const medicalHistoryRows = (patient.medicalHistories || []).map((item) => `
+      <tr>
+        <td>${formatDateString(item.eventDate)}</td>
+        <td>${historyKindLabel(item.kind)}</td>
+        <td>${formatHistoryDetails(item.kind, item.details)}</td>
+      </tr>
+    `).join("");
+
+  const html = `
+    <html>
+      <head>
+        <title>Dossier Patient - ${formatDoctorPatientName(patient)}</title>
+        <style>
+          body { font-family: "Calibri", Arial, sans-serif; color: #111; }
+          .page { padding: 24px; }
+          .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #222; padding-bottom: 16px; margin-bottom: 24px; }
+          .brand { display: flex; align-items: center; gap: 16px; }
+          .brand img { width: 56px; height: auto; }
+          .clinic-name { font-size: 24px; font-weight: 700; letter-spacing: 0.04em; color: #1f2937; }
+          .clinic-details { font-size: 11px; color: #4b5563; margin-top: 4px; }
+          .title { text-align: right; }
+          .title .document-type { font-size: 18px; font-weight: 700; color: #111827; }
+          .title .date { font-size: 10px; color: #6b7280; margin-top: 4px; }
+          .section { margin-bottom: 20px; }
+          .section-title { font-size: 12px; font-weight: 700; color: #111827; border-bottom: 1px solid #d1d5db; padding-bottom: 6px; margin-bottom: 12px; }
+          table { width: 100%; border-collapse: collapse; font-size: 11px; }
+          th, td { border: 1px solid #d1d5db; padding: 10px 8px; text-align: left; vertical-align: top; }
+          th { background: #f3f4f6; font-weight: 700; }
+          .label { width: 24%; font-weight: 700; }
+          .footer { margin-top: 24px; font-size: 10px; color: #6b7280; border-top: 1px solid #d1d5db; padding-top: 10px; }
+          @media print {
+            body { margin: 0; padding: 0; }
+            .page { padding: 18mm; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="page">
+          <div class="header">
+            <div class="brand">
+              <img src="/images/favicon.png" alt="Logo clinique" />
+              <div>
+                <div class="clinic-name">D7 Clinique</div>
+                <div class="clinic-details">Centre hospitalier régional - Services médicaux et administratifs</div>
+                <div class="clinic-details">Adresse: Zone de santé, Dilala | Tel: +243 987 299 227 | Email: fondationd7clinic@gmail.com</div>
+              </div>
+            </div>
+            <div class="title">
+              <div class="document-type">Dossier Patient Administratif</div>
+              <div class="date">Créé le ${new Date().toLocaleDateString('fr-FR')}</div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Informations du patient</div>
+            <table>
+              <tbody>
+                <tr><td class="label">Nom complet</td><td>${formatDoctorPatientName(patient)}</td></tr>
+                <tr><td class="label">ID patient</td><td>${patient.externalId || patient.id}</td></tr>
+                <tr><td class="label">Sexe</td><td>${patient.gender || '—'}</td></tr>
+                <tr><td class="label">Date de naissance</td><td>${patient.dateOfBirth ? new Date(patient.dateOfBirth).toLocaleDateString('fr-FR') : '—'}</td></tr>
+                <tr><td class="label">Téléphone</td><td>${patient.phone || '—'}</td></tr>
+                <tr><td class="label">Email</td><td>${patient.email || '—'}</td></tr>
+                <tr><td class="label">Adresse</td><td>${patient.address || '—'}</td></tr>
+                <tr><td class="label">Profession</td><td>${patient.profession || '—'}</td></tr>
+                <tr><td class="label">Nationalité</td><td>${patient.nationality || '—'}</td></tr>
+                <tr><td class="label">Service</td><td>${serviceLabel(patient)}</td></tr>
+                <tr><td class="label">Médecin</td><td>${doctorLabel(patient.assignedDoctor)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          ${(patient.familyContacts || []).length > 0 ? `
+          <div class="section">
+            <div class="section-title">Contacts famille</div>
+            <table>
+              <thead>
+                <tr><th>Nom</th><th>Relation</th><th>Téléphone</th></tr>
+              </thead>
+              <tbody>${familyRows}</tbody>
+            </table>
+          </div>
+          ` : ''}
+
+          ${(patient.consultations || []).length > 0 ? `
+          <div class="section">
+            <div class="section-title">Consultations</div>
+            <table>
+              <thead>
+                <tr><th>Date</th><th>Motif</th><th>Médecin</th><th>Diagnostique</th></tr>
+              </thead>
+              <tbody>${consultationRows}</tbody>
+            </table>
+          </div>
+          ` : ''}
+
+          ${(patient.prescriptions || []).length > 0 ? `
+          <div class="section">
+            <div class="section-title">Prescriptions</div>
+            <table>
+              <thead>
+                <tr><th>Date</th><th>Prescripteur</th><th>Médicaments</th><th>Statut</th></tr>
+              </thead>
+              <tbody>${prescriptionRows}</tbody>
+            </table>
+          </div>
+          ` : ''}
+
+          ${(patient.hospitalizations || []).length > 0 ? `
+          <div class="section">
+            <div class="section-title">Hospitalisations</div>
+            <table>
+              <thead>
+                <tr><th>Date</th><th>Statut</th><th>Raison</th><th>Lit</th></tr>
+              </thead>
+              <tbody>${hospitalizationRows}</tbody>
+            </table>
+          </div>
+          ` : ''}
+
+          ${(patient.medicalHistories || []).length > 0 ? `
+          <div class="section">
+            <div class="section-title">Historique médical</div>
+            <table>
+              <thead>
+                <tr><th>Date</th><th>Type</th><th>Détails</th></tr>
+              </thead>
+              <tbody>${medicalHistoryRows}</tbody>
+            </table>
+          </div>
+          ` : ''}
+
+          <div class="footer">
+            D7 Clinique - dossier patient administratif imprimé depuis le système interne.
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return;
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+  }, 300);
 }
 
 function Info({ label, value }: { label: string; value: React.ReactNode }) {

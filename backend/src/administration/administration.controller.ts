@@ -58,7 +58,7 @@ export class AdministrationController {
   }
 
   @Get('stock')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST', 'PHYSICIAN')
   stock() {
     return this.administrationService.stockCatalog();
   }

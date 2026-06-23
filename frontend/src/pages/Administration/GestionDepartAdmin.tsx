@@ -13,6 +13,19 @@ type Department = {
   Employee?: unknown[];
 };
 
+const AUTO_DEPARTMENT_NAMES = [
+  'Medecine Général',
+  'Chirurgie générale',
+  'Radiologie (Imagerie)',
+  'Pharmacie',
+  'Psychiatrie',
+  'Rééducation & Soins paramédicaux',
+  'Urgences',
+  "Unités d’hospitalisation",
+  'Médecine préventive & vaccination',
+  'Centre de recherche clinique',
+];
+
 export default function GestionDepartAdmin() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -79,25 +92,28 @@ export default function GestionDepartAdmin() {
       </Panel>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <Panel title="Nouveau departement">
-          <div className="grid gap-3 md:grid-cols-2">
-            <input value={departmentForm.name} onChange={(event) => setDepartmentForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
-            <input value={departmentForm.code} onChange={(event) => setDepartmentForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
-            <select value={departmentForm.type} onChange={(event) => setDepartmentForm((current) => ({ ...current, type: event.target.value }))} className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white">
-              <option value="MEDICAL">Medical</option>
-              <option value="NURSING">Soins infirmiers</option>
-              <option value="SURGERY">Chirurgie</option>
-              <option value="LABORATORY">Laboratoire</option>
-              <option value="RADIOLOGY">Radiologie</option>
-              <option value="PHARMACY">Pharmacie</option>
-              <option value="RECEPTION">Reception</option>
-              <option value="BILLING">Caisse</option>
-              <option value="ADMINISTRATION">Administration</option>
-            </select>
-            <input value={departmentForm.description} onChange={(event) => setDepartmentForm((current) => ({ ...current, description: event.target.value }))} placeholder="Description" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
-            <button onClick={createDepartment} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white md:col-span-2"><Plus size={17} /> Ajouter le departement</button>
-          </div>
-        </Panel>
+        {departments.some((department) => AUTO_DEPARTMENT_NAMES.includes(department.name)) ? null : (
+          <Panel title="Nouveau departement">
+            <div className="grid gap-3 md:grid-cols-2">
+              <input value={departmentForm.name} onChange={(event) => setDepartmentForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
+              <input value={departmentForm.code} onChange={(event) => setDepartmentForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
+              <select value={departmentForm.type} onChange={(event) => setDepartmentForm((current) => ({ ...current, type: event.target.value }))} className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white">
+                <option value="MEDECINE GENERAL">Medecine Général</option>
+                <option value="CHIRURGIE">Chirurgie</option>
+                <option value="IMAGERIE">Imagerie</option>
+                <option value="PHARMACIE">Pharmacie</option>
+                <option value="PSYSCHIATRIE">Psychiatrie</option>
+                <option value="KINESITHERAPIE">Kinesitherapie</option>
+                <option value="URGENCES">Urgences</option>
+                <option value="UNITE HOSPITALISATION">Unité d'Hospitalisation</option>
+                <option value="VACCINATION">Vaccination</option>
+                <option value="ADMINISTRATION">Administration</option>
+              </select>
+              <input value={departmentForm.description} onChange={(event) => setDepartmentForm((current) => ({ ...current, description: event.target.value }))} placeholder="Description" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
+              <button onClick={createDepartment} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white md:col-span-2"><Plus size={17} /> Ajouter le departement</button>
+            </div>
+          </Panel>
+        )}
 
         <Panel title="Nouvelle unite de service">
           <div className="grid gap-3 md:grid-cols-2">
