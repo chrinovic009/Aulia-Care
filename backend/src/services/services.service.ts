@@ -3,12 +3,56 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 
+const PARAMEDICAL_KEYWORDS = [
+  'radiologie',
+  'laboratoire',
+  'dialyse',
+  'scanner',
+  'imagerie',
+  'irm',
+  'échographie',
+  'echographie',
+  'mammographie',
+  'pathologie',
+  'anatomie',
+  'nucleaire',
+  'nucléaire',
+  'endoscopie',
+  'paramedical',
+  'paramédical',
+];
+
+const isParamedicalServiceName = (name: string) => {
+  if (!name) return false;
+  const normalized = name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+  return PARAMEDICAL_KEYWORDS.some((keyword) => normalized.includes(keyword));
+};
+
 @Injectable()
 export class ServicesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(data: CreateServiceDto) {
-    return this.prisma.service.create({ data: data as any });
+  async create(data: CreateServiceDto) {
+    const isParamedical = data.isParamedical !== undefined
+      ? data.isParamedical
+      : isParamedicalServiceName(data.name);
+
+    const svc = await this.prisma.service.create({ data: { ...data, isParamedical } as any });
+
+    // Ensure department exists for service according to category keywords
+    try {
+      await this.ensureDepartmentForService(svc.name);
+    } catch (err) {
+      // don't block service creation on department creation errors
+      // log if necessary
+    }
+
+    return svc;
   }
 
   findAll() {
@@ -37,11 +81,171 @@ export class ServicesService {
 
   async update(id: string, dto: UpdateServiceDto) {
     await this.findOne(id);
-    return this.prisma.service.update({ where: { id }, data: dto as any });
+    const updateData: any = { ...dto };
+    if (dto.isParamedical !== undefined) {
+      updateData.isParamedical = dto.isParamedical;
+    } else if (dto.name) {
+      updateData.isParamedical = isParamedicalServiceName(dto.name);
+    }
+    return this.prisma.service.update({ where: { id }, data: updateData });
   }
 
   async addTarif(dto: any) {
+    const service = await this.prisma.service.findUnique({
+      where: { id: dto.serviceId },
+      select: { name: true },
+    });
+    if (!service) throw new NotFoundException('Service introuvable');
+    const normalizedName = service.name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+    if (['reception', 'caisse', 'secretariat'].includes(normalizedName)) {
+      throw new BadRequestException(
+        'Ce service est operationnel interne et ne peut pas avoir de tarif patient',
+      );
+    }
     return this.prisma.serviceTarif.create({ data: dto });
+  }
+
+  private async ensureDepartmentForService(serviceName: string) {
+    const normalize = (value: string) => value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+    const normalizedServiceName = normalize(serviceName);
+
+    const CATEGORY_MAP: { serviceNames: string[]; departmentName: string; departmentType: string }[] = [
+      {
+        serviceNames: [
+          'Pédiatrie', 'Gynécologie & obstétrique', 'Cardiologie', 'Pneumologie',
+          'Neurologie', 'Gastro-entérologie', 'Néphrologie', 'Endocrinologie & diabétologie',
+          'Dermatologie', 'Rhumatologie', 'Infectiologie', 'Oncologie', 'Gériatrie', 'Médecine du sport',
+        ],
+        departmentName: 'Medecine Général',
+        departmentType: 'MEDICAL',
+      },
+      {
+        serviceNames: [
+          'Chirurgie orthopédique & traumatologique', 'Chirurgie cardiovasculaire', 'Neurochirurgie',
+          'Chirurgie plastique & reconstructive', 'Chirurgie ORL', 'Chirurgie maxillo-faciale',
+          'Chirurgie pédiatrique', 'Chirurgie gynécologique',
+        ],
+        departmentName: 'Chirurgie générale',
+        departmentType: 'SURGERY',
+      },
+      {
+        serviceNames: [
+          'Échographie', 'Mammographie', 'Scanner', 'IRM', 'Endoscopie', 'Médecine nucléaire',
+          'Laboratoire d’analyses médicales (Département)', 'Hématologie (Laboratoire)',
+          'Biochimie (Laboratoire)', 'Microbiologie & Bactériologie (Laboratoire)',
+          'Immunologie (Laboratoire)', 'Pathologie & anatomie cytologique', 'Dialyse',
+        ],
+        departmentName: 'Radiologie (Imagerie)',
+        departmentType: 'RADIOLOGY',
+      },
+      {
+        serviceNames: [
+          'Pharmacie interne (PUI)', 'Pharmacie externe', 'Gestion des stocks & traçabilité des médicaments',
+          'Conseil pharmaceutique personnalisé',
+        ],
+        departmentName: 'Pharmacie',
+        departmentType: 'PHARMACY',
+      },
+      {
+        serviceNames: [
+          'Psychologie clinique', 'Thérapies cognitives et comportementales', 'Addictologie',
+          'Soutien psychologique & accompagnement familial',
+        ],
+        departmentName: 'Psychiatrie',
+        departmentType: 'MEDICAL',
+      },
+      {
+        serviceNames: [
+          'Rééducation fonctionnelle', 'Ergothérapie', 'Orthophonie', 'Nutrition & diététique',
+          'Soins palliatifs', 'Douleur & algologie',
+        ],
+        departmentName: 'Rééducation & Soins paramédicaux',
+        departmentType: 'NURSING',
+      },
+      {
+        serviceNames: [
+          'Accueil & Tri des urgences (IAO)', 'Zone de déchocage (UHA)', 'Unité d’hospitalisation de courte durée (UHCD)',
+          'Urgences pédiatriques', 'Réanimation & Soins intensifs (Département)',
+          'Réanimation polyvalente', 'Unité de Surveillance Continue (USC)', 'Soins Intensifs Cardiaques (USIC)',
+        ],
+        departmentName: 'Urgences',
+        departmentType: 'MEDICAL',
+      },
+      {
+        serviceNames: [
+          'Hospitalisation complète (Médecine/Chirurgie)', 'Hospitalisation de jour (Ambulatoire)',
+          'Bloc opératoire (Gestion)', 'Salle de réveil (SSPI)',
+        ],
+        departmentName: 'Unités d’hospitalisation',
+        departmentType: 'NURSING',
+      },
+      {
+        serviceNames: [
+          'Médecine du travail', 'Consultation voyage', 'Check-up complet', 'Téléconsultation & suivi à distance',
+        ],
+        departmentName: 'Médecine préventive & vaccination',
+        departmentType: 'MEDICAL',
+      },
+      {
+        serviceNames: ['Programmes éducatifs pour patients', 'Réception', 'Caisse'],
+        departmentName: 'Centre de recherche clinique',
+        departmentType: 'ADMINISTRATION',
+      },
+    ];
+
+    const matchingCategory = CATEGORY_MAP.find((category) =>
+      category.serviceNames.some((name) => normalize(name) === normalizedServiceName),
+    );
+
+    if (!matchingCategory) {
+      return;
+    }
+
+    const departmentName = matchingCategory.departmentName;
+    const code = departmentName
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9 ]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, '_')
+      .slice(0, 50);
+
+    const department = await this.prisma.department.upsert({
+      where: { name: departmentName },
+      update: {},
+      create: {
+        name: departmentName,
+        type: matchingCategory.departmentType as any,
+        code,
+        description: `Département créé automatiquement pour regrouper les services liés à ${departmentName}`,
+      },
+    });
+
+    await (this.prisma as any).serviceUnit.upsert({
+      where: {
+        departmentId_name: {
+          departmentId: department.id,
+          name: serviceName,
+        },
+      },
+      update: {},
+      create: {
+        name: serviceName,
+        departmentId: department.id,
+        location: null,
+        contactNumber: null,
+        active: true,
+      },
+    });
   }
 
   async addResponsables(

@@ -22,6 +22,23 @@ const formatDate = (value?: string | null) => {
 const patientName = (profile: PatientProfile) =>
   [profile.firstName, profile.middleName, profile.lastName].filter(Boolean).join(" ");
 
+const workflowStatusLabel = (status?: string | null) => {
+  if (!status) return "-";
+  return {
+    EN_ATTENTE_DE_PAIEMENT: "En attente de paiement",
+    EN_ATTENTE_VALIDATION_CAISSE: "En attente de validation caisse",
+    EN_ATTENTE_INFIRMERIE: "En attente d'infirmerie",
+    EN_ATTENTE_MEDECIN: "En attente de médecin",
+    EN_CONSULTATION: "En consultation",
+    EN_LABORATOIRE: "En laboratoire",
+    EN_RADIOLOGIE: "En radiologie",
+    EN_PHARMACIE: "En pharmacie",
+    HOSPITALISE: "Hospitalisé",
+    TERMINE: "Terminé",
+    ANNULE: "Annulé",
+  }[status] || status.split("_").map((word) => word.charAt(0) + word.slice(1).toLowerCase()).join(" ");
+};
+
 export default function PatientClinicalPage({ mode }: PatientClinicalPageProps) {
   const [profile, setProfile] = useState<PatientProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -93,7 +110,44 @@ export default function PatientClinicalPage({ mode }: PatientClinicalPageProps) 
                 <Info label="Email" value={profile.email || "-"} />
                 <Info label="Adresse" value={profile.address || "-"} />
                 <Info label="Nationalite" value={profile.nationality || "-"} />
-                <Info label="Contact urgence" value={[profile.emergencyContact, profile.emergencyPhone].filter(Boolean).join(" - ") || "-"} />
+                <div>
+                  <p className="text-xs text-slate-500">Contact urgence</p>
+                  {(profile.familyContacts || []).length === 0 ? (
+                    <p className="mt-1 text-sm text-slate-500">Aucun contact d'urgence renseigné.</p>
+                  ) : (
+                    <div className="mt-2 space-y-3">
+                      {profile.familyContacts?.map((contact) => (
+                        <div key={contact.id || contact.phone || contact.name} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950">
+                          <p className="font-semibold text-slate-900 dark:text-white">{contact.name}</p>
+                          <p className="mt-1 text-slate-500">{contact.relation || contact.relationship || "Relation non renseignée"}</p>
+                          <div className="mt-2 flex items-center justify-between gap-3">
+                            <span className="text-slate-600 dark:text-slate-400">{contact.phone || "Téléphone non renseigné"}</span>
+                            {contact.phone ? (
+                              <span className="flex items-center gap-2">
+                                <a href={`tel:${contact.phone.replace(/\s+/g, "")}`} aria-label={`Appeler ${contact.name}`} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200">📞</a>
+                                <button
+                                  onClick={() => {
+                                    const useWhatsApp = window.confirm("Ouvrir WhatsApp pour discuter ? OK = WhatsApp, Annuler = SMS");
+                                    const digits = contact.phone.replace(/\D/g, "");
+                                    if (useWhatsApp) {
+                                      window.open(`https://wa.me/${digits}`, "_blank");
+                                    } else {
+                                      window.location.href = `sms:${digits}`;
+                                    }
+                                  }}
+                                  aria-label={`Envoyer message à ${contact.name}`}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200"
+                                >
+                                  ✉️
+                                </button>
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </Panel>
               <Panel title="Dernieres constantes">
                 <Info label="Temperature" value={latestVitals.TEMPERATURE || "-"} />
@@ -143,9 +197,9 @@ export default function PatientClinicalPage({ mode }: PatientClinicalPageProps) 
           {mode === "historique" && (
             <div className="grid gap-4 xl:grid-cols-2">
               <ListPanel title="Historique medical" items={(profile.medicalHistories || []).map((item) => ({
-                title: item.kind || "Evenement",
+                title: historyTitle(item.kind),
                 subtitle: formatDate(item.eventDate),
-                text: item.details || "",
+                text: formatHistoryDetails(item.kind, item.details),
               }))} />
               <ListPanel title="Examens laboratoire" items={(profile.labRequests || []).map((item) => ({
                 title: item.specimenType || item.status,
@@ -204,13 +258,85 @@ function ListPanel({ title, items }: { title: string; items: Array<{ title: stri
         <div key={`${item.title}-${index}`} className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950">
           <p className="font-semibold text-slate-900 dark:text-white">{item.title}</p>
           <p className="mt-1 text-xs text-slate-500">{item.subtitle}</p>
-          {item.text && <p className="mt-2 text-slate-600 dark:text-slate-300">{item.text}</p>}
+          {item.text && <p className="mt-2 text-slate-600 dark:text-slate-300 whitespace-pre-line">{item.text}</p>}
         </div>
       ))}
     </Panel>
   );
 }
 
-function Empty() {
-  return <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500 dark:bg-slate-950">Aucune donnee disponible.</p>;
+function formatHistoryDetails(kind: string | undefined, details?: string | null) {
+  if (!details) return "Aucun detail disponible.";
+
+  try {
+    const parsed = JSON.parse(details);
+    if (!parsed || typeof parsed !== "object") return details;
+
+    if (kind === "MEDICAL_CONSULTATION") {
+      return [
+        joinValues(parsed.medicalHistory, ["knownDiseases", "surgeries", "allergies", "currentMedications", "familyHistory"]),
+        joinValues(parsed.currentSymptoms, ["onset", "painLocation", "intensity", "aggravatingFactors", "associatedSymptoms"]),
+        joinValues(parsed.clinicalExam, ["generalState", "auscultation", "palpation", "focusedExam"]),
+        [parsed.diagnosis?.principal, ...(parsed.diagnosis?.hypotheses || [])].filter(Boolean).join(" | ") || "-",
+        parsed.treatmentPlan?.notes || "-",
+        parsed.followUp?.notes || "-",
+      ]
+        .filter((line) => line && line !== "-")
+        .map((line, index) => `${["Antecedents", "Anamnese", "Examen clinique", "Diagnostic", "Traitement", "Suivi"][index]}: ${line}`)
+        .join("\n");
+    }
+
+    if (kind === "NURSE_ORIENTATION") {
+      return [
+        `Medecin oriente: ${parsed.physicianName || parsed.physicianId || "-"}`,
+        `Consultation creee: ${parsed.consultationId || "-"}`,
+        `Observation infirmiere: ${parsed.notes || "-"}`,
+      ].join("\n");
+    }
+
+    if (kind === "ADMISSION_METADATA") {
+      return [
+        `Date de naissance: ${parsed.dateOfBirth || "-"}`,
+        `Age: ${parsed.age ? `${parsed.age} ans` : "-"}`,
+        `Profession: ${parsed.profession || "-"}`,
+        `Receptionniste: ${parsed.receptionistName || "-"}`,
+        `Contacts famille: ${Array.isArray(parsed.familyContacts) && parsed.familyContacts.length ? parsed.familyContacts.map((contact: any) => `${contact.name || "-"} (${contact.relation || "-"}) ${contact.phone || ""}`).join(" | ") : "-"}`,
+      ].join("\n");
+    }
+
+    return Object.entries(parsed)
+      .filter(([, value]) => value !== null && value !== "" && value !== undefined)
+      .map(([key, value]) => `${humanizeKey(key)}: ${formatObjectValue(value)}`)
+      .join("\n");
+  } catch {
+    return details;
+  }
 }
+
+function humanizeKey(key: string) {
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/_/g, " ")
+    .replace(/^./, (char) => char.toUpperCase());
+}
+
+function formatObjectValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "object" ? Object.values(item as Record<string, unknown>).filter(Boolean).join(" ") : String(item)))
+      .join(" | ") || "-";
+  }
+  if (typeof value === "object" && value) {
+    return Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue !== null && entryValue !== "" && entryValue !== undefined)
+      .map(([key, entryValue]) => `${humanizeKey(key)}: ${formatObjectValue(entryValue)}`)
+      .join(" | ") || "-";
+  }
+  return String(value ?? "-");
+}
+
+function joinValues(source: any, keys: string[]) {
+  if (!source) return "-";
+  return keys.map((key) => source?.[key]).filter(Boolean).join(" | ") || "-";
+}
+

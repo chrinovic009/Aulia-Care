@@ -12,8 +12,20 @@ export class ConsultationsService {
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
-  create(createConsultationDto: CreateConsultationDto) {
-    return this.prisma.consultation.create({ data: createConsultationDto as any });
+  async create(createConsultationDto: CreateConsultationDto) {
+    const consultation = await this.prisma.consultation.create({ data: createConsultationDto as any });
+
+    await this.prisma.patient.update({
+      where: { id: createConsultationDto.patientId },
+      data: { workflowStatus: PatientWorkflowStatus.EN_CONSULTATION },
+    });
+
+    this.notificationsGateway.notify('patient.updated', {
+      id: createConsultationDto.patientId,
+      workflowStatus: PatientWorkflowStatus.EN_CONSULTATION,
+    });
+
+    return consultation;
   }
 
   findAll() {

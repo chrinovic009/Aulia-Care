@@ -58,6 +58,32 @@ export const recordPatientVitalSigns = async (
   });
 };
 
+export const fetchNurseHospitalizations = async () => {
+  return apiFetch("/hospitalizations/nurse/followed");
+};
+
+export const fetchNurseRounds = async () => {
+  return apiFetch("/hospitalizations/nurse/rounds");
+};
+
+export const recordNurseRound = async (hospitalizationId: string, payload: Record<string, unknown>) => {
+  return apiFetch(`/hospitalizations/${hospitalizationId}/nurse-rounds`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+};
+
+export const fetchNurseHospitalizationById = async (id: string) => {
+  return apiFetch(API_CONFIG.HOSPITALIZATIONS.GET_BY_ID(id));
+};
+
+export const updateNurseHospitalization = async (id: string, payload: Record<string, unknown>) => {
+  return apiFetch(API_CONFIG.HOSPITALIZATIONS.UPDATE(id), {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+};
+
 export const isUrgentPatient = (patient: NursePatient): boolean => {
   const priority = (patient.priority || "").toLowerCase();
   return ["urgent", "urgence", "high", "haute", "critical", "critique", "prioritaire"].includes(priority);

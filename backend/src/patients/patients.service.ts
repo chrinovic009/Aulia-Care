@@ -808,15 +808,24 @@ export class PatientsService {
         })),
       });
 
-      await tx.patient.update({
-        where: { id: patientId },
-        data: {
-          workflowStatus: PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
-        },
-      });
-
       let consultation = null;
+      let workflowStatus: PatientWorkflowStatus = PatientWorkflowStatus.EN_ATTENTE_MEDECIN;
+
       if (dto.physicianId) {
+        const physician = await tx.user.findUnique({
+          where: { id: dto.physicianId },
+          select: {
+            displayName: true,
+            firstName: true,
+            lastName: true,
+            username: true,
+          },
+        });
+
+        const physicianName = physician
+          ? physician.displayName || [physician.firstName, physician.lastName].filter(Boolean).join(' ') || physician.username
+          : null;
+
         const appointment = await tx.appointment.create({
           data: {
             patientId,
@@ -846,6 +855,7 @@ export class PatientsService {
             kind: 'NURSE_ORIENTATION',
             details: JSON.stringify({
               physicianId: dto.physicianId,
+              physicianName,
               recordedById,
               appointmentId: appointment.id,
               consultationId: consultation.id,
@@ -854,12 +864,24 @@ export class PatientsService {
             createdById: recordedById,
           },
         });
+
+        workflowStatus = PatientWorkflowStatus.EN_CONSULTATION;
       }
+
+      await tx.patient.update({
+        where: { id: patientId },
+        data: {
+          workflowStatus,
+        },
+      });
 
       return consultation;
     });
 
-    this.notificationsGateway.notify('patient.updated', { id: patientId, workflowStatus: PatientWorkflowStatus.EN_ATTENTE_MEDECIN });
+    this.notificationsGateway.notify('patient.updated', {
+      id: patientId,
+      workflowStatus: result ? PatientWorkflowStatus.EN_CONSULTATION : PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
+    });
     if (result) {
       this.notificationsGateway.notify('consultation.created', result);
     }

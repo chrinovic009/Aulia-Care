@@ -14,6 +14,7 @@ export type PatientProfile = {
   nationality?: string | null;
   emergencyContact?: string | null;
   emergencyPhone?: string | null;
+  familyContacts?: Array<{ id?: string; name: string; relation?: string | null; relationship?: string | null; phone?: string | null; email?: string | null; address?: string | null }>;
   workflowStatus?: string;
   priority?: string | null;
   service?: { name?: string | null } | null;

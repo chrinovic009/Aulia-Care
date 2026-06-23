@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { HospitalizationsService } from './hospitalizations.service';
 import { CreateHospitalizationDto } from './dto/create-hospitalization.dto';
 import { UpdateHospitalizationDto } from './dto/update-hospitalization.dto';
@@ -27,6 +27,24 @@ export class HospitalizationsController {
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
   rooms() {
     return this.hospitalizationsService.getRoomInventory();
+  }
+
+  @Get('nurse/followed')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
+  nurseFollowed(@Request() req: any) {
+    return this.hospitalizationsService.getNurseHospitalizations(req.user?.userId);
+  }
+
+  @Get('nurse/rounds')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
+  nurseRounds(@Request() req: any) {
+    return this.hospitalizationsService.getNurseRounds(req.user?.userId);
+  }
+
+  @Post(':id/nurse-rounds')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE')
+  recordNurseRound(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+    return this.hospitalizationsService.recordNurseRound(id, req.user?.userId, body);
   }
 
   @Get(':id/timeline')

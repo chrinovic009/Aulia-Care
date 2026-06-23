@@ -1,18 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { AlertTriangle } from "lucide-react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
+import { Modal } from "../../components/ui/modal";
+import { useModal } from "../../hooks/useModal";
 import {
-  AvailableMedication,
   DoctorPatient,
-  createLabRequest,
-  createPrescription,
-  fetchAvailableMedications,
   fetchDoctorAssignedPatients,
   formatDoctorPatientName,
   saveClinicalSections,
 } from "../../api/doctor";
-import { apiFetch } from "../../config/api";
+import { apiFetch, ApiError } from "../../config/api";
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "-";
@@ -53,10 +52,12 @@ export default function DashboardMedecin() {
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [stock, setStock] = useState<any>({});
-  const [availableMedications, setAvailableMedications] = useState<AvailableMedication[]>([]);
-  const [services, setServices] = useState<Array<{ id: string; name: string; type?: string | null; category?: string | null }>>([]);
   const [medicationForm, setMedicationForm] = useState({ code: "", name: "", unit: "", strength: "", manufacturer: "" });
   const [lotForm, setLotForm] = useState({ medicationId: "", batchNumber: "", quantity: "", purchasePrice: "", expiryDate: "" });
+  const [conflictMedication, setConflictMedication] = useState<any | null>(null);
+  const [conflictMessage, setConflictMessage] = useState<string | null>(null);
+  const { isOpen: isConflictOpen, openModal: openConflictModal, closeModal: closeConflictModal } = useModal(false);
+  const lotPanelRef = useRef<HTMLDivElement | null>(null);
   const [clinicalForm, setClinicalForm] = useState({
     chiefComplaint: "",
     knownDiseases: "",
@@ -78,18 +79,6 @@ export default function DashboardMedecin() {
     treatmentPlan: "",
     followUp: "",
   });
-  const [labForm, setLabForm] = useState({ examName: "", serviceId: "", specimenType: "", priority: "NORMAL", notes: "" });
-  const [prescriptionForm, setPrescriptionForm] = useState({
-    medicationId: "",
-    quantity: "1",
-    dosage: "",
-    route: "ORAL",
-    frequency: "DAILY",
-    durationDays: "",
-    notes: "",
-    instruction: "",
-  });
-
   const loadPatients = async () => {
     setIsLoading(true);
     setError(null);
@@ -112,10 +101,6 @@ export default function DashboardMedecin() {
   useEffect(() => {
     loadPatients();
     apiFetch("/administration/stock").then(setStock).catch(() => setStock({}));
-    fetchAvailableMedications().then(setAvailableMedications).catch(() => setAvailableMedications([]));
-    apiFetch<Array<{ id: string; name: string; type?: string | null; category?: string | null }>>("/services")
-      .then((data) => setServices(data || []))
-      .catch(() => setServices([]));
     const handler = () => loadPatients();
     window.addEventListener("d7:patient.updated", handler);
     window.addEventListener("d7:consultation.created", handler);
@@ -166,19 +151,80 @@ export default function DashboardMedecin() {
     }));
   }, [selectedPatient?.id]);
 
+  const getMedicationStockQuantity = (medicationId: string) => {
+    const lotsQuantity = (stock.lots || []).filter((lot: any) => lot.medicationId === medicationId).reduce((sum: number, lot: any) => sum + Number(lot.quantity || 0), 0);
+    const stocksQuantity = (stock.stocks || []).filter((item: any) => item.medicationId === medicationId).reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0);
+    return lotsQuantity || stocksQuantity || 0;
+  };
+
+  const closeConflictModalAndClear = () => {
+    closeConflictModal();
+    setConflictMedication(null);
+    setConflictMessage(null);
+  };
+
+  const consultExistingMedication = () => {
+    if (conflictMedication?.id) {
+      setLotForm((current) => ({ ...current, medicationId: conflictMedication.id }));
+      setTimeout(() => lotPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+      setActionMessage("Le médicament a été trouvé et sélectionné dans le formulaire de lot.");
+    }
+    closeConflictModalAndClear();
+  };
+
+  const openMedicationInLotForm = () => {
+    if (conflictMedication?.id) {
+      setLotForm((current) => ({ ...current, medicationId: conflictMedication.id }));
+      setTimeout(() => lotPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+      setActionMessage("Vous pouvez ajouter de nouvelles quantités dans le formulaire de lot ci-dessous.");
+    }
+    closeConflictModalAndClear();
+  };
+
   const createMedication = async () => {
-    if (!medicationForm.code || !medicationForm.name || !medicationForm.unit) return;
-    await apiFetch("/administration/stock/medications", { method: "POST", body: JSON.stringify(medicationForm) });
-    setMedicationForm({ code: "", name: "", unit: "", strength: "", manufacturer: "" });
-    setStock(await apiFetch("/administration/stock").catch(() => ({})));
+    if (!medicationForm.code || !medicationForm.name || !medicationForm.unit) {
+      setActionMessage('Le code, le nom et l\'unité sont requis pour ajouter un médicament.');
+      return;
+    }
+
+    try {
+      await apiFetch("/administration/stock/medications", { method: "POST", body: JSON.stringify(medicationForm) });
+      setMedicationForm({ code: "", name: "", unit: "", strength: "", manufacturer: "" });
+      const refreshedStock = await apiFetch("/administration/stock").catch(() => ({}));
+      setStock(refreshedStock);
+      setActionMessage('Médicament ajouté au catalogue.');
+    } catch (error: any) {
+      if (error instanceof ApiError && error.status === 409) {
+        const body = error.body || {};
+        setConflictMedication(body.medication || null);
+        setConflictMessage(
+          typeof body.message === "string"
+            ? body.message
+            : "Ce médicament existe déjà dans le stock. Il n'est pas nécessaire de le recréer. Vous pouvez le retrouver dans la liste des médicaments ou mettre à jour sa quantité."
+        );
+        openConflictModal();
+        return;
+      }
+
+      setActionMessage(error instanceof Error ? error.message : 'Impossible d\'ajouter le médicament.');
+    }
   };
 
   const createLot = async () => {
-    if (!lotForm.medicationId || !lotForm.batchNumber) return;
-    await apiFetch("/administration/stock/lots", { method: "POST", body: JSON.stringify(lotForm) });
-    setLotForm({ medicationId: "", batchNumber: "", quantity: "", purchasePrice: "", expiryDate: "" });
-    setStock(await apiFetch("/administration/stock").catch(() => ({})));
-    setAvailableMedications(await fetchAvailableMedications().catch(() => []));
+    if (!lotForm.medicationId || !lotForm.batchNumber) {
+      setActionMessage('Le médicament et le numéro de lot sont requis.');
+      return;
+    }
+
+    try {
+      await apiFetch("/administration/stock/lots", { method: "POST", body: JSON.stringify(lotForm) });
+      setLotForm({ medicationId: "", batchNumber: "", quantity: "", purchasePrice: "", expiryDate: "" });
+      const refreshedStock = await apiFetch("/administration/stock").catch(() => ({}));
+      setStock(refreshedStock);
+      setActionMessage('Lot ajouté avec succès.');
+    } catch (error: any) {
+      setActionMessage(error instanceof Error ? error.message : 'Impossible d\'ajouter le lot.');
+    }
   };
 
   const currentConsultationId = selectedPatient?.latestConsultation?.id || selectedPatient?.consultations?.[0]?.id || "";
@@ -222,50 +268,6 @@ export default function DashboardMedecin() {
     await loadPatients();
   };
 
-  const submitLabRequest = async () => {
-    if (!currentConsultationId || !labForm.examName.trim()) {
-      setActionMessage("Choisissez un patient et renseignez l'examen demande.");
-      return;
-    }
-    const selectedService = services.find((service) => service.id === labForm.serviceId);
-    await createLabRequest(currentConsultationId, {
-      ...labForm,
-      specimenType: selectedService?.name || labForm.specimenType || labForm.examName,
-      notes: [labForm.notes, selectedService ? `Service paramedical: ${selectedService.name}` : ""].filter(Boolean).join("\n"),
-    });
-    setLabForm({ examName: "", serviceId: "", specimenType: "", priority: "NORMAL", notes: "" });
-    setActionMessage("Demande d'examen envoyee au laboratoire.");
-    await loadPatients();
-  };
-
-  const submitPrescription = async () => {
-    if (hasPendingLabRequest) {
-      setActionMessage("Prescription impossible tant qu'un resultat d'examen demande n'est pas verifie.");
-      return;
-    }
-    if (!currentConsultationId || !prescriptionForm.medicationId) {
-      setActionMessage("Choisissez un medicament disponible.");
-      return;
-    }
-    const medication = availableMedications.find((item) => item.id === prescriptionForm.medicationId);
-    await createPrescription(currentConsultationId, {
-      instruction: prescriptionForm.instruction,
-      lines: [{
-        medicationId: prescriptionForm.medicationId,
-        quantity: Number(prescriptionForm.quantity || 1),
-        dosage: prescriptionForm.dosage,
-        route: prescriptionForm.route,
-        frequency: prescriptionForm.frequency,
-        durationDays: prescriptionForm.durationDays ? Number(prescriptionForm.durationDays) : undefined,
-        notes: prescriptionForm.notes,
-        unitPrice: medication?.unitPrice ? Number(medication.unitPrice) : undefined,
-      }],
-    });
-    setPrescriptionForm({ medicationId: "", quantity: "1", dosage: "", route: "ORAL", frequency: "DAILY", durationDays: "", notes: "", instruction: "" });
-    setActionMessage("Prescription creee. Le patient est renvoye vers la caisse pour paiement.");
-    await Promise.all([loadPatients(), fetchAvailableMedications().then(setAvailableMedications).catch(() => setAvailableMedications([]))]);
-  };
-
   const filteredPatients = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return patients;
@@ -292,18 +294,6 @@ export default function DashboardMedecin() {
       prescriptions: patients.reduce((sum, patient) => sum + (patient.prescriptions?.length || 0), 0),
     };
   }, [patients]);
-
-  const examServices = useMemo(() => {
-    const keywords = ["laboratoire", "radio", "imagerie", "echographie", "échographie", "scanner", "irm", "mammographie", "analyse", "pathologie"];
-    return services.filter((service) => {
-      const normalized = [service.name, service.type, service.category].filter(Boolean).join(" ").toLowerCase();
-      return keywords.some((keyword) => normalized.includes(keyword));
-    });
-  }, [services]);
-
-  const hasPendingLabRequest = Boolean(
-    selectedPatient?.labRequests?.some((request) => request.status !== "VERIFIED" && !request.results?.some((result) => result.verified)),
-  );
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
@@ -401,7 +391,7 @@ export default function DashboardMedecin() {
               </div>
 
               {isConsultationPage ? (
-              <div className="mt-6 grid gap-4 2xl:grid-cols-[1.5fr_1fr]">
+              <div className="mt-6">
                 <Panel title="Consultation medicale">
                   <FormInput label="Motif de consultation" value={clinicalForm.chiefComplaint} onChange={(value) => setClinicalForm((current) => ({ ...current, chiefComplaint: value }))} />
 
@@ -451,49 +441,6 @@ export default function DashboardMedecin() {
                     Sauvegarder le dossier clinique
                   </button>
                 </Panel>
-
-                <div className="space-y-4">
-                  <Panel title="Demande d'examen">
-                    <FormInput label="Examen demande" value={labForm.examName} onChange={(value) => setLabForm((current) => ({ ...current, examName: value }))} placeholder="Analyse de sang, echographie..." />
-                    <FormSelect
-                      label="Service paramedical"
-                      value={labForm.serviceId}
-                      onChange={(value) => setLabForm((current) => ({ ...current, serviceId: value }))}
-                      options={[["", "Choisir un service"], ...examServices.map((service) => [service.id, service.name] as [string, string])]}
-                    />
-                    <FormInput label="Specimen / precision" value={labForm.specimenType} onChange={(value) => setLabForm((current) => ({ ...current, specimenType: value }))} placeholder="Sang, urine, thorax, abdomen..." />
-                    <FormSelect label="Priorite" value={labForm.priority} onChange={(value) => setLabForm((current) => ({ ...current, priority: value }))} options={[["NORMAL", "Normale"], ["URGENT", "Urgente"], ["CRITICAL", "Critique"]]} />
-                    <FormTextArea label="Notes cliniques" value={labForm.notes} onChange={(value) => setLabForm((current) => ({ ...current, notes: value }))} />
-                    <button onClick={submitLabRequest} className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">Envoyer au laboratoire</button>
-                  </Panel>
-
-                  <Panel title="Prescription">
-                    {hasPendingLabRequest ? (
-                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                        Prescription verrouillee: un examen demande attend encore un resultat verifie.
-                      </div>
-                    ) : null}
-                    <FormSelect
-                      label="Medicament disponible"
-                      value={prescriptionForm.medicationId}
-                      onChange={(value) => setPrescriptionForm((current) => ({ ...current, medicationId: value }))}
-                      options={[["", "Choisir"], ...availableMedications.map((medication) => [
-                        medication.id,
-                        `${medication.name}${medication.strength ? ` ${medication.strength}` : ""} - stock ${medication.availableQuantity}`,
-                      ] as [string, string])]}
-                    />
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <FormInput label="Quantite" type="number" value={prescriptionForm.quantity} onChange={(value) => setPrescriptionForm((current) => ({ ...current, quantity: value }))} />
-                      <FormInput label="Dosage" value={prescriptionForm.dosage} onChange={(value) => setPrescriptionForm((current) => ({ ...current, dosage: value }))} />
-                      <FormSelect label="Voie" value={prescriptionForm.route} onChange={(value) => setPrescriptionForm((current) => ({ ...current, route: value }))} options={[["ORAL", "Orale"], ["INTRAVENOUS", "IV"], ["INTRAMUSCULAR", "IM"], ["SUBCUTANEOUS", "SC"], ["TOPICAL", "Topique"], ["INHALATION", "Inhalation"], ["OTHER", "Autre"]]} />
-                      <FormSelect label="Frequence" value={prescriptionForm.frequency} onChange={(value) => setPrescriptionForm((current) => ({ ...current, frequency: value }))} options={[["ONCE", "Une fois"], ["DAILY", "Quotidien"], ["BID", "2x/jour"], ["TID", "3x/jour"], ["QID", "4x/jour"], ["PRN", "Si besoin"], ["CONTINUOUS", "Continu"]]} />
-                      <FormInput label="Duree (jours)" type="number" value={prescriptionForm.durationDays} onChange={(value) => setPrescriptionForm((current) => ({ ...current, durationDays: value }))} />
-                      <FormInput label="Note ligne" value={prescriptionForm.notes} onChange={(value) => setPrescriptionForm((current) => ({ ...current, notes: value }))} />
-                    </div>
-                    <FormTextArea label="Instruction generale" value={prescriptionForm.instruction} onChange={(value) => setPrescriptionForm((current) => ({ ...current, instruction: value }))} />
-                    <button disabled={hasPendingLabRequest} onClick={submitPrescription} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">Prescrire et envoyer a la caisse</button>
-                  </Panel>
-                </div>
               </div>
               ) : (
                 <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
@@ -569,21 +516,72 @@ export default function DashboardMedecin() {
             </div>
           </Panel>
 
-          <Panel title="Nouveau lot">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <select value={lotForm.medicationId} onChange={(event) => setLotForm((current) => ({ ...current, medicationId: event.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:col-span-2">
-                <option value="">Medicament</option>
-                {(stock.medications || []).map((medication: any) => <option key={medication.id} value={medication.id}>{medication.name}</option>)}
-              </select>
-              <input value={lotForm.batchNumber} onChange={(event) => setLotForm((current) => ({ ...current, batchNumber: event.target.value }))} placeholder="Lot" className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
-              <input value={lotForm.quantity} onChange={(event) => setLotForm((current) => ({ ...current, quantity: event.target.value }))} type="number" placeholder="Quantite" className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
-              <input value={lotForm.purchasePrice} onChange={(event) => setLotForm((current) => ({ ...current, purchasePrice: event.target.value }))} type="number" placeholder="Prix achat" className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
-              <input value={lotForm.expiryDate} onChange={(event) => setLotForm((current) => ({ ...current, expiryDate: event.target.value }))} type="date" className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
-              <button onClick={createLot} className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white sm:col-span-2">Ajouter le lot</button>
-            </div>
-          </Panel>
+          <div ref={lotPanelRef}>
+            <Panel title="Nouveau lot">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <select value={lotForm.medicationId} onChange={(event) => setLotForm((current) => ({ ...current, medicationId: event.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:col-span-2">
+                  <option value="">Medicament</option>
+                  {(stock.medications || []).map((medication: any) => <option key={medication.id} value={medication.id}>{medication.name}</option>)}
+                </select>
+                <input value={lotForm.batchNumber} onChange={(event) => setLotForm((current) => ({ ...current, batchNumber: event.target.value }))} placeholder="Lot" className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+                <input value={lotForm.quantity} onChange={(event) => setLotForm((current) => ({ ...current, quantity: event.target.value }))} type="number" placeholder="Quantite" className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+                <input value={lotForm.purchasePrice} onChange={(event) => setLotForm((current) => ({ ...current, purchasePrice: event.target.value }))} type="number" placeholder="Prix achat" className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+                <input value={lotForm.expiryDate} onChange={(event) => setLotForm((current) => ({ ...current, expiryDate: event.target.value }))} type="date" className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+                <button onClick={createLot} className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white sm:col-span-2">Ajouter le lot</button>
+              </div>
+            </Panel>
+          </div>
         </div>
       </section>
+
+      <Modal isOpen={isConflictOpen} onClose={closeConflictModalAndClear} className="max-w-xl p-6">
+        <div className="flex flex-col gap-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-blue-100 text-blue-700 dark:bg-slate-800 dark:text-blue-300">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Médicament déjà enregistré</h3>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{conflictMessage || "Ce médicament existe déjà dans le stock. Il n'est pas nécessaire de le recréer. Vous pouvez le retrouver dans la liste des médicaments ou mettre à jour sa quantité."}</p>
+            </div>
+          </div>
+
+          {conflictMedication ? (
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-slate-500">Nom</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{conflictMedication.name || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Dosage</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{conflictMedication.strength || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Forme pharmaceutique</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{conflictMedication.unit || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Quantité actuelle</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{conflictMedication.currentQuantity ?? getMedicationStockQuantity(conflictMedication.id) ?? "-"}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <button type="button" onClick={consultExistingMedication} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700">
+              Consulter le médicament
+            </button>
+            <button type="button" onClick={openMedicationInLotForm} className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-900">
+              Mettre à jour le stock
+            </button>
+            <button type="button" onClick={closeConflictModalAndClear} className="rounded-lg border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
+              Fermer
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

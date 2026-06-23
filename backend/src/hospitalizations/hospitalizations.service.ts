@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { PatientWorkflowStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateHospitalizationDto } from './dto/create-hospitalization.dto';
 import { UpdateHospitalizationDto } from './dto/update-hospitalization.dto';
@@ -14,10 +15,81 @@ export class HospitalizationsService {
     bed: { include: { room: { include: { serviceUnit: true } } } },
     physician: true,
     nurseInCharge: true,
+    Consultation: {
+      include: {
+        provider: true,
+        prescriptions: { include: { lineItems: { include: { medication: true } } } },
+        labRequests: { include: { results: true } },
+      },
+    },
   } as const;
 
+  private async activeShiftForUser(userId?: string | null, serviceUnitId?: string | null) {
+    if (!userId) return null;
+    const now = new Date();
+    return this.prisma.shift.findFirst({
+      where: {
+        startAt: { lte: now },
+        endAt: { gte: now },
+        employee: {
+          userId,
+          status: 'ACTIVE',
+          ...(serviceUnitId ? { serviceUnitId } : {}),
+        },
+      },
+      include: { employee: { include: { user: true, serviceUnit: true } } },
+      orderBy: { startAt: 'desc' },
+    });
+  }
+
+  private async buildNurseAccess(hospitalization: any, userId?: string | null) {
+    if (!userId) {
+      return { mode: 'READ_ONLY', canWrite: false, reason: 'Utilisateur non identifie' };
+    }
+
+    const [assignedShift, currentShift] = await Promise.all([
+      this.activeShiftForUser(hospitalization.nurseInChargeId, hospitalization.serviceUnitId),
+      this.activeShiftForUser(userId, hospitalization.serviceUnitId),
+    ]);
+
+    if (hospitalization.nurseInChargeId === userId) {
+      if (!currentShift) {
+        return { mode: 'READ_ONLY', canWrite: false, reason: 'Votre shift actif n est pas ouvert' };
+      }
+      return { mode: 'WRITE', canWrite: true, reason: 'Infirmier responsable en shift actif' };
+    }
+
+    if (!assignedShift && currentShift) {
+      return { mode: 'WRITE', canWrite: true, reason: 'Relai automatique: responsable hors shift' };
+    }
+
+    return { mode: 'READ_ONLY', canWrite: false, reason: 'Lecture clinique autorisee' };
+  }
+
   async create(createHospitalizationDto: CreateHospitalizationDto) {
-    const created = await this.prisma.hospitalization.create({ data: createHospitalizationDto as any });
+    const created = await this.prisma.$transaction(async (tx) => {
+      const hospitalization = await tx.hospitalization.create({ data: createHospitalizationDto as any });
+      await tx.patient.update({
+        where: { id: createHospitalizationDto.patientId },
+        data: { workflowStatus: PatientWorkflowStatus.HOSPITALISE },
+      });
+      await tx.medicalHistory.create({
+        data: {
+          patientId: createHospitalizationDto.patientId,
+          kind: 'HOSPITALIZATION_DECLARED',
+          details: JSON.stringify({
+            hospitalizationId: hospitalization.id,
+            admissionReason: createHospitalizationDto.admissionReason,
+            bedNumber: createHospitalizationDto.bedNumber || null,
+            serviceUnitId: createHospitalizationDto.serviceUnitId || null,
+            physicianId: createHospitalizationDto.physicianId || null,
+            nurseInChargeId: createHospitalizationDto.nurseInChargeId || null,
+          }),
+          createdById: createHospitalizationDto.physicianId || createHospitalizationDto.nurseInChargeId || null,
+        },
+      });
+      return hospitalization;
+    });
     try {
       await this.notifications.createAndEmit({
         title: `Hospitalisation: ${created.id}`,
@@ -34,6 +106,118 @@ export class HospitalizationsService {
 
   findAll() {
     return this.prisma.hospitalization.findMany({ include: this.hospitalizationInclude });
+  }
+
+  async getNurseHospitalizations(userId?: string) {
+    const hospitalizations = await this.prisma.hospitalization.findMany({
+      where: { status: { in: ['ADMITTED', 'TRANSFERRED'] } },
+      include: {
+        ...this.hospitalizationInclude,
+        patient: {
+          include: {
+            vitalSigns: { orderBy: { recordedAt: 'desc' }, take: 20, include: { recordedBy: true } },
+            medicalHistories: { orderBy: { eventDate: 'desc' }, take: 50, include: { createdBy: true } },
+          },
+        },
+      },
+      orderBy: { admittedAt: 'desc' },
+    });
+
+    const hospitalizationsWithAccess = await Promise.all(
+      hospitalizations.map(async (hospitalization) => ({
+        hospitalization,
+        access: await this.buildNurseAccess(hospitalization, userId),
+      })),
+    );
+
+    return hospitalizationsWithAccess
+      .filter(({ hospitalization, access }) => access.canWrite || hospitalization.nurseInChargeId === userId)
+      .map(({ hospitalization, access }) => ({
+        ...hospitalization,
+        access,
+      }));
+  }
+
+  async getNurseRounds(userId?: string) {
+    const hospitalizations = await this.getNurseHospitalizations(userId);
+    const now = new Date();
+    const todayKey = now.toISOString().slice(0, 10);
+
+    return hospitalizations.map((hospitalization: any) => {
+      const histories = hospitalization.patient?.medicalHistories || [];
+      const latestRound = histories.find((history) => ['NURSE_ROUND_DONE', 'NURSE_OBSERVATION', 'NURSE_PROBLEM'].includes(history.kind));
+      const roundDoneToday = histories.some((history) => history.kind === 'NURSE_ROUND_DONE' && new Date(history.eventDate).toISOString().slice(0, 10) === todayKey);
+      const problemToday = histories.some((history) => history.kind === 'NURSE_PROBLEM' && new Date(history.eventDate).toISOString().slice(0, 10) === todayKey);
+      const scheduledAt = hospitalization.admittedAt || now;
+      const overdue = !roundDoneToday && new Date(scheduledAt).getTime() + 4 * 60 * 60 * 1000 < now.getTime();
+
+      return {
+        id: hospitalization.id,
+        hospitalizationId: hospitalization.id,
+        patientId: hospitalization.patientId,
+        scheduledAt,
+        patient: [hospitalization.patient?.firstName, hospitalization.patient?.middleName, hospitalization.patient?.lastName].filter(Boolean).join(' ') || 'Patient',
+        room: hospitalization.bed?.room?.number || hospitalization.bedNumber || 'Non assigne',
+        bed: hospitalization.bed?.code || hospitalization.bedNumber || null,
+        type: 'Tournee infirmiere hospitalisation',
+        priority: problemToday || /urgence|critique|critical/i.test(hospitalization.admissionReason || '') ? 'High' : 'Normal',
+        status: roundDoneToday ? 'Termine' : overdue ? 'En retard' : 'A faire',
+        note: latestRound?.details || hospitalization.admissionReason || null,
+        service: hospitalization.ServiceUnit?.name || null,
+        nurseInCharge: hospitalization.nurseInCharge?.displayName || null,
+        nurseInChargeId: hospitalization.nurseInChargeId || null,
+        lastUpdated: latestRound?.eventDate || hospitalization.updatedAt || hospitalization.admittedAt,
+        access: hospitalization.access,
+      };
+    });
+  }
+
+  async recordNurseRound(id: string, userId: string | undefined, body: any) {
+    const hospitalization = await this.findOne(id);
+    const access = await this.buildNurseAccess(hospitalization, userId);
+    if (!access.canWrite) {
+      throw new ForbiddenException('Ecriture non autorisee pour cette hospitalisation');
+    }
+
+    const action = body?.action || 'observation';
+    const kind =
+      action === 'done'
+        ? 'NURSE_ROUND_DONE'
+        : action === 'problem'
+          ? 'NURSE_PROBLEM'
+          : 'NURSE_OBSERVATION';
+
+    const history = await this.prisma.medicalHistory.create({
+      data: {
+        patientId: hospitalization.patientId,
+        kind,
+        details: JSON.stringify({
+          hospitalizationId: id,
+          observation: body?.observation || body?.notes || null,
+          problem: body?.problem || null,
+          escalated: Boolean(body?.escalated),
+          accessReason: access.reason,
+        }),
+        createdById: userId || null,
+      },
+      include: { createdBy: true },
+    });
+
+    if (kind === 'NURSE_PROBLEM') {
+      try {
+        await this.notifications.createAndEmit({
+          title: 'Probleme infirmier signale',
+          body: body?.problem || body?.observation || 'Probleme signale pendant la tournee',
+          relatedEntity: 'hospitalization',
+          relatedId: id,
+          patientId: hospitalization.patientId,
+          type: 'SYSTEM',
+          priority: body?.escalated ? 'HIGH' : 'MEDIUM',
+        });
+      } catch {}
+    }
+
+    return history;
   }
 
   async search(query: string) {

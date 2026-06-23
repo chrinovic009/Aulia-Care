@@ -19,7 +19,7 @@ export class AuthService {
   ) {
     this.accessTokenSecret = configService.get<string>('JWT_SECRET', 'change_me_access');
     this.refreshTokenSecret = configService.get<string>('JWT_REFRESH_SECRET', 'change_me_refresh');
-    this.accessTokenExpires = configService.get<string>('JWT_EXPIRES_IN', '15m');
+    this.accessTokenExpires = configService.get<string>('JWT_EXPIRES_IN', '365d');
     this.refreshTokenExpires = configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d');
   }
 
@@ -137,6 +137,14 @@ export class AuthService {
         status: true,
         createdAt: true,
         updatedAt: true,
+        Employee: {
+          include: {
+            shifts: {
+              orderBy: { startAt: 'desc' },
+              take: 5,
+            },
+          },
+        },
       },
     });
 

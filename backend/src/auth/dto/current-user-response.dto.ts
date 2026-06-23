@@ -69,6 +69,19 @@ export class CurrentUserResponseDto {
   profilePhotoUrl?: string;
 
   @Expose()
+  Employee?: Array<{
+    id: string;
+    serviceUnitId?: string;
+    departmentId?: string;
+    shifts?: Array<{
+      id: string;
+      startAt: Date;
+      endAt: Date;
+      type: string;
+    }>;
+  }>;
+
+  @Expose()
   status: string;
 
   @Expose()

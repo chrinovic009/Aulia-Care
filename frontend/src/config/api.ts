@@ -111,6 +111,18 @@ export const getAuthHeaders = (): Record<string, string> => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public statusText: string,
+    public body: any,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 /**
  * Enhanced fetch with error handling and retry logic
  */
@@ -141,11 +153,8 @@ export const apiFetch = async <T = any>(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(
-        `API Error: ${response.status} - ${
-          errorData.message || response.statusText
-        }`
-      );
+      const message = typeof errorData.message === "string" ? errorData.message : response.statusText;
+      throw new ApiError(`API Error: ${response.status} - ${message}`, response.status, response.statusText, errorData);
     }
 
     return await response.json();

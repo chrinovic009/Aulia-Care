@@ -38,6 +38,12 @@ export interface AuthUser {
   linkedinUrl?: string;
   bio?: string;
   profilePhotoUrl?: string;
+  Employee?: Array<{
+    id: string;
+    serviceUnitId?: string;
+    departmentId?: string;
+    shifts?: Array<{ id: string; startAt: string; endAt: string; type: 'DAY' | 'NIGHT' | 'ROTATING' }>;
+  }>;
   status: string;
   createdAt: string;
   updatedAt: string;

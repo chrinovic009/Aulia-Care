@@ -27,6 +27,10 @@ import RoundsInfirmier from "./pages/Infirmier/Rounds";
 import HospitalisationInfirmier from "./pages/Infirmier/HospitalisationsSuivi";
 import DashboardMedecin from "./pages/Medecin/DashboardMedecin";
 import PatientsMedecin from "./pages/Medecin/PatientsMedecin";
+import ExamensMedecin from "./pages/Medecin/ExamensMedecin";
+import PrescriptionsMedecin from "./pages/Medecin/PrescriptionsMedecin";
+import HospitalisationsMedecin from "./pages/Medecin/HospitalisationsMedecin";
+import BlocOperatoireMedecin from "./pages/Medecin/BlocOperatoireMedecin";
 import MessagesMedecin from "./pages/Medecin/MessagesMedecin";
 import DashboardCaissier from "./pages/Caissier/DashboardCaissier";
 import MessagesCaissier from "./pages/Caissier/MessagesCaissier";
@@ -104,10 +108,10 @@ export default function App() {
             <Route path="/doctor/" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
             <Route path="/doctor/patients" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><PatientsMedecin /></RoleGuard>} />
             <Route path="/doctor/consultations" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
-            <Route path="/doctor/prescriptions" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
-            <Route path="/doctor/exams" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
-            <Route path="/doctor/hospitalizations" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
-            <Route path="/doctor/surgery" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
+            <Route path="/doctor/prescriptions" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><PrescriptionsMedecin /></RoleGuard>} />
+            <Route path="/doctor/exams" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><ExamensMedecin /></RoleGuard>} />
+            <Route path="/doctor/hospitalizations" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><HospitalisationsMedecin /></RoleGuard>} />
+            <Route path="/doctor/surgery" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><BlocOperatoireMedecin /></RoleGuard>} />
             <Route path="/doctor/messages" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><MessagesMedecin /></RoleGuard>} />
 
             {/* Page Caissier */}
