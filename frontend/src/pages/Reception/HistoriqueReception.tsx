@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { fetchPatientsFromDatabase } from "../../api/reception";
+import { formatPatientDossierId } from "../../utils/formatId";
 
 type AdmissionRecord = {
   id: string;
@@ -40,7 +41,7 @@ const toAdmissionRecord = (patient: any): AdmissionRecord => {
   const createdAt = patient.arrivalAt || patient.createdAt;
   const createdDate = createdAt ? new Date(createdAt) : new Date();
   return {
-    id: patient.externalId || patient.id,
+    id: formatPatientDossierId(patient.id, patient.externalId, { truncateTo: 8 }),
     patient: patientName(patient),
     service: serviceName(patient),
     doctor: doctorName(patient),
@@ -65,9 +66,13 @@ export default function HistoriqueReception() {
     setError(null);
     try {
       const patients = await fetchPatientsFromDatabase();
-      const mapped = (patients || [])
-        .map(toAdmissionRecord)
+      const sorted = (patients || [])
+        .slice()
         .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      const mapped = sorted.map((patient, idx) => ({
+        ...toAdmissionRecord(patient),
+        id: formatPatientDossierId(patient.id, patient.externalId, { truncateTo: 8, position: idx + 1 }),
+      }));
       setRecords(mapped);
       setSelectedRecord((current) => current || mapped[0] || null);
     } catch (err) {

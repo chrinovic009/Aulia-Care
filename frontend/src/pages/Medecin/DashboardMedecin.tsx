@@ -303,10 +303,6 @@ export default function DashboardMedecin() {
       <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase text-slate-500">Source PostgreSQL</p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-              {isConsultationPage ? "Consultations a traiter" : "Dashboard medical"}
-            </h1>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
               File triee en premier arrive, premier servi selon l'orientation vers le medecin.
             </p>

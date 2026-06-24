@@ -13,6 +13,8 @@ import {
   HospitalizationTimelineEvent,
 } from "../../api/reception";
 
+import { formatPatientDossierId } from "../../utils/formatId";
+
 const statusStyles: Record<string, string> = {
   ADMITTED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
   TRANSFERRED: "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200",
@@ -86,7 +88,7 @@ function HospitalizationDetails(props: {
           </div>
           <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
             <p className="text-sm text-slate-500 dark:text-slate-400">Info administrative</p>
-            <p className="mt-2 text-slate-900 dark:text-white">Dossier : {hospitalization.patient?.externalId || hospitalization.patient?.id || '—'}</p>
+            <p className="mt-2 text-slate-900 dark:text-white">Dossier : {formatPatientDossierId(hospitalization.patient?.id, hospitalization.patient?.externalId, { truncateTo: 8 })}</p>
             <p className="text-sm text-slate-500 dark:text-slate-400">Téléphone : {hospitalization.patient?.phone || '—'}</p>
             <p className="text-sm text-slate-500 dark:text-slate-400">Adresse : {hospitalization.patient?.address || hospitalization.patient?.city || '—'}</p>
           </div>

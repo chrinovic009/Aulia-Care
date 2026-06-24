@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { getPaymentRequests, createPayment, createInvoice, removePaymentRequest, deferPaymentRequest } from "../../api/finance";
 import { updatePatientRecord } from "../../api/reception";
+import { formatPatientDossierId } from "../../utils/formatId";
 
 const MessagesCaissier: React.FC = () => {
   const [requests, setRequests] = useState<any[]>([]);
@@ -116,7 +117,7 @@ const MessagesCaissier: React.FC = () => {
       <div className="col-span-1 lg:col-span-1 bg-white rounded shadow p-2">
         <h2 className="font-medium mb-2">Demandes</h2>
         <div className="space-y-2">
-          {requests.map((r) => (
+          {requests.map((r, idx) => (
             <button
               key={r.id}
               onClick={() => pick(r)}
@@ -124,7 +125,7 @@ const MessagesCaissier: React.FC = () => {
             >
               <div className="font-medium">{r.patientName}</div>
               <div className="text-xs text-gray-500">{r.act} • {r.service}</div>
-              <div className="text-xs text-gray-500">ID patient: {r.patientId || 'N/A'}</div>
+              <div className="text-xs text-gray-500">ID patient: {formatPatientDossierId(r.patientId, r.dossierNumber, { truncateTo: 8, position: idx + 1 })}</div>
               <div className="text-sm flex items-center justify-between gap-3">
                 <span>{r.amount} CDF</span>
                 <span className="text-xs text-slate-500">{new Date(r.createdAt).toLocaleTimeString()}</span>
@@ -141,7 +142,7 @@ const MessagesCaissier: React.FC = () => {
         {selected ? (
           <div>
             <div className="mb-2"><strong>Patient:</strong> {selected.patientName} <span className="text-sm text-gray-500">{selected.dossierNumber || ''}</span></div>
-            <div className="mb-2"><strong>ID patient:</strong> <span className="font-medium">{selected.patientId || 'N/A'}</span></div>
+            <div className="mb-2"><strong>ID patient:</strong> <span className="font-medium">{formatPatientDossierId(selected.patientId, selected.dossierNumber, { truncateTo: 8, position: requests.findIndex((request) => request.id === selected.id) + 1 })}</span></div>
             <div className="mb-2"><strong>Demande:</strong> {selected.act} • {selected.service}</div>
             <div className="mb-2"><strong>Montant demandé:</strong> {selected.amount} CDF</div>
             <div className="mb-2"><strong>Statut demande:</strong> {selected.status}</div>
