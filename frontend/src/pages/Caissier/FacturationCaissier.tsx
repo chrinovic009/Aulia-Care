@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { fetchAllInvoices } from "../../api/cashier";
 import { InvoicePrintTemplate } from "./InvoicePrintTemplate";
+import { formatInvoiceReference } from "../../utils/formatId";
 
 interface InvoiceDetail {
   id: string;
@@ -33,6 +34,7 @@ const FacturationCaissier: React.FC = () => {
   const [query, setQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<"ALL" | "PENDING" | "PAID" | "PARTIALLY_PAID">("ALL");
   const [printingInvoice, setPrintingInvoice] = useState<InvoiceDetail | null>(null);
+  const [printingInvoicePosition, setPrintingInvoicePosition] = useState<number | undefined>(undefined);
 
   const load = async () => {
     try {
@@ -43,7 +45,7 @@ const FacturationCaissier: React.FC = () => {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erreur lors du chargement des factures";
       setError(message);
-      console.error("Error loading invoices:", err);
+      console.error("Error loading factures:", err);
     } finally {
       setLoading(false);
     }
@@ -96,11 +98,14 @@ const FacturationCaissier: React.FC = () => {
   }, [invoices]);
 
   const handlePrintInvoice = (invoice: InvoiceDetail) => {
+    const index = filtered.findIndex((item) => item.id === invoice.id);
+    setPrintingInvoicePosition(index >= 0 ? index + 1 : undefined);
     setPrintingInvoice(invoice);
     // Open print dialog after component renders
     setTimeout(() => {
       window.print();
       setPrintingInvoice(null);
+      setPrintingInvoicePosition(undefined);
     }, 150);
   };
 
@@ -166,11 +171,11 @@ const FacturationCaissier: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 mb-4">
         <div className="p-3 bg-white rounded shadow text-center">
           <div className="text-sm text-gray-500">Montant total</div>
-          <div className="text-xl font-bold">{totals.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} FC</div>
+          <div className="text-xl font-bold">{totals.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} USD</div>
         </div>
         <div className="p-3 bg-white rounded shadow text-center">
           <div className="text-sm text-gray-500">Soldes à recouvrer</div>
-          <div className="text-xl font-bold text-red-600">{totals.totalDue.toLocaleString(undefined, { minimumFractionDigits: 0 })} FC</div>
+          <div className="text-xl font-bold text-red-600">{totals.totalDue.toLocaleString(undefined, { minimumFractionDigits: 0 })} USD</div>
         </div>
         <div className="p-3 bg-white rounded shadow text-center">
           <div className="text-sm text-gray-500">En attente</div>
@@ -245,16 +250,16 @@ const FacturationCaissier: React.FC = () => {
                 </td>
               </tr>
             ) : (
-              filtered.map((inv) => (
+              filtered.map((inv, idx) => (
                 <tr key={inv.id} className="border-t hover:bg-gray-50">
-                  <td className="p-3 font-medium text-blue-600">{inv.invoiceNumber || inv.id.slice(0, 8)}</td>
+                  <td className="p-3 font-medium text-blue-600">{formatInvoiceReference(inv.id, inv.invoiceNumber, { truncateTo: 8, position: idx + 1 })}</td>
                   <td className="p-3">{inv.patientName}</td>
                   <td className="p-3 text-sm">{inv.patientPhone || "—"}</td>
                   <td className="p-3 text-right font-medium">
-                    {inv.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} FC
+                    {inv.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} USD
                   </td>
                   <td className={`p-3 text-right font-medium ${inv.balanceDue > 0 ? "text-red-600" : "text-green-600"}`}>
-                    {inv.balanceDue.toLocaleString(undefined, { minimumFractionDigits: 0 })} FC
+                    {inv.balanceDue.toLocaleString(undefined, { minimumFractionDigits: 0 })} USD
                   </td>
                   <td className="p-3">
                     <span className={getStatusBadge(inv.status)}>{getStatusLabel(inv.status)}</span>
@@ -283,7 +288,7 @@ const FacturationCaissier: React.FC = () => {
           patientName={printingInvoice.patientName}
           patientPhone={printingInvoice.patientPhone}
           patientEmail={printingInvoice.patientEmail}
-          invoiceNumber={printingInvoice.invoiceNumber || printingInvoice.id}
+          invoiceNumber={printingInvoice.invoiceNumber}
           invoiceType={printingInvoice.type}
           totalAmount={printingInvoice.totalAmount}
           balanceDue={printingInvoice.balanceDue}
@@ -292,6 +297,7 @@ const FacturationCaissier: React.FC = () => {
           dueDate={printingInvoice.dueDate}
           remarks={printingInvoice.remarks}
           invoiceId={printingInvoice.id}
+          invoicePosition={printingInvoicePosition}
         />
       )}
     </div>

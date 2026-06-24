@@ -4,6 +4,7 @@ import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { useAuth } from "../../context/AuthContext";
 import { fetchPatientsFromDatabase, updatePatientRecord, fetchServices } from "../../api/reception";
+import { formatPatientDossierId } from "../../utils/formatId";
 
 type FamilyContact = {
   name: string;
@@ -154,6 +155,7 @@ export default function ReceptionPatients() {
   };
 
   const generateInsurancePDF = () => {
+    const selectedPatientPosition = patients.findIndex((p) => p.id === selectedPatient.id) + 1;
     const info = selectedPatient.insuranceInfo;
     const html = `
       <html>
@@ -171,7 +173,7 @@ export default function ReceptionPatients() {
         <body>
           <div class="card">
             <h1>Carte assurance — ${selectedPatient.name}</h1>
-            <p><strong>ID Patient:</strong> ${selectedPatient.id}</p>
+            <p><strong>ID Patient:</strong> ${formatPatientDossierId(selectedPatient.id, undefined, { truncateTo: 8, position: selectedPatientPosition })}</p>
             <table>
               <tr><th>Compagnie</th><td>${info.company}</td></tr>
               <tr><th>Numéro police</th><td>${info.policyNumber}</td></tr>
@@ -252,7 +254,7 @@ export default function ReceptionPatients() {
             <div class="patient-header">
               <div>
                 <div class="patient-name">${selectedPatient.name}</div>
-                <div class="patient-id">ID Patient: ${selectedPatient.id}</div>
+                <div class="patient-id">ID Patient: ${formatPatientDossierId(selectedPatient.id, undefined, { truncateTo: 8, position: selectedPatientPosition })}</div>
               </div>
               <div style="text-align: right;">
                 <div style="font-weight: bold; font-size: 12pt;">FICHE PATIENT</div>

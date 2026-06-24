@@ -1,4 +1,5 @@
 import React from "react";
+import { formatInvoiceReference } from "../../utils/formatId";
 
 interface InvoicePrintProps {
   patientName: string;
@@ -15,8 +16,7 @@ interface InvoicePrintProps {
   clinicName?: string;
   clinicAddress?: string;
   clinicPhone?: string;
-  invoiceId: string;
-}
+  invoiceId: string;  invoicePosition?: number;}
 
 export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   patientName,
@@ -31,6 +31,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   dueDate,
   remarks,
   invoiceId,
+  invoicePosition,
 }) => {
   return (
     <div
@@ -61,7 +62,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
               <strong>Numéro de facture:</strong>
             </td>
             <td style={{ paddingBottom: "3mm", textAlign: "right" }}>
-              {invoiceNumber || invoiceId}
+              {formatInvoiceReference(invoiceId, invoiceNumber, { truncateTo: 8, position: invoicePosition })}
             </td>
           </tr>
           <tr>
@@ -190,7 +191,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
       <div style={{ marginTop: "15mm", textAlign: "center", fontSize: "10px", color: "#666", borderTop: "1px solid #ddd", paddingTop: "5mm" }}>
         <p style={{ margin: "0" }}>Merci de votre confiance</p>
         <p style={{ margin: "2mm 0" }}>D7 CLINIC - Tous droits réservés</p>
-        <p style={{ margin: "2mm 0", color: "#999" }}>Facture n° {invoiceNumber || invoiceId}</p>
+        <p style={{ margin: "2mm 0", color: "#999" }}>Facture n° {formatInvoiceReference(invoiceId, invoiceNumber, { truncateTo: 8, position: invoicePosition })}</p>
       </div>
 
       {/* Print Styles */}

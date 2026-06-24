@@ -6,6 +6,7 @@ import {
   fetchDoctorVisiblePatients,
   formatDoctorPatientName,
 } from "../../api/doctor";
+import { formatDisplayId, formatPatientDossierId } from "../../utils/formatId";
 
 const formatDate = (value?: string | null) => {
   if (!value) return "-";
@@ -87,6 +88,7 @@ export default function PatientsMedecin() {
   }, [patients, search, filter]);
 
   const selectedPatient = patients.find((patient) => patient.id === selectedPatientId) || filteredPatients[0] || null;
+  const selectedPatientPosition = selectedPatient ? patients.findIndex((patient) => patient.id === selectedPatient.id) + 1 : undefined;
 
   const metrics = useMemo(() => ({
     total: patients.length,
@@ -187,7 +189,7 @@ export default function PatientsMedecin() {
           {!selectedPatient ? (
             <p className="text-sm text-slate-500">Selectionnez un patient.</p>
           ) : (
-            <PatientRecord patient={selectedPatient} />
+            <PatientRecord patient={selectedPatient} position={selectedPatientPosition} />
           )}
         </main>
       </div>
@@ -195,87 +197,115 @@ export default function PatientsMedecin() {
   );
 }
 
-function PatientRecord({ patient }: { patient: DoctorPatient }) {
+function PatientRecord({ patient, position }: { patient: DoctorPatient; position?: number }) {
   return (
-    <div>
-      <div className="flex flex-col gap-3 border-b border-slate-200 pb-5 dark:border-slate-800 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">{formatDoctorPatientName(patient)}</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            {patient.gender || "-"} - {patient.phone || "Telephone non renseigne"} - {serviceLabel(patient)}
-          </p>
-          <p className="mt-1 text-sm text-slate-500">Medecin responsable: {doctorLabel(patient.assignedDoctor)}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => printPatientRecord(patient)}
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800"
-          >
-            🖨️ Imprimer le dossier
-          </button>
-          <div className="flex flex-wrap gap-2">
-            <StatusBadge label={patient.workflowStatus || "STATUT"} />
-            <AccessBadge access={patient.access} />
+    <div className="space-y-6">
+      <div className="rounded-[32px] border border-slate-200 bg-slate-50 p-6 shadow-sm ring-1 ring-slate-200/70 dark:border-slate-800 dark:bg-slate-950 dark:ring-slate-700/60">
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-4">
+            <div className="inline-flex rounded-full bg-blue-100 px-4 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-blue-700 dark:bg-blue-900/60 dark:text-blue-200">
+              Dossier Patient
+            </div>
+            <div className="max-w-2xl">
+              <h2 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">{formatDoctorPatientName(patient)}</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                {serviceLabel(patient)} · {doctorLabel(patient.assignedDoctor)}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge label={patient.workflowStatus || "Statut inconnu"} />
+              <AccessBadge access={patient.access} />
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                {patient.priority ? `Priorité : ${patient.priority}` : "Priorité normale"}
+              </span>
+            </div>
           </div>
+
+          <div className="grid gap-3 sm:auto-rows-min">
+            <button
+              type="button"
+              onClick={() => printPatientRecord(patient, position)}
+              className="rounded-3xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:border-slate-600 dark:hover:bg-slate-900"
+            >
+              🖨️ Imprimer le dossier
+            </button>
+            <div className="rounded-3xl border border-slate-200 bg-white/90 px-5 py-4 text-sm dark:border-slate-800 dark:bg-slate-950">
+              <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Accès</p>
+              <p className="mt-2 font-semibold text-slate-900 dark:text-white">
+                {patient.access?.canWrite ? "Modification autorisée" : "Lecture seule"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <QuickStat label="ID dossier" value={formatPatientDossierId(patient.id, patient.externalId, { truncateTo: 8, position })} />
+          <QuickStat label="Né le" value={patient.dateOfBirth ? formatDate(patient.dateOfBirth) : "-"} />
+          <QuickStat label="Sexe" value={patient.gender || "-"} />
+          <QuickStat label="Groupe sanguin" value={patient.bloodType || "-"} />
+          <QuickStat label="Téléphone" value={patient.phone || "-"} />
+          <QuickStat label="Email" value={patient.email || "-"} />
+          <QuickStat label="Adresse" value={patient.address || "-"} />
+          <QuickStat label="Profession" value={patient.profession || "-"} />
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-4">
-        <Info label="ID dossier" value={patient.externalId || patient.id} />
-        <Info label="Naissance" value={patient.dateOfBirth ? formatDate(patient.dateOfBirth) : "-"} />
-        <Info label="Email" value={patient.email || "-"} />
-        <Info label="Adresse" value={patient.address || "-"} />
-        <Info label="Profession" value={patient.profession || "-"} />
-        <Info label="Nationalite" value={patient.nationality || "-"} />
-        <Info label="Groupe sanguin" value={patient.bloodType || "-"} />
-        <Info label="Priorite" value={patient.priority || "Normale"} />
+      <div className="space-y-6">
+        <Section title="Signes vitaux">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {[
+              ["Température", "TEMPERATURE"],
+              ["Tension", "BLOOD_PRESSURE"],
+              ["SpO2", "OXYGEN_SATURATION"],
+              ["Pouls", "HEART_RATE"],
+              ["Respiration", "RESPIRATORY_RATE"],
+              ["Poids", "WEIGHT"],
+              ["Taille", "HEIGHT"],
+              ["P. thoracique", "CHEST_CIRCUMFERENCE"],
+              ["P. brachial", "ARM_CIRCUMFERENCE"],
+            ].map(([label, type]) => {
+              const vital = latestVital(patient, type);
+              return <Info key={type} label={label} value={vital ? `${vital.value} ${vital.unit || ""}`.trim() : "-"} />;
+            })}
+          </div>
+        </Section>
+
+        <Section title="Contacts famille">
+          {(patient.familyContacts || []).length === 0 ? <Empty /> : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {patient.familyContacts?.map((contact) => (
+                <div key={contact.id || contact.name} className="rounded-3xl border border-slate-200 bg-white p-4 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-950">
+                  <p className="font-semibold text-slate-900 dark:text-white">{contact.name}</p>
+                  <p className="mt-2 text-slate-500">{contact.relationship || "-"} · {contact.phone || "-"}</p>
+                  <p className="mt-1 text-slate-500">{contact.address || contact.email || "-"}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+
+        <Section title="Consultations récentes">
+          {(patient.consultations || []).length === 0 ? <Empty /> : (
+            <div className="space-y-3">
+              {patient.consultations?.slice(0, 3).map((consultation) => (
+                <ClinicalConsultation key={consultation.id} consultation={consultation} />
+              ))}
+            </div>
+          )}
+        </Section>
+
+        <Section title="Historique médical">
+          {(patient.medicalHistories || []).length === 0 ? <Empty /> : (
+            <div className="space-y-3">
+              {patient.medicalHistories?.slice(0, 4).map((item) => (
+                <HistoryEventCard key={item.id} item={item} />
+              ))}
+            </div>
+          )}
+        </Section>
       </div>
 
-      <Section title="Signes vitaux">
-        <div className="grid gap-3 md:grid-cols-5">
-          {[
-            ["Temperature", "TEMPERATURE"],
-            ["Tension", "BLOOD_PRESSURE"],
-            ["SpO2", "OXYGEN_SATURATION"],
-            ["Pouls", "HEART_RATE"],
-            ["Respiration", "RESPIRATORY_RATE"],
-            ["Poids", "WEIGHT"],
-            ["Taille", "HEIGHT"],
-            ["P. thoracique", "CHEST_CIRCUMFERENCE"],
-            ["P. brachial", "ARM_CIRCUMFERENCE"],
-          ].map(([label, type]) => {
-            const vital = latestVital(patient, type);
-            return <Info key={type} label={label} value={vital ? `${vital.value} ${vital.unit || ""}`.trim() : "-"} />;
-          })}
-        </div>
-      </Section>
-
-      <Section title="Contacts famille">
-        {(patient.familyContacts || []).length === 0 ? <Empty /> : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {patient.familyContacts?.map((contact) => (
-              <div key={contact.id || contact.name} className="rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-800">
-                <p className="font-semibold text-slate-900 dark:text-white">{contact.name}</p>
-                <p className="mt-1 text-slate-500">{contact.relationship || "-"} - {contact.phone || "-"}</p>
-                <p className="mt-1 text-slate-500">{contact.address || contact.email || ""}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      <Section title="Consultations">
-        {(patient.consultations || []).length === 0 ? <Empty /> : (
-          <div className="space-y-3">
-            {patient.consultations?.map((consultation) => (
-              <ClinicalConsultation key={consultation.id} consultation={consultation} />
-            ))}
-          </div>
-        )}
-      </Section>
-
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="space-y-4">
         <Section title="Examens laboratoire">
           {(patient.labRequests || []).length === 0 ? <Empty /> : patient.labRequests?.map((request) => (
             <TimelineCard
@@ -381,7 +411,7 @@ function renderHistoryDetails(kind: string, details: string) {
 
     if (kind === "MEDICAL_CONSULTATION") {
       return (
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           <Info label="Antecedents" value={joinValues(parsed.medicalHistory, ["knownDiseases", "surgeries", "allergies", "currentMedications", "familyHistory"])} />
           <Info label="Anamnese" value={joinValues(parsed.currentSymptoms, ["onset", "painLocation", "intensity", "aggravatingFactors", "associatedSymptoms"])} />
           <Info label="Examen clinique" value={joinValues(parsed.clinicalExam, ["generalState", "auscultation", "palpation", "focusedExam"])} />
@@ -469,7 +499,16 @@ function Metric({ label, value, tone = "default" }: { label: string; value: numb
   return <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950"><p className="text-xs text-slate-500">{label}</p><p className={`mt-2 text-2xl font-semibold ${colors[tone]}`}>{value}</p></div>;
 }
 
-function printPatientRecord(patient: DoctorPatient) {
+function QuickStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white px-4 py-4 shadow-sm transition duration-150 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950">
+      <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-white">{value}</p>
+    </div>
+  );
+}
+
+function printPatientRecord(patient: DoctorPatient, position?: number) {
   const formatDateString = (value?: string | null) => {
     if (!value) return "—";
     return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -501,6 +540,15 @@ function printPatientRecord(patient: DoctorPatient) {
       </tr>
     `).join("");
 
+  const hospitalizationRows = (patient.hospitalizations || []).map((item) => `
+      <tr>
+        <td>${formatDateString(item.admittedAt)}</td>
+        <td>${item.status || "-"}</td>
+        <td>${item.admissionReason || "-"}</td>
+        <td>${item.bedNumber || "-"}</td>
+      </tr>
+    `).join("");
+
   const historyKindLabel = (kind: string) => {
     const labels: Record<string, string> = {
       MEDICAL_CONSULTATION: "Consultation médicale",
@@ -523,8 +571,22 @@ function printPatientRecord(patient: DoctorPatient) {
       return details || "-";
     }
 
-    const toLine = (label: string, value?: string | number | null) =>
-      value ? `<div><strong>${label} :</strong> ${value}</div>` : "";
+    const formatHistoryValue = (key: string, value: unknown): string => {
+    if (value === null || value === undefined || value === "") {
+      return "";
+    }
+
+    const stringValue = typeof value === "string" || typeof value === "number" ? String(value) : JSON.stringify(value);
+    if (/id$/i.test(key) && stringValue) {
+      return formatDisplayId(stringValue);
+    }
+    return stringValue;
+  };
+
+  const toLine = (label: string, key: string, value?: string | number | null) => {
+    const formatted = formatHistoryValue(key, value);
+    return formatted ? `<div><strong>${label} :</strong> ${formatted}</div>` : "";
+  };
 
     if (kind === "MEDICAL_CONSULTATION") {
       const rows: string[] = [];
@@ -627,7 +689,7 @@ function printPatientRecord(patient: DoctorPatient) {
             <table>
               <tbody>
                 <tr><td class="label">Nom complet</td><td>${formatDoctorPatientName(patient)}</td></tr>
-                <tr><td class="label">ID patient</td><td>${patient.externalId || patient.id}</td></tr>
+                <tr><td class="label">ID patient</td><td>${formatPatientDossierId(patient.id, patient.externalId, { truncateTo: 8, position })}</td></tr>
                 <tr><td class="label">Sexe</td><td>${patient.gender || '—'}</td></tr>
                 <tr><td class="label">Date de naissance</td><td>${patient.dateOfBirth ? new Date(patient.dateOfBirth).toLocaleDateString('fr-FR') : '—'}</td></tr>
                 <tr><td class="label">Téléphone</td><td>${patient.phone || '—'}</td></tr>
