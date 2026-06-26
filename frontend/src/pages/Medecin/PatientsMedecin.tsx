@@ -6,7 +6,8 @@ import {
   fetchDoctorVisiblePatients,
   formatDoctorPatientName,
 } from "../../api/doctor";
-import { formatDisplayId, formatPatientDossierId } from "../../utils/formatId";
+import { formatConsultationId, formatDossierId, formatExamRequestId, formatPrescriptionId } from "../../utils/formatId";
+import { medicalHistoryKindLabel } from "../../utils/medicalHistoryLabels";
 
 const formatDate = (value?: string | null) => {
   if (!value) return "-";
@@ -239,7 +240,7 @@ function PatientRecord({ patient, position }: { patient: DoctorPatient; position
         </div>
 
         <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <QuickStat label="ID dossier" value={formatPatientDossierId(patient.id, patient.externalId, { truncateTo: 8, position })} />
+          <QuickStat label="ID dossier" value={formatDossierId(position || 1, patient)} />
           <QuickStat label="Né le" value={patient.dateOfBirth ? formatDate(patient.dateOfBirth) : "-"} />
           <QuickStat label="Sexe" value={patient.gender || "-"} />
           <QuickStat label="Groupe sanguin" value={patient.bloodType || "-"} />
@@ -287,8 +288,8 @@ function PatientRecord({ patient, position }: { patient: DoctorPatient; position
         <Section title="Consultations récentes">
           {(patient.consultations || []).length === 0 ? <Empty /> : (
             <div className="space-y-3">
-              {patient.consultations?.slice(0, 3).map((consultation) => (
-                <ClinicalConsultation key={consultation.id} consultation={consultation} />
+              {patient.consultations?.slice(0, 3).map((consultation, index) => (
+                <ClinicalConsultation key={consultation.id} consultation={consultation} displayId={formatConsultationId(index + 1, patient)} />
               ))}
             </div>
           )}
@@ -307,10 +308,10 @@ function PatientRecord({ patient, position }: { patient: DoctorPatient; position
 
       <div className="space-y-4">
         <Section title="Examens laboratoire">
-          {(patient.labRequests || []).length === 0 ? <Empty /> : patient.labRequests?.map((request) => (
+          {(patient.labRequests || []).length === 0 ? <Empty /> : patient.labRequests?.map((request, index) => (
             <TimelineCard
               key={request.id}
-              title={request.specimenType || "Examen"}
+              title={`${formatExamRequestId(index + 1, patient)} - ${request.specimenType || "Examen"}`}
               subtitle={`${request.status} - ${formatDate(request.requestedAt)}`}
               text={request.results?.length ? request.results.map((result) => `${result.resultName}: ${result.resultValue} ${result.units || ""}`).join(", ") : "Resultat en attente."}
             />
@@ -318,10 +319,10 @@ function PatientRecord({ patient, position }: { patient: DoctorPatient; position
         </Section>
 
         <Section title="Prescriptions">
-          {(patient.prescriptions || []).length === 0 ? <Empty /> : patient.prescriptions?.map((prescription) => (
+          {(patient.prescriptions || []).length === 0 ? <Empty /> : patient.prescriptions?.map((prescription, index) => (
             <TimelineCard
               key={prescription.id}
-              title={prescription.prescriber?.displayName || prescription.status}
+              title={`${formatPrescriptionId(index + 1, patient)} - ${prescription.prescriber?.displayName || prescription.status}`}
               subtitle={formatDate(prescription.prescribingDate)}
               text={prescription.lineItems?.map((line) => `${line.medication?.name || "Medicament"} - ${line.dosage || ""} - ${line.frequency || ""} - qte ${line.quantity || 1}`).join(", ") || prescription.instruction || "-"}
             />
@@ -349,13 +350,13 @@ function PatientRecord({ patient, position }: { patient: DoctorPatient; position
   );
 }
 
-function ClinicalConsultation({ consultation }: { consultation: NonNullable<DoctorPatient["consultations"]>[number] }) {
+function ClinicalConsultation({ consultation, displayId }: { consultation: NonNullable<DoctorPatient["consultations"]>[number]; displayId: string }) {
   const parsed = parseClinicalSummary(consultation.clinicalSummary);
   return (
     <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="font-semibold text-slate-900 dark:text-white">{consultation.chiefComplaint || "Consultation medicale"}</p>
+          <p className="font-semibold text-slate-900 dark:text-white">{displayId} - {consultation.chiefComplaint || "Consultation medicale"}</p>
           <p className="mt-1 text-xs text-slate-500">{formatDate(consultation.createdAt)} - {consultation.provider?.displayName || "Medecin"}</p>
         </div>
         <StatusBadge label={consultation.status} />
@@ -386,7 +387,7 @@ function HistoryEventCard({ item }: { item: NonNullable<DoctorPatient["medicalHi
           <p className="font-semibold text-slate-900 dark:text-white">{title}</p>
           <p className="mt-1 text-xs text-slate-500">{formatDate(item.eventDate)} - {item.createdBy?.displayName || "Systeme"}</p>
         </div>
-        <StatusBadge label={item.kind} />
+        <StatusBadge label={title} />
       </div>
       <div className="mt-4">{renderHistoryDetails(item.kind, item.details)}</div>
     </div>
@@ -394,14 +395,7 @@ function HistoryEventCard({ item }: { item: NonNullable<DoctorPatient["medicalHi
 }
 
 function historyTitle(kind: string) {
-  const labels: Record<string, string> = {
-    MEDICAL_CONSULTATION: "Consultation medicale",
-    NURSE_ORIENTATION: "Orientation infirmiere",
-    ADMISSION_METADATA: "Admission reception",
-    LAB_REQUEST: "Demande d'examen",
-    PRESCRIPTION_CREATED: "Prescription creee",
-  };
-  return labels[kind] || kind.replace(/_/g, " ").toLowerCase();
+  return medicalHistoryKindLabel(kind);
 }
 
 function renderHistoryDetails(kind: string, details: string) {
@@ -550,12 +544,7 @@ function printPatientRecord(patient: DoctorPatient, position?: number) {
     `).join("");
 
   const historyKindLabel = (kind: string) => {
-    const labels: Record<string, string> = {
-      MEDICAL_CONSULTATION: "Consultation médicale",
-      NURSE_ORIENTATION: "Orientation infirmière",
-      ADMISSION_METADATA: "Admission réception",
-    };
-    return labels[kind] ?? kind.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+    return medicalHistoryKindLabel(kind);
   };
 
   const formatHistoryDetails = (kind: string, details: string) => {
@@ -578,7 +567,7 @@ function printPatientRecord(patient: DoctorPatient, position?: number) {
 
     const stringValue = typeof value === "string" || typeof value === "number" ? String(value) : JSON.stringify(value);
     if (/id$/i.test(key) && stringValue) {
-      return formatDisplayId(stringValue);
+      return stringValue;
     }
     return stringValue;
   };
@@ -689,7 +678,7 @@ function printPatientRecord(patient: DoctorPatient, position?: number) {
             <table>
               <tbody>
                 <tr><td class="label">Nom complet</td><td>${formatDoctorPatientName(patient)}</td></tr>
-                <tr><td class="label">ID patient</td><td>${formatPatientDossierId(patient.id, patient.externalId, { truncateTo: 8, position })}</td></tr>
+                <tr><td class="label">ID patient</td><td>${formatDossierId(position || 1, patient)}</td></tr>
                 <tr><td class="label">Sexe</td><td>${patient.gender || '—'}</td></tr>
                 <tr><td class="label">Date de naissance</td><td>${patient.dateOfBirth ? new Date(patient.dateOfBirth).toLocaleDateString('fr-FR') : '—'}</td></tr>
                 <tr><td class="label">Téléphone</td><td>${patient.phone || '—'}</td></tr>

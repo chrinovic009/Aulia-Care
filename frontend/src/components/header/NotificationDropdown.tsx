@@ -26,6 +26,7 @@ const messageRoutes: Partial<Record<RoleSlug, string>> = {
   CASHIER: "/caissier/messages",
   PATIENT: "/messages",
   LAB_TECHNICIAN: "/laboratoire/messages",
+  LAB_MANAGER: "/laboratoire/messages",
   RADIOLOGIST: "/radiologie/messages",
   PHARMACIST: "/pharmacie/messages",
 };

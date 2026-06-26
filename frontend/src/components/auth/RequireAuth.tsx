@@ -51,7 +51,13 @@ export function RoleGuard({ children, requiredRoles }: RoleGuardProps) {
     return <Navigate to="/signin" replace />;
   }
 
-  if (!requiredRoles.includes(currentUser.primaryRole)) {
+  const isLabManager = Boolean(
+    currentUser.serviceResponsabilites?.some((responsibility) =>
+      responsibility?.service?.name?.toLowerCase().includes('laboratoire'),
+    ),
+  );
+
+  if (!requiredRoles.includes(currentUser.primaryRole) && !(requiredRoles.includes('LAB_MANAGER') && isLabManager)) {
     return <Navigate to={getRedirectPath(currentUser.primaryRole)} replace />;
   }
 

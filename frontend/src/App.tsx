@@ -56,10 +56,16 @@ import HistoriquePharmacie from "./pages/Pharmacie/HistoriquePharmacie";
 import GestionStockPharmacie from "./pages/Pharmacie/GestionStockPharmacie";
 import MessagesPharmacie from "./pages/Pharmacie/MessagesPharmacie";
 import DashboardLaboratoire from "./pages/Laboratoire/DashboardLaboratoire";
+import CatalogueLab from "./pages/Laboratoire/CatalogueLab";
+import ActivityLab from "./pages/Laboratoire/ActivityLab";
+import ValidationsLab from "./pages/Laboratoire/ValidationsLab";
+import TechniciensLab from "./pages/Laboratoire/TechniciensLab";
 import MessagesLaboratoire from "./pages/Laboratoire/MessagesLaboratoire";
+import ProfileLaboratoire from "./pages/Laboratoire/ProfileLab";
 import DashboardSupAdmin from "./pages/SuperAdmin/DashboardSupAdmin";
 import ProfileSupAdmin from "./pages/SuperAdmin/ProfileSupAdmin";
 import ProfilePharmacie from "./pages/Pharmacie/ProfilePharmacie";
+import Guide from "./pages/Guide";
 
 export default function App() {
   return (
@@ -71,7 +77,8 @@ export default function App() {
           <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
 
             {/* Page d'erreur */}
-            <Route path="/blank" element={<Blank />} /> 
+            <Route path="/blank" element={<Blank />} />
+            <Route path="/guide" element={<RoleGuard requiredRoles={["PATIENT"]}><Guide /></RoleGuard>} />
 
             {/* Page Patient */}
             <Route index path="/" element={<HomeRedirect />} />
@@ -88,6 +95,7 @@ export default function App() {
             
             {/* Page Receptioniste */}
             <Route path="/reception" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionDashboard /></RoleGuard>} />
+            <Route path="/reception/guide" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><Guide /></RoleGuard>} />
             <Route path="/reception/patients" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionPatients /></RoleGuard>} />
             <Route path="/reception/admission" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionAdmission /></RoleGuard>} />
             <Route path="/reception/rendez-vous" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><RendezVousReception /></RoleGuard>} />
@@ -98,6 +106,7 @@ export default function App() {
 
             {/* Page Infirmier */}
             <Route path="/nurse" element={<RoleGuard requiredRoles={["NURSE"]}><DashboardInfirmier /></RoleGuard>} />
+            <Route path="/nurse/guide" element={<RoleGuard requiredRoles={["NURSE"]}><Guide /></RoleGuard>} />
             <Route path="/nurse/patients" element={<RoleGuard requiredRoles={["NURSE"]}><PatientAssignes /></RoleGuard>} />
             <Route path="/nurse/rounds" element={<RoleGuard requiredRoles={["NURSE"]}><RoundsInfirmier /></RoleGuard>} />
             <Route path="/nurse/hospitalized" element={<RoleGuard requiredRoles={["NURSE"]}><HospitalisationInfirmier /></RoleGuard>} />
@@ -106,6 +115,7 @@ export default function App() {
 
             {/* Page Médecin */}
             <Route path="/doctor/" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
+            <Route path="/doctor/guide" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><Guide /></RoleGuard>} />
             <Route path="/doctor/patients" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><PatientsMedecin /></RoleGuard>} />
             <Route path="/doctor/consultations" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
             <Route path="/doctor/prescriptions" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><PrescriptionsMedecin /></RoleGuard>} />
@@ -116,6 +126,7 @@ export default function App() {
 
             {/* Page Caissier */}
             <Route path="/caissier" element={<RoleGuard requiredRoles={["CASHIER"]}><DashboardCaissier /></RoleGuard>} />
+            <Route path="/caissier/guide" element={<RoleGuard requiredRoles={["CASHIER"]}><Guide /></RoleGuard>} />
             <Route path="/caissier/messages" element={<RoleGuard requiredRoles={["CASHIER"]}><MessagesCaissier /></RoleGuard>} />
             <Route path="/caissier/facturation" element={<RoleGuard requiredRoles={["CASHIER"]}><FacturationCaissier /></RoleGuard>} />
             <Route path="/caissier/historique" element={<RoleGuard requiredRoles={["CASHIER"]}><HistoriqueCaissier /></RoleGuard>} />
@@ -123,6 +134,7 @@ export default function App() {
 
             {/* Administration clinique */}
             <Route path="/administration" element={<RoleGuard requiredRoles={["ADMIN"]}><DashboardAdmin /></RoleGuard>} />
+            <Route path="/administration/guide" element={<RoleGuard requiredRoles={["ADMIN"]}><Guide /></RoleGuard>} />
             <Route path="/administration/personnel" element={<RoleGuard requiredRoles={["ADMIN"]}><GestionPersAdmin /></RoleGuard>} />
             <Route path="/administration/services" element={<RoleGuard requiredRoles={["ADMIN"]}><GestionServAdmin /></RoleGuard>} />
             <Route path="/administration/departements" element={<RoleGuard requiredRoles={["ADMIN"]}><GestionDepartAdmin /></RoleGuard>} />
@@ -133,6 +145,7 @@ export default function App() {
 
             {/* Pharmacie */}
             <Route path="/pharmacie" element={<RoleGuard requiredRoles={["PHARMACIST"]}><DashboardPharmacie /></RoleGuard>} />
+            <Route path="/pharmacie/guide" element={<RoleGuard requiredRoles={["PHARMACIST"]}><Guide /></RoleGuard>} />
             <Route path="/pharmacie/ordonnances" element={<RoleGuard requiredRoles={["PHARMACIST"]}><OrdonancesPharmacie /></RoleGuard>} />
             <Route path="/pharmacie/delivrance" element={<RoleGuard requiredRoles={["PHARMACIST"]}><DelivrancePharmacie /></RoleGuard>} />
             <Route path="/pharmacie/historique" element={<RoleGuard requiredRoles={["PHARMACIST"]}><HistoriquePharmacie /></RoleGuard>} />
@@ -141,12 +154,18 @@ export default function App() {
             <Route path="/pharmacie/profile" element={<RoleGuard requiredRoles={["PHARMACIST"]}><ProfilePharmacie /></RoleGuard>} />
 
             {/* Laboratoire */}
-            <Route path="/laboratoire" element={<RoleGuard requiredRoles={["LAB_TECHNICIAN"]}><DashboardLaboratoire /></RoleGuard>} />
-            <Route path="/laboratoire/examens" element={<RoleGuard requiredRoles={["LAB_TECHNICIAN"]}><DashboardLaboratoire /></RoleGuard>} />
-            <Route path="/laboratoire/messages" element={<RoleGuard requiredRoles={["LAB_TECHNICIAN"]}><MessagesLaboratoire /></RoleGuard>} />
+            <Route path="/laboratoire" element={<RoleGuard requiredRoles={["LAB_TECHNICIAN", "LAB_MANAGER"]}><DashboardLaboratoire /></RoleGuard>} />
+            <Route path="/laboratoire/guide" element={<RoleGuard requiredRoles={["LAB_TECHNICIAN", "LAB_MANAGER"]}><Guide /></RoleGuard>} />
+            <Route path="/laboratoire/activite" element={<RoleGuard requiredRoles={["LAB_TECHNICIAN", "LAB_MANAGER"]}><ActivityLab /></RoleGuard>} />
+            <Route path="/laboratoire/validations" element={<RoleGuard requiredRoles={["LAB_TECHNICIAN", "LAB_MANAGER"]}><ValidationsLab /></RoleGuard>} />
+            <Route path="/laboratoire/techniciens" element={<RoleGuard requiredRoles={["LAB_MANAGER"]}><TechniciensLab /></RoleGuard>} />
+            <Route path="/laboratoire/catalogue" element={<RoleGuard requiredRoles={["LAB_MANAGER"]}><CatalogueLab /></RoleGuard>} />
+            <Route path="/laboratoire/messages" element={<RoleGuard requiredRoles={["LAB_TECHNICIAN", "LAB_MANAGER"]}><MessagesLaboratoire /></RoleGuard>} />
+            <Route path="/laboratoire/profile" element={<RoleGuard requiredRoles={["LAB_TECHNICIAN", "LAB_MANAGER"]}><ProfileLaboratoire /></RoleGuard>} />
 
             {/* Super Admin */}
             <Route path="/admin" element={<RoleGuard requiredRoles={["SUPER_ADMIN"]}><DashboardSupAdmin /></RoleGuard>} />
+            <Route path="/admin/guide" element={<RoleGuard requiredRoles={["SUPER_ADMIN"]}><Guide /></RoleGuard>} />
             <Route path="/admin/profile" element={<RoleGuard requiredRoles={["SUPER_ADMIN"]}><ProfileSupAdmin /></RoleGuard>} />
 
           </Route>

@@ -82,6 +82,16 @@ export class CurrentUserResponseDto {
   }>;
 
   @Expose()
+  serviceResponsabilites?: Array<{
+    principal?: boolean;
+    service?: {
+      id: string;
+      name: string;
+      isParamedical?: boolean;
+    };
+  }>;
+
+  @Expose()
   status: string;
 
   @Expose()

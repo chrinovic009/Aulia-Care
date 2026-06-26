@@ -3,25 +3,29 @@ import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { DoctorPatient, createLabRequest, fetchDoctorVisiblePatients, formatDoctorPatientName } from "../../api/doctor";
 import { apiFetch } from "../../config/api";
+import { fetchLaboratoryCatalogue } from "../../api/laboratory";
 import { consultationLabel, formatDateTime, hasConsultations, patientSearchText, serviceLabel } from "./medecinShared";
 
 export default function ExamensMedecin() {
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
   const [services, setServices] = useState<Array<{ id: string; name: string; type?: string | null; category?: string | null }>>([]);
+  const [labTests, setLabTests] = useState<Array<{ id: string; name: string; code: string; price: string; turnaroundTimeMinutes?: number | null; section?: { name: string } | null; category?: { name: string } | null }>>([]);
   const [selectedPatientId, setSelectedPatientId] = useState("");
   const [selectedConsultationId, setSelectedConsultationId] = useState("");
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState<string | null>(null);
-  const [form, setForm] = useState({ examName: "", serviceId: "", specimenType: "", priority: "NORMAL", notes: "" });
+  const [form, setForm] = useState({ examName: "", serviceId: "", labTestId: "", specimenType: "", priority: "NORMAL", notes: "" });
 
   const load = async () => {
-    const [patientData, serviceData] = await Promise.all([
+    const [patientData, serviceData, catalogueData] = await Promise.all([
       fetchDoctorVisiblePatients(),
       apiFetch<Array<{ id: string; name: string; type?: string | null; category?: string | null }>>("/services").catch(() => []),
+      fetchLaboratoryCatalogue().catch(() => null),
     ]);
     const withConsultations = patientData.filter(hasConsultations);
     setPatients(withConsultations);
     setServices(serviceData || []);
+    setLabTests(catalogueData?.tests || []);
     setSelectedPatientId((current) => current || withConsultations[0]?.id || "");
     setSelectedConsultationId((current) => current || withConsultations[0]?.consultations?.[0]?.id || "");
   };
@@ -52,9 +56,12 @@ export default function ExamensMedecin() {
   const selectedPatient = patients.find((patient) => patient.id === selectedPatientId) || filteredPatients[0] || null;
   const selectedConsultation = selectedPatient?.consultations?.find((consultation) => consultation.id === selectedConsultationId) || selectedPatient?.consultations?.[0] || null;
   const canWrite = Boolean(selectedPatient?.access?.canWrite);
+  const selectedService = services.find((service) => service.id === form.serviceId);
+  const isLaboratoryService = Boolean(selectedService?.name?.toLowerCase().includes("laboratoire"));
+  const selectedLabTest = labTests.find((test) => test.id === form.labTestId);
 
   const submit = async () => {
-    if (!selectedConsultation || !form.examName.trim()) {
+    if (!selectedConsultation || (!form.examName.trim() && !form.labTestId)) {
       setMessage("Choisissez une consultation et renseignez l'examen.");
       return;
     }
@@ -62,13 +69,17 @@ export default function ExamensMedecin() {
       setMessage("Dossier en lecture seule: seul le medecin autorise peut demander un examen.");
       return;
     }
-    const selectedService = services.find((service) => service.id === form.serviceId);
     await createLabRequest(selectedConsultation.id, {
       ...form,
-      specimenType: selectedService?.name || form.specimenType || form.examName,
-      notes: [form.notes, selectedService ? `Service paramedical: ${selectedService.name}` : ""].filter(Boolean).join("\n"),
+      examName: selectedLabTest?.name || form.examName,
+      specimenType: selectedLabTest?.name || form.specimenType || selectedService?.name || form.examName,
+      notes: [
+        form.notes,
+        selectedService ? `Service paramedical: ${selectedService.name}` : "",
+        selectedLabTest ? `Examen catalogue: ${selectedLabTest.name} | Prix: ${selectedLabTest.price} | Delai: ${selectedLabTest.turnaroundTimeMinutes || "-"} min` : "",
+      ].filter(Boolean).join("\n"),
     });
-    setForm({ examName: "", serviceId: "", specimenType: "", priority: "NORMAL", notes: "" });
+    setForm({ examName: "", serviceId: "", labTestId: "", specimenType: "", priority: "NORMAL", notes: "" });
     setMessage("Demande d'examen envoyee.");
     await load();
   };
@@ -89,8 +100,22 @@ export default function ExamensMedecin() {
                 <div className="mt-5 grid gap-4 xl:grid-cols-2">
                   <Panel title="Nouvelle demande">
                     <Select label="Consultation" value={selectedConsultation.id} onChange={setSelectedConsultationId} options={(selectedPatient.consultations || []).map((consultation) => [consultation.id, consultationLabel(consultation)] as [string, string])} />
-                    <Input label="Examen demande" value={form.examName} onChange={(value) => setForm((current) => ({ ...current, examName: value }))} />
-                    <Select label="Service paramedical" value={form.serviceId} onChange={(value) => setForm((current) => ({ ...current, serviceId: value }))} options={[["", "Choisir"], ...examServices.map((service) => [service.id, service.name] as [string, string])]} />
+                    <Select label="Service paramedical" value={form.serviceId} onChange={(value) => setForm((current) => ({ ...current, serviceId: value, labTestId: "" }))} options={[["", "Choisir"], ...examServices.map((service) => [service.id, service.name] as [string, string])]} />
+                    {isLaboratoryService ? (
+                      <Select
+                        label="Examen du catalogue laboratoire"
+                        value={form.labTestId}
+                        onChange={(value) => setForm((current) => ({ ...current, labTestId: value, examName: labTests.find((test) => test.id === value)?.name || current.examName }))}
+                        options={[["", "Choisir un examen"], ...labTests.map((test) => [test.id, `${test.name} - ${Number(test.price || 0).toLocaleString("fr-FR")} FC - ${test.turnaroundTimeMinutes || "-"} min`] as [string, string])]}
+                      />
+                    ) : (
+                      <Input label="Examen demande" value={form.examName} onChange={(value) => setForm((current) => ({ ...current, examName: value }))} />
+                    )}
+                    {selectedLabTest ? (
+                      <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
+                        Section: {selectedLabTest.section?.name || "-"} | Categorie: {selectedLabTest.category?.name || "-"} | Prix: {Number(selectedLabTest.price || 0).toLocaleString("fr-FR")} FC | Delai: {selectedLabTest.turnaroundTimeMinutes || "-"} min
+                      </div>
+                    ) : null}
                     <Input label="Specimen / precision" value={form.specimenType} onChange={(value) => setForm((current) => ({ ...current, specimenType: value }))} />
                     <Select label="Priorite" value={form.priority} onChange={(value) => setForm((current) => ({ ...current, priority: value }))} options={[["NORMAL", "Normale"], ["URGENT", "Urgente"], ["CRITICAL", "Critique"]]} />
                     <Textarea label="Notes cliniques" value={form.notes} onChange={(value) => setForm((current) => ({ ...current, notes: value }))} />

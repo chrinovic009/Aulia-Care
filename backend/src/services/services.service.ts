@@ -55,14 +55,26 @@ export class ServicesService {
     return svc;
   }
 
-  findAll() {
-    return this.prisma.service.findMany({
+  async findAll() {
+    const [services, serviceUnits] = await Promise.all([
+      this.prisma.service.findMany({
       include: {
         tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' } },
         responsables: { where: { actif: true }, include: { user: true } },
         staff: { where: { actif: true }, include: { user: true } },
       },
       orderBy: { name: 'asc' },
+      }),
+      this.prisma.serviceUnit.findMany({ include: { department: true } }),
+    ]);
+    const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    return services.map((service) => {
+      const unit = serviceUnits.find((item) => normalize(item.name) === normalize(service.name));
+      return {
+        ...service,
+        departmentId: unit?.departmentId || null,
+        department: unit?.department || null,
+      };
     });
   }
 
@@ -76,7 +88,15 @@ export class ServicesService {
       },
     });
     if (!svc) throw new NotFoundException('Service introuvable');
-    return svc;
+    const serviceUnit = await this.prisma.serviceUnit.findFirst({
+      where: { name: { equals: svc.name, mode: 'insensitive' } },
+      include: { department: true },
+    });
+    return {
+      ...svc,
+      departmentId: serviceUnit?.departmentId || null,
+      department: serviceUnit?.department || null,
+    };
   }
 
   async update(id: string, dto: UpdateServiceDto) {

@@ -7,6 +7,7 @@ export type RoleSlug =
   | "NURSE"
   | "PHYSICIAN"
   | "LAB_TECHNICIAN"
+  | "LAB_MANAGER"
   | "RADIOLOGIST"
   | "SURGEON"
   | "ANESTHESIOLOGIST"
@@ -44,6 +45,14 @@ export interface AuthUser {
     departmentId?: string;
     shifts?: Array<{ id: string; startAt: string; endAt: string; type: 'DAY' | 'NIGHT' | 'ROTATING' }>;
   }>;
+  serviceResponsabilites?: Array<{
+    principal?: boolean;
+    service?: {
+      id: string;
+      name: string;
+      isParamedical?: boolean;
+    };
+  }>;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -59,6 +68,7 @@ interface AuthContextType {
   error: string | null;
   restrictedAccount: AuthUser | null;
   clearRestrictedAccount: () => void;
+  isLabManager: () => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -75,6 +85,7 @@ export function getRedirectPath(role: RoleSlug) {
     PHYSICIAN: "/doctor",
     CASHIER: "/caissier",
     LAB_TECHNICIAN: "/laboratoire",
+    LAB_MANAGER: "/laboratoire",
     RADIOLOGIST: "/radiologie",
     SURGEON: "/surgery",
     ANESTHESIOLOGIST: "/anesthesiologist",
@@ -86,11 +97,43 @@ export function getRedirectPath(role: RoleSlug) {
   return rolePathMap[role] || "/";
 }
 
+export function getGuidePath(role: RoleSlug) {
+  const guidePathMap: Record<RoleSlug, string> = {
+    RECEPTIONIST: "/reception/guide",
+    NURSE: "/nurse/guide",
+    PHYSICIAN: "/doctor/guide",
+    CASHIER: "/caissier/guide",
+    LAB_TECHNICIAN: "/laboratoire/guide",
+    LAB_MANAGER: "/laboratoire/guide",
+    RADIOLOGIST: "/radiologie/guide",
+    SURGEON: "/surgery/guide",
+    ANESTHESIOLOGIST: "/anesthesiologist/guide",
+    PHARMACIST: "/pharmacie/guide",
+    PATIENT: "/guide",
+    ADMIN: "/administration/guide",
+    SUPER_ADMIN: "/admin/guide",
+  };
+  return guidePathMap[role] || "/guide";
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [restrictedAccount, setRestrictedAccount] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const isLabManager = (user: AuthUser | null) =>
+    Boolean(
+      user?.serviceResponsabilites?.some((responsibility) =>
+        responsibility?.service?.name?.toLowerCase().includes('laboratoire'),
+      ),
+    );
+
+  const isLabManagerUser = useCallback(
+    () => isLabManager(currentUser),
+    [currentUser],
+  );
+
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Charger le user depuis /auth/me si un token existe
@@ -297,6 +340,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     error,
     restrictedAccount,
     clearRestrictedAccount: () => setRestrictedAccount(null),
+    isLabManager: isLabManagerUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
