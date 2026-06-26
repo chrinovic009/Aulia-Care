@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { fetchAllInvoices } from "../../api/cashier";
 import { InvoicePrintTemplate } from "./InvoicePrintTemplate";
-import { formatInvoiceReference } from "../../utils/formatId";
+import { formatInvoiceId } from "../../utils/formatId";
 
 interface InvoiceDetail {
   id: string;
@@ -250,9 +250,12 @@ const FacturationCaissier: React.FC = () => {
                 </td>
               </tr>
             ) : (
-              filtered.map((inv, idx) => (
+              filtered.map((inv, idx) => {
+                const [firstName, ...restNames] = (inv.patientName || "").trim().split(/\s+/);
+                const patient = { firstName, lastName: restNames[restNames.length - 1] || "" };
+                return (
                 <tr key={inv.id} className="border-t hover:bg-gray-50">
-                  <td className="p-3 font-medium text-blue-600">{formatInvoiceReference(inv.id, inv.invoiceNumber, { truncateTo: 8, position: idx + 1 })}</td>
+                  <td className="p-3 font-medium text-blue-600">{formatInvoiceId(idx + 1, patient)}</td>
                   <td className="p-3">{inv.patientName}</td>
                   <td className="p-3 text-sm">{inv.patientPhone || "—"}</td>
                   <td className="p-3 text-right font-medium">
@@ -274,7 +277,8 @@ const FacturationCaissier: React.FC = () => {
                     </button>
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>

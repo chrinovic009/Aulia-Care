@@ -25,7 +25,11 @@ export default function RoleGuard({ children, requiredRoles }: RoleGuardProps) {
     return <Navigate to="/signin" replace />;
   }
 
-  if (!requiredRoles.includes(currentUser.primaryRole)) {
+  const isManagedLabUser = currentUser && requiredRoles.includes('LAB_MANAGER') && currentUser.primaryRole !== 'LAB_MANAGER' && currentUser.serviceResponsabilites?.some((responsibility) =>
+    responsibility?.service?.name?.toLowerCase().includes('laboratoire'),
+  );
+
+  if (!requiredRoles.includes(currentUser.primaryRole) && !isManagedLabUser) {
     // Rôle non autorisé, rediriger vers le dashboard
     return <Navigate to="/" replace />;
   }

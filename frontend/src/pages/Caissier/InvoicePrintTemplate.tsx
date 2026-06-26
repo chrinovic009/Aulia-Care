@@ -1,5 +1,5 @@
 import React from "react";
-import { formatInvoiceReference } from "../../utils/formatId";
+import { formatInvoiceId } from "../../utils/formatId";
 
 interface InvoicePrintProps {
   patientName: string;
@@ -16,13 +16,14 @@ interface InvoicePrintProps {
   clinicName?: string;
   clinicAddress?: string;
   clinicPhone?: string;
-  invoiceId: string;  invoicePosition?: number;}
+  invoiceId: string;
+  invoicePosition?: number;
+}
 
 export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   patientName,
   patientPhone,
   patientEmail,
-  invoiceNumber,
   invoiceType,
   totalAmount,
   balanceDue,
@@ -30,9 +31,14 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   issuedAt,
   dueDate,
   remarks,
-  invoiceId,
   invoicePosition,
 }) => {
+  const [firstName, ...restNames] = patientName.trim().split(/\s+/);
+  const displayInvoiceId = formatInvoiceId(invoicePosition || 1, {
+    firstName,
+    lastName: restNames[restNames.length - 1] || "",
+  });
+
   return (
     <div
       style={{
@@ -62,7 +68,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
               <strong>Numéro de facture:</strong>
             </td>
             <td style={{ paddingBottom: "3mm", textAlign: "right" }}>
-              {formatInvoiceReference(invoiceId, invoiceNumber, { truncateTo: 8, position: invoicePosition })}
+              {displayInvoiceId}
             </td>
           </tr>
           <tr>
@@ -191,7 +197,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
       <div style={{ marginTop: "15mm", textAlign: "center", fontSize: "10px", color: "#666", borderTop: "1px solid #ddd", paddingTop: "5mm" }}>
         <p style={{ margin: "0" }}>Merci de votre confiance</p>
         <p style={{ margin: "2mm 0" }}>D7 CLINIC - Tous droits réservés</p>
-        <p style={{ margin: "2mm 0", color: "#999" }}>Facture n° {formatInvoiceReference(invoiceId, invoiceNumber, { truncateTo: 8, position: invoicePosition })}</p>
+        <p style={{ margin: "2mm 0", color: "#999" }}>Facture n° {displayInvoiceId}</p>
       </div>
 
       {/* Print Styles */}

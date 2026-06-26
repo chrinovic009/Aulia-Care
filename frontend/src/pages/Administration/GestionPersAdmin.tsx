@@ -73,6 +73,8 @@ type ServiceRecord = {
   name: string;
   description?: string | null;
   active?: boolean;
+  departmentId?: string | null;
+  department?: { id: string; name: string } | null;
   staff?: Array<{ user?: AdminUser; roleInService?: string | null }>;
   responsables?: Array<{ user?: AdminUser; principal?: boolean }>;
 };
@@ -260,6 +262,21 @@ export default function GestionPersAdmin() {
 
   const updateForm = (patch: Partial<typeof emptyForm>) => {
     const next = { ...form, ...patch };
+    if (patch.serviceId !== undefined) {
+      const selectedService = services.find((service) => service.id === patch.serviceId);
+      if (selectedService?.departmentId) {
+        next.departmentId = selectedService.departmentId;
+      } else if (selectedService?.department?.id) {
+        next.departmentId = selectedService.department.id;
+      }
+    }
+    if (patch.departmentId !== undefined && form.serviceId) {
+      const selectedService = services.find((service) => service.id === form.serviceId);
+      const serviceDepartmentId = selectedService?.departmentId || selectedService?.department?.id || "";
+      if (serviceDepartmentId && serviceDepartmentId !== patch.departmentId) {
+        next.serviceId = "";
+      }
+    }
     const username = buildUsername(next.firstName, next.lastName);
     if (!editingUser && (patch.firstName !== undefined || patch.lastName !== undefined)) {
       next.username = username;
@@ -274,6 +291,11 @@ export default function GestionPersAdmin() {
   const saveEmployee = async () => {
     setIsSaving(true);
     try {
+      const selectedService = services.find((service) => service.id === form.serviceId);
+      const serviceDepartmentId = selectedService?.departmentId || selectedService?.department?.id || "";
+      if (form.serviceId && form.departmentId && serviceDepartmentId && serviceDepartmentId !== form.departmentId) {
+        throw new Error("Le service selectionne n'appartient pas au departement choisi.");
+      }
       const displayName = [form.firstName, form.lastName].filter(Boolean).join(" ");
       const payload = {
         firstName: form.firstName,
@@ -293,7 +315,7 @@ export default function GestionPersAdmin() {
         addressStreet: form.addressStreet || undefined,
         gender: form.gender || undefined,
         dateOfBirth: form.dateOfBirth || undefined,
-        departmentId: form.departmentId || undefined,
+        departmentId: form.departmentId || serviceDepartmentId || undefined,
         position: form.specialty || roleLabel({ primaryRole: form.primaryRole } as AdminUser),
         salary: form.salary ? Number(form.salary) : undefined,
         salaryFrequency: form.salaryFrequency || undefined,
@@ -593,6 +615,12 @@ function EmployeeForm({
   onClose: () => void;
   onSave: () => void;
 }) {
+  const filteredServices = form.departmentId
+    ? services.filter((service) => (service.departmentId || service.department?.id) === form.departmentId)
+    : services;
+  const selectedService = services.find((service) => service.id === form.serviceId);
+  const selectedServiceDepartment = selectedService?.department?.name || departments.find((department) => department.id === selectedService?.departmentId)?.name;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
       <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-950">
@@ -623,7 +651,12 @@ function EmployeeForm({
             <FormSelect label="Role" value={form.primaryRole} onChange={(primaryRole) => onChange({ primaryRole: primaryRole as RoleSlug })} options={roleOptions.map((role) => [role, roleLabel({ primaryRole: role } as AdminUser)])} />
             <FormInput label="Fonction / Specialite" value={form.specialty} onChange={(specialty) => onChange({ specialty })} />
             <FormSelect label="Departement RH" value={form.departmentId} onChange={(departmentId) => onChange({ departmentId })} options={[["", "Aucun"], ...departments.map((department) => [department.id, department.name] as [string, string])]} />
-            <FormSelect label="Service" value={form.serviceId} onChange={(serviceId) => onChange({ serviceId })} options={[["", "Aucun"], ...services.map((service) => [service.id, service.name] as [string, string])]} />
+            <FormSelect label="Service" value={form.serviceId} onChange={(serviceId) => onChange({ serviceId })} options={[["", form.departmentId ? "Choisir un service du departement" : "Choisir d'abord ou non un departement"], ...filteredServices.map((service) => [service.id, service.name] as [string, string])]} />
+            {selectedServiceDepartment ? (
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs font-medium text-blue-700 sm:col-span-2">
+                Departement lie au service selectionne : {selectedServiceDepartment}
+              </div>
+            ) : null}
             <FormSelect label="Responsable du service" value={form.isResponsible ? "YES" : "NO"} onChange={(value) => onChange({ isResponsible: value === "YES" })} options={[["NO", "Non"], ["YES", "Oui"]]} />
             <FormSelect label="Statut" value={form.status} onChange={(status) => onChange({ status: status as UserStatus })} options={[["ACTIVE", "Actif"], ["INACTIVE", "Inactif"], ["SUSPENDED", "Suspendu"]]} />
             <FormInput label="Salaire" type="number" value={form.salary} onChange={(salary) => onChange({ salary })} />

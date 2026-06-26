@@ -19,6 +19,7 @@ import {
   PlusIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
+import { useAuth } from "../context/AuthContext";
 import SidebarWidget from "./SidebarWidget";
 
 type NavItem = {
@@ -222,11 +223,6 @@ const cashierNavItems: NavItem[] = [
     path: "/caissier/facturation",
   },
   {
-    icon: <ChatIcon />,
-    name: "Autorisations",
-    path: "/caissier/messages",
-  },
-  {
     icon: <FolderIcon />,
     name: "Historique paiements",
     path: "/caissier/historique",
@@ -259,10 +255,14 @@ const pharmacyNavItems: NavItem[] = [
   { icon: <LockIcon />, name: "Profil pharmacie", path: "/pharmacie/profile" },
 ];
 
-const laboratoryNavItems: NavItem[] = [
+const laboratoryNavItemsFactory = (isLabManager: boolean): NavItem[] => [
   { icon: <GridIcon />, name: "Dashboard laboratoire", path: "/laboratoire" },
-  { icon: <DocsIcon />, name: "Examens", path: "/laboratoire/examens" },
+  ...(isLabManager ? [{ icon: <DocsIcon />, name: "Catalogue laboratoire", path: "/laboratoire/catalogue" }] : []),
+  { icon: <TaskIcon />, name: "Activité laboratoire", path: "/laboratoire/activite" },
+  { icon: <DocsIcon />, name: "Validations", path: "/laboratoire/validations" },
+  ...(isLabManager ? [{ icon: <UserCircleIcon />, name: "Techniciens", path: "/laboratoire/techniciens" }] : []),
   { icon: <ChatIcon />, name: "Messages", path: "/laboratoire/messages" },
+  { icon: <LockIcon />, name: "Profil laboratoire", path: "/laboratoire/profile" },
 ];
 
 const superAdminNavItems: NavItem[] = [
@@ -275,6 +275,13 @@ const othersItems: NavItem[] = [];
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const location = useLocation();
+
+  const { currentUser } = useAuth();
+  const isLabManager = Boolean(
+    currentUser?.serviceResponsabilites?.some((responsability) =>
+      responsability?.service?.name?.toLowerCase().includes('laboratoire'),
+    ),
+  );
 
   const [openSubmenu, setOpenSubmenu] = useState<{
     type: "main" | "others";
@@ -301,7 +308,7 @@ const AppSidebar: React.FC = () => {
     : isPharmacySection
     ? pharmacyNavItems
     : isLaboratorySection
-    ? laboratoryNavItems
+    ? laboratoryNavItemsFactory(isLabManager)
     : isSuperAdminSection
     ? superAdminNavItems
     : navItems;

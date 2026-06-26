@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { fetchMyPatientProfile, PatientProfile } from "../../api/patient";
+import { medicalHistoryKindLabel } from "../../utils/medicalHistoryLabels";
 
 type PatientClinicalPageProps = {
   mode: "dossier" | "traitements" | "suivi" | "historique";
@@ -265,6 +266,10 @@ function ListPanel({ title, items }: { title: string; items: Array<{ title: stri
   );
 }
 
+function historyTitle(kind?: string | null) {
+  return medicalHistoryKindLabel(kind);
+}
+
 function formatHistoryDetails(kind: string | undefined, details?: string | null) {
   if (!details) return "Aucun detail disponible.";
 
@@ -339,4 +344,3 @@ function joinValues(source: any, keys: string[]) {
   if (!source) return "-";
   return keys.map((key) => source?.[key]).filter(Boolean).join(" | ") || "-";
 }
-

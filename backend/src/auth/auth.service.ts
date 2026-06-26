@@ -145,6 +145,10 @@ export class AuthService {
             },
           },
         },
+        serviceResponsabilites: {
+          where: { actif: true },
+          include: { service: true },
+        },
       },
     });
 

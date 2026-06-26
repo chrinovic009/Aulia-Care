@@ -140,6 +140,36 @@ export class ConsultationsService {
         include: { patient: true, requestedBy: true, consultation: true, results: true },
       });
 
+      const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
+      let labTest = null;
+
+      if (dto.labTestId) {
+        labTest = await tx.labTest.findUnique({ where: { id: dto.labTestId } });
+      }
+
+      if (!labTest && trimmedExamName) {
+        labTest = await tx.labTest.findFirst({
+          where: {
+            active: true,
+            OR: [
+              { name: { equals: trimmedExamName, mode: 'insensitive' } },
+              { code: { equals: trimmedExamName, mode: 'insensitive' } },
+            ],
+          },
+          orderBy: { name: 'asc' },
+        });
+      }
+
+      if (!labTest && trimmedExamName) {
+        labTest = await tx.labTest.findFirst({
+          where: {
+            active: true,
+            name: { contains: trimmedExamName, mode: 'insensitive' },
+          },
+          orderBy: { name: 'asc' },
+        });
+      }
+
       await tx.patient.update({
         where: { id: consultation.patientId },
         data: { workflowStatus: PatientWorkflowStatus.EN_LABORATOIRE },
@@ -153,6 +183,19 @@ export class ConsultationsService {
           createdById: actorId,
         },
       });
+
+      if (labTest) {
+        await tx.labRequestItem.create({
+          data: {
+            labRequestId: created.id,
+            labTestId: labTest.id,
+            status: 'REQUESTED',
+            requestedAt: created.requestedAt,
+            specimenLabel: created.specimenType || labTest.name,
+            notes: dto.notes || null,
+          },
+        });
+      }
 
       return created;
     });
