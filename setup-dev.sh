@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# D7 Clinique Development Startup Script
+# Aulia Care Development Startup Script
 # This script sets up and starts both frontend and backend
 
 set -e
 
 echo "================================"
-echo "D7 Clinique Development Setup"
+echo "Aulia Care Development Setup"
 echo "================================"
 echo ""
 

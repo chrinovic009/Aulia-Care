@@ -200,7 +200,7 @@ npm run prisma:studio
 1. Verify login page works: POST to /auth/login
 2. Check response contains `access_token`
 3. Should see token in browser DevTools → Application → localStorage
-4. Key should be `d7-clinic-auth-token` or `d7-clinic-api-token`
+4. Key should be `aulia-care-auth-token` or `aulia-care-api-token`
 
 ---
 

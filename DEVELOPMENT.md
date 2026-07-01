@@ -1,4 +1,4 @@
-# D7 Clinique - Development Setup Guide
+# Aulia Care - Development Setup Guide
 
 ## Prerequisites
 
@@ -101,7 +101,7 @@ npm run dev
 ## Project Structure
 
 ```
-D7 Clinnique/
+Aulia Care/
 ├── frontend (React + Vite)
 │   ├── src/
 │   │   ├── components/ - React components

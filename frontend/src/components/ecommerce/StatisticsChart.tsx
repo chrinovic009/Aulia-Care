@@ -86,7 +86,7 @@ export default function StatisticsChart() {
         colors: ["#475569"],
       },
     },
-    colors: ["#f53030", "#0078D7"],
+    colors: ["#f53030", "#085c00"],
     chart: {
       fontFamily: "Outfit, sans-serif",
       height: 340,

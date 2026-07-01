@@ -29,6 +29,22 @@ export class LaboratoryService {
         patient: true,
         requestedBy: true,
         consultation: { include: { provider: true } },
+        items: {
+          include: {
+            labTest: {
+              include: {
+                section: true,
+                category: true,
+                parameterTemplates: true,
+                sampleRequirements: { include: { labSampleType: true } },
+                consumableRequirements: { include: { labConsumable: { include: { stock: true } } } },
+              },
+            },
+            assignedTo: true,
+            samples: { include: { labSampleType: true } },
+            results: { include: { reportedBy: true }, orderBy: { reportedAt: 'desc' } },
+          },
+        },
         results: { include: { reportedBy: true }, orderBy: { reportedAt: 'desc' } },
       },
     });
@@ -92,8 +108,32 @@ export class LaboratoryService {
     };
   }
 
+  private async buildLabReferenceCode(patient: any, requestStatus: string, resultStatus?: string | null) {
+    const patientNumber = patient?.createdAt
+      ? await this.prisma.patient.count({ where: { createdAt: { lt: patient.createdAt } } }) + 1
+      : 1;
+
+    const firstNameInitial = String(patient?.firstName || '').trim().charAt(0).toUpperCase() || 'X';
+    const lastNameInitial = String(patient?.lastName || '').trim().charAt(0).toUpperCase() || 'X';
+
+    let suffix = 'LABD';
+    if (['TECHNICAL_VALIDATION', 'BIOLOGICAL_VALIDATION', 'AVAILABLE', 'SENT', 'COMPLETED', 'VERIFIED'].includes(requestStatus)) {
+      suffix = 'LABV';
+    } else if (['REQUESTED', 'COLLECTED', 'RECEIVED', 'IN_ANALYSIS'].includes(requestStatus)) {
+      suffix = 'LABD';
+    }
+
+    if (resultStatus && ['PENDING', 'CORRECTION_REQUESTED'].includes(resultStatus)) {
+      suffix = 'LABA';
+    } else if (resultStatus && ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED'].includes(resultStatus)) {
+      suffix = 'LABV';
+    }
+
+    return `${patientNumber}D7-${firstNameInitial}${lastNameInitial}${suffix}`;
+  }
+
   async getActivityOverview() {
-    const [recentRequests, lowStockEntries, assignedItems] = await Promise.all([
+    const [recentRequests, lowStockEntries, assignedItems, directResultAuthorizationEnabled] = await Promise.all([
       this.prisma.labRequest.findMany({
         where: { deletedAt: null },
         include: {
@@ -114,6 +154,7 @@ export class LaboratoryService {
         where: { deletedAt: null, assignedToId: { not: null } },
         include: { assignedTo: true, labTest: true, labRequest: { include: { patient: true } } },
       }),
+      this.getDirectResultAuthorizationSetting(),
     ]);
 
     const [totalRequests, pendingRequests, validationQueueCount, technicalValidationCount, biologicalValidationCount, sampleCollectedCount, sampleReceivedCount] =
@@ -177,32 +218,37 @@ export class LaboratoryService {
         criticalLevel: stock.criticalLevel?.toString() ?? null,
       }));
 
-    const criticalAlerts = recentRequests
-      .filter((request) => ['URGENT', 'CRITICAL'].includes((request.priority || '').toUpperCase()))
-      .slice(0, 5)
-      .map((request) => ({
-        title: `Demande urgente ${request.id}`,
+    const criticalAlerts = [] as Array<any>;
+    for (const request of recentRequests.filter((item) => ['URGENT', 'CRITICAL'].includes((item.priority || '').toUpperCase())).slice(0, 5)) {
+      const displayId = await this.buildLabReferenceCode(request.patient, request.status, request.results?.[0]?.resultStatus);
+      criticalAlerts.push({
+        title: `Demande urgente ${displayId}`,
         message: `${[request.patient?.firstName, request.patient?.lastName].filter(Boolean).join(' ') || 'Patient inconnu'} • ${request.specimenType || 'Examen'}`,
         priority: request.priority || 'URGENT',
         createdAt: request.requestedAt.toISOString(),
-      }));
+        displayId,
+      });
+    }
 
-    const recentRequestSummaries = recentRequests.map((request) => {
+    const recentRequestSummaries = [] as Array<any>;
+    for (const request of recentRequests) {
       const assignedItem = request.items?.find((item) => item.assignedTo);
       const assignedTo = assignedItem
         ? assignedItem.assignedTo.displayName ||
           [assignedItem.assignedTo.firstName, assignedItem.assignedTo.lastName].filter(Boolean).join(' ')
         : null;
-      return {
+      const displayId = await this.buildLabReferenceCode(request.patient, request.status, request.results?.[0]?.resultStatus);
+      recentRequestSummaries.push({
         id: request.id,
+        displayId,
         patientName: [request.patient?.firstName, request.patient?.lastName].filter(Boolean).join(' ') || 'Patient inconnu',
         status: request.status,
         priority: request.priority || 'NORMAL',
         requestedAt: request.requestedAt.toISOString(),
         assignedTo,
         specimenType: request.specimenType || 'N/A',
-      };
-    });
+      });
+    }
 
     return {
       totalRequests,
@@ -216,6 +262,7 @@ export class LaboratoryService {
       lowStockAlerts,
       criticalAlerts,
       recentRequests: recentRequestSummaries,
+      directResultAuthorizationEnabled,
     };
   }
 
@@ -885,6 +932,80 @@ export class LaboratoryService {
     };
   }
 
+  private async getDirectResultAuthorizationSetting() {
+    const config = await this.prisma.labConfiguration.findUnique({
+      where: { key: 'lab.direct_result_authorization' },
+    });
+
+    return Boolean((config?.value as any)?.enabled);
+  }
+
+  private async canSendResultDirectly(userId?: string) {
+    if (!userId) {
+      return { allowed: false, isManager: false };
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        primaryRole: true,
+        Employee: {
+          select: {
+            id: true,
+            shifts: {
+              select: {
+                id: true,
+                startAt: true,
+                endAt: true,
+                type: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const role = String(user?.primaryRole || '').toUpperCase();
+    if (['LAB_MANAGER', 'ADMIN', 'SUPER_ADMIN'].includes(role)) {
+      return { allowed: true, isManager: true };
+    }
+
+    const configEnabled = await this.getDirectResultAuthorizationSetting();
+    if (!configEnabled) {
+      return { allowed: false, isManager: false };
+    }
+
+    const now = new Date();
+    const hasActiveShift = (user?.Employee || []).some((employee: any) =>
+      (employee.shifts || []).some((shift: any) => {
+        const startAt = new Date(shift.startAt);
+        const endAt = new Date(shift.endAt);
+        return startAt <= now && endAt >= now;
+      }),
+    );
+
+    return { allowed: hasActiveShift, isManager: false };
+  }
+
+  async setDirectResultAuthorization(enabled: boolean, currentUserId?: string) {
+    const entry = await this.prisma.labConfiguration.upsert({
+      where: { key: 'lab.direct_result_authorization' },
+      update: {
+        value: { enabled, updatedById: currentUserId },
+      },
+      create: {
+        key: 'lab.direct_result_authorization',
+        value: { enabled, updatedById: currentUserId },
+        description: 'Autorise les techniciens de laboratoire actifs sur leur shift à envoyer directement les résultats au patient ou au médecin.',
+      },
+    });
+
+    return {
+      enabled,
+      updatedAt: entry.updatedAt,
+    };
+  }
+
   async applyValidationDecision(id: string, dto: any, currentUserId?: string) {
     const result = await this.prisma.labResult.findUnique({ where: { id } });
     if (!result) {
@@ -901,15 +1022,51 @@ export class LaboratoryService {
       nextStatus = 'CORRECTION_REQUESTED';
     }
 
-    const updated = await this.prisma.labResult.update({
-      where: { id },
-      data: {
-        resultStatus: nextStatus as any,
-        biologicalValidationAt: new Date(),
-        biologicalValidatedById: currentUserId,
-        comments: dto.observations || dto.reason || dto.instructions || null,
-        interpretation: dto.observations || dto.reason || dto.instructions || null,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedResult = await tx.labResult.update({
+        where: { id },
+        data: {
+          resultStatus: nextStatus as any,
+          biologicalValidationAt: new Date(),
+          biologicalValidatedById: currentUserId,
+          comments: dto.observations || dto.reason || dto.instructions || null,
+          interpretation: dto.observations || dto.reason || dto.instructions || null,
+        },
+      });
+
+      if (decision === 'VALIDATE') {
+        const labRequest = await tx.labRequest.findUnique({
+          where: { id: result.labRequestId },
+          select: { id: true, requestedById: true, consultation: { select: { providerId: true } }, patient: { select: { id: true, firstName: true, lastName: true } } },
+        });
+        const recipientId = labRequest?.requestedById || labRequest?.consultation?.providerId;
+        await tx.labRequest.update({
+          where: { id: result.labRequestId },
+          data: {
+            status: 'SENT',
+            sentAt: new Date(),
+          },
+        });
+
+        if (recipientId) {
+          await tx.notification.create({
+            data: {
+              recipientId,
+              patientId: labRequest?.patient?.id,
+              type: 'ALERT',
+              status: 'UNREAD',
+              priority: 'HIGH',
+              title: 'Résultat laboratoire envoyé',
+              message: `Le résultat ${updatedResult.resultName} de ${labRequest?.patient?.firstName || ''} ${labRequest?.patient?.lastName || ''} a été envoyé au demandeur.`,
+              relatedEntity: 'LabRequest',
+              relatedId: result.labRequestId,
+              sendAt: new Date(),
+            },
+          });
+        }
+      }
+
+      return updatedResult;
     });
 
     return updated;
@@ -918,10 +1075,14 @@ export class LaboratoryService {
   async addResult(id: string, dto: any, reportedById?: string) {
     const request = await this.findOne(id);
     const recipientId = request.requestedById || request.consultation?.providerId;
+    const directSendPermission = await this.canSendResultDirectly(reportedById);
+    const canDirectSend = directSendPermission.allowed;
+
     const result = await this.prisma.$transaction(async (tx) => {
       const created = await tx.labResult.create({
         data: {
           labRequestId: id,
+          labRequestItemId: dto.labRequestItemId || null,
           resultCode: dto.resultCode || dto.resultName || 'RESULT',
           resultName: dto.resultName,
           resultValue: dto.resultValue,
@@ -929,35 +1090,69 @@ export class LaboratoryService {
           referenceRange: dto.referenceRange || null,
           interpretation: dto.interpretation || null,
           reportedById,
+          resultStatus: canDirectSend ? 'TECHNICAL_VALIDATED' : 'PENDING',
+          technicalValidatedById: canDirectSend ? reportedById : null,
+          technicalValidationAt: canDirectSend ? new Date() : null,
         },
       });
 
       await tx.labRequest.update({
         where: { id },
         data: {
-          status: dto.verified ? 'VERIFIED' : 'COMPLETED',
-          completedAt: new Date(),
+          status: canDirectSend ? 'SENT' : 'TECHNICAL_VALIDATION',
+          completedAt: canDirectSend ? new Date() : null,
           performedAt: new Date(),
+          sentAt: canDirectSend ? new Date() : null,
         },
       });
-      const notification = recipientId
-        ? await tx.notification.create({
+
+      if (canDirectSend && recipientId) {
+        const notification = await tx.notification.create({
+          data: {
+            recipientId,
+            patientId: request.patientId,
+            type: 'ALERT',
+            status: 'UNREAD',
+            priority: 'HIGH',
+            title: 'Resultat laboratoire disponible',
+            message: `Le resultat ${dto.resultName || request.specimenType || 'laboratoire'} de ${request.patient.firstName} ${request.patient.lastName} est disponible.`,
+            relatedEntity: 'LabRequest',
+            relatedId: request.id,
+            sendAt: new Date(),
+          },
+        });
+
+        return { created, notification };
+      }
+
+      if (!canDirectSend) {
+        const managers = await tx.user.findMany({
+          where: {
+            primaryRole: 'LAB_MANAGER',
+            status: 'ACTIVE',
+          },
+          select: { id: true },
+        });
+
+        for (const manager of managers) {
+          await tx.notification.create({
             data: {
-              recipientId,
+              recipientId: manager.id,
               patientId: request.patientId,
               type: 'ALERT',
               status: 'UNREAD',
-              priority: dto.verified ? 'HIGH' : 'MEDIUM',
-              title: 'Resultat laboratoire disponible',
-              message: `Le resultat ${dto.resultName || request.specimenType || 'laboratoire'} de ${request.patient.firstName} ${request.patient.lastName} est disponible.`,
+              priority: 'HIGH',
+              title: 'Validation de résultat laboratoire requise',
+              message: `Le résultat ${dto.resultName || request.specimenType || 'laboratoire'} de ${request.patient.firstName} ${request.patient.lastName} attend votre validation.`,
               relatedEntity: 'LabRequest',
               relatedId: request.id,
               sendAt: new Date(),
             },
-          })
-        : null;
+          });
+        }
+      }
 
-      return { created, notification };
+      return { created, notification: null };
     });
 
     if (result.notification && recipientId) {

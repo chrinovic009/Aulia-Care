@@ -1,4 +1,4 @@
-# 📊 Système de Gestion Caissier - D7 Clinic
+# 📊 Système de Gestion Caissier - Aulia Care
 
 ## Vue d'ensemble
 
@@ -169,48 +169,6 @@ Rapport complet pour archivage. Contient:
 
 - **Role required** : `CASHIER` ou `ADMIN`
 - Endpoints protégés par JWT + RolesGuard
-
----
-
-## 📱 Données affichées
-
-### Patient en attente
-```json
-{
-  "id": "...",
-  "firstName": "Jean",
-  "lastName": "Dupont",
-  "phone": "+243812345678",
-  "email": "jean@example.com",
-  "workflowStatus": "EN_ATTENTE_DE_PAIEMENT",
-  "arrivalAt": "2026-06-12T10:30:00Z",
-  "service": "Consultation",
-  "receptionist": "Marie Martin",
-  "invoice": {
-    "id": "...",
-    "totalAmount": 20,
-    "balanceDue": 20,
-    "status": "PENDING",
-    "issuedAt": "...",
-    "dueDate": "..."
-  }
-}
-```
-
-### Paiement
-```json
-{
-  "id": "...",
-  "patientId": "...",
-  "patientName": "Jean Dupont",
-  "invoiceId": "...",
-  "amount": 20,
-  "method": "CASH",
-  "reference": "D7-JD-1718186400000",
-  "paidAt": "2026-06-12T10:45:00Z",
-  "createdAt": "..."
-}
-```
 
 ---
 

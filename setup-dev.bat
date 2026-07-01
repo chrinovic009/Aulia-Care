@@ -1,10 +1,10 @@
 @echo off
-REM D7 Clinique Development Startup Script for Windows
+REM Aulia Care Development Startup Script for Windows
 
 setlocal enabledelayedexpansion
 
 echo ================================
-echo D7 Clinique Development Setup
+echo Aulia Care Development Setup
 echo ================================
 echo.
 
