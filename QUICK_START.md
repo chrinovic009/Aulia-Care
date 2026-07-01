@@ -1,4 +1,4 @@
-# D7 Clinique - Complete Integration Solution
+# Aulia Care - Complete Integration Solution
 
 ## Executive Summary
 

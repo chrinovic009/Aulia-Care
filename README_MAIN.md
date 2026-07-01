@@ -1,4 +1,4 @@
-# D7 Clinique - Hospital Management System
+# Aulia Clinique - Hospital Management System
 
 A comprehensive full-stack hospital management system built with React, NestJS, Prisma, and PostgreSQL.
 
@@ -66,7 +66,7 @@ New to the project? Start here:
 ## 📁 Project Structure
 
 ```
-D7 Clinnique/
+Aulia Care
 ├── frontend (React + Vite)
 │   ├── src/
 │   │   ├── components/     - Reusable React components

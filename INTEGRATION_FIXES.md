@@ -1,6 +1,6 @@
 # Integration Fixes Summary
 
-This document summarizes all fixes applied to resolve frontend-backend communication issues in the D7 Clinique application.
+This document summarizes all fixes applied to resolve frontend-backend communication issues in the Aulia Care application.
 
 ## Overview
 

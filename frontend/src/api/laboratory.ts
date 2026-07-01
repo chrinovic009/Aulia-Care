@@ -113,11 +113,26 @@ export type LabActivityPayload = {
   sampleReceivedCount: number;
   technicianWorkloads: Array<{ technician: string; assignedItems: number; openItems: number }>;
   lowStockAlerts: Array<{ consumableName: string; location: string; quantity: string; minimumLevel: string | null; criticalLevel: string | null }>;
-  criticalAlerts: Array<{ title: string; message: string; priority: string; createdAt: string }>;
-  recentRequests: Array<{ id: string; patientName: string; status: string; priority: string; requestedAt: string; assignedTo?: string | null; specimenType: string }>;
+  criticalAlerts: Array<{ title: string; message: string; priority: string; createdAt: string; displayId?: string }>;
+  recentRequests: Array<{ id: string; displayId: string; patientName: string; status: string; priority: string; requestedAt: string; assignedTo?: string | null; specimenType: string }>;
+  directResultAuthorizationEnabled: boolean;
 };
 
 export const fetchLaboratoryActivity = () => apiFetch<LabActivityPayload>('/laboratory/activity');
+
+export const fetchLaboratoryRequestDetail = (id: string) => apiFetch<any>(`/laboratory/${id}`);
+
+export const submitLaboratoryResult = (id: string, payload: any) =>
+  apiFetch<any>(`/laboratory/${id}/results`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const updateDirectResultAuthorization = (enabled: boolean) =>
+  apiFetch<{ enabled: boolean; updatedAt: string }>('/laboratory/config/direct-result-authorization', {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  });
 
 export const createLabSection = (payload: { name: string; description?: string; order?: number; active?: boolean }) =>
   apiFetch('/laboratory/catalogue/sections', { method: 'POST', body: JSON.stringify(payload) });

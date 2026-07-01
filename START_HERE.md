@@ -2,7 +2,7 @@
 
 ## Status: ✅ ALL ISSUES RESOLVED
 
-The D7 Clinique application is **fully configured** and ready to run. All frontend-backend integration problems have been fixed.
+The Aulia Care application is **fully configured** and ready to run. All frontend-backend integration problems have been fixed.
 
 ## What Was Fixed
 

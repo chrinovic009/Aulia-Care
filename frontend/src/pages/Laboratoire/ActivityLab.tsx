@@ -1,22 +1,95 @@
 import { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Beaker, ClipboardList, Layers, Users } from "lucide-react";
+import { Activity, AlertTriangle, Beaker, ClipboardList, Layers, ToggleLeft, Users, X } from "lucide-react";
 import { AdminPageShell, Panel, StatCard, DataTable, formatDate } from "../Administration/adminUi";
-import { fetchLaboratoryActivity, LabActivityPayload } from "../../api/laboratory";
+import { fetchLaboratoryActivity, fetchLaboratoryRequestDetail, LabActivityPayload, submitLaboratoryResult, updateDirectResultAuthorization } from "../../api/laboratory";
+import { useAuth } from "../../context/AuthContext";
 
 export default function ActivityLab() {
+  const { currentUser } = useAuth();
   const [activity, setActivity] = useState<LabActivityPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSavingAuthorization, setIsSavingAuthorization] = useState(false);
+  const [directResultAuthorizationEnabled, setDirectResultAuthorizationEnabled] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
+  const [requestDetail, setRequestDetail] = useState<any | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [resultForm, setResultForm] = useState({
+    resultName: "",
+    resultValue: "",
+    interpretation: "",
+  });
+  const [isSubmittingResult, setIsSubmittingResult] = useState(false);
+
+  const isLabManager = currentUser?.primaryRole === "LAB_MANAGER" || currentUser?.primaryRole === "ADMIN" || currentUser?.primaryRole === "SUPER_ADMIN";
 
   const loadActivity = async () => {
     setIsLoading(true);
     try {
       const data = await fetchLaboratoryActivity();
       setActivity(data);
+      setDirectResultAuthorizationEnabled(Boolean(data.directResultAuthorizationEnabled));
     } catch (error) {
       console.error("Impossible de charger l'activité laboratoire", error);
       setActivity(null);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const openRequestDetail = async (requestId: string) => {
+    setIsDetailLoading(true);
+    setSelectedRequest(requestId);
+    try {
+      const detail = await fetchLaboratoryRequestDetail(requestId);
+      setRequestDetail(detail);
+      const firstItem = detail?.items?.[0];
+      setResultForm({
+        resultName: firstItem?.labTest?.name || "",
+        resultValue: "",
+        interpretation: "",
+      });
+    } catch (error) {
+      console.error("Impossible de charger le détail de la demande", error);
+      setRequestDetail(null);
+    } finally {
+      setIsDetailLoading(false);
+    }
+  };
+
+  const handleSubmitResult = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedRequest) return;
+
+    setIsSubmittingResult(true);
+    try {
+      await submitLaboratoryResult(selectedRequest, {
+        ...resultForm,
+        labRequestItemId: requestDetail?.items?.[0]?.id || null,
+      });
+      setRequestDetail(null);
+      setSelectedRequest(null);
+      await loadActivity();
+    } catch (error) {
+      console.error("Impossible d'enregistrer le résultat", error);
+    } finally {
+      setIsSubmittingResult(false);
+    }
+  };
+
+  const handleAuthorizationToggle = async () => {
+    if (!isLabManager) {
+      return;
+    }
+
+    setIsSavingAuthorization(true);
+    try {
+      const response = await updateDirectResultAuthorization(!directResultAuthorizationEnabled);
+      setDirectResultAuthorizationEnabled(Boolean(response.enabled));
+      await loadActivity();
+    } catch (error) {
+      console.error("Impossible de mettre à jour l'autorisation d'envoi direct", error);
+    } finally {
+      setIsSavingAuthorization(false);
     }
   };
 
@@ -26,11 +99,11 @@ export default function ActivityLab() {
     const handler = () => {
       loadActivity();
     };
-    window.addEventListener("d7:lab.request.created", handler);
-    window.addEventListener("d7:lab.result.created", handler);
+    window.addEventListener("aulia:lab.request.created", handler);
+    window.addEventListener("aulia:lab.result.created", handler);
     return () => {
-      window.removeEventListener("d7:lab.request.created", handler);
-      window.removeEventListener("d7:lab.result.created", handler);
+      window.removeEventListener("aulia:lab.request.created", handler);
+      window.removeEventListener("aulia:lab.result.created", handler);
     };
   }, []);
 
@@ -48,6 +121,35 @@ export default function ActivityLab() {
         </button>
       }
     >
+      <section className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+              <ToggleLeft size={18} className="text-emerald-700" />
+              Envoi direct des résultats
+            </p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              {isLabManager
+                ? ""
+                : "Activez ce réglage pour autoriser les techniciens actifs selon leur shift à envoyer directement les résultats au patient ou au médecin."}
+            </p>
+          </div>
+          <label className="inline-flex cursor-pointer items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600"
+              checked={directResultAuthorizationEnabled}
+              onChange={handleAuthorizationToggle}
+              disabled={!isLabManager || isSavingAuthorization}
+            />
+            <span>{directResultAuthorizationEnabled ? "Autorisation activée" : "Autorisation désactivée"}</span>
+          </label>
+        </div>
+        <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+          Si l’option est désactivée, les techniciens transmettent d’abord le résultat au responsable pour validation avant envoi.
+        </p>
+      </section>
+
       <section className="grid gap-4 xl:grid-cols-3">
         <StatCard icon={<ClipboardList size={20} />} label="Demandes totales" value={activity?.totalRequests ?? "–"} tone="blue" />
         <StatCard icon={<Beaker size={20} />} label="Demandes en attente" value={activity?.pendingRequests ?? "–"} tone="amber" />
@@ -63,7 +165,9 @@ export default function ActivityLab() {
             <DataTable
               headers={["ID", "Patient", "Statut", "Priorité", "Examen", "Assigné à", "Demandé le"]}
               rows={activity?.recentRequests.map((request) => [
-                request.id,
+                <button key={request.id} onClick={() => openRequestDetail(request.id)} className="text-left font-semibold text-emerald-700 hover:underline">
+                  {request.displayId}
+                </button>,
                 request.patientName,
                 request.status,
                 request.priority,
@@ -103,7 +207,7 @@ export default function ActivityLab() {
               <div className="space-y-4">
                 {activity?.criticalAlerts.slice(0, 4).map((alert, index) => (
                   <div key={`critical-${index}`} className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/40 dark:bg-red-950/20">
-                    <p className="font-semibold">{alert.title}</p>
+                    <p className="font-semibold">{alert.displayId || alert.title}</p>
                     <p className="mt-1">{alert.message}</p>
                     <p className="mt-1 text-xs text-slate-600">{formatDate(alert.createdAt)}</p>
                   </div>
@@ -133,6 +237,154 @@ export default function ActivityLab() {
           </Panel>
         </aside>
       </div>
+
+      {requestDetail ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Examen demandé</p>
+                <h3 className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">{requestDetail?.id}</h3>
+              </div>
+              <button onClick={() => { setRequestDetail(null); setSelectedRequest(null); }} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+                <X size={18} />
+              </button>
+            </div>
+
+            {isDetailLoading ? (
+              <p className="mt-6 text-sm text-slate-500">Chargement du détail...</p>
+            ) : (
+              <div className="mt-6 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+                <div className="space-y-6">
+                  <Panel title="Dossier patient" subtitle="Informations complètes du patient concerné.">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Patient</p>
+                        <p className="mt-1 font-semibold text-slate-900 dark:text-white">{[requestDetail?.patient?.firstName, requestDetail?.patient?.lastName].filter(Boolean).join(" ") || "Patient inconnu"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Téléphone</p>
+                        <p className="mt-1 text-slate-700 dark:text-slate-300">{requestDetail?.patient?.phone || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Email</p>
+                        <p className="mt-1 text-slate-700 dark:text-slate-300">{requestDetail?.patient?.email || "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Adresse</p>
+                        <p className="mt-1 text-slate-700 dark:text-slate-300">{requestDetail?.patient?.address || "—"}</p>
+                      </div>
+                    </div>
+                  </Panel>
+
+                  <Panel title="Détails de l’examen" subtitle="Section, catégorie, examen, paramètres, échantillons et consommables associés.">
+                    {requestDetail?.items?.map((item: any, index: number) => (
+                      <div key={item.id || index} className="space-y-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Section</p>
+                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{item?.labTest?.section?.name || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Catégorie</p>
+                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{item?.labTest?.category?.name || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Examen</p>
+                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{item?.labTest?.name || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Statut</p>
+                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{item?.status || "—"}</p>
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Paramètres</p>
+                          <ul className="mt-2 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                            {(item?.labTest?.parameterTemplates || []).length === 0 ? (
+                              <li>Aucun paramètre défini.</li>
+                            ) : item.labTest.parameterTemplates.map((parameter: any) => (
+                              <li key={parameter.id} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
+                                {parameter.name} — {parameter.unit || "unité non précisée"}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Échantillons</p>
+                          <ul className="mt-2 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                            {(item?.samples || []).length === 0 ? (
+                              <li>Aucun échantillon associé.</li>
+                            ) : item.samples.map((sample: any) => (
+                              <li key={sample.id} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
+                                {sample.labSampleType?.name || "Échantillon"} — {sample.status}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="text-xs uppercase tracking-wide text-slate-500">Exigences et consommables</p>
+                          <ul className="mt-2 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                            {(item?.labTest?.consumableRequirements || []).length === 0 ? (
+                              <li>Aucun consommable requis.</li>
+                            ) : item.labTest.consumableRequirements.map((requirement: any) => (
+                              <li key={requirement.id} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
+                                {requirement.labConsumable?.name} — {requirement.quantity} {requirement.unit || requirement.labConsumable?.unit || ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    ))}
+                  </Panel>
+                </div>
+
+                <div>
+                  <Panel title="Saisie du résultat" subtitle="Trois champs principaux pour enregistrer le résultat.">
+                    <form onSubmit={handleSubmitResult} className="space-y-4">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Nom du résultat</label>
+                        <input
+                          value={resultForm.resultName}
+                          onChange={(event) => setResultForm((current) => ({ ...current, resultName: event.target.value }))}
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Valeur</label>
+                        <input
+                          value={resultForm.resultValue}
+                          onChange={(event) => setResultForm((current) => ({ ...current, resultValue: event.target.value }))}
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Interprétation</label>
+                        <textarea
+                          value={resultForm.interpretation}
+                          onChange={(event) => setResultForm((current) => ({ ...current, interpretation: event.target.value }))}
+                          rows={4}
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={isSubmittingResult}
+                        className="w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isSubmittingResult ? "Enregistrement..." : "Enregistrer le résultat"}
+                      </button>
+                    </form>
+                  </Panel>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </AdminPageShell>
   );
 }

@@ -186,7 +186,7 @@ Patient EN_ATTENTE_VALIDATION_CAISSE
 ### Facture A5 (Imprimante Thermique)
 ```
 ┌─────────────────────────────────┐
-│      D7 CLINIC                  │
+│      AULIA CARE                  │
 │   Kinshasa, RDC                 │
 │   Tél: +243 800 000 000         │
 ├─────────────────────────────────┤
@@ -210,14 +210,14 @@ Patient EN_ATTENTE_VALIDATION_CAISSE
 │ Statut: EN ATTENTE              │
 ├─────────────────────────────────┤
 │ Merci de votre confiance         │
-│ D7 CLINIC - Tous droits réservés │
+│ AULIA CARE - Tous droits réservés │
 └─────────────────────────────────┘
 ```
 
 ### Historique A4 (Rapport)
 ```
 ┌────────────────────────────────────────────────┐
-│        D7 CLINIC                               │
+│        AULIA CARE                               │
 │     Kinshasa, RDC                              │
 │  HISTORIQUE CAISSE                             │
 │  Date d'impression: 12/06/2026                 │

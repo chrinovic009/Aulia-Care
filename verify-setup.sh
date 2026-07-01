@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Verification Script for D7 Clinique Application
+# Verification Script for Aulia Care Application
 # This script verifies all components are correctly set up
 
 set -e
 
-echo "D7 Clinique - Complete System Verification"
+echo "Aulia Care - Complete System Verification"
 echo "=========================================="
 echo ""
 
