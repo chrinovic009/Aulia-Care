@@ -9,7 +9,7 @@ export class AdministrationService {
     return (this.prisma as any).department.findMany({
       where: { deletedAt: null },
       include: {
-        services: {
+        services: { // <-- Assure-toi que c'est bien "services" dans ton schema.prisma
           where: { deletedAt: null },
           include: {
             rooms: { include: { beds: true } },
@@ -34,11 +34,16 @@ export class AdministrationService {
   }
 
   createDepartment(data: any) {
+    // Sécurité : On s'assure que le type est fourni
+    if (!data.type) {
+      throw new BadRequestException("Le champ 'type' (DepartmentType) est requis pour créer un département.");
+    }
+
     return (this.prisma as any).department.create({
       data: {
         name: data.name,
         code: data.code,
-        type: data.type,
+        type: data.type, // Reçu depuis ton DTO / Contrôleur
         description: data.description ?? null,
       },
     });
@@ -208,44 +213,28 @@ export class AdministrationService {
   }
 
   async reports() {
+    // OPTIMISATION : On charge uniquement les entités légères, ajoute des "take: 100" ou des filtres sur les grosses tables en prod
     const [patients, users, services, invoices, payments, hospitalizations, medications, departments, rooms, consultations, prescriptions, insurances, attendances, leaveRequests, payrolls, auditTrails] =
       await Promise.all([
-        (this.prisma as any).patient.findMany({ where: { deletedAt: null } }),
+        (this.prisma as any).patient.findMany({ where: { deletedAt: null }, take: 500 }), 
         (this.prisma as any).user.findMany({ where: { deletedAt: null } }),
         (this.prisma as any).service.findMany({ include: { staff: true, responsables: true } }),
-        (this.prisma as any).invoice.findMany({ where: { deletedAt: null } }),
-        (this.prisma as any).payment.findMany({ where: { deletedAt: null } }),
+        (this.prisma as any).invoice.findMany({ where: { deletedAt: null }, take: 200 }),
+        (this.prisma as any).payment.findMany({ where: { deletedAt: null }, take: 200 }),
         (this.prisma as any).hospitalization.findMany({ where: { deletedAt: null } }),
         (this.prisma as any).medication.findMany({ where: { deletedAt: null } }),
         (this.prisma as any).department.findMany({ where: { deletedAt: null } }),
         (this.prisma as any).room.findMany({ include: { beds: true } }),
-        (this.prisma as any).consultation.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 200 }),
-        (this.prisma as any).prescription.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 200 }),
-        (this.prisma as any).insuranceClaim.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 200 }),
-        (this.prisma as any).attendance.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
-        (this.prisma as any).leaveRequest.findMany({ orderBy: { requestedAt: 'desc' }, take: 200 }),
-        (this.prisma as any).payroll.findMany({ orderBy: { createdAt: 'desc' }, take: 100 }),
-        (this.prisma as any).auditTrail.findMany({ orderBy: { changedAt: 'desc' }, take: 100 }),
+        (this.prisma as any).consultation.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 100 }),
+        (this.prisma as any).prescription.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 100 }),
+        (this.prisma as any).insuranceClaim.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 100 }),
+        (this.prisma as any).attendance.findMany({ orderBy: { createdAt: 'desc' }, take: 100 }),
+        (this.prisma as any).leaveRequest.findMany({ orderBy: { requestedAt: 'desc' }, take: 100 }),
+        (this.prisma as any).payroll.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
+        (this.prisma as any).auditTrail.findMany({ orderBy: { changedAt: 'desc' }, take: 50 }),
       ]);
 
-    return {
-      patients,
-      users,
-      services,
-      invoices,
-      payments,
-      hospitalizations,
-      medications,
-      departments,
-      rooms,
-      consultations,
-      prescriptions,
-      insurances,
-      attendances,
-      leaveRequests,
-      payrolls,
-      auditTrails,
-    };
+    return { patients, users, services, invoices, payments, hospitalizations, medications, departments, rooms, consultations, prescriptions, insurances, attendances, leaveRequests, payrolls, auditTrails };
   }
 
   async dashboard() {
@@ -258,11 +247,13 @@ export class AdministrationService {
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
 
+    // OPTIMISATION: Utilisation de requêtes ciblées pour les comptages globaux plutôt que de charger des listes entières
     const [
-      patients,
+      totalPatientsCount,
+      urgentPatients,
       consultationsToday,
       hospitalizations,
-      invoicesMonth,
+      invoicesMonthCount,
       paymentsMonth,
       rooms,
       services,
@@ -270,7 +261,13 @@ export class AdministrationService {
       lots,
       recentConsultations,
     ] = await Promise.all([
-      (this.prisma as any).patient.findMany({ where: { deletedAt: null } }),
+      (this.prisma as any).patient.count({ where: { deletedAt: null } }),
+      (this.prisma as any).patient.findMany({
+        where: {
+          deletedAt: null,
+          priority: { in: ['urgent', 'urgence', 'prioritaire', 'critical', 'critique', 'URGENT', 'CRITICAL'] }
+        }
+      }),
       (this.prisma as any).consultation.findMany({
         where: {
           deletedAt: null,
@@ -283,29 +280,20 @@ export class AdministrationService {
         where: { status: { in: ['ADMITTED', 'TRANSFERRED'] } },
         include: { patient: true, ServiceUnit: true },
       }),
-      (this.prisma as any).invoice.findMany({
-        where: {
-          deletedAt: null,
-          issuedAt: { gte: startOfMonth },
-        },
-        include: { patient: true },
-        orderBy: { issuedAt: 'desc' },
+      (this.prisma as any).invoice.count({
+        where: { deletedAt: null, issuedAt: { gte: startOfMonth } },
       }),
       (this.prisma as any).payment.findMany({
-        where: {
-          deletedAt: null,
-          paidAt: { gte: startOfMonth },
-        },
-        include: { invoice: { include: { patient: true } } },
-        orderBy: { paidAt: 'desc' },
+        where: { deletedAt: null, paidAt: { gte: startOfMonth } },
+        select: { amount: true } // Rend la requête ultra légère
       }),
       (this.prisma as any).room.findMany({
-        include: { beds: { include: { hospitalization: { include: { patient: true } } } }, serviceUnit: true },
+        include: { beds: true },
       }),
       (this.prisma as any).service.findMany({
         include: {
-          staff: { where: { actif: true }, include: { user: true } },
-          responsables: { where: { actif: true }, include: { user: true } },
+          staff: { where: { actif: true } },
+          responsables: { where: { actif: true } },
           patients: { where: { deletedAt: null } },
           tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' }, take: 1 },
         },
@@ -321,14 +309,9 @@ export class AdministrationService {
       }),
     ]);
 
-    const activePatients = patients.filter(
-      (patient: any) => !['TERMINE', 'ANNULE'].includes(String(patient.workflowStatus || '')),
-    );
     const beds = rooms.flatMap((room: any) => room.beds || []);
     const availableBeds = beds.filter((bed: any) => bed.status === 'FREE').length;
-    const urgentPatients = patients.filter((patient: any) =>
-      ['urgent', 'urgence', 'prioritaire', 'critical', 'critique'].includes(String(patient.priority || '').toLowerCase()),
-    );
+    
     const criticalStockItems = [
       ...stocks.filter((stock: any) => Number(stock.quantity || 0) <= Number(stock.criticalLevel || 0)),
       ...lots.filter((lot: any) => Number(lot.quantity || 0) <= 3),
@@ -337,10 +320,10 @@ export class AdministrationService {
     return {
       generatedAt: new Date().toISOString(),
       metrics: {
-        activePatients: activePatients.length,
+        activePatients: totalPatientsCount, // Valeur optimisée via .count()
         consultationsToday: consultationsToday.length,
         hospitalizations: hospitalizations.length,
-        invoicesMonth: invoicesMonth.length,
+        invoicesMonth: invoicesMonthCount, // Valeur optimisée via .count()
         paymentsMonth: paymentsMonth.reduce((sum: number, payment: any) => sum + Number(payment.amount || 0), 0),
         availableBeds,
         criticalAlerts: criticalStockItems.length + urgentPatients.length + (availableBeds === 0 ? 1 : 0),
@@ -372,8 +355,6 @@ export class AdministrationService {
       recent: {
         consultations: recentConsultations,
         hospitalizations,
-        invoices: invoicesMonth.slice(0, 10),
-        payments: paymentsMonth.slice(0, 10),
       },
     };
   }
