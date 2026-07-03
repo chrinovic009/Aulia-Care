@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 module.exports = {
   apps: [
     {
@@ -8,7 +9,10 @@ module.exports = {
       name: "aulia-frontend",
       script: "node_modules/vite/bin/vite.js",
       args: "--config frontend/vite.config.ts --host",
-      cwd: "./"
+      cwd: "./",
+      env: {
+        NODE_ENV: "production"
+      }
     }
   ]
 }
