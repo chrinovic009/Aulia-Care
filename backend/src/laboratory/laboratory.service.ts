@@ -381,10 +381,23 @@ export class LaboratoryService {
   }
 
   async getTechnicians(currentUser?: any) {
-    const labServiceIds = (currentUser?.serviceResponsabilites || [])
+    const serviceResponsibilityIds = (currentUser?.serviceResponsabilites || [])
       .filter((responsibility: any) => responsibility?.service?.name?.toLowerCase().includes('laboratoire'))
       .map((responsibility: any) => responsibility.service?.id)
       .filter(Boolean) as string[];
+
+    const departmentIds = (currentUser?.departmentResponsabilites || [])
+      .filter((responsibility: any) => String(responsibility?.department?.name || '').toLowerCase().includes('laboratoire'))
+      .map((responsibility: any) => responsibility.department?.id)
+      .filter(Boolean) as string[];
+
+    let deptServiceIds: string[] = [];
+    if (departmentIds.length) {
+      const servicesInDepts = await this.prisma.service.findMany({ where: { departmentId: { in: departmentIds } }, select: { id: true } });
+      deptServiceIds = servicesInDepts.map((s: any) => s.id).filter(Boolean);
+    }
+
+    const labServiceIds = Array.from(new Set([...serviceResponsibilityIds, ...deptServiceIds]));
 
     const now = new Date();
     const startOfDay = new Date(now);

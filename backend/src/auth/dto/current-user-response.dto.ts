@@ -92,6 +92,15 @@ export class CurrentUserResponseDto {
   }>;
 
   @Expose()
+  departmentResponsabilites?: Array<{
+    principal?: boolean;
+    department?: {
+      id: string;
+      name: string;
+    };
+  }>;
+
+  @Expose()
   status: string;
 
   @Expose()

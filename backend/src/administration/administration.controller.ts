@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards, Param } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -19,6 +19,13 @@ export class AdministrationController {
   @Roles('SUPER_ADMIN', 'ADMIN')
   serviceUnits() {
     return this.administrationService.serviceUnits();
+  }
+
+  @Post('departments/:id/responsables')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  addDepartmentResponsables(@Param('id') id: string, @Body() body: any) {
+    const items = Array.isArray(body) ? body : [body];
+    return this.administrationService.addDepartmentResponsables(items.map((it) => ({ ...it, departmentId: id })));
   }
 
   @Post('departments')

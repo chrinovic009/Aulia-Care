@@ -121,7 +121,7 @@ export class ServicesService {
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .trim();
-    if (['reception', 'caisse', 'secretariat'].includes(normalizedName)) {
+    if (['caisse', 'secretariat'].includes(normalizedName)) {
       throw new BadRequestException(
         'Ce service est operationnel interne et ne peut pas avoir de tarif patient',
       );
@@ -137,6 +137,12 @@ export class ServicesService {
       .trim();
 
     const normalizedServiceName = normalize(serviceName);
+    // Do not auto-create departments for internal operational services
+    // such as reception or caisse — these should be associated manually
+    // with the ADMINISTRATION & GESTION department instead.
+    if (['reception', 'caisse', 'secretariat'].includes(normalizedServiceName)) {
+      return;
+    }
 
     const CATEGORY_MAP: { serviceNames: string[]; departmentName: string; departmentType: string }[] = [
       {
