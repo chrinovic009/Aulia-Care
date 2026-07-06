@@ -10,21 +10,27 @@ export default function ExamensMedecin() {
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
   const [services, setServices] = useState<Array<{ id: string; name: string; type?: string | null; category?: string | null }>>([]);
   const [labTests, setLabTests] = useState<Array<{ id: string; name: string; code: string; price: string; turnaroundTimeMinutes?: number | null; section?: { name: string } | null; category?: { name: string } | null }>>([]);
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
+  const [serviceUnits, setServiceUnits] = useState<Array<{ id: string; name: string; departmentId?: string }>>([]);
   const [selectedPatientId, setSelectedPatientId] = useState("");
   const [selectedConsultationId, setSelectedConsultationId] = useState("");
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState<string | null>(null);
-  const [form, setForm] = useState({ examName: "", serviceId: "", labTestId: "", specimenType: "", priority: "NORMAL", notes: "" });
+  const [form, setForm] = useState({ examName: "", departmentId: "", serviceId: "", labTestId: "", specimenType: "", priority: "NORMAL", notes: "" });
 
   const load = async () => {
-    const [patientData, serviceData, catalogueData] = await Promise.all([
+    const [patientData, serviceData, catalogueData, departmentsData, serviceUnitsData] = await Promise.all([
       fetchDoctorVisiblePatients(),
       apiFetch<Array<{ id: string; name: string; type?: string | null; category?: string | null }>>("/services").catch(() => []),
       fetchLaboratoryCatalogue().catch(() => null),
+      apiFetch<Array<{ id: string; name: string }>>("/administration/departments").catch(() => []),
+      apiFetch<Array<{ id: string; name: string; departmentId?: string }>>("/administration/service-units").catch(() => []),
     ]);
     const withConsultations = patientData.filter(hasConsultations);
     setPatients(withConsultations);
     setServices(serviceData || []);
+    setDepartments(departmentsData || []);
+    setServiceUnits(serviceUnitsData || []);
     setLabTests(catalogueData?.tests || []);
     setSelectedPatientId((current) => current || withConsultations[0]?.id || "");
     setSelectedConsultationId((current) => current || withConsultations[0]?.consultations?.[0]?.id || "");
@@ -56,8 +62,8 @@ export default function ExamensMedecin() {
   const selectedPatient = patients.find((patient) => patient.id === selectedPatientId) || filteredPatients[0] || null;
   const selectedConsultation = selectedPatient?.consultations?.find((consultation) => consultation.id === selectedConsultationId) || selectedPatient?.consultations?.[0] || null;
   const canWrite = Boolean(selectedPatient?.access?.canWrite);
-  const selectedService = services.find((service) => service.id === form.serviceId);
-  const isLaboratoryService = Boolean(selectedService?.name?.toLowerCase().includes("laboratoire"));
+  const selectedService = serviceUnits.find((s) => s.id === form.serviceId) || services.find((service) => service.id === form.serviceId);
+  const isDepartmentLaboratory = Boolean(departments.find((d) => d.id === form.departmentId && d.name === "Laboratoire Medical"));
   const selectedLabTest = labTests.find((test) => test.id === form.labTestId);
 
   const submit = async () => {
@@ -79,7 +85,7 @@ export default function ExamensMedecin() {
         selectedLabTest ? `Examen catalogue: ${selectedLabTest.name} | Prix: ${selectedLabTest.price} | Delai: ${selectedLabTest.turnaroundTimeMinutes || "-"} min` : "",
       ].filter(Boolean).join("\n"),
     });
-    setForm({ examName: "", serviceId: "", labTestId: "", specimenType: "", priority: "NORMAL", notes: "" });
+    setForm({ examName: "", departmentId: "", serviceId: "", labTestId: "", specimenType: "", priority: "NORMAL", notes: "" });
     setMessage("Demande d'examen envoyee.");
     await load();
   };
@@ -100,8 +106,8 @@ export default function ExamensMedecin() {
                 <div className="mt-5 grid gap-4 xl:grid-cols-2">
                   <Panel title="Nouvelle demande">
                     <Select label="Consultation" value={selectedConsultation.id} onChange={setSelectedConsultationId} options={(selectedPatient.consultations || []).map((consultation) => [consultation.id, consultationLabel(consultation)] as [string, string])} />
-                    <Select label="Service paramedical" value={form.serviceId} onChange={(value) => setForm((current) => ({ ...current, serviceId: value, labTestId: "" }))} options={[["", "Choisir"], ...examServices.map((service) => [service.id, service.name] as [string, string])]} />
-                    {isLaboratoryService ? (
+                    <Select label="Departement paramedical" value={form.departmentId} onChange={(value) => setForm((current) => ({ ...current, departmentId: value, serviceId: "", labTestId: "" }))} options={[["", "Choisir"], ...departments.map((d) => [d.id, d.name] as [string, string])]} />
+                    {isDepartmentLaboratory ? (
                       <Select
                         label="Examen du catalogue laboratoire"
                         value={form.labTestId}
@@ -109,7 +115,12 @@ export default function ExamensMedecin() {
                         options={[["", "Choisir un examen"], ...labTests.map((test) => [test.id, `${test.name} - ${Number(test.price || 0).toLocaleString("fr-FR")} FC - ${test.turnaroundTimeMinutes || "-"} min`] as [string, string])]}
                       />
                     ) : (
-                      <Input label="Examen demande" value={form.examName} onChange={(value) => setForm((current) => ({ ...current, examName: value }))} />
+                      <Select
+                        label="Service demande"
+                        value={form.serviceId}
+                        onChange={(value) => setForm((current) => ({ ...current, serviceId: value, examName: serviceUnits.find((s) => s.id === value)?.name || current.examName }))}
+                        options={[["", "Choisir un service"], ...serviceUnits.filter((s) => s.departmentId === form.departmentId).map((s) => [s.id, s.name] as [string, string])]} 
+                      />
                     )}
                     {selectedLabTest ? (
                       <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">

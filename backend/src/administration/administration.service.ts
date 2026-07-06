@@ -96,6 +96,7 @@ export class AdministrationService {
         code: data.code,
         type: data.type, // Reçu depuis ton DTO / Contrôleur
         description: data.description ?? null,
+        isParamedical: data.isParamedical ?? false,
       },
     });
   }
