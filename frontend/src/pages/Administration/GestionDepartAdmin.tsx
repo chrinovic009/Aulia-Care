@@ -17,7 +17,7 @@ export default function GestionDepartAdmin() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [departmentForm, setDepartmentForm] = useState({ name: "", code: "", type: "MEDICAL", description: "" });
-  const [unitForm, setUnitForm] = useState({ name: "", departmentId: "", location: "", price: "" });
+  const [unitForm, setUnitForm] = useState({ name: "", departmentId: "", location: "", price: "", isParamedical: false });
 
   useEffect(() => {
     const load = () => apiFetch<Department[]>("/administration/departments")
@@ -60,7 +60,7 @@ export default function GestionDepartAdmin() {
           name,
           description: `Service ${name}`,
           active: true,
-          isParamedical: false,
+          isParamedical: unitForm.isParamedical,
         }),
       });
 
@@ -86,7 +86,7 @@ export default function GestionDepartAdmin() {
         }
       }
 
-      setUnitForm({ name: "", departmentId: "", location: "", price: "" });
+      setUnitForm({ name: "", departmentId: "", location: "", price: "", isParamedical: false });
       await reload();
     } catch (error: any) {
       console.error(error);
@@ -156,6 +156,10 @@ export default function GestionDepartAdmin() {
               {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
             </select>
             <input value={unitForm.name} onChange={(event) => setUnitForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom de l'unite" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
+            <label className="flex items-center gap-2 px-2">
+              <input type="checkbox" checked={unitForm.isParamedical} onChange={(event) => setUnitForm((current) => ({ ...current, isParamedical: event.target.checked }))} className="h-4 w-4 rounded border-slate-200 text-slate-900" />
+              <span className="text-sm text-slate-700">Service paramédical</span>
+            </label>
             <input value={unitForm.price} onChange={(event) => setUnitForm((current) => ({ ...current, price: event.target.value }))} placeholder="Tarif" type="number" min="0" step="0.01" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
             <button onClick={createUnit} className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white md:col-span-2"><Plus size={17} /> Ajouter l'unite</button>
           </div>

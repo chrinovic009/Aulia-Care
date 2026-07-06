@@ -101,7 +101,7 @@ export default function CatalogueLab() {
       await createLabSection({
         name: sectionForm.name,
         description: sectionForm.description || undefined,
-        order: sectionForm.order !== '' ? Number(sectionForm.order) : undefined,
+        order: sectionForm.order !== '' ? sectionForm.order : undefined,
         active: sectionForm.active,
       });
       setSectionForm({ name: '', description: '', order: '0', active: true });
@@ -129,7 +129,7 @@ export default function CatalogueLab() {
         name: categoryForm.name,
         code: categoryForm.code || undefined,
         description: categoryForm.description || undefined,
-        order: categoryForm.order !== '' ? Number(categoryForm.order) : undefined,
+        order: categoryForm.order !== '' ? categoryForm.order : undefined,
         active: categoryForm.active,
       });
       setCategoryForm({ sectionId: '', name: '', code: '', description: '', order: '0', active: true });
@@ -158,14 +158,14 @@ export default function CatalogueLab() {
         categoryId: testForm.categoryId,
         sectionId: testForm.sectionId || undefined,
         description: testForm.description || undefined,
-        price: Number(testForm.price),
-        turnaroundTimeMinutes: testForm.turnaroundTimeMinutes !== '' ? Number(testForm.turnaroundTimeMinutes) : undefined,
+        price: String(testForm.price),
+        turnaroundTimeMinutes: testForm.turnaroundTimeMinutes !== '' ? String(testForm.turnaroundTimeMinutes) : undefined,
         resultType: testForm.resultType,
         unit: testForm.unit || undefined,
         referenceRange: testForm.referenceRange || undefined,
         genderRestriction: testForm.genderRestriction,
-        minAge: testForm.minAge !== '' ? Number(testForm.minAge) : undefined,
-        maxAge: testForm.maxAge !== '' ? Number(testForm.maxAge) : undefined,
+        minAge: testForm.minAge !== '' ? String(testForm.minAge) : undefined,
+        maxAge: testForm.maxAge !== '' ? String(testForm.maxAge) : undefined,
         active: testForm.active,
       });
       setTestForm({ code: '', name: '', categoryId: '', sectionId: '', description: '', price: '0', turnaroundTimeMinutes: '30', resultType: 'MULTI_PARAMETER', unit: '', referenceRange: '', genderRestriction: 'ALL', minAge: '', maxAge: '', active: true });
@@ -197,7 +197,7 @@ export default function CatalogueLab() {
         referenceRange: parameterForm.referenceRange || undefined,
         minValue: parameterForm.minValue || undefined,
         maxValue: parameterForm.maxValue || undefined,
-        order: parameterForm.order !== '' ? Number(parameterForm.order) : undefined,
+        order: parameterForm.order !== '' ? parameterForm.order : undefined,
         active: parameterForm.active,
       });
       setParameterForm({ labTestId: '', code: '', name: '', unit: '', resultType: 'NUMERIC', referenceRange: '', minValue: '', maxValue: '', order: '0', active: true });
@@ -263,10 +263,10 @@ export default function CatalogueLab() {
       await createLabTestSampleRequirement({
         labTestId: sampleRequirementForm.labTestId,
         labSampleTypeId: sampleRequirementForm.labSampleTypeId,
-        volumeRequired: sampleRequirementForm.volumeRequired !== '' ? Number(sampleRequirementForm.volumeRequired) : undefined,
+        volumeRequired: sampleRequirementForm.volumeRequired !== '' ? String(sampleRequirementForm.volumeRequired) : undefined,
         volumeUnit: sampleRequirementForm.volumeUnit || undefined,
         storageCondition: sampleRequirementForm.storageCondition || undefined,
-        maxAgeMinutes: sampleRequirementForm.maxAgeMinutes !== '' ? Number(sampleRequirementForm.maxAgeMinutes) : undefined,
+        maxAgeMinutes: sampleRequirementForm.maxAgeMinutes !== '' ? String(sampleRequirementForm.maxAgeMinutes) : undefined,
         instructions: sampleRequirementForm.instructions || undefined,
       });
       setSampleRequirementForm({ labTestId: '', labSampleTypeId: '', volumeRequired: '', volumeUnit: 'mL', storageCondition: '', maxAgeMinutes: '', instructions: '' });
@@ -319,7 +319,7 @@ export default function CatalogueLab() {
       await createLabTestConsumableRequirement({
         labTestId: consumableRequirementForm.labTestId,
         labConsumableId: consumableRequirementForm.labConsumableId,
-        quantity: Number(consumableRequirementForm.quantity),
+        quantity: String(consumableRequirementForm.quantity),
         unit: consumableRequirementForm.unit || undefined,
       });
       setConsumableRequirementForm({ labTestId: '', labConsumableId: '', quantity: '1', unit: '' });
@@ -344,9 +344,9 @@ export default function CatalogueLab() {
     try {
       await createLabConsumableStock({
         labConsumableId: stockForm.labConsumableId,
-        quantity: Number(stockForm.quantity),
-        minimumLevel: stockForm.minimumLevel !== '' ? Number(stockForm.minimumLevel) : undefined,
-        criticalLevel: stockForm.criticalLevel !== '' ? Number(stockForm.criticalLevel) : undefined,
+        quantity: String(stockForm.quantity),
+        minimumLevel: stockForm.minimumLevel !== '' ? String(stockForm.minimumLevel) : undefined,
+        criticalLevel: stockForm.criticalLevel !== '' ? String(stockForm.criticalLevel) : undefined,
         location: stockForm.location || undefined,
       });
       setStockForm({ labConsumableId: '', quantity: '0', minimumLevel: '', criticalLevel: '', location: '' });

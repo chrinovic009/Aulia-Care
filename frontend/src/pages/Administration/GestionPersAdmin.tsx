@@ -282,11 +282,25 @@ export default function GestionPersAdmin() {
     setFormError(null);
     try {
       const displayName = [form.firstName, form.lastName].filter(Boolean).join(" ");
+      const requestedUsername = form.username || buildUsername(form.firstName, form.lastName);
+      const existingUsernames = users.map((user) => user.username?.toLowerCase()).filter(Boolean);
+      let username = requestedUsername.toLowerCase();
+      if (!form.username) {
+        let suffix = 1;
+        while (existingUsernames.includes(username)) {
+          username = `${requestedUsername}${suffix}`.toLowerCase();
+          suffix += 1;
+        }
+      } else if (existingUsernames.includes(username)) {
+        setFormError("Nom d'utilisateur déjà pris, choisissez-en un autre.");
+        return;
+      }
+
       const payload = {
         firstName: form.firstName,
         lastName: form.lastName,
         displayName,
-        username: form.username || buildUsername(form.firstName, form.lastName),
+        username,
         email: form.email || `${form.firstName}${form.lastName}@gmail.com`.toLowerCase(),
         password: form.password || undefined,
         primaryRole: form.primaryRole,
@@ -328,7 +342,7 @@ export default function GestionPersAdmin() {
           ? await apiFetch<AdminUser>(`/users/${editingUser.id}`, { method: "PATCH", body: JSON.stringify(payload) })
           : await apiFetch<AdminUser>("/users", { method: "POST", body: JSON.stringify(payload) });
       } catch (err: any) {
-        setFormError(err?.message || 'Erreur lors de la création/modification de l\'utilisateur');
+        setFormError(err?.body?.message || err?.message || 'Erreur lors de la création/modification de l\'utilisateur');
         return;
       }
 
