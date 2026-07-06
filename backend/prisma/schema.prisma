@@ -54,95 +54,96 @@ model RolePermission {
 }
 
 model User {
-  id                          String                   @id @default(uuid())
-  email                       String                   @unique
-  username                    String                   @unique
-  displayName                 String
-  firstName                   String
-  lastName                    String
-  passwordHash                String
-  status                      UserStatus               @default(ACTIVE)
-  primaryRole                 RoleSlug?
-  specialty                   String?
-  bio                         String?
-  profilePhotoUrl             String?
-  phone                       String?
-  whatsappUrl                 String?
-  facebookUrl                 String?
-  instagramUrl                String?
-  linkedinUrl                 String?
-  nationality                 String?
-  addressCountry              String?
-  addressProvince             String?
-  addressCity                 String?
-  addressNeighborhood         String?
-  addressStreet               String?
-  lastLoginAt                 DateTime?
-  preferredLanguage           String?                  @default("fr")
-  createdAt                   DateTime                 @default(now())
-  updatedAt                   DateTime                 @updatedAt
-  deletedAt                   DateTime?
-  syncedAt                    DateTime?
-  sourceNode                  String?
-  version                     Int                      @default(1)
-  clinicId                    String?
-  clinic                      Clinic?                  @relation(fields: [clinicId], references: [id])
-  appointmentsRequested       Appointment[]            @relation("AppointmentRequester")
-  auditLogs                   AuditLog[]
-  providedConsultations       Consultation[]           @relation("ConsultationProvider")
-  consultationNotesAuthored   ConsultationNote[]       @relation("ConsultationNoteAuthor")
-  hospitalizationsAsNurse     Hospitalization[]        @relation("HospitalizationNurse")
-  hospitalizationsAsPhysician Hospitalization[]        @relation("HospitalizationPhysician")
-  imagingReportsInterpreted   ImagingReport[]          @relation("ImagingReportInterpreter")
-  imagingRequestsRequested    ImagingRequest[]         @relation("ImagingRequestRequester")
-  invoicesIssued              Invoice[]                @relation("InvoiceIssuer")
-  labRequestsRequested        LabRequest[]             @relation("LabRequestRequester")
-  labResultsReported          LabResult[]              @relation("LabResultReporter")
-  labRequestItemsAssigned     LabRequestItem[]         @relation("LabRequestItemAssignedTo")
-  labSamplesCollected         LabSample[]              @relation("LabSampleCollectedBy")
-  labSampleTrackingEventsPerformed LabSampleTrackingEvent[] @relation("LabSampleTrackingPerformedBy")
-  labRequestEventsPerformed         LabRequestEvent[]         @relation("LabRequestEventPerformedBy")
-  labResultTechnicalValidated LabResult[]              @relation("LabResultTechnicalValidator")
-  labResultBiologicalValidated LabResult[]             @relation("LabResultBiologicalValidator")
-  labReportsIssued            LabReport[]              @relation("LabReportIssuedBy")
-  labConsumableStockUpdates   LabConsumableStock[]     @relation("LabConsumableStockUpdatedBy")
-  labConsumableTransactions   LabConsumableTransaction[] @relation("LabConsumableTransactionPerformedBy")
-  labTestsCreated             LabTest[]                @relation("LabTestCreatedBy")
-  labTestsUpdated             LabTest[]                @relation("LabTestUpdatedBy")
-  labSectionStaff             LabSectionStaff[]
-  medicalHistoriesCreated     MedicalHistory[]         @relation("MedicalHistoryCreatedBy")
-  notificationsSent           Notification[]           @relation("NotificationAuthor")
-  notifications               Notification[]           @relation("NotificationRecipient")
-  sentChatMessages            ChatMessage[]            @relation("ChatMessageSender")
-  receivedChatMessages        ChatMessage[]            @relation("ChatMessageRecipient")
-  registeredPatients          Patient[]                @relation("PatientReceptionist")
-  paymentsMade                Payment[]                @relation("PaymentPayer")
-  pharmacyDispenses           PharmacyDispense[]       @relation("PharmacyDispenseDispenser")
-  prescriptionsPrescribed     Prescription[]           @relation("PrescriptionPrescriber")
-  refreshTokens               RefreshToken[]
-  serviceResponsabilites      ServiceResponsable[]
-  staff                       ServiceStaff[]
-  surgeriesAsAnesthesiologist Surgery[]                @relation("SurgeryAnesthesiologist")
-  surgeriesAsSurgeon          Surgery[]                @relation("SurgerySurgeon")
-  roles                       UserRole[]
-  vitalSignsRecorded          VitalSign[]              @relation("VitalSignRecordedBy")
-  Diagnosis                   Diagnosis[]
-  ProblemList                 ProblemList[]
-  Allergy                     Allergy[]
-  Vaccination                 Vaccination[]
-  ClinicalCondition           ClinicalCondition[]
-  InsuranceClaim              InsuranceClaim[]
-  InsuranceAuthorization      InsuranceAuthorization[]
-  GoodsReceipt                GoodsReceipt[]
-  StockTransaction            StockTransaction[]
-  Employee                    Employee[]
-  LeaveRequest                LeaveRequest[]
-  Payroll                     Payroll[]
-  AuditTrail                  AuditTrail[]
-  PasswordHistory             PasswordHistory[]
-  LoginAttempt                LoginAttempt[]
-  Session                     Session[]
-  PasswordResetToken          PasswordResetToken[]
+  id                               String                     @id @default(uuid())
+  email                            String                     @unique
+  username                         String                     @unique
+  displayName                      String
+  firstName                        String
+  lastName                         String
+  passwordHash                     String
+  status                           UserStatus                 @default(ACTIVE)
+  primaryRole                      RoleSlug?
+  specialty                        String?
+  bio                              String?
+  profilePhotoUrl                  String?
+  phone                            String?
+  whatsappUrl                      String?
+  facebookUrl                      String?
+  instagramUrl                     String?
+  linkedinUrl                      String?
+  nationality                      String?
+  addressCountry                   String?
+  addressProvince                  String?
+  addressCity                      String?
+  addressNeighborhood              String?
+  addressStreet                    String?
+  lastLoginAt                      DateTime?
+  preferredLanguage                String?                    @default("fr")
+  createdAt                        DateTime                   @default(now())
+  updatedAt                        DateTime                   @updatedAt
+  deletedAt                        DateTime?
+  syncedAt                         DateTime?
+  sourceNode                       String?
+  version                          Int                        @default(1)
+  clinicId                         String?
+  clinic                           Clinic?                    @relation(fields: [clinicId], references: [id])
+  appointmentsRequested            Appointment[]              @relation("AppointmentRequester")
+  auditLogs                        AuditLog[]
+  providedConsultations            Consultation[]             @relation("ConsultationProvider")
+  consultationNotesAuthored        ConsultationNote[]         @relation("ConsultationNoteAuthor")
+  hospitalizationsAsNurse          Hospitalization[]          @relation("HospitalizationNurse")
+  hospitalizationsAsPhysician      Hospitalization[]          @relation("HospitalizationPhysician")
+  imagingReportsInterpreted        ImagingReport[]            @relation("ImagingReportInterpreter")
+  imagingRequestsRequested         ImagingRequest[]           @relation("ImagingRequestRequester")
+  invoicesIssued                   Invoice[]                  @relation("InvoiceIssuer")
+  labRequestsRequested             LabRequest[]               @relation("LabRequestRequester")
+  labResultsReported               LabResult[]                @relation("LabResultReporter")
+  labRequestItemsAssigned          LabRequestItem[]           @relation("LabRequestItemAssignedTo")
+  labSamplesCollected              LabSample[]                @relation("LabSampleCollectedBy")
+  labSampleTrackingEventsPerformed LabSampleTrackingEvent[]   @relation("LabSampleTrackingPerformedBy")
+  labRequestEventsPerformed        LabRequestEvent[]          @relation("LabRequestEventPerformedBy")
+  labResultTechnicalValidated      LabResult[]                @relation("LabResultTechnicalValidator")
+  labResultBiologicalValidated     LabResult[]                @relation("LabResultBiologicalValidator")
+  labReportsIssued                 LabReport[]                @relation("LabReportIssuedBy")
+  labConsumableStockUpdates        LabConsumableStock[]       @relation("LabConsumableStockUpdatedBy")
+  labConsumableTransactions        LabConsumableTransaction[] @relation("LabConsumableTransactionPerformedBy")
+  labTestsCreated                  LabTest[]                  @relation("LabTestCreatedBy")
+  labTestsUpdated                  LabTest[]                  @relation("LabTestUpdatedBy")
+  labSectionStaff                  LabSectionStaff[]
+  medicalHistoriesCreated          MedicalHistory[]           @relation("MedicalHistoryCreatedBy")
+  notificationsSent                Notification[]             @relation("NotificationAuthor")
+  notifications                    Notification[]             @relation("NotificationRecipient")
+  sentChatMessages                 ChatMessage[]              @relation("ChatMessageSender")
+  receivedChatMessages             ChatMessage[]              @relation("ChatMessageRecipient")
+  registeredPatients               Patient[]                  @relation("PatientReceptionist")
+  paymentsMade                     Payment[]                  @relation("PaymentPayer")
+  pharmacyDispenses                PharmacyDispense[]         @relation("PharmacyDispenseDispenser")
+  prescriptionsPrescribed          Prescription[]             @relation("PrescriptionPrescriber")
+  refreshTokens                    RefreshToken[]
+  serviceResponsabilites           ServiceResponsable[]
+  staff                            ServiceStaff[]
+  surgeriesAsAnesthesiologist      Surgery[]                  @relation("SurgeryAnesthesiologist")
+  surgeriesAsSurgeon               Surgery[]                  @relation("SurgerySurgeon")
+  roles                            UserRole[]
+  vitalSignsRecorded               VitalSign[]                @relation("VitalSignRecordedBy")
+  Diagnosis                        Diagnosis[]
+  ProblemList                      ProblemList[]
+  Allergy                          Allergy[]
+  Vaccination                      Vaccination[]
+  ClinicalCondition                ClinicalCondition[]
+  InsuranceClaim                   InsuranceClaim[]
+  InsuranceAuthorization           InsuranceAuthorization[]
+  GoodsReceipt                     GoodsReceipt[]
+  StockTransaction                 StockTransaction[]
+  Employee                         Employee[]
+  LeaveRequest                     LeaveRequest[]
+  Payroll                          Payroll[]
+  AuditTrail                       AuditTrail[]
+  PasswordHistory                  PasswordHistory[]
+  LoginAttempt                     LoginAttempt[]
+  Session                          Session[]
+  PasswordResetToken               PasswordResetToken[]
+  departmentResponsibilities       DepartmentResponsable[]
 
   @@index([primaryRole])
   @@index([clinicId])
@@ -164,21 +165,22 @@ model UserRole {
 }
 
 model Department {
-  id          String         @id @default(uuid())
-  name        String         @unique
-  type        DepartmentType
-  code        String         @unique
-  description String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  deletedAt   DateTime?
-  syncedAt    DateTime?
-  sourceNode  String?
-  version     Int            @default(1)
-  clinicId    String?
-  clinic      Clinic?        @relation(fields: [clinicId], references: [id])
-  services    ServiceUnit[]
-  Employee    Employee[]
+  id                        String                  @id @default(uuid())
+  name                      String                  @unique
+  type                      DepartmentType
+  code                      String                  @unique
+  description               String?
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
+  deletedAt                 DateTime?
+  syncedAt                  DateTime?
+  sourceNode                String?
+  version                   Int                     @default(1)
+  clinicId                  String?
+  clinic                    Clinic?                 @relation(fields: [clinicId], references: [id])
+  services                  ServiceUnit[]
+  Employee                  Employee[]
+  departmentResponsabilites DepartmentResponsable[]
 
   @@index([clinicId])
 }
@@ -210,24 +212,43 @@ model ServiceUnit {
 
 /// Central services catalog (e.g. Cardiologie, Radiologie)
 model Service {
-  id              String               @id @default(uuid())
-  name            String               @unique
-  description     String?
-  active          Boolean              @default(true)
-  isParamedical   Boolean              @default(false)
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  syncedAt        DateTime?
-  sourceNode      String?
-  version         Int                  @default(1)
-  clinicId        String?
-  clinic          Clinic?              @relation(fields: [clinicId], references: [id])
-  patients        Patient[]
-  responsables    ServiceResponsable[]
-  staff           ServiceStaff[]
-  tarifs          ServiceTarif[]
+  id            String               @id @default(uuid())
+  name          String               @unique
+  description   String?
+  active        Boolean              @default(true)
+  isParamedical Boolean              @default(false)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  syncedAt      DateTime?
+  sourceNode    String?
+  version       Int                  @default(1)
+  clinicId      String?
+  clinic        Clinic?              @relation(fields: [clinicId], references: [id])
+  patients      Patient[]
+  responsables  ServiceResponsable[]
+  staff         ServiceStaff[]
+  tarifs        ServiceTarif[]
 
   @@index([clinicId])
+}
+
+/// DepartmentResponsable links departments to users (department chiefs)
+model DepartmentResponsable {
+  id           String    @id @default(uuid())
+  departmentId String
+  userId       String
+  principal    Boolean   @default(false)
+  actif        Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  syncedAt     DateTime?
+  sourceNode   String?
+  version      Int       @default(1)
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([departmentId, userId])
+  @@index([departmentId])
 }
 
 /// ServiceTarif allows historisation of service prices
@@ -660,71 +681,71 @@ model PharmacyDispenseLine {
 
 /// Laboratory workflow.
 model LabRequest {
-  id                String              @id @default(uuid())
+  id                String           @id @default(uuid())
   consultationId    String
   patientId         String
   requestedById     String?
   clinicId          String?
-  status            LabRequestStatus    @default(REQUESTED)
-  requestedAt       DateTime            @default(now())
+  status            LabRequestStatus @default(REQUESTED)
+  requestedAt       DateTime         @default(now())
   receivedAt        DateTime?
   performedAt       DateTime?
   completedAt       DateTime?
   sentAt            DateTime?
-  accessionNumber   String?             @unique
+  accessionNumber   String?          @unique
   externalReference String?
   specimenType      String?
-  priority          String?             @default("NORMAL")
+  priority          String?          @default("NORMAL")
   notes             String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @default(now())
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @default(now())
   deletedAt         DateTime?
   syncedAt          DateTime?
   sourceNode        String?
-  version           Int                 @default(1)
+  version           Int              @default(1)
 
-  consultation      Consultation        @relation(fields: [consultationId], references: [id], onDelete: Cascade)
-  patient           Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  requestedBy       User?               @relation("LabRequestRequester", fields: [requestedById], references: [id])
-  items             LabRequestItem[]
-  samples           LabSample[]
-  events            LabRequestEvent[]
-  results           LabResult[]
-  reports           LabReport[]
+  consultation Consultation      @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  patient      Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  requestedBy  User?             @relation("LabRequestRequester", fields: [requestedById], references: [id])
+  items        LabRequestItem[]
+  samples      LabSample[]
+  events       LabRequestEvent[]
+  results      LabResult[]
+  reports      LabReport[]
 
   @@index([status])
   @@index([clinicId])
 }
 
 model LabRequestItem {
-  id                   String                 @id @default(uuid())
-  labRequestId         String
-  labTestId            String
-  sampleTypeId         String?
-  status               LabRequestItemStatus  @default(REQUESTED)
-  specimenLabel        String?
-  assignedToId         String?
-  requestedAt          DateTime              @default(now())
-  collectedAt          DateTime?
-  receivedAt           DateTime?
-  analysisStartedAt    DateTime?
-  completedAt          DateTime?
-  notes                String?
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @default(now())
-  deletedAt            DateTime?
-  syncedAt             DateTime?
-  sourceNode           String?
-  version              Int                   @default(1)
+  id                String               @id @default(uuid())
+  labRequestId      String
+  labTestId         String
+  sampleTypeId      String?
+  status            LabRequestItemStatus @default(REQUESTED)
+  specimenLabel     String?
+  assignedToId      String?
+  requestedAt       DateTime             @default(now())
+  collectedAt       DateTime?
+  receivedAt        DateTime?
+  analysisStartedAt DateTime?
+  completedAt       DateTime?
+  notes             String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @default(now())
+  deletedAt         DateTime?
+  syncedAt          DateTime?
+  sourceNode        String?
+  version           Int                  @default(1)
 
-  labRequest           LabRequest            @relation(fields: [labRequestId], references: [id], onDelete: Cascade)
-  labTest              LabTest               @relation(fields: [labTestId], references: [id], onDelete: Cascade)
-  sampleType           LabSampleType?        @relation(fields: [sampleTypeId], references: [id])
-  assignedTo           User?                 @relation("LabRequestItemAssignedTo", fields: [assignedToId], references: [id])
-  samples              LabSample[]
-  results              LabResult[]
-  events               LabRequestEvent[]
-  reports              LabReport[]
+  labRequest LabRequest        @relation(fields: [labRequestId], references: [id], onDelete: Cascade)
+  labTest    LabTest           @relation(fields: [labTestId], references: [id], onDelete: Cascade)
+  sampleType LabSampleType?    @relation(fields: [sampleTypeId], references: [id])
+  assignedTo User?             @relation("LabRequestItemAssignedTo", fields: [assignedToId], references: [id])
+  samples    LabSample[]
+  results    LabResult[]
+  events     LabRequestEvent[]
+  reports    LabReport[]
 
   @@index([labRequestId])
   @@index([labTestId])
@@ -732,12 +753,12 @@ model LabRequestItem {
 }
 
 model LabSampleType {
-  id                 String               @id @default(uuid())
-  name               String               @unique
-  description        String?
-  active             Boolean              @default(true)
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @default(now())
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
 
   sampleRequirements LabTestSampleRequirement[]
   samples            LabSample[]
@@ -745,35 +766,35 @@ model LabSampleType {
 }
 
 model LabSample {
-  id                 String            @id @default(uuid())
-  labRequestId       String
-  labRequestItemId   String?
-  labSampleTypeId    String
-  externalId         String            @unique
-  barcode            String            @unique
-  collectedById      String?
-  collectedAt        DateTime?
-  volume             Decimal?          @db.Decimal(12, 2)
-  volumeUnit         String?           @default("mL")
-  condition          String?
-  storageLocation    String?
-  status             LabSampleStatus   @default(COLLECTED)
-  receivedAt         DateTime?
-  rejectedAt         DateTime?
-  rejectionReason    String?
-  notes              String?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @default(now())
-  deletedAt          DateTime?
-  syncedAt           DateTime?
-  sourceNode         String?
-  version            Int               @default(1)
+  id               String          @id @default(uuid())
+  labRequestId     String
+  labRequestItemId String?
+  labSampleTypeId  String
+  externalId       String          @unique
+  barcode          String          @unique
+  collectedById    String?
+  collectedAt      DateTime?
+  volume           Decimal?        @db.Decimal(12, 2)
+  volumeUnit       String?         @default("mL")
+  condition        String?
+  storageLocation  String?
+  status           LabSampleStatus @default(COLLECTED)
+  receivedAt       DateTime?
+  rejectedAt       DateTime?
+  rejectionReason  String?
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @default(now())
+  deletedAt        DateTime?
+  syncedAt         DateTime?
+  sourceNode       String?
+  version          Int             @default(1)
 
-  labRequest         LabRequest        @relation(fields: [labRequestId], references: [id], onDelete: Cascade)
-  labRequestItem     LabRequestItem?   @relation(fields: [labRequestItemId], references: [id])
-  labSampleType      LabSampleType     @relation(fields: [labSampleTypeId], references: [id], onDelete: Cascade)
-  collectedBy        User?             @relation("LabSampleCollectedBy", fields: [collectedById], references: [id])
-  trackingEvents     LabSampleTrackingEvent[]
+  labRequest     LabRequest               @relation(fields: [labRequestId], references: [id], onDelete: Cascade)
+  labRequestItem LabRequestItem?          @relation(fields: [labRequestItemId], references: [id])
+  labSampleType  LabSampleType            @relation(fields: [labSampleTypeId], references: [id], onDelete: Cascade)
+  collectedBy    User?                    @relation("LabSampleCollectedBy", fields: [collectedById], references: [id])
+  trackingEvents LabSampleTrackingEvent[]
 
   @@index([labRequestId])
   @@index([labRequestItemId])
@@ -781,21 +802,21 @@ model LabSample {
 }
 
 model LabSampleTrackingEvent {
-  id             String        @id @default(uuid())
-  labSampleId    String
-  status         LabSampleStatus
-  performedById  String?
-  note           String?
-  createdAt      DateTime      @default(now())
+  id            String          @id @default(uuid())
+  labSampleId   String
+  status        LabSampleStatus
+  performedById String?
+  note          String?
+  createdAt     DateTime        @default(now())
 
-  labSample      LabSample     @relation(fields: [labSampleId], references: [id], onDelete: Cascade)
-  performedBy    User?         @relation("LabSampleTrackingPerformedBy", fields: [performedById], references: [id])
+  labSample   LabSample @relation(fields: [labSampleId], references: [id], onDelete: Cascade)
+  performedBy User?     @relation("LabSampleTrackingPerformedBy", fields: [performedById], references: [id])
 
   @@index([labSampleId])
 }
 
 model LabRequestEvent {
-  id               String      @id @default(uuid())
+  id               String   @id @default(uuid())
   labRequestId     String
   labRequestItemId String?
   action           String
@@ -803,128 +824,128 @@ model LabRequestEvent {
   toStatus         String?
   performedById    String?
   note             String?
-  createdAt        DateTime    @default(now())
+  createdAt        DateTime @default(now())
 
-  labRequest       LabRequest  @relation(fields: [labRequestId], references: [id], onDelete: Cascade)
-  labRequestItem   LabRequestItem? @relation(fields: [labRequestItemId], references: [id])
-  performedBy      User?        @relation("LabRequestEventPerformedBy", fields: [performedById], references: [id])
+  labRequest     LabRequest      @relation(fields: [labRequestId], references: [id], onDelete: Cascade)
+  labRequestItem LabRequestItem? @relation(fields: [labRequestItemId], references: [id])
+  performedBy    User?           @relation("LabRequestEventPerformedBy", fields: [performedById], references: [id])
 
   @@index([labRequestId])
   @@index([labRequestItemId])
 }
 
 model LabResult {
-  id                        String                    @id @default(uuid())
-  labRequestId              String
-  labRequestItemId          String?
-  resultCode                String
-  resultName                String
-  resultType                LabResultType            @default(MULTI_PARAMETER)
-  resultStatus              LabResultValidationStatus @default(PENDING)
-  resultValue               String?
-  numericValue              Decimal?                 @db.Decimal(12, 4)
-  textValue                 String?
-  units                     String?
-  referenceRange            String?
-  interpretation            String?
-  reportedById              String?
-  technicalValidatedById    String?
-  biologicalValidatedById   String?
-  reportedAt                DateTime                 @default(now())
-  technicalValidationAt     DateTime?
-  biologicalValidationAt    DateTime?
-  comments                  String?
-  createdAt                 DateTime                 @default(now())
-  updatedAt                 DateTime                 @default(now())
-  deletedAt                 DateTime?
-  syncedAt                  DateTime?
-  sourceNode                String?
-  version                   Int                      @default(1)
+  id                      String                    @id @default(uuid())
+  labRequestId            String
+  labRequestItemId        String?
+  resultCode              String
+  resultName              String
+  resultType              LabResultType             @default(MULTI_PARAMETER)
+  resultStatus            LabResultValidationStatus @default(PENDING)
+  resultValue             String?
+  numericValue            Decimal?                  @db.Decimal(12, 4)
+  textValue               String?
+  units                   String?
+  referenceRange          String?
+  interpretation          String?
+  reportedById            String?
+  technicalValidatedById  String?
+  biologicalValidatedById String?
+  reportedAt              DateTime                  @default(now())
+  technicalValidationAt   DateTime?
+  biologicalValidationAt  DateTime?
+  comments                String?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @default(now())
+  deletedAt               DateTime?
+  syncedAt                DateTime?
+  sourceNode              String?
+  version                 Int                       @default(1)
 
-  labRequest                LabRequest                @relation(fields: [labRequestId], references: [id], onDelete: Cascade)
-  labRequestItem            LabRequestItem?           @relation(fields: [labRequestItemId], references: [id], onDelete: Cascade)
-  reportedBy                User?                     @relation("LabResultReporter", fields: [reportedById], references: [id])
-  technicalValidatedBy      User?                     @relation("LabResultTechnicalValidator", fields: [technicalValidatedById], references: [id])
-  biologicalValidatedBy     User?                     @relation("LabResultBiologicalValidator", fields: [biologicalValidatedById], references: [id])
-  parameters                LabResultParameter[]
+  labRequest            LabRequest           @relation(fields: [labRequestId], references: [id], onDelete: Cascade)
+  labRequestItem        LabRequestItem?      @relation(fields: [labRequestItemId], references: [id], onDelete: Cascade)
+  reportedBy            User?                @relation("LabResultReporter", fields: [reportedById], references: [id])
+  technicalValidatedBy  User?                @relation("LabResultTechnicalValidator", fields: [technicalValidatedById], references: [id])
+  biologicalValidatedBy User?                @relation("LabResultBiologicalValidator", fields: [biologicalValidatedById], references: [id])
+  parameters            LabResultParameter[]
 
   @@index([resultCode])
   @@index([labRequestItemId])
 }
 
 model LabResultParameter {
-  id                  String             @id @default(uuid())
-  labResultId         String
-  labTestParameterId  String?
-  valueNumeric        Decimal?           @db.Decimal(12, 4)
-  valueText           String?
-  interpretation      String?
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @default(now())
+  id                 String   @id @default(uuid())
+  labResultId        String
+  labTestParameterId String?
+  valueNumeric       Decimal? @db.Decimal(12, 4)
+  valueText          String?
+  interpretation     String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now())
 
-  labResult           LabResult          @relation(fields: [labResultId], references: [id], onDelete: Cascade)
-  labTestParameter    LabTestParameter?  @relation(fields: [labTestParameterId], references: [id])
+  labResult        LabResult         @relation(fields: [labResultId], references: [id], onDelete: Cascade)
+  labTestParameter LabTestParameter? @relation(fields: [labTestParameterId], references: [id])
 
   @@index([labResultId])
   @@index([labTestParameterId])
 }
 
 model LabSection {
-  id          String             @id @default(uuid())
-  name        String             @unique
+  id          String   @id @default(uuid())
+  name        String   @unique
   description String?
-  active      Boolean            @default(true)
-  order       Int                @default(0)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @default(now())
+  active      Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
 
-  categories  LabCategory[]
-  staff       LabSectionStaff[]
-  tests       LabTest[]
+  categories LabCategory[]
+  staff      LabSectionStaff[]
+  tests      LabTest[]
 }
 
 model LabCategory {
-  id          String      @id @default(uuid())
+  id          String   @id @default(uuid())
   sectionId   String?
   name        String
-  code        String?     @unique
+  code        String?  @unique
   description String?
-  active      Boolean     @default(true)
-  order       Int         @default(0)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @default(now())
+  active      Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
 
-  section     LabSection? @relation(fields: [sectionId], references: [id])
-  tests       LabTest[]
+  section LabSection? @relation(fields: [sectionId], references: [id])
+  tests   LabTest[]
 
   @@unique([sectionId, name])
 }
 
 model LabTest {
-  id                     String                      @id @default(uuid())
-  code                   String                      @unique
-  name                   String
-  categoryId             String
-  sectionId              String?
-  description            String?
-  price                  Decimal                     @db.Decimal(12, 2)
-  turnaroundTimeMinutes  Int?
-  resultType             LabResultType               @default(MULTI_PARAMETER)
-  unit                   String?
-  referenceRange         String?
-  genderRestriction      GenderRestriction           @default(ALL)
-  minAge                 Int?
-  maxAge                 Int?
-  active                 Boolean                     @default(true)
-  createdById            String?
-  updatedById            String?
-  createdAt              DateTime                    @default(now())
-  updatedAt              DateTime                    @default(now())
+  id                    String            @id @default(uuid())
+  code                  String            @unique
+  name                  String
+  categoryId            String
+  sectionId             String?
+  description           String?
+  price                 Decimal           @db.Decimal(12, 2)
+  turnaroundTimeMinutes Int?
+  resultType            LabResultType     @default(MULTI_PARAMETER)
+  unit                  String?
+  referenceRange        String?
+  genderRestriction     GenderRestriction @default(ALL)
+  minAge                Int?
+  maxAge                Int?
+  active                Boolean           @default(true)
+  createdById           String?
+  updatedById           String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @default(now())
 
-  category               LabCategory                 @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  section                LabSection?                 @relation(fields: [sectionId], references: [id])
-  createdBy              User?                       @relation("LabTestCreatedBy", fields: [createdById], references: [id])
-  updatedBy              User?                       @relation("LabTestUpdatedBy", fields: [updatedById], references: [id])
+  category               LabCategory                    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  section                LabSection?                    @relation(fields: [sectionId], references: [id])
+  createdBy              User?                          @relation("LabTestCreatedBy", fields: [createdById], references: [id])
+  updatedBy              User?                          @relation("LabTestUpdatedBy", fields: [updatedById], references: [id])
   sampleRequirements     LabTestSampleRequirement[]
   consumableRequirements LabTestConsumableRequirement[]
   parameterTemplates     LabTestParameter[]
@@ -948,40 +969,40 @@ model LabTestParameter {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @default(now())
 
-  labTest        LabTest       @relation(fields: [labTestId], references: [id], onDelete: Cascade)
+  labTest          LabTest              @relation(fields: [labTestId], references: [id], onDelete: Cascade)
   resultParameters LabResultParameter[]
 
   @@index([labTestId])
 }
 
 model LabTestSampleRequirement {
-  id                 String        @id @default(uuid())
-  labTestId          String
-  labSampleTypeId    String
-  volumeRequired     Decimal?      @db.Decimal(12, 2)
-  volumeUnit         String?       @default("mL")
-  storageCondition   String?
-  maxAgeMinutes      Int?
-  instructions       String?
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @default(now())
+  id               String   @id @default(uuid())
+  labTestId        String
+  labSampleTypeId  String
+  volumeRequired   Decimal? @db.Decimal(12, 2)
+  volumeUnit       String?  @default("mL")
+  storageCondition String?
+  maxAgeMinutes    Int?
+  instructions     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now())
 
-  labTest            LabTest       @relation(fields: [labTestId], references: [id], onDelete: Cascade)
-  labSampleType      LabSampleType @relation(fields: [labSampleTypeId], references: [id], onDelete: Cascade)
+  labTest       LabTest       @relation(fields: [labTestId], references: [id], onDelete: Cascade)
+  labSampleType LabSampleType @relation(fields: [labSampleTypeId], references: [id], onDelete: Cascade)
 
   @@index([labTestId])
   @@index([labSampleTypeId])
 }
 
 model LabConsumable {
-  id           String                      @id @default(uuid())
-  name         String
-  code         String                      @unique
-  description  String?
-  unit         String
-  active       Boolean                     @default(true)
-  createdAt    DateTime                    @default(now())
-  updatedAt    DateTime                    @default(now())
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  description String?
+  unit        String
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
 
   stock        LabConsumableStock[]
   transactions LabConsumableTransaction[]
@@ -989,56 +1010,56 @@ model LabConsumable {
 }
 
 model LabTestConsumableRequirement {
-  id              String          @id @default(uuid())
+  id              String   @id @default(uuid())
   labTestId       String
   labConsumableId String
-  quantity        Decimal         @db.Decimal(12, 2)
+  quantity        Decimal  @db.Decimal(12, 2)
   unit            String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now())
 
-  labTest         LabTest         @relation(fields: [labTestId], references: [id], onDelete: Cascade)
-  labConsumable   LabConsumable   @relation(fields: [labConsumableId], references: [id], onDelete: Cascade)
+  labTest       LabTest       @relation(fields: [labTestId], references: [id], onDelete: Cascade)
+  labConsumable LabConsumable @relation(fields: [labConsumableId], references: [id], onDelete: Cascade)
 
   @@index([labTestId])
   @@index([labConsumableId])
 }
 
 model LabConsumableStock {
-  id               String             @id @default(uuid())
-  labConsumableId  String
-  quantity         Decimal            @db.Decimal(12, 2) @default(0)
-  minimumLevel     Decimal?           @db.Decimal(12, 2)
-  criticalLevel    Decimal?           @db.Decimal(12, 2)
-  location         String?
-  lastUpdatedAt    DateTime           @default(now())
-  updatedById      String?
+  id              String   @id @default(uuid())
+  labConsumableId String
+  quantity        Decimal  @default(0) @db.Decimal(12, 2)
+  minimumLevel    Decimal? @db.Decimal(12, 2)
+  criticalLevel   Decimal? @db.Decimal(12, 2)
+  location        String?
+  lastUpdatedAt   DateTime @default(now())
+  updatedById     String?
 
-  labConsumable    LabConsumable      @relation(fields: [labConsumableId], references: [id], onDelete: Cascade)
-  updatedBy        User?              @relation("LabConsumableStockUpdatedBy", fields: [updatedById], references: [id])
+  labConsumable LabConsumable @relation(fields: [labConsumableId], references: [id], onDelete: Cascade)
+  updatedBy     User?         @relation("LabConsumableStockUpdatedBy", fields: [updatedById], references: [id])
 
   @@index([labConsumableId])
 }
 
 model LabConsumableTransaction {
-  id                String                      @id @default(uuid())
-  labConsumableId   String
-  type              LabConsumableTransactionType
-  quantity          Decimal                     @db.Decimal(12, 2)
-  unit              String
-  reference         String?
-  note              String?
-  performedById     String?
-  createdAt         DateTime                    @default(now())
+  id              String                       @id @default(uuid())
+  labConsumableId String
+  type            LabConsumableTransactionType
+  quantity        Decimal                      @db.Decimal(12, 2)
+  unit            String
+  reference       String?
+  note            String?
+  performedById   String?
+  createdAt       DateTime                     @default(now())
 
-  labConsumable     LabConsumable               @relation(fields: [labConsumableId], references: [id], onDelete: Cascade)
-  performedBy       User?                       @relation("LabConsumableTransactionPerformedBy", fields: [performedById], references: [id])
+  labConsumable LabConsumable @relation(fields: [labConsumableId], references: [id], onDelete: Cascade)
+  performedBy   User?         @relation("LabConsumableTransactionPerformedBy", fields: [performedById], references: [id])
 
   @@index([labConsumableId])
 }
 
 model LabReport {
-  id               String         @id @default(uuid())
+  id               String          @id @default(uuid())
   labRequestId     String
   labRequestItemId String?
   title            String
@@ -1048,29 +1069,29 @@ model LabReport {
   issuedById       String?
   generatedAt      DateTime?
   publishedAt      DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @default(now())
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @default(now())
 
-  labRequest       LabRequest     @relation(fields: [labRequestId], references: [id], onDelete: Cascade)
-  labRequestItem   LabRequestItem? @relation(fields: [labRequestItemId], references: [id])
-  issuedBy         User?           @relation("LabReportIssuedBy", fields: [issuedById], references: [id])
+  labRequest     LabRequest      @relation(fields: [labRequestId], references: [id], onDelete: Cascade)
+  labRequestItem LabRequestItem? @relation(fields: [labRequestItemId], references: [id])
+  issuedBy       User?           @relation("LabReportIssuedBy", fields: [issuedById], references: [id])
 
   @@index([labRequestId])
   @@index([labRequestItemId])
 }
 
 model LabSectionStaff {
-  id            String       @id @default(uuid())
-  labSectionId  String
-  userId        String
-  role          LabStaffRole @default(LAB_TECHNICIAN)
-  active        Boolean      @default(true)
-  assignedAt    DateTime     @default(now())
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @default(now())
+  id           String       @id @default(uuid())
+  labSectionId String
+  userId       String
+  role         LabStaffRole @default(LAB_TECHNICIAN)
+  active       Boolean      @default(true)
+  assignedAt   DateTime     @default(now())
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @default(now())
 
-  labSection    LabSection   @relation(fields: [labSectionId], references: [id], onDelete: Cascade)
-  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  labSection LabSection @relation(fields: [labSectionId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([labSectionId, userId])
 }
@@ -1088,7 +1109,7 @@ model LabDailyStatistics {
   date                  DateTime @unique
   requestsCount         Int      @default(0)
   testsPerformed        Int      @default(0)
-  revenue               Decimal  @db.Decimal(14, 2) @default(0)
+  revenue               Decimal  @default(0) @db.Decimal(14, 2)
   validatedCount        Int      @default(0)
   rejectedCount         Int      @default(0)
   averageTurnaroundMins Int?

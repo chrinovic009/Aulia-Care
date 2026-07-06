@@ -89,6 +89,8 @@ export class UsersService {
         },
         staff: { include: { service: true } },
         serviceResponsabilites: { include: { service: true } },
+        // CORRIGÉ : "ties" au lieu de "tes"
+        departmentResponsibilities: { include: { department: true } },
       },
     });
   }
@@ -133,10 +135,16 @@ export class UsersService {
           where: { actif: true },
           include: { service: true },
         },
+        // CORRIGÉ : "ties" au lieu de "tes"
+        departmentResponsibilities: {
+          where: { actif: true },
+          include: { department: true },
+        },
       },
       orderBy: [{ primaryRole: 'asc' }, { displayName: 'asc' }],
     });
   }
+
   async findContactsForRole(role?: RoleSlug | 'PATIENT', userId?: string) {
     type ContactRole = RoleSlug | 'PATIENT';
     const allowedRolesByRole: Partial<Record<RoleSlug | 'PATIENT', ContactRole[]>> = {

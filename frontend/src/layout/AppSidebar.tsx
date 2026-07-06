@@ -278,6 +278,7 @@ const AppSidebar: React.FC = () => {
 
   const { currentUser } = useAuth();
   const isLabManager = Boolean(
+    currentUser?.primaryRole === 'LAB_MANAGER' ||
     currentUser?.serviceResponsabilites?.some((responsability) =>
       responsability?.service?.name?.toLowerCase().includes('laboratoire'),
     ),

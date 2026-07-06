@@ -13,24 +13,11 @@ type Department = {
   Employee?: unknown[];
 };
 
-const AUTO_DEPARTMENT_NAMES = [
-  'Medecine Général',
-  'Chirurgie générale',
-  'Radiologie (Imagerie)',
-  'Pharmacie',
-  'Psychiatrie',
-  'Rééducation & Soins paramédicaux',
-  'Urgences',
-  "Unités d’hospitalisation",
-  'Médecine préventive & vaccination',
-  'Centre de recherche clinique',
-];
-
 export default function GestionDepartAdmin() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [departmentForm, setDepartmentForm] = useState({ name: "", code: "", type: "MEDICAL", description: "" });
-  const [unitForm, setUnitForm] = useState({ name: "", departmentId: "", location: "", contactNumber: "" });
+  const [unitForm, setUnitForm] = useState({ name: "", departmentId: "", location: "", price: "" });
 
   useEffect(() => {
     const load = () => apiFetch<Department[]>("/administration/departments")
@@ -54,10 +41,58 @@ export default function GestionDepartAdmin() {
   };
 
   const createUnit = async () => {
-    if (!unitForm.name || !unitForm.departmentId) return;
-    await apiFetch("/administration/service-units", { method: "POST", body: JSON.stringify(unitForm) });
-    setUnitForm({ name: "", departmentId: "", location: "", contactNumber: "" });
-    await reload();
+    const name = unitForm.name?.trim() || "";
+    if (!name || !unitForm.departmentId) return;
+
+      const normalize = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    const normalized = normalize(name);
+    const isInternal = ['caisse', 'secretariat'].includes(normalized);
+
+    if (!isInternal && (!unitForm.price || Number(unitForm.price) <= 0)) {
+      window.alert('Le tarif est requis pour tous les services sauf Caisse.');
+      return;
+    }
+
+    try {
+      const service = await apiFetch<{ id: string }>("/services", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          description: `Service ${name}`,
+          active: true,
+          isParamedical: false,
+        }),
+      });
+
+      await apiFetch("/administration/service-units", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          departmentId: unitForm.departmentId,
+          active: true,
+        }),
+      });
+
+      if (!isInternal) {
+        try {
+          await apiFetch(`/services/${service.id}/prices`, {
+            method: "POST",
+            body: JSON.stringify({ prix: Number(unitForm.price), actif: true }),
+          });
+        } catch (err: any) {
+          console.error('Failed to add price:', err);
+          const message = err?.body?.message || err?.message || 'Erreur lors de l\'ajout du tarif';
+          window.alert(`Service créé mais tarif non ajouté: ${message}`);
+        }
+      }
+
+      setUnitForm({ name: "", departmentId: "", location: "", price: "" });
+      await reload();
+    } catch (error: any) {
+      console.error(error);
+      const message = error?.body?.message || error?.message || 'Erreur lors de la création du service';
+      window.alert(message.includes('unique') ? 'Un service portant ce nom existe déjà.' : `Impossible de créer le service: ${message}`);
+    }
   };
 
   const metrics = useMemo(() => ({
@@ -92,28 +127,27 @@ export default function GestionDepartAdmin() {
       </Panel>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        {departments.some((department) => AUTO_DEPARTMENT_NAMES.includes(department.name)) ? null : (
           <Panel title="Nouveau departement">
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={departmentForm.name} onChange={(event) => setDepartmentForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
-              <input value={departmentForm.code} onChange={(event) => setDepartmentForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
-              <select value={departmentForm.type} onChange={(event) => setDepartmentForm((current) => ({ ...current, type: event.target.value }))} className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white">
-                <option value="MEDECINE GENERAL">Medecine Général</option>
-                <option value="CHIRURGIE">Chirurgie</option>
-                <option value="IMAGERIE">Imagerie</option>
-                <option value="PHARMACIE">Pharmacie</option>
-                <option value="PSYSCHIATRIE">Psychiatrie</option>
-                <option value="KINESITHERAPIE">Kinesitherapie</option>
-                <option value="URGENCES">Urgences</option>
-                <option value="UNITE HOSPITALISATION">Unité d'Hospitalisation</option>
-                <option value="VACCINATION">Vaccination</option>
-                <option value="ADMINISTRATION">Administration</option>
+              <select value={departmentForm.name} onChange={(event) => setDepartmentForm((current) => ({ ...current, name: event.target.value }))} className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white">
+                <option value="">-- Selectionnez un departement --</option>
+                <option value="Medecine Générale">Medecine Générale</option>
+                <option value="Chirurgie Générale">Chirurgie Générale</option>
+                <option value="Imagerie & Diagnostics">Imagerie & Diagnostics</option>
+                <option value="Laboratoire Medical">Laboratoire Medical</option>
+                <option value="Pharmacie">Pharmacie</option>
+                <option value="Santé Mentale">Santé Mentale</option>
+                <option value="Rééducation & Kinesitherapie">Rééducation & Kinesitherapie</option>
+                <option value="Urgences & Soins Intensifs">Urgences & Soins Intensifs</option>
+                <option value="Unité d'Hospitalisation">Unité d'Hospitalisation</option>
+                <option value="Prevention & Vaccination">Prevention & Vaccination</option>
+                <option value="Administration & Gestion">Administration & Gestion</option>
               </select>
+              <input value={departmentForm.code} onChange={(event) => setDepartmentForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
               <input value={departmentForm.description} onChange={(event) => setDepartmentForm((current) => ({ ...current, description: event.target.value }))} placeholder="Description" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
               <button onClick={createDepartment} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white md:col-span-2"><Plus size={17} /> Ajouter le departement</button>
             </div>
           </Panel>
-        )}
 
         <Panel title="Nouvelle unite de service">
           <div className="grid gap-3 md:grid-cols-2">
@@ -122,8 +156,7 @@ export default function GestionDepartAdmin() {
               {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
             </select>
             <input value={unitForm.name} onChange={(event) => setUnitForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom de l'unite" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
-            <input value={unitForm.location} onChange={(event) => setUnitForm((current) => ({ ...current, location: event.target.value }))} placeholder="Localisation" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
-            <input value={unitForm.contactNumber} onChange={(event) => setUnitForm((current) => ({ ...current, contactNumber: event.target.value }))} placeholder="Contact" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
+            <input value={unitForm.price} onChange={(event) => setUnitForm((current) => ({ ...current, price: event.target.value }))} placeholder="Tarif" type="number" min="0" step="0.01" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
             <button onClick={createUnit} className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white md:col-span-2"><Plus size={17} /> Ajouter l'unite</button>
           </div>
         </Panel>

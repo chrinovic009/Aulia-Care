@@ -7,13 +7,15 @@ import { ROLES_KEY } from './roles.decorator';
 // Si tu en as besoin plus tard, utilise : new RegExp('[\\x00-\\x1F]') pour éviter l'erreur ESLint.
 
 const isLabManager = (user: any) => {
-  const responsibilities = user?.serviceResponsabilites;
-  if (!Array.isArray(responsibilities)) return false;
-  return responsibilities.some((responsibility: any) =>
-    String(responsibility?.service?.name || '')
-      .toLowerCase()
-      .includes('laboratoire'),
-  );
+  const serviceResponsibilities = user?.serviceResponsabilites || [];
+  const departmentResponsibilities = user?.departmentResponsabilites || [];
+
+  const combined = [] as any[];
+  if (Array.isArray(serviceResponsibilities)) combined.push(...serviceResponsibilities.map((r: any) => ({ name: r?.service?.name }))); 
+  if (Array.isArray(departmentResponsibilities)) combined.push(...departmentResponsibilities.map((r: any) => ({ name: r?.department?.name })));
+
+  if (!Array.isArray(combined)) return false;
+  return combined.some((responsibility: any) => String(responsibility?.name || '').toLowerCase().includes('laboratoire'));
 };
 
 @Injectable()

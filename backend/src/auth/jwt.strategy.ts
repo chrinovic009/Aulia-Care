@@ -31,6 +31,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
           where: { actif: true },
           include: { service: true },
         },
+        // CORRIGÉ : departmentResponsibilities ("ties" au lieu de "tes")
+        departmentResponsibilities: {
+          where: { actif: true },
+          include: { department: true },
+        },
       },
     });
 
@@ -44,6 +49,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       username: payload.username,
       role: user.primaryRole,
       serviceResponsabilites: user.serviceResponsabilites,
+      // CORRIGÉ : Utilisation du bon nom de propriété sans "as any"
+      departmentResponsibilities: user.departmentResponsibilities,
     };
   }
 }

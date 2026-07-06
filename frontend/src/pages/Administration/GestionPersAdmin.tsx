@@ -148,6 +148,7 @@ export default function GestionPersAdmin() {
   const [filter, setFilter] = useState("ALL");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -223,6 +224,7 @@ export default function GestionPersAdmin() {
     next.password = generatePassword(next.primaryRole, next.firstName, next.lastName, staffUsers.length + 1);
     setForm(next);
     setEditingUser(null);
+    setFormError(null);
     setShowForm(true);
   };
 
@@ -249,7 +251,7 @@ export default function GestionPersAdmin() {
       specialty: user.specialty || employee?.position || "",
       serviceId: user.staff?.[0]?.service?.id || "",
       departmentId: departments.find((department) => department.name === employee?.department?.name)?.id || "",
-      isResponsible: Boolean(user.serviceResponsabilites?.length),
+      isResponsible: Boolean((user.serviceResponsabilites && user.serviceResponsabilites.length) || (user as any).departmentResponsabilites?.length),
       status: user.status || "ACTIVE",
       salary: contract?.salary ? String(contract.salary) : "",
       salaryFrequency: contract?.frequency || "MONTHLY",
@@ -258,25 +260,12 @@ export default function GestionPersAdmin() {
       shiftType: employee?.shifts?.[0]?.type || "DAY",
     });
     setShowForm(true);
+    setFormError(null);
   };
 
   const updateForm = (patch: Partial<typeof emptyForm>) => {
     const next = { ...form, ...patch };
-    if (patch.serviceId !== undefined) {
-      const selectedService = services.find((service) => service.id === patch.serviceId);
-      if (selectedService?.departmentId) {
-        next.departmentId = selectedService.departmentId;
-      } else if (selectedService?.department?.id) {
-        next.departmentId = selectedService.department.id;
-      }
-    }
-    if (patch.departmentId !== undefined && form.serviceId) {
-      const selectedService = services.find((service) => service.id === form.serviceId);
-      const serviceDepartmentId = selectedService?.departmentId || selectedService?.department?.id || "";
-      if (serviceDepartmentId && serviceDepartmentId !== patch.departmentId) {
-        next.serviceId = "";
-      }
-    }
+    // Admin assigns users to departments only. Do not auto-map services here.
     const username = buildUsername(next.firstName, next.lastName);
     if (!editingUser && (patch.firstName !== undefined || patch.lastName !== undefined)) {
       next.username = username;
@@ -290,12 +279,8 @@ export default function GestionPersAdmin() {
 
   const saveEmployee = async () => {
     setIsSaving(true);
+    setFormError(null);
     try {
-      const selectedService = services.find((service) => service.id === form.serviceId);
-      const serviceDepartmentId = selectedService?.departmentId || selectedService?.department?.id || "";
-      if (form.serviceId && form.departmentId && serviceDepartmentId && serviceDepartmentId !== form.departmentId) {
-        throw new Error("Le service selectionne n'appartient pas au departement choisi.");
-      }
       const displayName = [form.firstName, form.lastName].filter(Boolean).join(" ");
       const payload = {
         firstName: form.firstName,
@@ -315,7 +300,7 @@ export default function GestionPersAdmin() {
         addressStreet: form.addressStreet || undefined,
         gender: form.gender || undefined,
         dateOfBirth: form.dateOfBirth || undefined,
-        departmentId: form.departmentId || serviceDepartmentId || undefined,
+        departmentId: form.departmentId || undefined,
         position: form.specialty || roleLabel({ primaryRole: form.primaryRole } as AdminUser),
         salary: form.salary ? Number(form.salary) : undefined,
         salaryFrequency: form.salaryFrequency || undefined,
@@ -324,23 +309,44 @@ export default function GestionPersAdmin() {
         shiftType: form.shiftType || undefined,
       };
 
-      const saved = editingUser
-        ? await apiFetch<AdminUser>(`/users/${editingUser.id}`, { method: "PATCH", body: JSON.stringify(payload) })
-        : await apiFetch<AdminUser>("/users", { method: "POST", body: JSON.stringify(payload) });
+      // If admin marked user as department responsible and the department is a lab,
+      // ensure the user's primary role becomes LAB_MANAGER (not LAB_TECHNICIAN).
+      try {
+        const dept = departments.find((d) => d.id === (form.departmentId || payload.departmentId));
+        const deptType = (dept as any)?.type || (dept as any)?.departmentType || undefined;
+        const isLabDept = deptType === 'LABORATORY' || String((dept as any)?.name || '').toLowerCase().includes('laboratoire');
+        if (form.isResponsible && isLabDept && form.primaryRole === 'LAB_TECHNICIAN') {
+          (payload as any).primaryRole = 'LAB_MANAGER';
+        }
+      } catch (e) {
+        // ignore lookup errors
+      }
 
-      if (form.serviceId) {
-        await apiFetch(`/services/${form.serviceId}/staff`, {
-          method: "POST",
-          body: JSON.stringify({ userId: saved.id, roleInService: roleLabel(saved) }),
-        }).catch(() => undefined);
+      let saved: AdminUser;
+      try {
+        saved = editingUser
+          ? await apiFetch<AdminUser>(`/users/${editingUser.id}`, { method: "PATCH", body: JSON.stringify(payload) })
+          : await apiFetch<AdminUser>("/users", { method: "POST", body: JSON.stringify(payload) });
+      } catch (err: any) {
+        setFormError(err?.message || 'Erreur lors de la création/modification de l\'utilisateur');
+        return;
+      }
 
-        if (form.isResponsible) {
-          await apiFetch(`/services/${form.serviceId}/responsables`, {
-            method: "POST",
+      // If admin marked user as department responsible, call backend endpoint to persist it
+      if (!editingUser && form.isResponsible && form.departmentId) {
+        try {
+          await apiFetch(`/administration/departments/${form.departmentId}/responsables`, {
+            method: 'POST',
             body: JSON.stringify({ userId: saved.id, principal: true }),
-          }).catch(() => undefined);
+          });
+        } catch (err: any) {
+          setFormError(err?.message || 'Erreur lors de l\'assignation du responsable de département');
+          return;
         }
       }
+
+      // Service membership and service responsables are assigned by the
+      // department/service responsable later; admin only assigns department.
 
       setShowForm(false);
       setEditingUser(null);
@@ -519,6 +525,7 @@ export default function GestionPersAdmin() {
           onChange={updateForm}
           onClose={() => setShowForm(false)}
           onSave={saveEmployee}
+          error={formError}
         />
       ) : null}
 
@@ -605,6 +612,7 @@ function EmployeeForm({
   onChange,
   onClose,
   onSave,
+  error,
 }: {
   form: typeof emptyForm;
   services: ServiceRecord[];
@@ -614,12 +622,9 @@ function EmployeeForm({
   onChange: (patch: Partial<typeof emptyForm>) => void;
   onClose: () => void;
   onSave: () => void;
+  error?: string | null;
 }) {
-  const filteredServices = form.departmentId
-    ? services.filter((service) => (service.departmentId || service.department?.id) === form.departmentId)
-    : services;
-  const selectedService = services.find((service) => service.id === form.serviceId);
-  const selectedServiceDepartment = selectedService?.department?.name || departments.find((department) => department.id === selectedService?.departmentId)?.name;
+  // Admin assigns employees to departments only; services are managed later by responsables.
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
@@ -651,13 +656,7 @@ function EmployeeForm({
             <FormSelect label="Role" value={form.primaryRole} onChange={(primaryRole) => onChange({ primaryRole: primaryRole as RoleSlug })} options={roleOptions.map((role) => [role, roleLabel({ primaryRole: role } as AdminUser)])} />
             <FormInput label="Fonction / Specialite" value={form.specialty} onChange={(specialty) => onChange({ specialty })} />
             <FormSelect label="Departement RH" value={form.departmentId} onChange={(departmentId) => onChange({ departmentId })} options={[["", "Aucun"], ...departments.map((department) => [department.id, department.name] as [string, string])]} />
-            <FormSelect label="Service" value={form.serviceId} onChange={(serviceId) => onChange({ serviceId })} options={[["", form.departmentId ? "Choisir un service du departement" : "Choisir d'abord ou non un departement"], ...filteredServices.map((service) => [service.id, service.name] as [string, string])]} />
-            {selectedServiceDepartment ? (
-              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs font-medium text-blue-700 sm:col-span-2">
-                Departement lie au service selectionne : {selectedServiceDepartment}
-              </div>
-            ) : null}
-            <FormSelect label="Responsable du service" value={form.isResponsible ? "YES" : "NO"} onChange={(value) => onChange({ isResponsible: value === "YES" })} options={[["NO", "Non"], ["YES", "Oui"]]} />
+            <FormSelect label="Responsable du departement" value={form.isResponsible ? "YES" : "NO"} onChange={(value) => onChange({ isResponsible: value === "YES" })} options={[["NO", "Non"], ["YES", "Oui"]]} />
             <FormSelect label="Statut" value={form.status} onChange={(status) => onChange({ status: status as UserStatus })} options={[["ACTIVE", "Actif"], ["INACTIVE", "Inactif"], ["SUSPENDED", "Suspendu"]]} />
             <FormInput label="Salaire" type="number" value={form.salary} onChange={(salary) => onChange({ salary })} />
             <FormSelect label="Frequence paie" value={form.salaryFrequency} onChange={(salaryFrequency) => onChange({ salaryFrequency })} options={[["MONTHLY", "Mensuel"], ["WEEKLY", "Hebdomadaire"], ["DAILY", "Journalier"]]} />
@@ -668,6 +667,7 @@ function EmployeeForm({
         </div>
 
         <div className="flex justify-end gap-2 border-t border-slate-200 p-5 dark:border-slate-800">
+          {error ? <div className="mr-auto text-sm text-red-600">{error}</div> : null}
           <button onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:text-slate-200">Annuler</button>
           <button disabled={isSaving || !form.firstName || !form.lastName || !form.primaryRole} onClick={onSave} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
             {isSaving ? "Enregistrement..." : "Enregistrer"}
@@ -781,7 +781,7 @@ function roleLabel(user: AdminUser) {
   const gender = user.Employee?.[0]?.gender;
   switch (user.primaryRole) {
     case "ADMIN":
-      return "Administrateur";
+      return gender === "F" ? "Administratrice" : "Administrateur";
     case "RECEPTIONIST":
       return "Receptionniste";
     case "CASHIER":
@@ -791,13 +791,13 @@ function roleLabel(user: AdminUser) {
     case "PHYSICIAN":
       return "Medecin";
     case "PHARMACIST":
-      return "Pharmacien";
+      return gender === "F" ? "Pharmacienne" : "Pharmacien";
     case "LAB_TECHNICIAN":
       return "Laborantin";
     case "RADIOLOGIST":
       return "Radiologue";
     case "SURGEON":
-      return "Chirurgien";
+      return gender === "F" ? "Chirurgienne" : "Chirurgien";
     case "ANESTHESIOLOGIST":
       return "Anesthesiste";
     default:

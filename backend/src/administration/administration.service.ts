@@ -5,6 +5,55 @@ import { PrismaService } from '../prisma/prisma.service';
 export class AdministrationService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async addDepartmentResponsables(
+    items: {
+      departmentId: string;
+      userId: string;
+      principal?: boolean;
+    }[],
+  ) {
+    const created = [];
+
+    const allowedChiefRoles = [
+      'PHYSICIAN',
+      'SURGEON',
+      'RADIOLOGIST',
+      'ANESTHESIOLOGIST',
+      'LAB_TECHNICIAN',
+      'PHARMACIST',
+      'NURSE',
+      'ADMIN',
+      'RECEPTIONIST',
+      'CASHIER',
+    ];
+
+    for (const it of items) {
+      const user = await this.prisma.user.findUnique({ where: { id: it.userId } });
+      if (!user) throw new BadRequestException('Utilisateur introuvable');
+
+      if (user.primaryRole && !allowedChiefRoles.includes(user.primaryRole)) {
+        throw new BadRequestException('Cet utilisateur ne peut pas être responsable de département');
+      }
+
+      const existing = await this.prisma.departmentResponsable.findFirst({
+        where: { departmentId: it.departmentId, userId: it.userId },
+      });
+
+      const rec = existing
+        ? await this.prisma.departmentResponsable.update({
+            where: { id: existing.id },
+            data: { principal: !!it.principal, actif: true },
+          })
+        : await this.prisma.departmentResponsable.create({
+            data: { departmentId: it.departmentId, userId: it.userId, principal: !!it.principal, actif: true },
+          });
+
+      created.push(rec);
+    }
+
+    return created;
+  }
+
   departments() {
     return (this.prisma as any).department.findMany({
       where: { deletedAt: null },
@@ -16,6 +65,7 @@ export class AdministrationService {
           },
         },
         Employee: true,
+        departmentResponsabilites: { include: { user: true } },
       },
       orderBy: { name: 'asc' },
     });

@@ -149,6 +149,11 @@ export class AuthService {
           where: { actif: true },
           include: { service: true },
         },
+        // CORRIGÉ : departmentResponsibilities ("ties" au lieu de "tes")
+        departmentResponsibilities: {
+          where: { actif: true },
+          include: { department: true },
+        },
       },
     });
 
