@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PatientWorkflowStatus, RoleSlug } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, PatientWorkflowStatus, RoleSlug } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -20,79 +20,95 @@ export class UsersService {
       serviceUnitId: dto.serviceUnitId ?? null,
     };
 
-    return this.prisma.user.create({
-      data: {
-        email: dto.email.toLowerCase(),
-        username: dto.username.toLowerCase(),
-        displayName: dto.displayName,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        passwordHash,
-        primaryRole: dto.primaryRole,
+    try {
+      return await this.prisma.user.create({
+        data: {
+          email: dto.email.toLowerCase(),
+          username: dto.username.toLowerCase(),
+          displayName: dto.displayName,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          passwordHash,
+          primaryRole: dto.primaryRole,
 
-        specialty: dto.specialty ?? null,
-        phone: dto.phone ?? null,
-        whatsappUrl: dto.whatsappUrl ?? null,
-        facebookUrl: dto.facebookUrl ?? null,
-        instagramUrl: dto.instagramUrl ?? null,
-        linkedinUrl: dto.linkedinUrl ?? null,
+          specialty: dto.specialty ?? null,
+          phone: dto.phone ?? null,
+          whatsappUrl: dto.whatsappUrl ?? null,
+          facebookUrl: dto.facebookUrl ?? null,
+          instagramUrl: dto.instagramUrl ?? null,
+          linkedinUrl: dto.linkedinUrl ?? null,
 
-        nationality: dto.nationality ?? null,
-        addressCountry: dto.addressCountry ?? null,
-        addressProvince: dto.addressProvince ?? null,
-        addressCity: dto.addressCity ?? null,
-        addressNeighborhood: dto.addressNeighborhood ?? null,
-        addressStreet: dto.addressStreet ?? null,
+          nationality: dto.nationality ?? null,
+          addressCountry: dto.addressCountry ?? null,
+          addressProvince: dto.addressProvince ?? null,
+          addressCity: dto.addressCity ?? null,
+          addressNeighborhood: dto.addressNeighborhood ?? null,
+          addressStreet: dto.addressStreet ?? null,
 
-        bio: dto.bio ?? null,
+          bio: dto.bio ?? null,
 
-        status: dto.status ?? 'ACTIVE',
-        Employee: {
-          create: {
-            firstName: dto.firstName,
-            lastName: dto.lastName,
-            hireDate: new Date(),
-            status: 'ACTIVE',
-            ...employeeDetails,
-            contracts:
-              dto.salary || dto.contractType || dto.salaryFrequency
-                ? {
-                    create: {
-                      type: (dto.contractType as any) ?? 'PERMANENT',
-                      startDate: new Date(),
-                      salary: dto.salary ?? null,
-                      frequency: dto.salaryFrequency ?? 'MONTHLY',
-                    },
-                  }
-                : undefined,
-            shifts:
-              dto.shiftStartAt && dto.shiftEndAt
-                ? {
-                    create: {
-                      startAt: new Date(dto.shiftStartAt),
-                      endAt: new Date(dto.shiftEndAt),
-                      type: (dto.shiftType as any) ?? 'DAY',
-                    },
-                  }
-                : undefined,
+          status: dto.status ?? 'ACTIVE',
+          Employee: {
+            create: {
+              firstName: dto.firstName,
+              lastName: dto.lastName,
+              hireDate: new Date(),
+              status: 'ACTIVE',
+              ...employeeDetails,
+              contracts:
+                dto.salary || dto.contractType || dto.salaryFrequency
+                  ? {
+                      create: {
+                        type: (dto.contractType as any) ?? 'PERMANENT',
+                        startDate: new Date(),
+                        salary: dto.salary ?? null,
+                        frequency: dto.salaryFrequency ?? 'MONTHLY',
+                      },
+                    }
+                  : undefined,
+              shifts:
+                dto.shiftStartAt && dto.shiftEndAt
+                  ? {
+                      create: {
+                        startAt: new Date(dto.shiftStartAt),
+                        endAt: new Date(dto.shiftEndAt),
+                        type: (dto.shiftType as any) ?? 'DAY',
+                      },
+                    }
+                  : undefined,
+            },
           },
         },
-      },
-      include: {
-        Employee: {
-          include: {
-            department: true,
-            serviceUnit: true,
-            contracts: { where: { active: true }, orderBy: { createdAt: 'desc' }, take: 1 },
-            shifts: { orderBy: { startAt: 'desc' }, take: 5 },
+        include: {
+          Employee: {
+            include: {
+              department: true,
+              serviceUnit: true,
+              contracts: { where: { active: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+              shifts: { orderBy: { startAt: 'desc' }, take: 5 },
+            },
           },
+          staff: { include: { service: true } },
+          serviceResponsabilites: { include: { service: true } },
+          // CORRIGÉ : "ties" au lieu de "tes"
+          departmentResponsibilities: { include: { department: true } },
         },
-        staff: { include: { service: true } },
-        serviceResponsabilites: { include: { service: true } },
-        // CORRIGÉ : "ties" au lieu de "tes"
-        departmentResponsibilities: { include: { department: true } },
-      },
-    });
+      });
+    } catch (error: any) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const target = Array.isArray(error.meta?.target) ? error.meta.target : [];
+        if (target.includes('username')) {
+          throw new BadRequestException('Le nom d\'utilisateur existe déjà. Choisissez-en un autre.');
+        }
+        if (target.includes('email')) {
+          throw new BadRequestException('L\'email existe déjà. Choisissez-en un autre.');
+        }
+      }
+      throw error;
+    }
   }
 
   findAll() {

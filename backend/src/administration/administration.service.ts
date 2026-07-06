@@ -20,6 +20,7 @@ export class AdministrationService {
       'RADIOLOGIST',
       'ANESTHESIOLOGIST',
       'LAB_TECHNICIAN',
+      'LAB_MANAGER',
       'PHARMACIST',
       'NURSE',
       'ADMIN',
