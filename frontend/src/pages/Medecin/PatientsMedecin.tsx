@@ -204,12 +204,12 @@ function PatientRecord({ patient, position }: { patient: DoctorPatient; position
       <div className="rounded-[32px] border border-slate-200 bg-slate-50 p-6 shadow-sm ring-1 ring-slate-200/70 dark:border-slate-800 dark:bg-slate-950 dark:ring-slate-700/60">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-4">
-            <div className="inline-flex rounded-full bg-blue-100 px-4 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-blue-700 dark:bg-blue-900/60 dark:text-blue-200">
+            <div className="inline-flex rounded-full bg-blue-100 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-blue-700 dark:bg-blue-900/60 dark:text-blue-200">
               Dossier Patient
             </div>
             <div className="max-w-2xl">
-              <h2 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">{formatDoctorPatientName(patient)}</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+              <h2 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white">{formatDoctorPatientName(patient)}</h2>
+              <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-600 dark:text-slate-300">
                 {serviceLabel(patient)} · {doctorLabel(patient.assignedDoctor)}
               </p>
             </div>
@@ -495,9 +495,9 @@ function Metric({ label, value, tone = "default" }: { label: string; value: numb
 
 function QuickStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white px-4 py-4 shadow-sm transition duration-150 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950">
-      <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="mt-3 text-lg font-semibold text-slate-900 dark:text-white">{value}</p>
+    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-sm transition duration-150 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950">
+      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="mt-2 text-sm leading-5 text-slate-900 dark:text-white">{value}</p>
     </div>
   );
 }

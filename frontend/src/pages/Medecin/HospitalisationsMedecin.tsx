@@ -6,6 +6,29 @@ import { apiFetch } from "../../config/api";
 import { useAuth } from "../../context/AuthContext";
 import { consultationLabel, formatDateTime, hasConsultations, patientSearchText, serviceLabel } from "./medecinShared";
 
+const formatVitalLabel = (value?: string | null) => {
+  const normalized = (value || "").trim().toUpperCase();
+  const labels: Record<string, string> = {
+    TEMPERATURE: "Température",
+    BLOOD_PRESSURE: "Tension artérielle",
+    OXYGEN_SATURATION: "Saturation en oxygène",
+    HEART_RATE: "Pouls",
+    RESPIRATORY_RATE: "Fréquence respiratoire",
+    WEIGHT: "Poids",
+    HEIGHT: "Taille",
+    CHEST_CIRCUMFERENCE: "Périmètre thoracique",
+    ARM_CIRCUMFERENCE: "Périmètre brachial",
+  };
+
+  if (labels[normalized]) return labels[normalized];
+
+  return (value || "")
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+};
+
 export default function HospitalisationsMedecin() {
   const { currentUser } = useAuth();
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
@@ -108,11 +131,11 @@ export default function HospitalisationsMedecin() {
                 </Panel>
               </div>
 
-              <div className="mt-5 grid gap-4 xl:grid-cols-2">
+              <div className="mt-5 grid gap-4">
                 <Panel title="Signes et soins traces">
                   {(selectedPatient.vitalSigns || []).length === 0 ? <SmallEmpty /> : selectedPatient.vitalSigns?.slice(0, 8).map((sign) => (
                     <div key={`${sign.type}-${sign.recordedAt}`} className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950">
-                      <p className="font-semibold text-slate-900 dark:text-white">{sign.type}: {sign.value} {sign.unit || ""}</p>
+                      <p className="font-semibold text-slate-900 dark:text-white">{formatVitalLabel(sign.type)} : {sign.value} {sign.unit || ""}</p>
                       <p className="text-xs text-slate-500">{formatDateTime(sign.recordedAt)} - {sign.recordedBy?.displayName || "Infirmier"}</p>
                       {sign.note && <p className="mt-2 text-slate-600 dark:text-slate-300">{sign.note}</p>}
                     </div>

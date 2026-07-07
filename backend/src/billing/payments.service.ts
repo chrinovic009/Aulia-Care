@@ -54,7 +54,9 @@ export class PaymentsService {
       const nextWorkflowStatus =
         invoice.type === 'PHARMACY'
           ? PatientWorkflowStatus.EN_PHARMACIE
-          : PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE;
+          : invoice.type === 'LABORATORY'
+            ? PatientWorkflowStatus.EN_LABORATOIRE
+            : PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE;
 
       const updatedPatient = await prisma.patient.update({
         where: { id: invoice.patientId },
@@ -64,6 +66,27 @@ export class PaymentsService {
       });
 
       const patientUserAccess = await this.ensurePatientUserAccess(prisma, updatedPatient);
+
+      let labRequest: any = null;
+      if (invoice.type === 'LABORATORY') {
+        const labRequestMatch = invoice.remarks?.match(/LabRequest:([a-zA-Z0-9-]+)/);
+        if (labRequestMatch?.[1]) {
+          labRequest = await prisma.labRequest.update({
+            where: { id: labRequestMatch[1] },
+            data: { status: 'REQUESTED' },
+          });
+        }
+      }
+
+      if (invoice.type === 'PHARMACY') {
+        const prescriptionMatch = invoice.remarks?.match(/Prescription:([a-zA-Z0-9-]+)/);
+        if (prescriptionMatch?.[1]) {
+          await prisma.prescription.update({
+            where: { id: prescriptionMatch[1] },
+            data: { status: 'PRESCRIBED' },
+          });
+        }
+      }
 
       let receptionistMessage = null;
       if (updatedPatient.receptionistId) {
@@ -103,7 +126,7 @@ export class PaymentsService {
         });
       }
 
-      const targetRole = invoice.type === 'PHARMACY' ? 'PHARMACIST' : 'NURSE';
+      const targetRole = invoice.type === 'PHARMACY' ? 'PHARMACIST' : invoice.type === 'LABORATORY' ? 'LAB_TECHNICIAN' : 'NURSE';
       const targetUsers = await prisma.user.findMany({
         where: {
           OR: [
@@ -121,11 +144,18 @@ export class PaymentsService {
               type: 'ALERT',
               status: 'UNREAD',
               priority: 'HIGH',
-              title: invoice.type === 'PHARMACY' ? 'Prescription payee' : 'Patient pret pour infirmerie',
+              title:
+                invoice.type === 'PHARMACY'
+                  ? 'Prescription payee'
+                  : invoice.type === 'LABORATORY'
+                    ? 'Demande laboratoire activée'
+                    : 'Patient pret pour infirmerie',
               message:
                 invoice.type === 'PHARMACY'
                   ? `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} a paye sa prescription et attend la pharmacie.`
-                  : `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} est en attente de l'infirmerie apres paiement.`,
+                  : invoice.type === 'LABORATORY'
+                    ? `La demande de laboratoire pour ${updatedPatient.firstName} ${updatedPatient.lastName} est maintenant activee apres paiement.`
+                    : `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} est en attente de l'infirmerie apres paiement.`,
               relatedEntity: 'Patient',
               relatedId: updatedPatient.id,
               sendAt: new Date(),
@@ -163,13 +193,17 @@ export class PaymentsService {
         },
       });
 
-      return { payment, updatedInvoice, updatedPatient, notifications, hospitalization, receptionistMessage };
+      return { payment, updatedInvoice, updatedPatient, notifications, hospitalization, receptionistMessage, labRequest };
     });
 
     result.notifications.forEach((notification) => {
       this.notificationsGateway.notify('notification.created', notification);
     });
     this.notificationsGateway.notify('patient.updated', result.updatedPatient);
+
+    if (invoice.type === 'LABORATORY' && result.labRequest) {
+      this.notificationsGateway.notify('lab.request.created', result.labRequest);
+    }
 
     if (result.receptionistMessage) {
       this.notificationsGateway.notifyToUser(result.receptionistMessage.recipientId, 'message.received', {
