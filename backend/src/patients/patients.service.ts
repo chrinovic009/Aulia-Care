@@ -267,7 +267,7 @@ export class PatientsService {
       }
     }
 
-    // Resolve service only for orientation / assignment. Admission billing uses a distinct admission fee.
+    // Resolve service only for orientation / assignment. Admission billing uses the linked service tariff when available.
     let resolvedService: any = null;
     if (createAdmissionDto.serviceId) {
       resolvedService = await this.prisma.service.findUnique({ where: { id: createAdmissionDto.serviceId } });
@@ -276,7 +276,15 @@ export class PatientsService {
     }
 
     const isParamedicalVoucher = String(createAdmissionDto.admissionType || '').toUpperCase() === 'BON_PARAMEDICAL';
-    const admissionFee = isParamedicalVoucher ? Number(createAdmissionDto.amountDue || 0) : 20;
+    const resolvedTariff = resolvedService
+      ? await this.prisma.serviceTarif.findFirst({
+          where: { serviceId: resolvedService.id, actif: true },
+          orderBy: [{ dateDebut: 'desc' }, { createdAt: 'desc' }],
+          select: { prix: true },
+        })
+      : null;
+    const serviceFee = Number(resolvedTariff?.prix || 0);
+    const admissionFee = isParamedicalVoucher ? Number(createAdmissionDto.amountDue || 0) : serviceFee > 0 ? serviceFee : 20;
 
     const receptionistConnect = actorId
       ? { connect: { id: actorId } }
@@ -338,7 +346,7 @@ export class PatientsService {
           type: isParamedicalVoucher ? 'SERVICE' : 'ADMISSION_FEE',
           remarks: isParamedicalVoucher
             ? `Bon paramedical ${createAdmissionDto.voucherNumber || 'sans numero'} - ${resolvedService?.name || createAdmissionDto.service || ''}`
-            : `Frais de fiche d'admission - ${resolvedService?.name || createAdmissionDto.service || ''}`,
+            : `Frais de fiche d'admission - ${resolvedService?.name || createAdmissionDto.service || ''} - ${admissionFee} FC`,
         },
       });
 
@@ -613,7 +621,7 @@ export class PatientsService {
 
   async getPatientsAwaitingPayment() {
     // Récupère les patients avec workflowStatus EN_ATTENTE_DE_PAIEMENT ou EN_ATTENTE_VALIDATION_CAISSE
-    // qui ont une facture de frais d'admission non payée ou partiellement payée
+    // qui ont au moins une facture non payée ou partiellement payée liée à l'admission, au laboratoire ou à la pharmacie.
     const patients = await this.prisma.patient.findMany({
       where: {
         workflowStatus: {
@@ -626,12 +634,13 @@ export class PatientsService {
       include: {
         invoices: {
           where: {
-            type: 'ADMISSION_FEE',
+            type: { in: ['ADMISSION_FEE', 'SERVICE', 'LABORATORY', 'PHARMACY'] },
+            OR: [{ status: { in: ['PENDING', 'PARTIALLY_PAID'] } }, { balanceDue: { gt: 0 } }],
           },
           orderBy: {
             issuedAt: 'desc',
           },
-          take: 1,
+          take: 5,
         },
         service: {
           select: {

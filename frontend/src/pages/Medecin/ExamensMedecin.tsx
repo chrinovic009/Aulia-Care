@@ -6,11 +6,65 @@ import { apiFetch } from "../../config/api";
 import { fetchLaboratoryCatalogue } from "../../api/laboratory";
 import { consultationLabel, formatDateTime, hasConsultations, patientSearchText, serviceLabel } from "./medecinShared";
 
+const formatLabStatus = (status?: string | null) => {
+  const normalized = (status || "").toUpperCase();
+  const labels: Record<string, string> = {
+    REQUESTED: "Demandée",
+    COLLECTED: "Prélevée",
+    RECEIVED: "Reçue",
+    IN_ANALYSIS: "En analyse",
+    TECHNICAL_VALIDATION: "Validation technique",
+    BIOLOGICAL_VALIDATION: "Validation biologique",
+    AVAILABLE: "Disponible",
+    SENT: "Envoyée",
+    COMPLETED: "Terminée",
+    VERIFIED: "Vérifiée",
+    CANCELLED: "Annulée",
+    PENDING: "En attente",
+    TECHNICAL_VALIDATED: "Validée techniquement",
+    BIOLOGICALLY_VALIDATED: "Validée biologiquement",
+    REJECTED: "Refusée",
+    CORRECTION_REQUESTED: "Correction demandée",
+  };
+
+  return labels[normalized] || status || "Statut inconnu";
+};
+
+const getLabRequestViewState = (request: { status?: string | null; results?: Array<{ resultName?: string | null; resultValue?: string | null }> | null }, patientWorkflowStatus?: string | null) => {
+  const hasResults = Boolean(request.results?.length);
+  const normalizedWorkflow = (patientWorkflowStatus || "").toUpperCase();
+
+  if (normalizedWorkflow === "EN_ATTENTE_VALIDATION_CAISSE" || normalizedWorkflow === "EN_ATTENTE_DE_PAIEMENT") {
+    return {
+      badgeLabel: "En attente de paiement",
+      badgeClassName: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+      message: "Le paiement doit être validé par la caisse avant que le laboratoire ne puisse traiter cet examen.",
+      showResults: false,
+    };
+  }
+
+  if (hasResults) {
+    return {
+      badgeLabel: "Résultat prêt",
+      badgeClassName: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+      message: "Le résultat est disponible.",
+      showResults: true,
+    };
+  }
+
+  return {
+    badgeLabel: "En cours de traitement",
+    badgeClassName: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
+    message: "L'examen a été transmis au laboratoire et est en cours de traitement.",
+    showResults: false,
+  };
+};
+
 export default function ExamensMedecin() {
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
   const [services, setServices] = useState<Array<{ id: string; name: string; type?: string | null; category?: string | null }>>([]);
   const [labTests, setLabTests] = useState<Array<{ id: string; name: string; code: string; price: string; turnaroundTimeMinutes?: number | null; section?: { name: string } | null; category?: { name: string } | null }>>([]);
-  const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string; isParamedical?: boolean }>>([]);
   const [serviceUnits, setServiceUnits] = useState<Array<{ id: string; name: string; departmentId?: string }>>([]);
   const [selectedPatientId, setSelectedPatientId] = useState("");
   const [selectedConsultationId, setSelectedConsultationId] = useState("");
@@ -23,7 +77,7 @@ export default function ExamensMedecin() {
       fetchDoctorVisiblePatients(),
       apiFetch<Array<{ id: string; name: string; type?: string | null; category?: string | null }>>("/services").catch(() => []),
       fetchLaboratoryCatalogue().catch(() => null),
-      apiFetch<Array<{ id: string; name: string }>>("/administration/departments").catch(() => []),
+      apiFetch<Array<{ id: string; name: string; isParamedical?: boolean }>>("/administration/departments").catch(() => []),
       apiFetch<Array<{ id: string; name: string; departmentId?: string }>>("/administration/service-units").catch(() => []),
     ]);
     const withConsultations = patientData.filter(hasConsultations);
@@ -48,11 +102,6 @@ export default function ExamensMedecin() {
       window.removeEventListener("d7:clinicalDataUpdated", handler);
     };
   }, []);
-
-  const examServices = useMemo(() => {
-    const keywords = ["laboratoire", "radio", "imagerie", "echographie", "échographie", "scanner", "irm", "mammographie", "analyse", "pathologie"];
-    return services.filter((service) => keywords.some((keyword) => [service.name, service.type, service.category].filter(Boolean).join(" ").toLowerCase().includes(keyword)));
-  }, [services]);
 
   const filteredPatients = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -106,13 +155,13 @@ export default function ExamensMedecin() {
                 <div className="mt-5 grid gap-4 xl:grid-cols-2">
                   <Panel title="Nouvelle demande">
                     <Select label="Consultation" value={selectedConsultation.id} onChange={setSelectedConsultationId} options={(selectedPatient.consultations || []).map((consultation) => [consultation.id, consultationLabel(consultation)] as [string, string])} />
-                    <Select label="Departement paramedical" value={form.departmentId} onChange={(value) => setForm((current) => ({ ...current, departmentId: value, serviceId: "", labTestId: "" }))} options={[["", "Choisir"], ...departments.map((d) => [d.id, d.name] as [string, string])]} />
+                    <Select label="Departement paramedical" value={form.departmentId} onChange={(value) => setForm((current) => ({ ...current, departmentId: value, serviceId: "", labTestId: "" }))} options={[["", "Choisir"], ...departments.filter((d) => d.isParamedical).map((d) => [d.id, d.name] as [string, string])]} />
                     {isDepartmentLaboratory ? (
                       <Select
                         label="Examen du catalogue laboratoire"
                         value={form.labTestId}
                         onChange={(value) => setForm((current) => ({ ...current, labTestId: value, examName: labTests.find((test) => test.id === value)?.name || current.examName }))}
-                        options={[["", "Choisir un examen"], ...labTests.map((test) => [test.id, `${test.name} - ${Number(test.price || 0).toLocaleString("fr-FR")} FC - ${test.turnaroundTimeMinutes || "-"} min`] as [string, string])]}
+                        options={[["", "Choisir un examen"], ...labTests.map((test) => [test.id, `${test.name} - ${Number(test.price || 0).toLocaleString("fr-FR")} USD - ${test.turnaroundTimeMinutes || "-"} min`] as [string, string])]}
                       />
                     ) : (
                       <Select
@@ -133,13 +182,41 @@ export default function ExamensMedecin() {
                     <button disabled={!canWrite} onClick={submit} className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:bg-slate-300 disabled:text-slate-600">Envoyer la demande</button>
                   </Panel>
                   <Panel title="Demandes et resultats">
-                    {(selectedPatient.labRequests || []).length === 0 ? <SmallEmpty /> : selectedPatient.labRequests?.map((request) => (
-                      <div key={request.id} className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950">
-                        <p className="font-semibold text-slate-900 dark:text-white">{request.specimenType || "Examen"} - {request.status}</p>
-                        <p className="mt-1 text-xs text-slate-500">{formatDateTime(request.requestedAt)}</p>
-                        <p className="mt-2 text-slate-600 dark:text-slate-300">{request.results?.length ? request.results.map((result) => `${result.resultName}: ${result.resultValue} ${result.units || ""}${result.verified ? " (verifie)" : ""}`).join(", ") : "Resultat en attente."}</p>
-                      </div>
-                    ))}
+                    {(selectedPatient.labRequests || []).length === 0 ? <SmallEmpty /> : selectedPatient.labRequests?.map((request) => {
+                      const viewState = getLabRequestViewState(request, selectedPatient.workflowStatus);
+                      return (
+                        <div key={request.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="font-semibold text-slate-900 dark:text-white">{request.specimenType || "Examen"}</p>
+                              <p className="mt-1 text-xs text-slate-500">{formatDateTime(request.requestedAt)}</p>
+                            </div>
+                            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${viewState.badgeClassName}`}>
+                              {viewState.badgeLabel}
+                            </span>
+                          </div>
+                          <p className="mt-2 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                            {formatLabStatus(request.status)}
+                          </p>
+                          <p className="mt-3 text-slate-600 dark:text-slate-300">{viewState.message}</p>
+                          {viewState.showResults ? (
+                            <div className="mt-3 space-y-2">
+                              {request.results?.map((result, index) => (
+                                <div key={`${request.id}-${index}`} className="rounded-lg border border-slate-200 bg-white/80 p-2.5 dark:border-slate-800 dark:bg-slate-900/70">
+                                  <p className="font-medium text-slate-700 dark:text-slate-200">
+                                    {result.resultName}: {result.resultValue} {result.units || ""}
+                                    {result.verified ? " • Validé" : ""}
+                                  </p>
+                                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                                    Interprétation : {result.interpretation || "Aucune interprétation fournie."}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </Panel>
                 </div>
               </>

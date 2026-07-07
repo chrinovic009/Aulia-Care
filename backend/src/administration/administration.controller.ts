@@ -10,13 +10,13 @@ export class AdministrationController {
   constructor(private readonly administrationService: AdministrationService) {}
 
   @Get('departments')
-  @Roles('SUPER_ADMIN', 'ADMIN')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
   departments() {
     return this.administrationService.departments();
   }
 
   @Get('service-units')
-  @Roles('SUPER_ADMIN', 'ADMIN')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
   serviceUnits() {
     return this.administrationService.serviceUnits();
   }

@@ -19,8 +19,28 @@ export default function ActivityLab() {
     interpretation: "",
   });
   const [isSubmittingResult, setIsSubmittingResult] = useState(false);
+  const [showSendChoice, setShowSendChoice] = useState(false);
+  const [deliveryMode, setDeliveryMode] = useState<"validation" | "direct">("validation");
 
   const isLabManager = currentUser?.primaryRole === "LAB_MANAGER" || currentUser?.primaryRole === "ADMIN" || currentUser?.primaryRole === "SUPER_ADMIN";
+  const currentItem = requestDetail?.items?.[0];
+  const latestResult = currentItem?.results?.[0] || requestDetail?.results?.[0];
+  const lockedResultStatuses = new Set(["TECHNICAL_VALIDATED", "BIOLOGICALLY_VALIDATED", "AVAILABLE", "SENT", "VERIFIED", "COMPLETED"]);
+  const lockedRequestStatuses = new Set(["AVAILABLE", "SENT", "VERIFIED", "COMPLETED"]);
+  const lockedItemStatuses = new Set(["AVAILABLE", "SENT"]);
+  const isResultLocked = [
+    (latestResult?.resultStatus || "").toUpperCase(),
+    (requestDetail?.status || "").toUpperCase(),
+    (currentItem?.status || "").toUpperCase(),
+  ].some((status) => lockedResultStatuses.has(status) || lockedRequestStatuses.has(status) || lockedItemStatuses.has(status));
+  const isItemAssigned = Boolean(currentItem?.assignedToId);
+  const isAssignedToCurrentTechnician = Boolean(currentItem?.assignedToId && currentUser?.id && currentItem.assignedToId === currentUser?.id);
+  const canSubmitResult = !isResultLocked && (!isItemAssigned || isAssignedToCurrentTechnician || isLabManager);
+  const resultButtonLabel = isResultLocked ? "Résultat déjà transmis" : isItemAssigned ? "Envoyer le résultat" : "Enregistrer le résultat";
+  const requesterSummary = requestDetail?.consultation?.provider
+    ? `Médecin ${[requestDetail.consultation.provider.firstName, requestDetail.consultation.provider.lastName].filter(Boolean).join(" ") || requestDetail.consultation.provider.displayName || "Demandeur"}`
+    : `Patient ${[requestDetail?.patient?.firstName, requestDetail?.patient?.lastName].filter(Boolean).join(" ") || "Demandeur"}`;
+  const requesterPhone = requestDetail?.consultation?.provider?.phone || requestDetail?.patient?.phone || requestDetail?.requestedBy?.phone || null;
 
   const loadActivity = async () => {
     setIsLoading(true);
@@ -48,6 +68,8 @@ export default function ActivityLab() {
         resultValue: "",
         interpretation: "",
       });
+      setShowSendChoice(false);
+      setDeliveryMode("validation");
     } catch (error) {
       console.error("Impossible de charger le détail de la demande", error);
       setRequestDetail(null);
@@ -56,16 +78,17 @@ export default function ActivityLab() {
     }
   };
 
-  const handleSubmitResult = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const submitResult = async () => {
     if (!selectedRequest) return;
 
     setIsSubmittingResult(true);
     try {
       await submitLaboratoryResult(selectedRequest, {
         ...resultForm,
-        labRequestItemId: requestDetail?.items?.[0]?.id || null,
+        labRequestItemId: currentItem?.id || null,
+        deliveryMode: isItemAssigned ? deliveryMode : undefined,
       });
+      setShowSendChoice(false);
       setRequestDetail(null);
       setSelectedRequest(null);
       await loadActivity();
@@ -74,6 +97,26 @@ export default function ActivityLab() {
     } finally {
       setIsSubmittingResult(false);
     }
+  };
+
+  const handleSubmitResult = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedRequest) return;
+
+    if (isResultLocked) {
+      return;
+    }
+
+    if (isItemAssigned && !canSubmitResult) {
+      return;
+    }
+
+    if (isItemAssigned && (isAssignedToCurrentTechnician || isLabManager)) {
+      setShowSendChoice(true);
+      return;
+    }
+
+    await submitResult();
   };
 
   const handleAuthorizationToggle = async () => {
@@ -370,18 +413,77 @@ export default function ActivityLab() {
                           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
                         />
                       </div>
+                      {isResultLocked ? (
+                        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
+                          Cet examen a déjà été validé et transmis au médecin. Il ne peut plus être modifié par le laboratoire.
+                        </p>
+                      ) : !canSubmitResult ? (
+                        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+                          Cet examen est attribué à un autre technicien. Seul le technicien assigné ou le responsable peut transmettre le résultat.
+                        </p>
+                      ) : null}
                       <button
                         type="submit"
-                        disabled={isSubmittingResult}
+                        disabled={isSubmittingResult || !canSubmitResult || isResultLocked}
                         className="w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {isSubmittingResult ? "Enregistrement..." : "Enregistrer le résultat"}
+                        {isSubmittingResult ? "Enregistrement..." : resultButtonLabel}
                       </button>
                     </form>
                   </Panel>
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      ) : null}
+
+      {showSendChoice ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Choix d’envoi du résultat</p>
+            <h3 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">Comment transmettre le résultat ?</h3>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+              {requesterSummary}{requesterPhone ? ` • ${requesterPhone}` : ""}
+            </p>
+            <div className="mt-4 space-y-3">
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                <input
+                  type="radio"
+                  name="deliveryMode"
+                  value="validation"
+                  checked={deliveryMode === "validation"}
+                  onChange={() => setDeliveryMode("validation")}
+                  className="mt-1 h-4 w-4"
+                />
+                <span>
+                  <span className="block font-semibold text-slate-900 dark:text-white">Envoyer au responsable de laboratoire pour validation</span>
+                  <span className="mt-1 block text-sm text-slate-600 dark:text-slate-300">Le responsable pourra valider le résultat avant l’envoi.</span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                <input
+                  type="radio"
+                  name="deliveryMode"
+                  value="direct"
+                  checked={deliveryMode === "direct"}
+                  onChange={() => setDeliveryMode("direct")}
+                  className="mt-1 h-4 w-4"
+                />
+                <span>
+                  <span className="block font-semibold text-slate-900 dark:text-white">Envoyer directement au demandeur</span>
+                  <span className="mt-1 block text-sm text-slate-600 dark:text-slate-300">Le résultat sera transmis directement au médecin ou au patient selon le demandeur.</span>
+                </span>
+              </label>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setShowSendChoice(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200">
+                Annuler
+              </button>
+              <button type="button" onClick={submitResult} disabled={isSubmittingResult} className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
+                {isSubmittingResult ? "Envoi..." : "Confirmer"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

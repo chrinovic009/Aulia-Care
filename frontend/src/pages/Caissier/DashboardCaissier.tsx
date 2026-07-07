@@ -8,7 +8,6 @@ import {
   fetchPatientBillingSummary,
   fetchPatientsAwaitingPayment,
   PatientBillingSummary,
-  updatePatientWorkflowStatus,
 } from "../../api/cashier";
 
 const fmt = (value: number | string | { toString: () => string }) => {
@@ -53,7 +52,7 @@ interface PaymentRecord {
 const DashboardCaissier: React.FC = () => {
   const [patients, setPatients] = useState<CashierPatient[]>([]);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
-  const [invoices, setInvoices] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<Array<{ id: string; balanceDue?: number | string; status?: string; totalAmount?: number | string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState<string | null>(null);
@@ -127,7 +126,6 @@ const DashboardCaissier: React.FC = () => {
         method: "CASH",
         reference: `D7-${patient.firstName.charAt(0)}${patient.lastName.charAt(0)}-${Date.now()}`,
       });
-      await updatePatientWorkflowStatus(patient.id, "EN_ATTENTE_INFIRMERIE");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors du traitement du paiement");

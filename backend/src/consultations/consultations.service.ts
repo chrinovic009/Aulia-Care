@@ -170,16 +170,41 @@ export class ConsultationsService {
         });
       }
 
+      const unitPrice = Number(labTest?.price || 0);
+      const invoice = await tx.invoice.create({
+        data: {
+          patientId: consultation.patientId,
+          issuedById: actorId,
+          type: 'LABORATORY',
+          status: 'PENDING',
+          totalAmount: unitPrice,
+          balanceDue: unitPrice,
+          remarks: `LabRequest:${created.id}`,
+        },
+      });
+
+      if (unitPrice > 0 && labTest) {
+        await tx.invoiceLine.create({
+          data: {
+            invoiceId: invoice.id,
+            label: labTest.name,
+            quantity: 1,
+            unitPrice,
+            totalAmount: unitPrice,
+          },
+        });
+      }
+
       await tx.patient.update({
         where: { id: consultation.patientId },
-        data: { workflowStatus: PatientWorkflowStatus.EN_LABORATOIRE },
+        data: { workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
       });
 
       await tx.medicalHistory.create({
         data: {
           patientId: consultation.patientId,
           kind: 'LAB_REQUEST',
-          details: JSON.stringify({ labRequestId: created.id, ...dto }),
+          details: JSON.stringify({ labRequestId: created.id, invoiceId: invoice.id, ...dto }),
           createdById: actorId,
         },
       });
@@ -197,44 +222,12 @@ export class ConsultationsService {
         });
       }
 
-      return created;
+      return { request: created, invoice };
     });
 
-    const labUsers = await this.prisma.user.findMany({
-      where: {
-        OR: [
-          { primaryRole: 'LAB_TECHNICIAN' as any },
-          { roles: { some: { role: { slug: 'LAB_TECHNICIAN' as any } } } },
-        ],
-      },
-    });
+    this.notificationsGateway.notify('patient.updated', { id: consultation.patientId, workflowStatus: PatientWorkflowStatus.EN_ATTENTE_VALIDATION_CAISSE });
 
-    const notifications = await Promise.all(
-      labUsers.map((user) =>
-        this.prisma.notification.create({
-          data: {
-            recipientId: user.id,
-            patientId: consultation.patientId,
-            type: 'TASK',
-            status: 'UNREAD',
-            priority: request.priority === 'CRITICAL' ? 'CRITICAL' : request.priority === 'URGENT' ? 'HIGH' : 'MEDIUM',
-            title: 'Nouvelle demande laboratoire',
-            message: `Demande ${request.specimenType || 'laboratoire'} pour ${consultation.patient.firstName} ${consultation.patient.lastName}.`,
-            relatedEntity: 'LabRequest',
-            relatedId: request.id,
-            sendAt: new Date(),
-          },
-        }),
-      ),
-    );
-
-    notifications.forEach((notification) => {
-      this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification);
-    });
-    this.notificationsGateway.notify('patient.updated', { id: consultation.patientId, workflowStatus: PatientWorkflowStatus.EN_LABORATOIRE });
-    this.notificationsGateway.notify('lab.request.created', request);
-
-    return request;
+    return request.request;
   }
 
   async createPrescription(id: string, dto: any, actorId?: string) {
@@ -300,7 +293,7 @@ export class ConsultationsService {
           status: 'PENDING',
           totalAmount: total,
           balanceDue: total,
-          remarks: `Prescription ${prescription.id}`,
+          remarks: `Prescription:${prescription.id}`,
         },
       });
 

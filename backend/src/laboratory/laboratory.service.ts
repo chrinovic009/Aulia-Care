@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 
@@ -9,9 +9,10 @@ export class LaboratoryService {
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
-  findAll() {
+  async findAll() {
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
     return this.prisma.labRequest.findMany({
-      where: { deletedAt: null },
+      where: visibilityWhere,
       include: {
         patient: true,
         requestedBy: true,
@@ -51,6 +52,17 @@ export class LaboratoryService {
     if (!request) {
       throw new NotFoundException('Demande de laboratoire introuvable');
     }
+
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
+    const isVisible = await this.prisma.labRequest.findFirst({
+      where: { id, ...visibilityWhere },
+      select: { id: true },
+    });
+
+    if (!isVisible) {
+      throw new NotFoundException('Demande de laboratoire introuvable');
+    }
+
     return request;
   }
 
@@ -108,6 +120,22 @@ export class LaboratoryService {
     };
   }
 
+  private async buildLabRequestVisibilityWhere() {
+    const paidInvoiceLabRequestIds = await this.prisma.invoice.findMany({
+      where: { type: 'LABORATORY', status: 'PAID' },
+      select: { remarks: true },
+    });
+
+    const paidRequestIds = paidInvoiceLabRequestIds
+      .map((invoice) => String(invoice.remarks || '').match(/LabRequest:([a-zA-Z0-9-]+)/)?.[1])
+      .filter((value): value is string => Boolean(value));
+
+    return {
+      deletedAt: null,
+      id: { in: paidRequestIds },
+    } as const;
+  }
+
   private async buildLabReferenceCode(patient: any, requestStatus: string, resultStatus?: string | null) {
     const patientNumber = patient?.createdAt
       ? await this.prisma.patient.count({ where: { createdAt: { lt: patient.createdAt } } }) + 1
@@ -133,9 +161,10 @@ export class LaboratoryService {
   }
 
   async getActivityOverview() {
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
     const [recentRequests, lowStockEntries, assignedItems, directResultAuthorizationEnabled] = await Promise.all([
       this.prisma.labRequest.findMany({
-        where: { deletedAt: null },
+        where: visibilityWhere,
         include: {
           patient: true,
           requestedBy: true,
@@ -151,7 +180,11 @@ export class LaboratoryService {
         include: { labConsumable: true },
       }),
       this.prisma.labRequestItem.findMany({
-        where: { deletedAt: null, assignedToId: { not: null } },
+        where: {
+          deletedAt: null,
+          assignedToId: { not: null },
+          labRequest: visibilityWhere,
+        },
         include: { assignedTo: true, labTest: true, labRequest: { include: { patient: true } } },
       }),
       this.getDirectResultAuthorizationSetting(),
@@ -159,10 +192,10 @@ export class LaboratoryService {
 
     const [totalRequests, pendingRequests, validationQueueCount, technicalValidationCount, biologicalValidationCount, sampleCollectedCount, sampleReceivedCount] =
       await Promise.all([
-        this.prisma.labRequest.count({ where: { deletedAt: null } }),
+        this.prisma.labRequest.count({ where: visibilityWhere }),
         this.prisma.labRequest.count({
           where: {
-            deletedAt: null,
+            ...visibilityWhere,
             status: { in: ['REQUESTED', 'COLLECTED', 'RECEIVED', 'IN_ANALYSIS'] },
           },
         }),
@@ -272,8 +305,9 @@ export class LaboratoryService {
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
 
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
     const [requestsToday, examsToday, resultsPending, resultsValidatedToday, overdue, revenueToday] = await Promise.all([
-      this.prisma.labRequest.count({ where: { deletedAt: null, requestedAt: { gte: today, lt: tomorrow } } }),
+      this.prisma.labRequest.count({ where: { ...visibilityWhere, requestedAt: { gte: today, lt: tomorrow } } }),
       this.prisma.labResult.count({ where: { deletedAt: null, reportedAt: { gte: today, lt: tomorrow } } }),
       this.prisma.labResult.count({ where: { deletedAt: null, resultStatus: { in: ['PENDING', 'TECHNICAL_VALIDATED', 'CORRECTION_REQUESTED'] as any } } }),
       this.prisma.labResult.count({ where: { deletedAt: null, biologicalValidationAt: { gte: today, lt: tomorrow } } }),
@@ -301,9 +335,10 @@ export class LaboratoryService {
   }
 
   async getDashboardWorkflow() {
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
     const groups = await this.prisma.labRequest.groupBy({
       by: ['status'],
-      where: { deletedAt: null },
+      where: visibilityWhere,
       _count: { _all: true },
     });
     return groups.reduce((acc, item) => {
@@ -381,23 +416,27 @@ export class LaboratoryService {
   }
 
   async getTechnicians(currentUser?: any) {
-    const serviceResponsibilityIds = (currentUser?.serviceResponsabilites || [])
-      .filter((responsibility: any) => responsibility?.service?.name?.toLowerCase().includes('laboratoire'))
-      .map((responsibility: any) => responsibility.service?.id)
-      .filter(Boolean) as string[];
+    const labDepartment = await this.prisma.department.findFirst({
+      where: {
+        OR: [
+          { name: { equals: 'Laboratoire Medical', mode: 'insensitive' } },
+          { name: { equals: 'Laboratoire Médical', mode: 'insensitive' } },
+          { name: { contains: 'laboratoire', mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true, name: true },
+    });
 
-    const departmentIds = (currentUser?.departmentResponsabilites || [])
-      .filter((responsibility: any) => String(responsibility?.department?.name || '').toLowerCase().includes('laboratoire'))
-      .map((responsibility: any) => responsibility.department?.id)
-      .filter(Boolean) as string[];
+    const labDepartmentId = labDepartment?.id;
+    const responsibleUserIds = new Set<string>();
 
-    let deptServiceIds: string[] = [];
-    if (departmentIds.length) {
-      const servicesInDepts = await this.prisma.service.findMany({ where: { departmentId: { in: departmentIds } }, select: { id: true } });
-      deptServiceIds = servicesInDepts.map((s: any) => s.id).filter(Boolean);
+    if (labDepartmentId) {
+      const departmentResponsibles = await this.prisma.departmentResponsable.findMany({
+        where: { departmentId: labDepartmentId, actif: true },
+        select: { userId: true },
+      });
+      departmentResponsibles.forEach((responsible) => responsibleUserIds.add(responsible.userId));
     }
-
-    const labServiceIds = Array.from(new Set([...serviceResponsibilityIds, ...deptServiceIds]));
 
     const now = new Date();
     const startOfDay = new Date(now);
@@ -409,21 +448,34 @@ export class LaboratoryService {
 
     await this.repairMissingLabRequestItems();
 
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
+    const visibleRequestIds = new Set(
+      (await this.prisma.labRequest.findMany({ where: visibilityWhere, select: { id: true } })).map((request) => request.id),
+    );
+
     const [staffRecords, assignedItems, requestEvents] = await Promise.all([
-      this.prisma.serviceStaff.findMany({
-        where: {
-          actif: true,
-          ...(labServiceIds.length ? { serviceId: { in: labServiceIds } } : {}),
-        },
-        include: {
-          service: true,
-          user: {
-            include: {
-              serviceResponsabilites: { include: { service: true } },
+      labDepartmentId
+        ? this.prisma.employee.findMany({
+            where: {
+              departmentId: labDepartmentId,
+              status: 'ACTIVE',
+              user: {
+                status: 'ACTIVE',
+                deletedAt: null,
+                primaryRole: 'LAB_TECHNICIAN',
+              },
             },
-          },
-        },
-      }),
+            include: {
+              department: true,
+              user: {
+                include: {
+                  serviceResponsabilites: { include: { service: true } },
+                  departmentResponsibilities: { where: { actif: true }, include: { department: true } },
+                },
+              },
+            },
+          })
+        : Promise.resolve([]),
       this.prisma.labRequestItem.findMany({
         where: { deletedAt: null, assignedToId: { not: null } },
         include: {
@@ -448,10 +500,14 @@ export class LaboratoryService {
 
     const technicians = await Promise.all(
       staffRecords
-        .filter((record: any) => record.user?.primaryRole === 'LAB_TECHNICIAN')
+        .filter((record: any) => {
+          const user = record.user;
+          const isResponsible = responsibleUserIds.has(user?.id || '');
+          return !!user && user.primaryRole === 'LAB_TECHNICIAN' && user.status === 'ACTIVE' && !isResponsible;
+        })
         .map(async (record: any) => {
           const user = record.user;
-          const technicianItems = assignedItems.filter((item: any) => item.assignedToId === user.id);
+          const technicianItems = assignedItems.filter((item: any) => item.assignedToId === user.id && visibleRequestIds.has(item.labRequestId));
           const statusList = (item: any) => (item.status || '').toUpperCase();
           const resultStatusList = (result: any) => (result.resultStatus || '').toUpperCase();
 
@@ -579,7 +635,7 @@ export class LaboratoryService {
         }),
     );
 
-    const unassignedItems = await this.prisma.labRequestItem.findMany({
+    const unassignedItems = (await this.prisma.labRequestItem.findMany({
       where: { deletedAt: null, assignedToId: null },
       include: {
         labRequest: { include: { patient: true } },
@@ -588,7 +644,7 @@ export class LaboratoryService {
         events: { orderBy: { createdAt: 'desc' }, take: 5 },
       },
       orderBy: { requestedAt: 'desc' },
-    });
+    })).filter((item: any) => visibleRequestIds.has(item.labRequestId));
 
     return {
       technicians: technicians.sort((a, b) => b.workload.pending - a.workload.pending),
@@ -847,8 +903,12 @@ export class LaboratoryService {
       where.items = { some: { assignedToId: currentUserId } };
     }
 
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
     const requests = await this.prisma.labRequest.findMany({
-      where,
+      where: {
+        ...where,
+        ...visibilityWhere,
+      },
       include: {
         patient: true,
         consultation: { include: { provider: true } },
@@ -1019,10 +1079,32 @@ export class LaboratoryService {
     };
   }
 
+  private isResultLocked(resultStatus?: string | null, requestStatus?: string | null, itemStatus?: string | null) {
+    const normalizedResultStatus = `${resultStatus || ''}`.toUpperCase();
+    const normalizedRequestStatus = `${requestStatus || ''}`.toUpperCase();
+    const normalizedItemStatus = `${itemStatus || ''}`.toUpperCase();
+    const lockedResultStatuses = new Set(['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED', 'AVAILABLE', 'SENT', 'VERIFIED', 'COMPLETED']);
+    const lockedRequestStatuses = new Set(['AVAILABLE', 'SENT', 'VERIFIED', 'COMPLETED']);
+    const lockedItemStatuses = new Set(['AVAILABLE', 'SENT']);
+
+    return lockedResultStatuses.has(normalizedResultStatus)
+      || lockedRequestStatuses.has(normalizedRequestStatus)
+      || lockedItemStatuses.has(normalizedItemStatus);
+  }
+
   async applyValidationDecision(id: string, dto: any, currentUserId?: string) {
     const result = await this.prisma.labResult.findUnique({ where: { id } });
     if (!result) {
       throw new NotFoundException('Résultat introuvable');
+    }
+
+    const labRequest = await this.prisma.labRequest.findUnique({
+      where: { id: result.labRequestId },
+      select: { status: true },
+    });
+
+    if (this.isResultLocked(result.resultStatus, labRequest?.status)) {
+      throw new BadRequestException('Ce résultat a déjà été validé et transmis au médecin, il ne peut plus être modifié.');
     }
 
     const decision = dto.decision;
@@ -1087,9 +1169,21 @@ export class LaboratoryService {
 
   async addResult(id: string, dto: any, reportedById?: string) {
     const request = await this.findOne(id);
+    const targetItem = dto.labRequestItemId
+      ? request.items?.find((item: any) => item.id === dto.labRequestItemId) || null
+      : request.items?.[0] || null;
+    const existingResult = targetItem?.results?.[0] || request.results?.[0] || null;
     const recipientId = request.requestedById || request.consultation?.providerId;
     const directSendPermission = await this.canSendResultDirectly(reportedById);
-    const canDirectSend = directSendPermission.allowed;
+
+    if (this.isResultLocked(existingResult?.resultStatus, request.status, targetItem?.status)) {
+      throw new BadRequestException('Ce résultat a déjà été validé et transmis au médecin, il ne peut plus être modifié.');
+    }
+    const requestedMode = String(dto.deliveryMode || dto.sendMode || '').toLowerCase();
+    const explicitDirect = requestedMode === 'direct';
+    const explicitValidation = requestedMode === 'validation';
+    const canDirectSend = explicitDirect ? true : explicitValidation ? false : directSendPermission.allowed;
+    const isManagerOrAdmin = directSendPermission.isManager;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const created = await tx.labResult.create({
