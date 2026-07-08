@@ -34,3 +34,21 @@ export const createIndependentSale = (payload: Record<string, unknown>) =>
     method: 'POST',
     body: JSON.stringify(payload),
   });
+
+export type PharmacyHistoryRecord = {
+  id: string;
+  type: 'DISPENSE' | 'SALE';
+  typeLabel: string;
+  createdAt: string;
+  patientName: string;
+  medicationName: string;
+  quantity: number;
+  amount: number;
+  reference: string;
+  actorName: string;
+  status: string;
+  notes?: string | null;
+  trace: string;
+};
+
+export const fetchPharmacyHistory = () => apiFetch<PharmacyHistoryRecord[]>('/pharmacy/history');

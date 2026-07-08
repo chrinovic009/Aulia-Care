@@ -301,6 +301,79 @@ export class PharmacyService {
     });
   }
 
+  async getHistory() {
+    const [dispenses, sales] = await Promise.all([
+      this.prisma.pharmacyDispense.findMany({
+        where: { deletedAt: null },
+        include: {
+          prescription: { include: { patient: true, prescriber: true } },
+          dispensedBy: true,
+          lines: { include: { medication: true } },
+        },
+        orderBy: { dispensedAt: 'desc' },
+      }),
+      this.prisma.stockTransaction.findMany({
+        where: { type: 'SALE' },
+        include: {
+          medication: true,
+          performedBy: true,
+          lot: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    const dispenseRecords = dispenses.map((dispense) => {
+      const patientName = [dispense.prescription?.patient?.firstName, dispense.prescription?.patient?.lastName]
+        .filter(Boolean)
+        .join(' ') || 'Patient inconnu';
+      const medicationNames = dispense.lines.map((line) => line.medication?.name || 'Médicament').slice(0, 3);
+      const medicinesLabel = medicationNames.length > 0 ? medicationNames.join(', ') : 'Médicament';
+      const quantity = dispense.lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
+      const amount = dispense.lines.reduce((sum, line) => sum + Number(line.totalPrice || 0), 0);
+      const actorName = dispense.dispensedBy?.displayName || [dispense.dispensedBy?.firstName, dispense.dispensedBy?.lastName].filter(Boolean).join(' ') || 'Inconnu';
+
+      return {
+        id: dispense.id,
+        type: 'DISPENSE',
+        typeLabel: 'Délivrance',
+        createdAt: dispense.dispensedAt?.toISOString() || dispense.createdAt?.toISOString(),
+        patientName,
+        medicationName: medicinesLabel,
+        quantity,
+        amount,
+        reference: `Prescription:${dispense.prescriptionId}`,
+        actorName,
+        status: dispense.status || 'DISPENSED',
+        notes: dispense.notes || null,
+        trace: `Ordonnance ${dispense.prescriptionId}`,
+      };
+    });
+
+    const saleRecords = sales.map((sale) => {
+      const actorName = sale.performedBy?.displayName || [sale.performedBy?.firstName, sale.performedBy?.lastName].filter(Boolean).join(' ') || 'Inconnu';
+      const quantity = Math.abs(Number(sale.quantity || 0));
+      const amount = Number(sale.unitPrice || 0) * quantity;
+      return {
+        id: sale.id,
+        type: 'SALE',
+        typeLabel: 'Vente directe',
+        createdAt: sale.createdAt?.toISOString(),
+        patientName: 'Vente directe',
+        medicationName: sale.medication?.name || 'Médicament',
+        quantity,
+        amount,
+        reference: sale.reference || 'Vente indépendante',
+        actorName,
+        status: 'COMPLETED',
+        notes: sale.reference || null,
+        trace: `Lot ${sale.lotId || 'n/a'}`,
+      };
+    });
+
+    return [...dispenseRecords, ...saleRecords].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
   async findOne(id: string) {
     const medication = await this.prisma.medication.findUnique({ where: { id } });
     if (!medication) {
