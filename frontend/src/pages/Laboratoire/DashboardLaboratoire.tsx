@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Component, ErrorInfo, ReactNode, useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { apiFetch } from "../../config/api";
@@ -26,6 +26,33 @@ const formatUserName = (user?: { displayName?: string | null; firstName?: string
 const formatDate = (value?: string | null) =>
   value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "-";
 
+class DashboardErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("DashboardLaboratoire crashed", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-50 p-6 text-slate-700 dark:bg-slate-950 dark:text-slate-300">
+          <div className="rounded-lg border border-red-200 bg-white p-6 shadow-sm dark:border-red-900 dark:bg-slate-900">
+            <h2 className="text-xl font-semibold">Le tableau de bord a rencontré une erreur</h2>
+            <p className="mt-2 text-sm">Actualisez la page ou revenez plus tard. Si le problème persiste, vérifiez la connexion au backend.</p>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function DashboardLaboratoire() {
   const [requests, setRequests] = useState<LabRequest[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<LabRequest | null>(null);
@@ -36,22 +63,24 @@ export default function DashboardLaboratoire() {
   const [overview, setOverview] = useState<any | null>(null);
   const [workflow, setWorkflow] = useState<Record<string, number>>({});
   const [alerts, setAlerts] = useState<any[]>([]);
-  const [validations,] = useState<any[]>([]);
-  const [performance,] = useState<any | null>(null);
-  const [topTests,] = useState<any[]>([]);
-  const [staffPerformance,] = useState<any[]>([]);
-  const [inventory,] = useState<any | null>(null);
-  const [revenue,] = useState<any | null>(null);
-  const [quality,] = useState<any | null>(null);
-  const [recentActivity,] = useState<any[]>([]);
+  const [validations, setValidations] = useState<any[]>([]);
+  const [performance, setPerformance] = useState<any | null>(null);
+  const [topTests, setTopTests] = useState<any[]>([]);
+  const [staffPerformance, setStaffPerformance] = useState<any[]>([]);
+  const [inventory, setInventory] = useState<any[]>([]);
+  const [revenue, setRevenue] = useState<any | null>(null);
+  const [quality, setQuality] = useState<any | null>(null);
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
   const loadRequests = async () => {
     setIsLoading(true);
     try {
       const data = await apiFetch<LabRequest[]>("/laboratory");
       setRequests(data);
-      setSelectedRequest((current) => current || data[0] || null);
-    } finally {
+      setSelectedRequest((current) => current || data[0] || null);    } catch (err) {
+      console.error('Unable to load laboratory requests', err);
+      setRequests([]);
+      setSelectedRequest(null);    } finally {
       setIsLoading(false);
     }
   };
@@ -60,9 +89,23 @@ export default function DashboardLaboratoire() {
     try {
       const data = await apiFetch('/laboratory/dashboard/overview');
       setOverview(data);
+      setPerformance(data?.performance || null);
+      setTopTests(data?.topTests || []);
+      setStaffPerformance(data?.staffPerformance || []);
+      setInventory(data?.inventory || []);
+      setRevenue(data?.revenue || null);
+      setQuality(data?.quality || null);
+      setRecentActivity(data?.recentActivity || []);
     } catch (err) {
       console.error('Unable to load laboratory overview', err);
       setOverview(null);
+      setPerformance(null);
+      setTopTests([]);
+      setStaffPerformance([]);
+      setInventory([]);
+      setRevenue(null);
+      setQuality(null);
+      setRecentActivity([]);
     }
   };
 
@@ -86,13 +129,24 @@ export default function DashboardLaboratoire() {
     }
   };
 
+  const loadValidations = async () => {
+    try {
+      const data = await apiFetch('/laboratory/validations');
+      setValidations(data?.items || []);
+    } catch (err) {
+      console.error('Unable to load laboratory validations', err);
+      setValidations([]);
+    }
+  };
+
+  const refreshDashboard = async () => {
+    await Promise.allSettled([loadRequests(), loadMetrics(), loadWorkflow(), loadAlerts(), loadValidations()]);
+  };
+
   useEffect(() => {
-    loadRequests();
+    refreshDashboard();
     const handler = () => {
-      loadRequests();
-      loadMetrics();
-      loadWorkflow();
-      loadAlerts();
+      refreshDashboard();
     };
     window.addEventListener("d7:consultation.created", handler);
     window.addEventListener("d7:patient.updated", handler);
@@ -130,6 +184,7 @@ export default function DashboardLaboratoire() {
   // Dashboard is read-only: no creation or modification allowed here
 
   return (
+    <DashboardErrorBoundary>
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
       <PageMeta title="Laboratoire | D7 Clinique" description="Demandes d'examens et resultats en temps reel." />
       <PageBreadcrumb pageTitle="Laboratoire" />
@@ -140,15 +195,16 @@ export default function DashboardLaboratoire() {
             <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Examens laboratoire</h1>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Reception, execution et validation des resultats patients.</p>
           </div>
-          <button onClick={loadRequests} className="rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white">Actualiser</button>
+          <button onClick={() => refreshDashboard()} className="rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white">Actualiser</button>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-5">
-          <Metric label="Total demandes" value={metrics.total} />
-          <Metric label="Total validées" value={metrics.total} />
-          <Metric label="Total en attente" value={metrics.pending} tone="amber" />
-          <Metric label="Total terminees" value={metrics.completed} tone="green" />
-          <Metric label="Total urgentes" value={metrics.urgent} tone="red" />
+        <div className="mt-6 grid gap-3 sm:grid-cols-6">
+          <Metric label="Demandes reçues aujourd'hui" value={overview?.requestsToday ?? 0} />
+          <Metric label="Examens réalisés aujourd'hui" value={overview?.examsToday ?? 0} />
+          <Metric label="Résultats en attente" value={overview?.resultsPending ?? 0} tone="amber" />
+          <Metric label="Validés aujourd'hui" value={overview?.resultsValidatedToday ?? 0} tone="green" />
+          <Metric label="Examens en retard" value={overview?.overdue ?? 0} tone="red" />
+          <Metric label="Revenu du jour" value={overview?.revenueToday ?? 0} />
         </div>
       </section>
 
@@ -260,8 +316,8 @@ export default function DashboardLaboratoire() {
                             <td className="py-2">{v.patientName}</td>
                             <td className="py-2">{v.testName}</td>
                             <td className="py-2">{v.technicianName || '-'}</td>
-                            <td className="py-2">{v.enteredAt ? new Date(v.enteredAt).toLocaleString('fr-FR') : '-'}</td>
-                            <td className="py-2">{v.status}</td>
+                            <td className="py-2">{v.submittedAt ? new Date(v.submittedAt).toLocaleString('fr-FR') : '-'}</td>
+                            <td className="py-2">{v.resultStatus || v.status || 'PENDING'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -275,10 +331,9 @@ export default function DashboardLaboratoire() {
               <Panel title="Performance du laboratoire">
                 {performance ? (
                   <div className="text-sm">
-                    <div>Nombre d'examens: {performance.totalExams ?? '—'}</div>
-                    <div>Temps moyen: {performance.avgTurnaround ?? '—'}</div>
-                    <div>Taux de validation: {performance.validationRate ?? '—'}</div>
-                    <div>Taux de rejet: {performance.rejectionRate ?? '—'}</div>
+                    <div>Demandes aujourd'hui: {performance.requestsToday ?? 0}</div>
+                    <div>Examens traités aujourd'hui: {performance.processedToday ?? 0}</div>
+                    <div>Taux de traitement: {performance.value ?? 0}%</div>
                   </div>
                 ) : (
                   <p className="text-sm text-slate-500">Aucune donnée de performance.</p>
@@ -303,9 +358,9 @@ export default function DashboardLaboratoire() {
                 ) : (
                   <div className="space-y-2 text-sm">
                     {staffPerformance.map((s: any) => (
-                      <div key={s.userId} className="flex items-center justify-between rounded-lg bg-slate-50 p-2 dark:bg-slate-950">
+                      <div key={s.name} className="flex items-center justify-between rounded-lg bg-slate-50 p-2 dark:bg-slate-950">
                         <div>{s.name}</div>
-                        <div className="text-slate-600">{s.examsPerformed} exams</div>
+                        <div className="text-slate-600">{s.percent}%</div>
                       </div>
                     ))}
                   </div>
@@ -315,23 +370,27 @@ export default function DashboardLaboratoire() {
 
             <div className="mt-6 grid gap-6 xl:grid-cols-3">
               <Panel title="Surveillance du stock">
-                {inventory ? (
-                  <div className="text-sm">
-                    <div>Articles critiques: {inventory.criticalCount ?? 0}</div>
-                    <div>Réactifs proches expiration: {inventory.expiringSoon ?? 0}</div>
-                    <div>Articles épuisés: {inventory.outOfStock ?? 0}</div>
-                  </div>
+                {inventory.length === 0 ? (
+                  <p className="text-sm text-slate-500">Aucun consommable disponible.</p>
                 ) : (
-                  <p className="text-sm text-slate-500">Aucune donnée d'inventaire.</p>
+                  <div className="space-y-2 text-sm">
+                    {inventory.map((item: any) => (
+                      <div key={item.id} className="rounded-lg bg-slate-50 p-2 dark:bg-slate-950">
+                        <div className="flex items-center justify-between gap-2">
+                          <span>{item.name}</span>
+                          <span className="font-semibold">{item.percent}</span>
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">Restant: {item.quantity}</div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </Panel>
 
               <Panel title="Revenus">
                 {revenue ? (
                   <div className="text-sm">
-                    <div>Aujourd'hui: {revenue.today ?? '—'}</div>
-                    <div>Cette semaine: {revenue.week ?? '—'}</div>
-                    <div>Ce mois: {revenue.month ?? '—'}</div>
+                    <div>Total de la base: {revenue.total ?? 0} USD</div>
                   </div>
                 ) : (
                   <p className="text-sm text-slate-500">Aucune donnée financière.</p>
@@ -341,9 +400,8 @@ export default function DashboardLaboratoire() {
               <Panel title="Indicateurs qualité">
                 {quality ? (
                   <div className="text-sm">
-                    <div>Taux validation biologique: {quality.biologicalValidationRate ?? '—'}</div>
-                    <div>Taux de rejet: {quality.rejectionRate ?? '—'}</div>
-                    <div>Temps moyen: {quality.avgTurnaround ?? '—'}</div>
+                    <div>Validations réussies: {quality.validationsCount ?? 0}</div>
+                    <div>Envois aujourd'hui: {quality.sentCount ?? 0}</div>
                   </div>
                 ) : (
                   <p className="text-sm text-slate-500">Aucune donnée qualité.</p>
@@ -354,11 +412,11 @@ export default function DashboardLaboratoire() {
             <div className="mt-6">
               <Panel title="Historique récent">
                 {recentActivity.length === 0 ? (
-                  <p className="text-sm text-slate-500">Aucune activité récente.</p>
+                  <p className="text-sm text-slate-500">Aucune activité récente aujourd'hui.</p>
                 ) : (
-                  <ul className="text-sm space-y-2">
+                  <ul className="space-y-2 text-sm">
                     {recentActivity.map((a: any, idx: number) => (
-                      <li key={idx} className="text-slate-700 dark:text-slate-300">{a.when} — {a.description}</li>
+                      <li key={idx} className="text-slate-700 dark:text-slate-300">{new Date(a.when).toLocaleString('fr-FR')} — {a.description}</li>
                     ))}
                   </ul>
                 )}
@@ -368,6 +426,7 @@ export default function DashboardLaboratoire() {
         </section>
       </div>
     </div>
+    </DashboardErrorBoundary>
   );
 }
 

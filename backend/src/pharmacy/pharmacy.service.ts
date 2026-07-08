@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { PatientWorkflowStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -35,31 +36,24 @@ export class PharmacyService {
       .filter((medication) => medication.availableQuantity > 0);
   }
 
-  async findReadyPrescriptions() {
-    const paidPharmacyInvoices = await this.prisma.invoice.findMany({
-      where: {
-        deletedAt: null,
-        type: 'PHARMACY',
-        status: 'PAID',
-        remarks: { contains: 'Prescription:' },
-      },
-      select: { remarks: true },
+  async findPrescriptions() {
+    const patients = await this.prisma.patient.findMany({
+      where: { deletedAt: null },
+      select: { id: true, firstName: true, lastName: true },
+      orderBy: { createdAt: 'asc' },
     });
 
-    const prescriptionIds = paidPharmacyInvoices
-      .map((invoice) => String(invoice.remarks || '').match(/Prescription:([a-zA-Z0-9-]+)/)?.[1])
-      .filter(Boolean) as string[];
+    const patientIds = new Map<string, string>();
+    patients.forEach((patient, index) => {
+      const firstInitial = (patient.firstName || '').trim().charAt(0) || 'X';
+      const lastInitial = (patient.lastName || '').trim().charAt(0) || 'X';
+      const normalizedFirst = firstInitial.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+      const normalizedLast = lastInitial.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+      patientIds.set(patient.id, `${index + 1}${normalizedFirst}${normalizedLast}-ADMIN`);
+    });
 
-    if (prescriptionIds.length === 0) {
-      return [];
-    }
-
-    return this.prisma.prescription.findMany({
-      where: {
-        id: { in: prescriptionIds },
-        deletedAt: null,
-        status: { not: 'DISPENSED' },
-      },
+    const prescriptions = await this.prisma.prescription.findMany({
+      where: { deletedAt: null },
       include: {
         patient: true,
         prescriber: true,
@@ -69,6 +63,19 @@ export class PharmacyService {
       },
       orderBy: { prescribingDate: 'desc' },
     });
+
+    return prescriptions.map((prescription) => ({
+      ...prescription,
+      patient: {
+        ...prescription.patient,
+        displayId: patientIds.get(prescription.patientId) || null,
+      },
+    }));
+  }
+
+  async findReadyPrescriptions() {
+    const prescriptions = await this.findPrescriptions();
+    return prescriptions.filter((prescription) => prescription.status !== 'DISPENSED');
   }
 
   async dispensePrescription(prescriptionId: string, actorId?: string) {
@@ -210,7 +217,87 @@ export class PharmacyService {
         data: { status: 'DISPENSED' },
       });
 
+      await tx.patient.update({
+        where: { id: prescription.patientId },
+        data: { workflowStatus: PatientWorkflowStatus.TERMINE },
+      });
+
       return pharmacyDispense;
+    });
+  }
+
+  async createIndependentSale(data: any, actorId?: string) {
+    if (!actorId) {
+      throw new BadRequestException('Utilisateur non identifié.');
+    }
+
+    const medicationId = data?.medicationId;
+    const quantity = Number(data?.quantity || 0);
+
+    if (!medicationId || !quantity || quantity <= 0) {
+      throw new BadRequestException('Médicament et quantité requis.');
+    }
+
+    const medication = await this.prisma.medication.findUnique({
+      where: { id: medicationId },
+      include: { StockLot: true },
+    });
+
+    if (!medication) {
+      throw new NotFoundException('Médicament introuvable.');
+    }
+
+    const available = medication.StockLot.reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
+    if (available < quantity) {
+      throw new BadRequestException(`Stock insuffisant pour ${medication.name}.`);
+    }
+
+    const lots = await this.prisma.stockLot.findMany({
+      where: { medicationId, quantity: { gt: 0 } },
+      orderBy: [{ receivedAt: 'asc' }, { expiryDate: 'asc' }],
+    });
+
+    const stockUpdates: Array<{ id: string; quantity: number }> = [];
+    const stockTransactions: Array<any> = [];
+    let remaining = quantity;
+
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      const used = Math.min(Number(lot.quantity || 0), remaining);
+      if (used <= 0) continue;
+      remaining -= used;
+      const newQuantity = Number(lot.quantity || 0) - used;
+      stockUpdates.push({ id: lot.id, quantity: newQuantity });
+      stockTransactions.push({
+        medicationId,
+        lotId: lot.id,
+        type: 'SALE',
+        quantity: -used,
+        unitPrice: Number(lot.purchasePrice || 0),
+        reference: `IndependentSale:${data?.source || 'PHARMACY'}`,
+        performedById: actorId,
+        clinicId: data?.clinicId || null,
+      });
+    }
+
+    if (remaining > 0) {
+      throw new BadRequestException(`Stock insuffisant pour ${medication.name}.`);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      for (const update of stockUpdates) {
+        await tx.stockLot.update({ where: { id: update.id }, data: { quantity: update.quantity } });
+      }
+
+      for (const transaction of stockTransactions) {
+        await tx.stockTransaction.create({ data: transaction });
+      }
+
+      return tx.stockTransaction.findMany({
+        where: { reference: { contains: data?.source || 'PHARMACY' } },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      });
     });
   }
 

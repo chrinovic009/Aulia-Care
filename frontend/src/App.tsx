@@ -50,7 +50,6 @@ import RapportAdmin from "./pages/Administration/RapportAdmin";
 import GestionStockAdmin from "./pages/Administration/GestionStockAdmin";
 import ProfilAdmin from "./pages/Administration/ProfileAdmin";
 import DashboardPharmacie from "./pages/Pharmacie/DashboardPharmacie";
-import OrdonancesPharmacie from "./pages/Pharmacie/OrdonancesPharmacie";
 import DelivrancePharmacie from "./pages/Pharmacie/DelivrancePharmacie";
 import HistoriquePharmacie from "./pages/Pharmacie/HistoriquePharmacie";
 import GestionStockPharmacie from "./pages/Pharmacie/GestionStockPharmacie";
@@ -146,7 +145,6 @@ export default function App() {
             {/* Pharmacie */}
             <Route path="/pharmacie" element={<RoleGuard requiredRoles={["PHARMACIST"]}><DashboardPharmacie /></RoleGuard>} />
             <Route path="/pharmacie/guide" element={<RoleGuard requiredRoles={["PHARMACIST"]}><Guide /></RoleGuard>} />
-            <Route path="/pharmacie/ordonnances" element={<RoleGuard requiredRoles={["PHARMACIST"]}><OrdonancesPharmacie /></RoleGuard>} />
             <Route path="/pharmacie/delivrance" element={<RoleGuard requiredRoles={["PHARMACIST"]}><DelivrancePharmacie /></RoleGuard>} />
             <Route path="/pharmacie/historique" element={<RoleGuard requiredRoles={["PHARMACIST"]}><HistoriquePharmacie /></RoleGuard>} />
             <Route path="/pharmacie/stock" element={<RoleGuard requiredRoles={["PHARMACIST"]}><GestionStockPharmacie /></RoleGuard>} />

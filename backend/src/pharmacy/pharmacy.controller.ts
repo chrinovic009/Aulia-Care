@@ -15,6 +15,12 @@ export class PharmacyController {
     return this.pharmacyService.findAll();
   }
   
+    @Get('prescriptions')
+    @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+    findPrescriptions() {
+      return this.pharmacyService.findPrescriptions();
+    }
+
     @Get('prescriptions/ready')
     @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
     findReadyPrescriptions() {
@@ -25,6 +31,12 @@ export class PharmacyController {
     @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
     dispensePrescription(@Param('id') id: string, @Request() req: any) {
       return this.pharmacyService.dispensePrescription(id, req.user?.userId);
+    }
+
+    @Post('sales')
+    @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+    createIndependentSale(@Request() req: any) {
+      return this.pharmacyService.createIndependentSale(req.body, req.user?.userId);
     }
 
   @Get('available')

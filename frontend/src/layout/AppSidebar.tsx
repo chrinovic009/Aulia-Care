@@ -247,7 +247,6 @@ const administrationNavItems: NavItem[] = [
 
 const pharmacyNavItems: NavItem[] = [
   { icon: <GridIcon />, name: "Dashboard pharmacie", path: "/pharmacie" },
-  { icon: <DocsIcon />, name: "Ordonnances", path: "/pharmacie/ordonnances" },
   { icon: <TaskIcon />, name: "Delivrance", path: "/pharmacie/delivrance" },
   { icon: <FolderIcon />, name: "Historique", path: "/pharmacie/historique" },
   { icon: <BoxCubeIcon />, name: "Stock", path: "/pharmacie/stock" },
