@@ -39,6 +39,12 @@ export class PharmacyController {
       return this.pharmacyService.createIndependentSale(req.body, req.user?.userId);
     }
 
+@Get('history')
+    @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+    getHistory() {
+      return this.pharmacyService.getHistory();
+    }
+
   @Get('available')
   @Roles('SUPER_ADMIN', 'PHYSICIAN', 'PHARMACIST')
   findAvailable() {
