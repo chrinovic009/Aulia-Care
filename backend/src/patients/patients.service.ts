@@ -284,7 +284,11 @@ export class PatientsService {
         })
       : null;
     const serviceFee = Number(resolvedTariff?.prix || 0);
-    const admissionFee = isParamedicalVoucher ? Number(createAdmissionDto.amountDue || 0) : serviceFee > 0 ? serviceFee : 20;
+    const admissionFee = isParamedicalVoucher
+      ? Number(createAdmissionDto.amountDue || 0)
+      : serviceFee > 0
+        ? serviceFee
+        : Number(createAdmissionDto.amountDue || 0);
 
     const receptionistConnect = actorId
       ? { connect: { id: actorId } }

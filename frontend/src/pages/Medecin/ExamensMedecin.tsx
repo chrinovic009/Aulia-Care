@@ -33,6 +33,26 @@ const formatLabStatus = (status?: string | null) => {
 const getLabRequestViewState = (request: { status?: string | null; results?: Array<{ resultName?: string | null; resultValue?: string | null }> | null }, patientWorkflowStatus?: string | null) => {
   const hasResults = Boolean(request.results?.length);
   const normalizedWorkflow = (patientWorkflowStatus || "").toUpperCase();
+  const normalizedRequestStatus = (request.status || "").toUpperCase();
+  const alreadyTreatedStatuses = new Set([
+    "TECHNICAL_VALIDATED",
+    "BIOLOGICALLY_VALIDATED",
+    "AVAILABLE",
+    "SENT",
+    "VERIFIED",
+    "COMPLETED",
+    "TECHNICAL_VALIDATION",
+    "BIOLOGICAL_VALIDATION",
+  ]);
+
+  if (hasResults || alreadyTreatedStatuses.has(normalizedRequestStatus)) {
+    return {
+      badgeLabel: "Traité",
+      badgeClassName: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+      message: hasResults ? "Le résultat est disponible." : "Cet examen a déjà été traité.",
+      showResults: hasResults,
+    };
+  }
 
   if (normalizedWorkflow === "EN_ATTENTE_VALIDATION_CAISSE" || normalizedWorkflow === "EN_ATTENTE_DE_PAIEMENT") {
     return {
@@ -40,15 +60,6 @@ const getLabRequestViewState = (request: { status?: string | null; results?: Arr
       badgeClassName: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
       message: "Le paiement doit être validé par la caisse avant que le laboratoire ne puisse traiter cet examen.",
       showResults: false,
-    };
-  }
-
-  if (hasResults) {
-    return {
-      badgeLabel: "Résultat prêt",
-      badgeClassName: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-      message: "Le résultat est disponible.",
-      showResults: true,
     };
   }
 

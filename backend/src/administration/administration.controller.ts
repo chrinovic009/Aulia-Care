@@ -71,7 +71,7 @@ export class AdministrationController {
   }
 
   @Post('stock/medications')
-  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  @Roles('SUPER_ADMIN', 'PHARMACIST', 'PHYSICIAN')
   createMedication(@Body() body: any) {
     return this.administrationService.createMedication(body);
   }
@@ -83,7 +83,7 @@ export class AdministrationController {
   }
 
   @Post('stock/lots')
-  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  @Roles('SUPER_ADMIN', 'PHARMACIST', 'PHYSICIAN')
   createStockLot(@Body() body: any) {
     return this.administrationService.createStockLot(body);
   }
