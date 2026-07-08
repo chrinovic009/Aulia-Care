@@ -60,20 +60,25 @@ type ValidationResponse = {
   items: ValidationItem[];
 };
 
+type ValidationDecision = "VALIDATE" | "REJECT" | "CORRECTION";
+
 const isManagerRole = (role?: string | null) => role === "LAB_MANAGER" || role === "ADMIN";
 
 export default function ValidationsLab() {
   const { currentUser } = useAuth();
   const [items, setItems] = useState<ValidationItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<ValidationItem | null>(null);
+  const [selectedValidationId, setSelectedValidationId] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [decision, setDecision] = useState<"VALIDATE" | "REJECT" | "CORRECTION">("VALIDATE");
+  const [decision, setDecision] = useState<ValidationDecision>("VALIDATE");
   const [reason, setReason] = useState("");
   const [observations, setObservations] = useState("");
   const [instructions, setInstructions] = useState("");
   const [priority, setPriority] = useState("HIGH");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [pendingSearch, setPendingSearch] = useState("");
+  const [historySearch, setHistorySearch] = useState("");
 
   const role = currentUser?.primaryRole ?? currentUser?.role ?? null;
   const isManager = isManagerRole(role);
@@ -83,7 +88,8 @@ export default function ValidationsLab() {
     try {
       const data = await apiFetch<ValidationResponse>("/laboratory/validations");
       setItems(data.items || []);
-      setSelectedItem((current) => current || (data.items || [])[0] || null);
+      setSelectedValidationId("");
+      setSelectedItem(null);
     } catch (error) {
       console.error("Impossible de charger les validations laboratoire", error);
       setItems([]);
@@ -101,8 +107,50 @@ export default function ValidationsLab() {
   const validatedItems = useMemo(() => items.filter((item) => ["BIOLOGICALLY_VALIDATED", "VERIFIED", "AVAILABLE"].includes(item.resultStatus || "")), [items]);
   const rejectedItems = useMemo(() => items.filter((item) => ["REJECTED", "CORRECTION_REQUESTED"].includes(item.resultStatus || "")), [items]);
 
+  const filteredPendingItems = useMemo(() => {
+    const query = pendingSearch.trim().toLowerCase();
+    if (!query) return pendingItems;
+
+    return pendingItems.filter((item) => {
+      const haystack = [
+        item.requestId,
+        item.patientName,
+        item.testName,
+        item.technicianName || "",
+        item.status,
+        formatDate(item.submittedAt),
+        item.priority || "NORMAL",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [pendingItems, pendingSearch]);
+
+  const filteredHistoryValidations = useMemo(() => {
+    const query = historySearch.trim().toLowerCase();
+    if (!query) return selectedItem?.validations || [];
+
+    return (selectedItem?.validations || []).filter((validation) => {
+      const haystack = [
+        selectedItem?.patientName || "",
+        selectedItem?.testName || "",
+        validation.decision,
+        validation.validatorName || "",
+        formatDate(validation.decisionDate),
+        validation.version || 1,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [historySearch, selectedItem]);
+
   const submitDecision = async () => {
-    if (!selectedItem) return;
+    if (!selectedValidationId || !selectedItem) {
+      setMessage("Veuillez d'abord sélectionner un examen à traiter.");
+      return;
+    }
     if (!isManager) {
       setMessage("Seuls les responsables laboratoire peuvent modifier une validation biologique.");
       return;
@@ -171,10 +219,19 @@ export default function ValidationsLab() {
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-6">
           <Panel title={isManager ? "En attente de validation biologique" : "Mes analyses"} subtitle="Données chargées depuis le workflow laboratoire existant.">
+            <label className="mb-3 block text-sm">
+              <span className="mb-2 block font-medium text-slate-700 dark:text-slate-300">Rechercher</span>
+              <input
+                value={pendingSearch}
+                onChange={(event) => setPendingSearch(event.target.value)}
+                placeholder="Demande, Patient, Examen, Technicien, Statut, Date, Priorité"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+              />
+            </label>
             <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
               <DataTable
                 headers={["Demande", "Patient", "Examen", "Technicien", "Statut", "Date saisie", "Priorité"]}
-                rows={items.map((item) => [
+                rows={filteredPendingItems.map((item) => [
                   item.requestId,
                   item.patientName,
                   item.testName,
@@ -188,10 +245,19 @@ export default function ValidationsLab() {
           </Panel>
 
           <Panel title="Historique des validations" subtitle="Toutes les décisions successives conservées dans la traçabilité laboratoire.">
+            <label className="mb-3 block text-sm">
+              <span className="mb-2 block font-medium text-slate-700 dark:text-slate-300">Rechercher</span>
+              <input
+                value={historySearch}
+                onChange={(event) => setHistorySearch(event.target.value)}
+                placeholder="Patient, Examen, Décision, Responsable, Date, Version"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+              />
+            </label>
             <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
               <DataTable
                 headers={["Patient", "Examen", "Décision", "Responsable", "Date", "Version"]}
-                rows={(selectedItem?.validations || []).map((validation) => [
+                rows={filteredHistoryValidations.map((validation) => [
                   selectedItem?.patientName || "-",
                   selectedItem?.testName || "-",
                   validation.decision,
@@ -245,8 +311,28 @@ export default function ValidationsLab() {
             <Panel title="Décision du responsable" subtitle="Validation biologique, refus ou correction.">
               <div className="space-y-3">
                 <label className="block text-sm">
+                  <span className="mb-2 block text-slate-700 dark:text-slate-300">Examen à traiter</span>
+                  <select
+                    value={selectedValidationId}
+                    onChange={(event) => {
+                      const nextId = event.target.value;
+                      setSelectedValidationId(nextId);
+                      setSelectedItem(items.find((item) => item.id === nextId) || null);
+                    }}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+                  >
+                    <option value="">Sélectionner un examen</option>
+                    {pendingItems.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.patientName} — {item.testName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block text-sm">
                   <span className="mb-2 block text-slate-700 dark:text-slate-300">Action</span>
-                  <select value={decision} onChange={(event) => setDecision(event.target.value as any)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950">
+                  <select value={decision} onChange={(event) => setDecision(event.target.value as ValidationDecision)} disabled={!selectedValidationId} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950">
                     <option value="VALIDATE">Valider</option>
                     <option value="REJECT">Refuser</option>
                     <option value="CORRECTION">Demander une correction</option>
@@ -262,18 +348,18 @@ export default function ValidationsLab() {
 
                 <label className="block text-sm">
                   <span className="mb-2 block text-slate-700 dark:text-slate-300">Observations</span>
-                  <textarea value={observations} onChange={(event) => setObservations(event.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" />
+                  <textarea value={observations} onChange={(event) => setObservations(event.target.value)} rows={3} disabled={!selectedValidationId} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950" />
                 </label>
 
                 {decision === "CORRECTION" ? (
                   <>
                     <label className="block text-sm">
                       <span className="mb-2 block text-slate-700 dark:text-slate-300">Instructions de correction</span>
-                      <textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" />
+                      <textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} rows={3} disabled={!selectedValidationId} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950" />
                     </label>
                     <label className="block text-sm">
                       <span className="mb-2 block text-slate-700 dark:text-slate-300">Priorité</span>
-                      <select value={priority} onChange={(event) => setPriority(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950">
+                      <select value={priority} onChange={(event) => setPriority(event.target.value)} disabled={!selectedValidationId} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950">
                         <option value="HIGH">Haute</option>
                         <option value="MEDIUM">Moyenne</option>
                         <option value="LOW">Faible</option>
@@ -282,7 +368,7 @@ export default function ValidationsLab() {
                   </>
                 ) : null}
 
-                <button onClick={submitDecision} disabled={submitting || !selectedItem} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                <button onClick={submitDecision} disabled={submitting || !selectedValidationId || !selectedItem} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
                   {submitting ? "Enregistrement..." : "Enregistrer la décision"}
                 </button>
               </div>

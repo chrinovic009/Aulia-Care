@@ -1,8 +1,36 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, Beaker, ClipboardList, Layers, ToggleLeft, Users, X } from "lucide-react";
 import { AdminPageShell, Panel, StatCard, DataTable, formatDate } from "../Administration/adminUi";
 import { fetchLaboratoryActivity, fetchLaboratoryRequestDetail, LabActivityPayload, submitLaboratoryResult, updateDirectResultAuthorization } from "../../api/laboratory";
+import { fetchPatientsFromDatabase, type PatientRecord } from "../../api/reception";
 import { useAuth } from "../../context/AuthContext";
+
+type LabRequestDetailItem = {
+  id?: string;
+  status?: string | null;
+  requestedAt?: string | null;
+  assignedToId?: string | null;
+  labTest?: {
+    name?: string | null;
+    section?: { name?: string | null } | null;
+    category?: { name?: string | null } | null;
+    referenceRange?: string | null;
+    parameterTemplates?: Array<{ id: string; name?: string | null; unit?: string | null }>;
+    consumableRequirements?: Array<{ id: string; labConsumable?: { name?: string | null; unit?: string | null } | null; quantity?: string | number | null; unit?: string | null }>;
+  } | null;
+  results?: Array<{ resultStatus?: string | null; resultName?: string | null; resultValue?: string | null; interpretation?: string | null }>;
+  samples?: Array<{ id: string; status?: string | null; labSampleType?: { name?: string | null } | null }>;
+};
+
+type LabRequestDetail = {
+  id?: string;
+  status?: string | null;
+  items?: LabRequestDetailItem[];
+  results?: Array<{ resultStatus?: string | null; resultName?: string | null; resultValue?: string | null; interpretation?: string | null }>;
+  patient?: { id?: string; firstName?: string | null; lastName?: string | null; phone?: string | null; email?: string | null; address?: string | null } | null;
+  consultation?: { provider?: { firstName?: string | null; lastName?: string | null; displayName?: string | null; phone?: string | null } | null } | null;
+  requestedBy?: { phone?: string | null } | null;
+};
 
 export default function ActivityLab() {
   const { currentUser } = useAuth();
@@ -10,17 +38,19 @@ export default function ActivityLab() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingAuthorization, setIsSavingAuthorization] = useState(false);
   const [directResultAuthorizationEnabled, setDirectResultAuthorizationEnabled] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
-  const [requestDetail, setRequestDetail] = useState<any | null>(null);
+  const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
+  const [requestDetail, setRequestDetail] = useState<LabRequestDetail | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [resultForm, setResultForm] = useState({
     resultName: "",
     resultValue: "",
     interpretation: "",
   });
+  const [recentRequestsSearch, setRecentRequestsSearch] = useState("");
   const [isSubmittingResult, setIsSubmittingResult] = useState(false);
   const [showSendChoice, setShowSendChoice] = useState(false);
   const [deliveryMode, setDeliveryMode] = useState<"validation" | "direct">("validation");
+  const [patientList, setPatientList] = useState<PatientRecord[] | null>(null);
 
   const isLabManager = currentUser?.primaryRole === "LAB_MANAGER" || currentUser?.primaryRole === "ADMIN" || currentUser?.primaryRole === "SUPER_ADMIN";
   const currentItem = requestDetail?.items?.[0];
@@ -33,6 +63,60 @@ export default function ActivityLab() {
     (requestDetail?.status || "").toUpperCase(),
     (currentItem?.status || "").toUpperCase(),
   ].some((status) => lockedResultStatuses.has(status) || lockedRequestStatuses.has(status) || lockedItemStatuses.has(status));
+
+  const patientPosition = useMemo(() => {
+    if (!requestDetail?.patient?.id || !patientList?.length) return undefined;
+    const sortedPatients = [...patientList].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    return sortedPatients.findIndex((patient) => patient.id === requestDetail.patient?.id) + 1 || undefined;
+  }, [patientList, requestDetail?.patient?.id]);
+
+  const normalizeInitial = (value?: string | null) => {
+    const trimmed = String(value || "").trim();
+    return trimmed ? trimmed[0].toUpperCase() : "X";
+  };
+
+  const getLabStatusLabel = (requestStatus?: string | null, resultStatus?: string | null) => {
+    const status = String(requestStatus || "").trim().toUpperCase();
+    const result = String(resultStatus || "").trim().toUpperCase();
+    const validatedStatuses = new Set(["TECHNICAL_VALIDATED", "BIOLOGICALLY_VALIDATED", "AVAILABLE", "SENT", "VERIFIED", "COMPLETED"]);
+    const treatedStatuses = new Set(["PENDING", "CORRECTION_REQUESTED", "IN_ANALYSIS", "RECEIVED", "COLLECTED"]);
+    const requestStatuses = new Set(["REQUESTED", "COLLECTED", "RECEIVED", "IN_ANALYSIS"]);
+
+    if (validatedStatuses.has(result) || validatedStatuses.has(status)) {
+      return "Validé";
+    }
+
+    if (result && treatedStatuses.has(result)) {
+      return "Traité";
+    }
+
+    if (status && requestStatuses.has(status)) {
+      return "Demande";
+    }
+
+    if (status && treatedStatuses.has(status)) {
+      return "Traité";
+    }
+
+    return status ? status : "Demande";
+  };
+
+  const getExamRepeatCount = (requestedExamName?: string) => {
+    if (!requestedExamName || !requestDetail?.items) return 1;
+    return requestDetail.items.filter((item) => item.labTest?.name?.trim().toUpperCase() === requestedExamName.trim().toUpperCase()).length || 1;
+  };
+
+  const buildLabRequestDisplayId = (position?: number, patient?: LabRequestDetail["patient"], examCount?: number) => {
+    if (!position) return requestDetail?.id || "-";
+    const initials = `${normalizeInitial(patient?.firstName)}${normalizeInitial(patient?.lastName)}`;
+    const count = examCount || 1;
+    return `${position}${initials}-EXAMD${count}`;
+  };
+
+  const currentExamName = currentItem?.labTest?.name || requestDetail?.items?.[0]?.labTest?.name || "Examen";
+  const currentExamRequestCount = getExamRepeatCount(currentExamName);
+  const displayRequestId = buildLabRequestDisplayId(patientPosition, requestDetail?.patient, currentExamRequestCount);
+  const translatedRequestStatus = getLabStatusLabel(requestDetail?.status, latestResult?.resultStatus);
   const isItemAssigned = Boolean(currentItem?.assignedToId);
   const isAssignedToCurrentTechnician = Boolean(currentItem?.assignedToId && currentUser?.id && currentItem.assignedToId === currentUser?.id);
   const canSubmitResult = !isResultLocked && (!isItemAssigned || isAssignedToCurrentTechnician || isLabManager);
@@ -41,6 +125,28 @@ export default function ActivityLab() {
     ? `Médecin ${[requestDetail.consultation.provider.firstName, requestDetail.consultation.provider.lastName].filter(Boolean).join(" ") || requestDetail.consultation.provider.displayName || "Demandeur"}`
     : `Patient ${[requestDetail?.patient?.firstName, requestDetail?.patient?.lastName].filter(Boolean).join(" ") || "Demandeur"}`;
   const requesterPhone = requestDetail?.consultation?.provider?.phone || requestDetail?.patient?.phone || requestDetail?.requestedBy?.phone || null;
+  const canPrintResult = isResultLocked && Boolean(latestResult || requestDetail?.results?.[0]);
+
+  const filteredRecentRequests = useMemo(() => {
+    const query = recentRequestsSearch.trim().toLowerCase();
+    if (!query) return activity?.recentRequests ?? [];
+
+    return (activity?.recentRequests ?? []).filter((request) => {
+      const haystack = [
+        request.displayId,
+        request.patientName,
+        request.status,
+        request.priority,
+        request.specimenType,
+        request.assignedTo || "non assigné",
+        formatDate(request.requestedAt),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [activity?.recentRequests, recentRequestsSearch]);
 
   const loadActivity = async () => {
     setIsLoading(true);
@@ -65,11 +171,20 @@ export default function ActivityLab() {
       const firstItem = detail?.items?.[0];
       setResultForm({
         resultName: firstItem?.labTest?.name || "",
-        resultValue: "",
-        interpretation: "",
+        resultValue: firstItem?.labTest?.referenceRange || "",
+        interpretation: firstItem?.results?.[0]?.interpretation || "",
       });
       setShowSendChoice(false);
       setDeliveryMode("validation");
+
+      if (!patientList && detail?.patient?.id) {
+        try {
+          const patients = await fetchPatientsFromDatabase();
+          setPatientList(patients);
+        } catch (error) {
+          console.error("Impossible de charger la liste des patients", error);
+        }
+      }
     } catch (error) {
       console.error("Impossible de charger le détail de la demande", error);
       setRequestDetail(null);
@@ -150,6 +265,107 @@ export default function ActivityLab() {
     };
   }, []);
 
+  const printLaboratoryResultDocument = () => {
+    if (!requestDetail) return;
+
+    const patientName = [requestDetail.patient?.firstName, requestDetail.patient?.lastName].filter(Boolean).join(" ") || "Patient inconnu";
+    const examName = currentItem?.labTest?.name || requestDetail.items?.[0]?.labTest?.name || "Analyse laboratoire";
+    const resultName = currentItem?.labTest?.name || latestResult?.resultName || currentItem?.results?.[0]?.resultName || "Résultat laboratoire";
+    const resultValue = currentItem?.labTest?.referenceRange || latestResult?.resultValue || currentItem?.results?.[0]?.resultValue || "—";
+    const interpretation = latestResult?.interpretation || currentItem?.results?.[0]?.interpretation || "—";
+    const requestedAt = formatDate(requestDetail?.items?.[0]?.requestedAt || null);
+    const displayRequestIdForPrint = displayRequestId || requestDetail.id || "—";
+    const translatedRequestStatusForPrint = translatedRequestStatus;
+
+    const html = `
+      <html>
+        <head>
+          <title>Résultat de laboratoire - ${patientName}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 24px; }
+            .page { max-width: 900px; margin: 0 auto; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #111827; padding-bottom: 12px; margin-bottom: 20px; }
+            .clinic { font-size: 22px; font-weight: 700; }
+            .details { font-size: 12px; color: #4b5563; margin-top: 4px; }
+            .section { margin-bottom: 18px; }
+            .section-title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #111827; margin-bottom: 8px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            td { border: 1px solid #d1d5db; padding: 8px 10px; vertical-align: top; }
+            .label { width: 32%; font-weight: 700; background: #f9fafb; }
+            .footer { margin-top: 24px; font-size: 11px; color: #6b7280; border-top: 1px solid #d1d5db; padding-top: 10px; }
+            @media print { body { padding: 0; } .page { padding: 18mm; } }
+          </style>
+        </head>
+        <body>
+          <div class="page">
+            <div class="header">
+              <div class="brand-block">
+                <img src="/images/favicon.png" alt="Logo clinique" width="56" />
+                <div class="clinic">D7 Clinique</div>
+                <div class="details">Centre hospitalier régional - Résultat de laboratoire</div>
+                <div class="details">Adresse: Zone de santé, Dilala | Tel: +243 987 299 227</div>
+              </div>
+              <div style="text-align: right; font-size: 12px; color: #4b5563;">
+                <div><strong>Document</strong></div>
+                <div>Imprimé le ${new Date().toLocaleDateString("fr-FR")}</div>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">Informations patient</div>
+              <table>
+                <tbody>
+                  <tr><td class="label">Nom complet</td><td>${patientName}</td></tr>
+                  <tr><td class="label">ID demande</td><td>${displayRequestIdForPrint}</td></tr>
+                  <tr><td class="label">Statut</td><td>${translatedRequestStatusForPrint}</td></tr>
+                  <tr><td class="label">Téléphone</td><td>${requestDetail.patient?.phone || "—"}</td></tr>
+                  <tr><td class="label">Email</td><td>${requestDetail.patient?.email || "—"}</td></tr>
+                  <tr><td class="label">Adresse</td><td>${requestDetail.patient?.address || "—"}</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">Examen demandé</div>
+              <table>
+                <tbody>
+                  <tr><td class="label">Examen</td><td>${examName}</td></tr>
+                  <tr><td class="label">Statut</td><td>${requestDetail.status || "—"}</td></tr>
+                  <tr><td class="label">Demandé le</td><td>${requestedAt}</td></tr>
+                  <tr><td class="label">Prescripteur</td><td>${requestDetail.consultation?.provider?.displayName || requestDetail.consultation?.provider?.firstName || "—"}</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">Résultat</div>
+              <table>
+                <tbody>
+                  <tr><td class="label">Nom du résultat</td><td>${resultName}</td></tr>
+                  <tr><td class="label">Valeur de référence</td><td>${resultValue}</td></tr>
+                  <tr><td class="label">Interprétation</td><td>${interpretation}</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="footer">
+              Document administratif généré depuis la plateforme de laboratoire D7 Clinique.
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 300);
+  };
+
   return (
     <AdminPageShell
       title="Activité Laboratoire"
@@ -205,9 +421,18 @@ export default function ActivityLab() {
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">
           <Panel title="Demandes récentes" subtitle="20 dernières demandes de laboratoire les plus récentes.">
+            <label className="mb-3 block text-sm">
+              <span className="mb-2 block font-medium text-slate-700 dark:text-slate-300">Rechercher</span>
+              <input
+                value={recentRequestsSearch}
+                onChange={(event) => setRecentRequestsSearch(event.target.value)}
+                placeholder="ID, Patient, Statut, Priorité, Examen, Assigné à, Date"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+              />
+            </label>
             <DataTable
               headers={["ID", "Patient", "Statut", "Priorité", "Examen", "Assigné à", "Demandé le"]}
-              rows={activity?.recentRequests.map((request) => [
+              rows={filteredRecentRequests.map((request) => [
                 <button key={request.id} onClick={() => openRequestDetail(request.id)} className="text-left font-semibold text-emerald-700 hover:underline">
                   {request.displayId}
                 </button>,
@@ -217,7 +442,7 @@ export default function ActivityLab() {
                 request.specimenType,
                 request.assignedTo || "Non assigné",
                 formatDate(request.requestedAt),
-              ]) ?? []}
+              ])}
             />
           </Panel>
 
@@ -289,9 +514,16 @@ export default function ActivityLab() {
                 <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Examen demandé</p>
                 <h3 className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">{requestDetail?.id}</h3>
               </div>
-              <button onClick={() => { setRequestDetail(null); setSelectedRequest(null); }} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                {canPrintResult ? (
+                  <button onClick={printLaboratoryResultDocument} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                    Imprimer
+                  </button>
+                ) : null}
+                <button onClick={() => { setRequestDetail(null); setSelectedRequest(null); }} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {isDetailLoading ? (
@@ -321,7 +553,7 @@ export default function ActivityLab() {
                   </Panel>
 
                   <Panel title="Détails de l’examen" subtitle="Section, catégorie, examen, paramètres, échantillons et consommables associés.">
-                    {requestDetail?.items?.map((item: any, index: number) => (
+                    {requestDetail?.items?.map((item, index) => (
                       <div key={item.id || index} className="space-y-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                         <div className="grid gap-4 md:grid-cols-2">
                           <div>
@@ -338,7 +570,7 @@ export default function ActivityLab() {
                           </div>
                           <div>
                             <p className="text-xs uppercase tracking-wide text-slate-500">Statut</p>
-                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{item?.status || "—"}</p>
+                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{getLabStatusLabel(item?.status, item?.results?.[0]?.resultStatus)}</p>
                           </div>
                         </div>
 
@@ -347,7 +579,7 @@ export default function ActivityLab() {
                           <ul className="mt-2 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                             {(item?.labTest?.parameterTemplates || []).length === 0 ? (
                               <li>Aucun paramètre défini.</li>
-                            ) : item.labTest.parameterTemplates.map((parameter: any) => (
+                            ) : (item.labTest?.parameterTemplates || []).map((parameter) => (
                               <li key={parameter.id} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
                                 {parameter.name} — {parameter.unit || "unité non précisée"}
                               </li>
@@ -360,7 +592,7 @@ export default function ActivityLab() {
                           <ul className="mt-2 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                             {(item?.samples || []).length === 0 ? (
                               <li>Aucun échantillon associé.</li>
-                            ) : item.samples.map((sample: any) => (
+                            ) : (item.samples || []).map((sample) => (
                               <li key={sample.id} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
                                 {sample.labSampleType?.name || "Échantillon"} — {sample.status}
                               </li>
@@ -373,7 +605,7 @@ export default function ActivityLab() {
                           <ul className="mt-2 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                             {(item?.labTest?.consumableRequirements || []).length === 0 ? (
                               <li>Aucun consommable requis.</li>
-                            ) : item.labTest.consumableRequirements.map((requirement: any) => (
+                            ) : (item.labTest?.consumableRequirements || []).map((requirement) => (
                               <li key={requirement.id} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
                                 {requirement.labConsumable?.name} — {requirement.quantity} {requirement.unit || requirement.labConsumable?.unit || ""}
                               </li>
@@ -389,19 +621,19 @@ export default function ActivityLab() {
                   <Panel title="Saisie du résultat" subtitle="Trois champs principaux pour enregistrer le résultat.">
                     <form onSubmit={handleSubmitResult} className="space-y-4">
                       <div>
-                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Nom du résultat</label>
+                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Nom de l'examen</label>
                         <input
                           value={resultForm.resultName}
-                          onChange={(event) => setResultForm((current) => ({ ...current, resultName: event.target.value }))}
-                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                          readOnly
+                          className="w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600 focus:border-emerald-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Valeur</label>
+                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Valeur de référence</label>
                         <input
                           value={resultForm.resultValue}
-                          onChange={(event) => setResultForm((current) => ({ ...current, resultValue: event.target.value }))}
-                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                          readOnly
+                          className="w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600 focus:border-emerald-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
                         />
                       </div>
                       <div>

@@ -948,6 +948,18 @@ export class LaboratoryService {
         const resultData: any = result;
         const itemData: any = item;
         const patientData: any = requestData.patient;
+        const normalizedResultStatus = String(resultData.resultStatus || '').toUpperCase();
+        const normalizedRequestStatus = String(requestData.status || '').toUpperCase();
+        const normalizedItemStatus = String(itemData.status || '').toUpperCase();
+        const isPendingManagerDecision = normalizedResultStatus === 'PENDING'
+          || (normalizedResultStatus === '' && ['TECHNICAL_VALIDATION', 'BIOLOGICAL_VALIDATION'].includes(normalizedRequestStatus));
+        const isLockedForManagerDecision = ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED', 'AVAILABLE', 'SENT', 'VERIFIED', 'COMPLETED', 'REJECTED', 'CORRECTION_REQUESTED'].includes(normalizedResultStatus)
+          || ['AVAILABLE', 'SENT', 'VERIFIED', 'COMPLETED'].includes(normalizedRequestStatus)
+          || ['AVAILABLE', 'SENT'].includes(normalizedItemStatus);
+
+        if (isLockedForManagerDecision || !isPendingManagerDecision) {
+          return [];
+        }
 
         return [{
           id: resultData.id,
@@ -1092,6 +1104,79 @@ export class LaboratoryService {
       || lockedItemStatuses.has(normalizedItemStatus);
   }
 
+  private async consumeConsumablesForValidatedResult(tx: any, resultId: string, labRequestItemId: string | null, performedById?: string) {
+    if (!labRequestItemId) {
+      return;
+    }
+
+    const item = await tx.labRequestItem.findUnique({
+      where: { id: labRequestItemId },
+      select: { labTestId: true },
+    });
+
+    if (!item?.labTestId) {
+      return;
+    }
+
+    const requirements = await tx.labTestConsumableRequirement.findMany({
+      where: { labTestId: item.labTestId },
+      include: { labConsumable: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    for (const requirement of requirements) {
+      const requiredQuantity = Number(requirement.quantity || 0);
+      if (requiredQuantity <= 0) {
+        continue;
+      }
+
+      const stockEntries = await tx.labConsumableStock.findMany({
+        where: { labConsumableId: requirement.labConsumableId },
+        orderBy: [{ lastUpdatedAt: 'asc' }, { id: 'asc' }],
+      });
+
+      let remainingToConsume = requiredQuantity;
+      for (const stockEntry of stockEntries) {
+        if (remainingToConsume <= 0) {
+          break;
+        }
+
+        const availableQuantity = Number(stockEntry.quantity || 0);
+        if (availableQuantity <= 0) {
+          continue;
+        }
+
+        const consumedQuantity = Math.min(availableQuantity, remainingToConsume);
+        await tx.labConsumableStock.update({
+          where: { id: stockEntry.id },
+          data: {
+            quantity: availableQuantity - consumedQuantity,
+            lastUpdatedAt: new Date(),
+            updatedById: performedById || null,
+          },
+        });
+
+        await tx.labConsumableTransaction.create({
+          data: {
+            labConsumableId: requirement.labConsumableId,
+            type: 'OUT',
+            quantity: consumedQuantity,
+            unit: requirement.unit || requirement.labConsumable?.unit || 'unité',
+            reference: `lab-result:${resultId}`,
+            note: `Consommation liée à la validation du résultat de laboratoire`,
+            performedById: performedById || null,
+          },
+        });
+
+        remainingToConsume -= consumedQuantity;
+      }
+
+      if (remainingToConsume > 0) {
+        throw new BadRequestException(`Stock insuffisant pour ${requirement.labConsumable?.name || 'un consommable laboratoire'}.`);
+      }
+    }
+  }
+
   async applyValidationDecision(id: string, dto: any, currentUserId?: string) {
     const result = await this.prisma.labResult.findUnique({ where: { id } });
     if (!result) {
@@ -1130,6 +1215,8 @@ export class LaboratoryService {
       });
 
       if (decision === 'VALIDATE') {
+        await this.consumeConsumablesForValidatedResult(tx, updatedResult.id, updatedResult.labRequestItemId, currentUserId);
+
         const labRequest = await tx.labRequest.findUnique({
           where: { id: result.labRequestId },
           select: { id: true, requestedById: true, consultation: { select: { providerId: true } }, patient: { select: { id: true, firstName: true, lastName: true } } },
@@ -1212,6 +1299,10 @@ export class LaboratoryService {
           sentAt: canDirectSend ? new Date() : null,
         },
       });
+
+      if (canDirectSend) {
+        await this.consumeConsumablesForValidatedResult(tx, created.id, created.labRequestItemId, reportedById);
+      }
 
       if (canDirectSend && recipientId) {
         const notification = await tx.notification.create({
