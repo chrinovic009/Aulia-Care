@@ -103,7 +103,9 @@ export default function ValidationsLab() {
     loadItems();
   }, []);
 
-  const pendingItems = useMemo(() => items.filter((item) => item.resultStatus === "PENDING" || item.status === "TECHNICAL_VALIDATION"), [items]);
+  const pendingItems = useMemo(() => items.filter(
+    (item) => item.resultStatus === "PENDING" || item.resultStatus === "TECHNICAL_VALIDATED" || item.status === "TECHNICAL_VALIDATION"
+  ), [items]);
   const validatedItems = useMemo(() => items.filter((item) => ["BIOLOGICALLY_VALIDATED", "VERIFIED", "AVAILABLE"].includes(item.resultStatus || "")), [items]);
   const rejectedItems = useMemo(() => items.filter((item) => ["REJECTED", "CORRECTION_REQUESTED"].includes(item.resultStatus || "")), [items]);
 

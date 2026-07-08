@@ -41,7 +41,27 @@ export default function PrescriptionsMedecin() {
   const selectedPatient = patients.find((patient) => patient.id === selectedPatientId) || filteredPatients[0] || null;
   const selectedConsultation = selectedPatient?.consultations?.find((consultation) => consultation.id === selectedConsultationId) || selectedPatient?.consultations?.[0] || null;
   const canWrite = Boolean(selectedPatient?.access?.canWrite);
-  const pendingExam = Boolean(selectedPatient?.labRequests?.some((request) => request.status !== "VERIFIED" && !request.results?.some((result) => result.verified)));
+  const pendingExam = Boolean(selectedPatient?.labRequests?.some((request) => {
+    const status = (request.status || "").toUpperCase();
+    const treatedStatuses = new Set([
+      "PENDING",
+      "CORRECTION_REQUESTED",
+      "IN_ANALYSIS",
+      "RECEIVED",
+      "COLLECTED",
+      "TECHNICAL_VALIDATION",
+      "BIOLOGICAL_VALIDATION",
+      "TECHNICAL_VALIDATED",
+      "BIOLOGICALLY_VALIDATED",
+      "AVAILABLE",
+      "SENT",
+      "VERIFIED",
+      "COMPLETED",
+    ]);
+    const isTreated = treatedStatuses.has(status);
+    const hasVerifiedResult = request.results?.some((result) => result.verified);
+    return !isTreated && !hasVerifiedResult;
+  }));
 
   const submit = async () => {
     if (!selectedConsultation || !form.medicationId) {

@@ -253,10 +253,14 @@ export class ConsultationsService {
       if (available < quantity) {
         throw new BadRequestException(`Stock insuffisant pour ${medication.name}.`);
       }
+
       const latestLot = medication.StockLot
         .slice()
         .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())[0];
-      const unitPrice = Number(line.unitPrice || latestLot?.purchasePrice || 0);
+      const explicitPrice = Number(line.unitPrice ?? 0);
+      const stockPrice = Number(latestLot?.purchasePrice ?? 0);
+      const unitPrice = explicitPrice > 0 ? explicitPrice : stockPrice;
+
       return { ...line, quantity, unitPrice, medication };
     });
 

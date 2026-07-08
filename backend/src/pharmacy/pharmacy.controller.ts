@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards, Post, Request } from '@nestjs/common';
 import { PharmacyService } from './pharmacy.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -14,6 +14,18 @@ export class PharmacyController {
   findAll() {
     return this.pharmacyService.findAll();
   }
+  
+    @Get('prescriptions/ready')
+    @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+    findReadyPrescriptions() {
+      return this.pharmacyService.findReadyPrescriptions();
+    }
+  
+    @Post('prescriptions/:id/dispense')
+    @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+    dispensePrescription(@Param('id') id: string, @Request() req: any) {
+      return this.pharmacyService.dispensePrescription(id, req.user?.userId);
+    }
 
   @Get('available')
   @Roles('SUPER_ADMIN', 'PHYSICIAN', 'PHARMACIST')

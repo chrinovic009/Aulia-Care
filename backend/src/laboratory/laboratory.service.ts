@@ -952,8 +952,9 @@ export class LaboratoryService {
         const normalizedRequestStatus = String(requestData.status || '').toUpperCase();
         const normalizedItemStatus = String(itemData.status || '').toUpperCase();
         const isPendingManagerDecision = normalizedResultStatus === 'PENDING'
+          || normalizedResultStatus === 'TECHNICAL_VALIDATED'
           || (normalizedResultStatus === '' && ['TECHNICAL_VALIDATION', 'BIOLOGICAL_VALIDATION'].includes(normalizedRequestStatus));
-        const isLockedForManagerDecision = ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED', 'AVAILABLE', 'SENT', 'VERIFIED', 'COMPLETED', 'REJECTED', 'CORRECTION_REQUESTED'].includes(normalizedResultStatus)
+        const isLockedForManagerDecision = ['BIOLOGICALLY_VALIDATED', 'AVAILABLE', 'SENT', 'VERIFIED', 'COMPLETED', 'REJECTED', 'CORRECTION_REQUESTED'].includes(normalizedResultStatus)
           || ['AVAILABLE', 'SENT', 'VERIFIED', 'COMPLETED'].includes(normalizedRequestStatus)
           || ['AVAILABLE', 'SENT'].includes(normalizedItemStatus);
 
