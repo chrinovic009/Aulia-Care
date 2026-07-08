@@ -15,14 +15,22 @@ export type PharmacyPrescription = {
   status: string;
   prescribingDate: string;
   instruction?: string | null;
-  patient?: { firstName?: string | null; lastName?: string | null } | null;
+  patient?: { firstName?: string | null; lastName?: string | null; displayId?: string | null } | null;
   prescriber?: { displayName?: string | null } | null;
   lineItems?: PharmacyPrescriptionLine[];
 };
+
+export const fetchPrescriptions = () => apiFetch<PharmacyPrescription[]>('/pharmacy/prescriptions');
 
 export const fetchReadyPrescriptions = () => apiFetch<PharmacyPrescription[]>('/pharmacy/prescriptions/ready');
 
 export const dispensePrescription = (prescriptionId: string) =>
   apiFetch(`/pharmacy/prescriptions/${prescriptionId}/dispense`, {
     method: 'POST',
+  });
+
+export const createIndependentSale = (payload: Record<string, unknown>) =>
+  apiFetch('/pharmacy/sales', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });

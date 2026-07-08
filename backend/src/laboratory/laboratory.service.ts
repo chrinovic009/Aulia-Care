@@ -304,33 +304,148 @@ export class LaboratoryService {
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
+    const now = new Date();
 
     const visibilityWhere = await this.buildLabRequestVisibilityWhere();
-    const [requestsToday, examsToday, resultsPending, resultsValidatedToday, overdue, revenueToday] = await Promise.all([
-      this.prisma.labRequest.count({ where: { ...visibilityWhere, requestedAt: { gte: today, lt: tomorrow } } }),
-      this.prisma.labResult.count({ where: { deletedAt: null, reportedAt: { gte: today, lt: tomorrow } } }),
-      this.prisma.labResult.count({ where: { deletedAt: null, resultStatus: { in: ['PENDING', 'TECHNICAL_VALIDATED', 'CORRECTION_REQUESTED'] as any } } }),
-      this.prisma.labResult.count({ where: { deletedAt: null, biologicalValidationAt: { gte: today, lt: tomorrow } } }),
-      this.prisma.labRequestItem.count({
-        where: {
-          deletedAt: null,
-          status: { in: ['REQUESTED', 'COLLECTED', 'RECEIVED', 'IN_ANALYSIS'] as any },
-          labTest: { turnaroundTimeMinutes: { not: null } },
+    const requests = await this.prisma.labRequest.findMany({
+      where: visibilityWhere,
+      include: {
+        items: {
+          include: {
+            labTest: true,
+            results: true,
+          },
         },
-      }),
-      this.prisma.labRequestItem.findMany({
-        where: { deletedAt: null, requestedAt: { gte: today, lt: tomorrow } },
-        include: { labTest: true },
-      }),
-    ]);
+      },
+      orderBy: { requestedAt: 'desc' },
+    });
+
+    const todayRequests = requests.filter((request) => request.requestedAt >= today && request.requestedAt < tomorrow);
+    const todayItems = todayRequests.flatMap((request) => request.items || []);
+    const processedToday = todayItems.filter((item) => {
+      const normalizedStatus = String(item.status || '').toUpperCase();
+      const hasValidatedResult = (item.results || []).some((result: any) => ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED'].includes(String(result.resultStatus || '').toUpperCase()));
+      return ['COMPLETED', 'AVAILABLE', 'SENT', 'VERIFIED'].includes(normalizedStatus) || hasValidatedResult;
+    }).length;
+
+    const pendingItems = requests.flatMap((request) => request.items || []).filter((item) => {
+      const normalizedStatus = String(item.status || '').toUpperCase();
+      const hasValidatedResult = (item.results || []).some((result: any) => ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED'].includes(String(result.resultStatus || '').toUpperCase()));
+      return !['COMPLETED', 'AVAILABLE', 'SENT', 'VERIFIED'].includes(normalizedStatus) && !hasValidatedResult;
+    });
+
+    const validatedToday = requests.filter((request) => request.sentAt && request.sentAt >= today && request.sentAt < tomorrow).length;
+    const overdueItems = requests.flatMap((request) => request.items || []).filter((item) => {
+      const turnaroundMinutes = Number(item.labTest?.turnaroundTimeMinutes || 0);
+      if (!turnaroundMinutes || !item.requestedAt) {
+        return false;
+      }
+      const deadline = new Date(new Date(item.requestedAt).getTime() + turnaroundMinutes * 60000);
+      const normalizedStatus = String(item.status || '').toUpperCase();
+      const hasValidatedResult = (item.results || []).some((result: any) => ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED'].includes(String(result.resultStatus || '').toUpperCase()));
+      return now > deadline && !['COMPLETED', 'AVAILABLE', 'SENT', 'VERIFIED'].includes(normalizedStatus) && !hasValidatedResult;
+    });
+
+    const revenueToday = todayItems.reduce((sum, item) => sum + Number(item.labTest?.price || 0), 0);
+    const totalRevenue = requests.flatMap((request) => request.items || []).reduce((sum, item) => sum + Number(item.labTest?.price || 0), 0);
+
+    const workflow = requests.reduce((acc, request) => {
+      const key = this.translateWorkflowStatus(request.status);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const validations = await this.getValidations(undefined, 'LAB_MANAGER');
+    const performance = {
+      value: requests.length > 0 ? Number(((processedToday / Math.max(todayRequests.length, 1)) * 100).toFixed(1)) : 0,
+      processedToday,
+      requestsToday: todayRequests.length,
+    };
+
+    const topTests = requests.flatMap((request) => request.items || []).reduce((acc, item) => {
+      const name = item.labTest?.name || 'Analyse';
+      acc[name] = (acc[name] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const staffPerformance = await this.prisma.labRequestItem.findMany({
+      where: { deletedAt: null, assignedToId: { not: null } },
+      include: { assignedTo: true, results: true },
+    });
+
+    const staffMap = new Map<string, { name: string; total: number; validated: number }>();
+    staffPerformance.forEach((item) => {
+      const technician = item.assignedTo;
+      if (!technician) {
+        return;
+      }
+      const entry = staffMap.get(technician.id) || { name: technician.displayName || [technician.firstName, technician.lastName].filter(Boolean).join(' ') || 'Technicien', total: 0, validated: 0 };
+      entry.total += 1;
+      const hasSuccessfulValidation = (item.results || []).some((result: any) => ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED'].includes(String(result.resultStatus || '').toUpperCase()));
+      if (hasSuccessfulValidation) {
+        entry.validated += 1;
+      }
+      staffMap.set(technician.id, entry);
+    });
+
+    const inventory = await this.prisma.labConsumableStock.findMany({
+      include: { labConsumable: true },
+      orderBy: { lastUpdatedAt: 'desc' },
+    });
+
+    const quality = {
+      validationsCount: requests.flatMap((request) => request.items || []).reduce((sum, item) => sum + ((item.results || []).some((result: any) => ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED'].includes(String(result.resultStatus || '').toUpperCase())) ? 1 : 0), 0),
+      sentCount: requests.filter((request) => request.sentAt && request.sentAt >= today && request.sentAt < tomorrow).length,
+    };
+
+    const recentActivity = await this.prisma.labRequestEvent.findMany({
+      where: { createdAt: { gte: today, lt: tomorrow } },
+      include: { labRequest: { include: { patient: true } }, labRequestItem: { include: { labTest: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    });
+
+    const alerts = [
+      ...((await this.getActivityOverview()).criticalAlerts || []),
+      ...((await this.getActivityOverview()).lowStockAlerts || []).map((alert) => ({
+        title: 'Stock laboratoire critique',
+        message: `${alert.consumableName} - ${alert.quantity} restant(s)`,
+        priority: 'HIGH',
+        meta: alert.location,
+        createdAt: new Date().toISOString(),
+      })),
+    ];
 
     return {
-      requestsToday,
-      examsToday,
-      resultsPending,
-      resultsValidatedToday,
-      overdue,
-      revenueToday: revenueToday.reduce((sum, item: any) => sum + Number(item.labTest?.price || 0), 0),
+      requestsToday: todayRequests.length,
+      examsToday: processedToday,
+      resultsPending: pendingItems.length,
+      resultsValidatedToday: validatedToday,
+      overdue: overdueItems.length,
+      revenueToday,
+      workflow,
+      alerts,
+      validations: validations.items || [],
+      performance,
+      topTests: Object.entries(topTests).map(([testName, count]) => ({ testName, count })).sort((a, b) => b.count - a.count).slice(0, 8),
+      staffPerformance: Array.from(staffMap.values()).map((entry) => ({
+        ...entry,
+        percent: entry.total ? Number(((entry.validated / entry.total) * 100).toFixed(1)) : 0,
+      })).sort((a, b) => b.percent - a.percent),
+      inventory: inventory.map((stock) => ({
+        id: stock.id,
+        name: stock.labConsumable?.name || 'Consommable',
+        quantity: Number(stock.quantity || 0),
+        minimumLevel: Number(stock.minimumLevel || 0),
+        percent: stock.minimumLevel ? Number((Number(stock.quantity || 0) / Number(stock.minimumLevel)) * 100) : (Number(stock.quantity || 0) > 0 ? 100 : 0),
+      })),
+      revenue: { total: totalRevenue },
+      quality,
+      recentActivity: recentActivity.map((entry) => ({
+        id: entry.id,
+        when: entry.createdAt?.toISOString(),
+        description: `${entry.action || 'Activité'} • ${entry.labRequest?.patient ? `${entry.labRequest.patient.firstName} ${entry.labRequest.patient.lastName}`.trim() : 'Patient inconnu'} • ${entry.labRequestItem?.labTest?.name || 'Analyse'}`,
+      })),
     };
   }
 
@@ -342,7 +457,7 @@ export class LaboratoryService {
       _count: { _all: true },
     });
     return groups.reduce((acc, item) => {
-      acc[item.status] = item._count._all;
+      acc[this.translateWorkflowStatus(item.status)] = item._count._all;
       return acc;
     }, {} as Record<string, number>);
   }
@@ -359,6 +474,24 @@ export class LaboratoryService {
         createdAt: new Date().toISOString(),
       })),
     ];
+  }
+
+  private translateWorkflowStatus(status?: string | null) {
+    const normalized = String(status || '').toUpperCase();
+    const labels: Record<string, string> = {
+      REQUESTED: 'Demandée',
+      COLLECTED: 'Collectée',
+      RECEIVED: 'Reçue',
+      IN_ANALYSIS: 'En analyse',
+      TECHNICAL_VALIDATION: 'Validation technique',
+      BIOLOGICAL_VALIDATION: 'Validation biologique',
+      AVAILABLE: 'Disponible',
+      SENT: 'Envoyée',
+      COMPLETED: 'Terminée',
+      VERIFIED: 'Vérifiée',
+      CANCELLED: 'Annulée',
+    };
+    return labels[normalized] || normalized;
   }
 
   async repairMissingLabRequestItems() {
