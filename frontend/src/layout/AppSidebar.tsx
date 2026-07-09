@@ -222,6 +222,11 @@ const cashierNavItems: NavItem[] = [
     name: "Facturation",
     path: "/caissier/facturation",
   },
+   {
+    icon: <ChatIcon />,
+    name: "Messages caisse",
+    path: "/caissier/messages",
+  },
   {
     icon: <FolderIcon />,
     name: "Historique paiements",
@@ -240,6 +245,7 @@ const administrationNavItems: NavItem[] = [
   { icon: <BoxCubeIcon />, name: "Services", path: "/administration/services" },
   { icon: <FolderIcon />, name: "Departements", path: "/administration/departements" },
   { icon: <CalenderIcon />, name: "Salles & lits", path: "/administration/salles" },
+  { icon: <ChatIcon />, name: "Messages admin", path: "/administration/messages" },
   { icon: <DocsIcon />, name: "Rapports", path: "/administration/rapports" },
   { icon: <TaskIcon />, name: "Stock pharmacie", path: "/administration/stock" },
   { icon: <LockIcon />, name: "Profil admin", path: "/administration/profile" },

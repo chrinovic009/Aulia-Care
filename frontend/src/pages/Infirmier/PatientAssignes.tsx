@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
@@ -116,6 +117,11 @@ export default function PatientAssignes() {
   }, [patients, searchQuery, serviceFilter]);
 
   const openVitalsModal = (patient: NursePatient) => {
+    // Trigger audio announcement when opening vitals modal
+    try {
+      announcePatient(patient).catch(() => {});
+    } catch {}
+
     setSelectedPatient(patient);
     setVitalsForm({
       temperature: patient.vitals.temperature || "",
@@ -130,6 +136,47 @@ export default function PatientAssignes() {
       notes: "",
       physicianId: "",
     });
+  };
+
+  // Announce patient and play a short tone through speakers
+  const announcePatient = async (patient: NursePatient) => {
+    try {
+      const { currentUser } = useAuth();
+      const nurseName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'l\'infirmier';
+      const serviceName = (currentUser?.serviceResponsabilites && currentUser.serviceResponsabilites[0]?.service?.name) || patient.service || 'votre service';
+      const roomText = serviceName ? `dans la salle du service ${serviceName}` : 'dans la salle attribuée au service';
+
+      const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, vous êtes attendu par ${nurseName} ${roomText}.`;
+
+      // short beep using WebAudio
+      try {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = 880;
+        g.gain.value = 0.08;
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start();
+        setTimeout(() => {
+          o.stop();
+          try { ctx.close(); } catch (e) {}
+        }, 500);
+      } catch (e) {
+        // ignore audio errors
+      }
+
+      // Use SpeechSynthesis to speak the text
+      if ('speechSynthesis' in window) {
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'fr-FR';
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utter);
+      }
+    } catch (e) {
+      // ignore
+    }
   };
 
   const updateVitalsField = (field: keyof VitalsForm, value: string) => {
