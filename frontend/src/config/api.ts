@@ -94,8 +94,8 @@ export const buildUrl = (endpoint: string): string => {
 export const getAuthToken = (): string | null => {
   try {
     return (
-      localStorage.getItem("d7-clinic-auth-token") ||
       localStorage.getItem("d7-clinic-access-token") ||
+      localStorage.getItem("d7-clinic-auth-token") ||
       localStorage.getItem("d7-clinic-api-token")
     );
   } catch {

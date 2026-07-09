@@ -25,6 +25,7 @@ export class UsersController {
     'RECEPTIONIST',
     'NURSE',
     'PHYSICIAN',
+    'LAB_MANAGER',
     'LAB_TECHNICIAN',
     'RADIOLOGIST',
     'PHARMACIST',

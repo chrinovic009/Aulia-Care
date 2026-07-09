@@ -164,34 +164,69 @@ export class UsersService {
   async findContactsForRole(role?: RoleSlug | 'PATIENT', userId?: string) {
     type ContactRole = RoleSlug | 'PATIENT';
     const allowedRolesByRole: Partial<Record<RoleSlug | 'PATIENT', ContactRole[]>> = {
+      // Super admin can contact everyone
       SUPER_ADMIN: [
         'ADMIN',
         'RECEPTIONIST',
         'NURSE',
         'PHYSICIAN',
+        'LAB_MANAGER',
         'LAB_TECHNICIAN',
         'RADIOLOGIST',
         'PHARMACIST',
         'CASHIER',
         'PATIENT',
       ],
+
+      // Admin can contact (and be contacted by) everyone
       ADMIN: [
+        'SUPER_ADMIN',
         'RECEPTIONIST',
         'NURSE',
         'PHYSICIAN',
+        'LAB_MANAGER',
         'LAB_TECHNICIAN',
         'RADIOLOGIST',
         'PHARMACIST',
         'CASHIER',
         'PATIENT',
       ],
-      RECEPTIONIST: ['RECEPTIONIST', 'PATIENT'],
-      NURSE: ['NURSE', 'PHYSICIAN', 'PATIENT'],
-      PHYSICIAN: ['PHYSICIAN', 'NURSE', 'LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST'],
-      LAB_TECHNICIAN: ['LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN'],
-      RADIOLOGIST: ['LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN'],
-      PHARMACIST: ['LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN'],
-      PATIENT: ['RECEPTIONIST', 'NURSE', 'PHYSICIAN'],
+
+      // Reception can contact patients and hospital staff (pharmacy, caisse, medecins, labo, infirmiers)
+      RECEPTIONIST: [
+        'PATIENT',
+        'PHARMACIST',
+        'CASHIER',
+        'PHYSICIAN',
+        'LAB_TECHNICIAN',
+        'LAB_MANAGER',
+        'NURSE',
+        'ADMIN',
+      ],
+
+      // Nurse can contact nurses, physicians (in their dept), patients and reception
+      NURSE: ['NURSE', 'PHYSICIAN', 'PATIENT', 'RECEPTIONIST', 'ADMIN'],
+
+      // Physician can contact nurses in their department (handled elsewhere), patients, reception, lab staff and pharmacists
+      PHYSICIAN: ['PHYSICIAN', 'NURSE', 'PATIENT', 'RECEPTIONIST', 'LAB_TECHNICIAN', 'LAB_MANAGER', 'PHARMACIST', 'ADMIN'],
+
+      // Lab manager can contact lab technicians, reception and all physicians
+      LAB_MANAGER: ['LAB_TECHNICIAN', 'RECEPTIONIST', 'PHYSICIAN', 'ADMIN', 'PHARMACIST'],
+
+      // Lab technicians can contact other technicians, the lab manager, reception, pharmacists and physicians (subject to result-sending permissions)
+      LAB_TECHNICIAN: ['LAB_TECHNICIAN', 'LAB_MANAGER', 'RECEPTIONIST', 'PHYSICIAN', 'PHARMACIST', 'ADMIN'],
+
+      // Radiologists follow similar visibility to lab technicians/physicians
+      RADIOLOGIST: ['RADIOLOGIST', 'LAB_TECHNICIAN', 'PHYSICIAN', 'PHARMACIST', 'RECEPTIONIST', 'ADMIN'],
+
+      // Pharmacists can contact physicians, reception, and lab staff
+      PHARMACIST: ['PHARMACIST', 'PHYSICIAN', 'RECEPTIONIST', 'LAB_TECHNICIAN', 'ADMIN'],
+
+      // Patient can contact reception, the nurse who took vitals (handled elsewhere), physicians and lab staff
+      PATIENT: ['RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'LAB_TECHNICIAN', 'ADMIN'],
+
+      // Cashier can contact reception and admin
+      CASHIER: ['RECEPTIONIST', 'ADMIN'],
     };
 
     const allowedRoles = role ? allowedRolesByRole[role] || [] : [];

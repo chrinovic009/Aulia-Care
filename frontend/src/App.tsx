@@ -65,6 +65,7 @@ import DashboardSupAdmin from "./pages/SuperAdmin/DashboardSupAdmin";
 import ProfileSupAdmin from "./pages/SuperAdmin/ProfileSupAdmin";
 import ProfilePharmacie from "./pages/Pharmacie/ProfilePharmacie";
 import Guide from "./pages/Guide";
+import MessagesAdmin from "./pages/Administration/MessagesAdmin";
 
 export default function App() {
   return (
@@ -138,6 +139,7 @@ export default function App() {
             <Route path="/administration/services" element={<RoleGuard requiredRoles={["ADMIN"]}><GestionServAdmin /></RoleGuard>} />
             <Route path="/administration/departements" element={<RoleGuard requiredRoles={["ADMIN"]}><GestionDepartAdmin /></RoleGuard>} />
             <Route path="/administration/salles" element={<RoleGuard requiredRoles={["ADMIN"]}><GestionSalleAdmin /></RoleGuard>} />
+            <Route path="/administration/messages" element={<RoleGuard requiredRoles={["ADMIN"]}><MessagesAdmin /></RoleGuard>} />
             <Route path="/administration/rapports" element={<RoleGuard requiredRoles={["ADMIN"]}><RapportAdmin /></RoleGuard>} />
             <Route path="/administration/stock" element={<RoleGuard requiredRoles={["ADMIN"]}><GestionStockAdmin /></RoleGuard>} />
             <Route path="/administration/profile" element={<RoleGuard requiredRoles={["ADMIN"]}><ProfilAdmin /></RoleGuard>} />
