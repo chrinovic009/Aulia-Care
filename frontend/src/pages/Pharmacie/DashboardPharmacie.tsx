@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { apiFetch } from "../../config/api";
-import { dispensePrescription, fetchReadyPrescriptions, PharmacyPrescription, PharmacyPrescriptionLine } from "../../api/pharmacy";
+import { dispensePrescription, fetchPrescriptions, fetchReadyPrescriptions, PharmacyPrescription, PharmacyPrescriptionLine } from "../../api/pharmacy";
 
 type MedicationCatalogItem = {
   id?: string;
@@ -41,7 +41,7 @@ export default function DashboardPharmacie() {
     try {
       const [meds, consults, stockData] = await Promise.all([
         apiFetch<MedicationCatalogItem[]>("/pharmacy").catch(() => []),
-        apiFetch<ConsultationSummary[]>("/consultations").catch(() => []),
+        fetchPrescriptions().catch(() => []),
         apiFetch<StockData>("/administration/stock").catch(() => ({})),
       ]);
       const ready = await fetchReadyPrescriptions().catch(() => []);
@@ -165,7 +165,7 @@ export default function DashboardPharmacie() {
           <Table headers={["Code", "Nom", "Dosage", "Unite"]} rows={medications.slice(0, 15).map((item) => [
             item.code || "-",
             item.name || "-",
-            item.dosage || "-",
+            item.dosage || item.strength || "-",
             item.unit || "-",
           ])} />
         </Panel>

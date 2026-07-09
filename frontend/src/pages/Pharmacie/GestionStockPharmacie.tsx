@@ -22,6 +22,7 @@ type StockMedication = {
 
 export default function GestionStockPharmacie() {
   const [medications, setMedications] = useState<StockMedication[]>([]);
+  const [catalogMedications, setCatalogMedications] = useState<StockMedication[]>([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "in-stock" | "low" | "out">("all");
   const [isLoading, setIsLoading] = useState(true);
@@ -34,8 +35,12 @@ export default function GestionStockPharmacie() {
   const loadStock = async () => {
     setIsLoading(true);
     try {
-      const data = await apiFetch<StockMedication[]>("/pharmacy/available").catch(() => []);
+      const [data, catalog] = await Promise.all([
+        apiFetch<StockMedication[]>("/pharmacy/available").catch(() => []),
+        apiFetch<StockMedication[]>("/pharmacy").catch(() => []),
+      ]);
       setMedications(data || []);
+      setCatalogMedications(catalog || []);
     } finally {
       setIsLoading(false);
     }
@@ -194,7 +199,7 @@ export default function GestionStockPharmacie() {
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <select value={lotForm.medicationId} onChange={(event) => setLotForm((current) => ({ ...current, medicationId: event.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:col-span-2">
                     <option value="">Médicament</option>
-                    {medications.map((medication) => (
+                    {catalogMedications.map((medication) => (
                       <option key={medication.id} value={medication.id}>{medication.name}</option>
                     ))}
                   </select>
