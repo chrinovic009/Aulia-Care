@@ -254,7 +254,7 @@ export default function ReceptionPatients() {
             <div class="patient-header">
               <div>
                 <div class="patient-name">${selectedPatient.name}</div>
-                <div class="patient-id">ID Patient: ${formatPatientDossierId(selectedPatient.id, undefined, { truncateTo: 8, position: selectedPatientPosition })}</div>
+                <div class="patient-id">ID Patient: ${selectedPatient.id || ''}</div>
               </div>
               <div style="text-align: right;">
                 <div style="font-weight: bold; font-size: 12pt;">FICHE PATIENT</div>
@@ -338,6 +338,7 @@ export default function ReceptionPatients() {
   const selectedPatient = (patients && patients.length > 0)
     ? (patients.find((p) => p.id === selectedPatientId) || patients[0])
     : EMPTY_PATIENT;
+  const selectedPatientPosition = selectedPatient && patients && patients.length > 0 ? patients.findIndex((p) => p.id === selectedPatient.id) + 1 : undefined;
 
   useEffect(() => {
     (async () => {
@@ -399,8 +400,15 @@ export default function ReceptionPatients() {
 
         if (ps && ps.length > 0) {
           const normalized = (ps as any[]).map(ensurePatientDefaults);
-          console.log('Normalized patients:', normalized);
-          setPatients(normalized);
+          // Deduplicate patients by id to avoid duplicate keys in lists
+          const byId = new Map<string, Patient>();
+          for (const p of normalized) {
+            if (!p.id) continue;
+            if (!byId.has(p.id)) byId.set(p.id, p);
+          }
+          const uniquePatients = Array.from(byId.values());
+          console.log('Normalized patients:', uniquePatients);
+          setPatients(uniquePatients);
           const requestedPatient = navigationState?.patientId
             ? normalized.find((patient) => patient.id === navigationState.patientId)
             : null;
@@ -438,11 +446,42 @@ export default function ReceptionPatients() {
         // nurse list not needed by reception actions (view-only), skipping
 
         const services = await fetchServices();
-        setAppointmentTypes(services || []);
+        // Exclude administrative services from appointment 'Type' list
+        const normalize = (v: string) => (v || '').toString().normalize('NFD').replace(/[ --\u0300-\u036f]/g, '').toLowerCase().trim();
+        const filteredServices = (services || []).filter((s: any) => {
+          const name = normalize(s.name || s.title || '');
+          if (['caisse', 'reception'].includes(name)) return false;
+          if (s.isParamedical === true) return true;
+          if (s.department && s.department.type) return s.department.type !== 'ADMINISTRATION';
+          return true;
+        });
+        // dedupe services by id or name
+        const svcMap = new Map<string, any>();
+        for (const s of filteredServices) {
+          const key = s.id || (s.name || '').toString();
+          if (!svcMap.has(key)) svcMap.set(key, s);
+        }
+        setAppointmentTypes(Array.from(svcMap.values()));
 
-        const docs = await fetch(`${API_BASE_URL}/users?role=PHYSICIAN`, { credentials: 'include' }).then((r) => r.ok ? r.json() : [] ).catch(() => []);
-        const docsAlt = await fetch(`${API_BASE_URL}/users?role=MEDECIN`, { credentials: 'include' }).then((r) => r.ok ? r.json() : [] ).catch(() => []);
-        setDoctors((Array.isArray(docs) ? docs : []).concat(Array.isArray(docsAlt) ? docsAlt : []));
+        // Fetch all users and filter client-side to include medical + paramedical staff
+        const rawAll = await fetch(`${API_BASE_URL}/users`, { credentials: 'include' }).then((r) => r.ok ? r.json() : [] ).catch(() => []);
+        const rawDocs = Array.isArray(rawAll) ? rawAll : [];
+        const allowedRoles = ['PHYSICIAN', 'MEDECIN', 'SURGEON', 'RADIOLOGIST', 'ANESTHESIOLOGIST', 'NURSE', 'LAB_TECHNICIAN', 'PHARMACIST'];
+        const filteredDocs = rawDocs.filter((d: any) => {
+          if (!d) return false;
+          if (d.primaryRole && allowedRoles.includes(d.primaryRole)) return true;
+          if (Array.isArray(d.roles) && d.roles.some((r: any) => allowedRoles.includes(r))) return true;
+          // include users linked to a paramedical service unit (if present in payload)
+          if (d.serviceUnit && d.serviceUnit.department && d.serviceUnit.department.type && d.serviceUnit.department.type !== 'ADMINISTRATION') return true;
+          return false;
+        });
+        // dedupe doctors by id
+        const docMap = new Map<string, any>();
+        for (const dd of filteredDocs) {
+          if (!dd || !dd.id) continue;
+          if (!docMap.has(dd.id)) docMap.set(dd.id, dd);
+        }
+        setDoctors(Array.from(docMap.values()));
       } catch (e) {}
     })();
   }, [navigationState?.openAppointment, navigationState?.patientId]);
@@ -481,15 +520,45 @@ export default function ReceptionPatients() {
       const name = item.name || item.title || "";
       return id === type || name === type;
     });
-    const payload = {
+    // Ensure scheduledAt is a valid ISO-8601 datetime string accepted by Prisma
+    let scheduledAt = datetime;
+    if (!scheduledAt) {
+      alert('Veuillez fournir une date et heure valides');
+      return;
+    }
+    // If format is YYYY-MM-DDTHH:mm or with seconds, parse components as local time
+    const m = scheduledAt.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/);
+    if (m) {
+      const y = parseInt(m[1], 10);
+      const mo = parseInt(m[2], 10) - 1;
+      const d = parseInt(m[3], 10);
+      const hh = parseInt(m[4], 10);
+      const mm = parseInt(m[5], 10);
+      const ss = m[6] ? parseInt(m[6], 10) : 0;
+      const ms = m[7] ? parseInt((m[7] + '000').slice(0, 3), 10) : 0;
+      const dt = new Date(y, mo, d, hh, mm, ss, ms); // local time
+      scheduledAt = dt.toISOString();
+    } else {
+      // fallback: try to create Date and send ISO
+      const cand = new Date(scheduledAt);
+      if (!isNaN(cand.getTime())) scheduledAt = cand.toISOString();
+    }
+
+    const payload: any = {
       patientId: selectedPatient.id,
       requestedById: currentUser?.id || undefined,
-      serviceUnitId: selectedService?.id || undefined,
-      scheduledAt: datetime,
+      // serviceUnitId must reference a ServiceUnit record. The `appointmentTypes` array contains Service entries,
+      // which do not map directly to ServiceUnit ids. Omit serviceUnitId when we don't have a valid ServiceUnit id.
+      scheduledAt,
       reason: [notes || type || "Nouvelle visite", doctorId ? `Medecin: ${doctorId}` : ""].filter(Boolean).join(" - "),
       status: "SCHEDULED",
       durationMinutes: 30,
     };
+    // If appointmentTypes entries include a serviceUnitId property, include it; otherwise omit to avoid FK errors.
+    if (selectedService && (selectedService as any).serviceUnitId) {
+      payload.serviceUnitId = (selectedService as any).serviceUnitId;
+    }
+    if (doctorId) payload.recipientId = doctorId;
     try {
       const api = await import('../../api/reception');
       const created = await api.createAppointmentInDatabase(payload);
@@ -844,12 +913,12 @@ export default function ReceptionPatients() {
               <label className="text-sm">Type</label>
               <select id="appt-type" value={selectedApptType} onChange={(e) => setSelectedApptType(e.target.value)} className="w-full rounded-md border px-3 py-2">
                 <option value="">Sélectionner un type</option>
-                {appointmentTypes.map((t: any) => (<option key={t.id || t.name} value={t.id || t.name}>{t.name || t.title}</option>))}
+                {appointmentTypes.map((t: any, i) => (<option key={t.id || `${t.name}-${i}`} value={t.id || t.name}>{t.name || t.title}</option>))}
               </select>
-              <label className="text-sm">Médecin</label>
+              <label className="text-sm">Personnel</label>
               <select id="appt-doctor" value={selectedApptDoctor} onChange={(e) => setSelectedApptDoctor(e.target.value)} className="w-full rounded-md border px-3 py-2">
-                <option value="">Sélectionner un médecin</option>
-                {doctors.map((d: any) => (<option key={d.id} value={d.id}>{d.firstName ? `${d.firstName} ${d.lastName || ''}` : d.displayName || d.username}</option>))}
+                <option value="">Sélectionner le personnel (médecins, infirmiers, techniciens...)</option>
+                {doctors.map((d: any, i) => (<option key={d.id || `${d.displayName || d.username}-${i}`} value={d.id}>{d.firstName ? `${d.firstName} ${d.lastName || ''}` : d.displayName || d.username}</option>))}
               </select>
               <label className="text-sm">Notes</label>
               <textarea id="appt-notes" className="w-full rounded-md border px-3 py-2" />
