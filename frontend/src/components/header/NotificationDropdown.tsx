@@ -4,6 +4,7 @@ import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { RoleSlug, useAuth } from "../../context/AuthContext";
 import { fetchUnreadMessages, StoredMessage } from "../../api/messages";
+import { playNotificationSound } from "../../utils/notificationSound";
 
 type RealtimeMessage = {
   id: string;
@@ -37,27 +38,7 @@ const truncate = (value: string, size = 90) => {
 };
 
 const playMessageSound = () => {
-  try {
-    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!Ctx) return;
-
-    const ctx = new Ctx();
-    const oscillator = ctx.createOscillator();
-    const gain = ctx.createGain();
-    oscillator.type = "sine";
-    oscillator.frequency.value = 880;
-    oscillator.connect(gain);
-    gain.connect(ctx.destination);
-    gain.gain.setValueAtTime(0.08, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.45);
-    oscillator.start();
-    window.setTimeout(() => {
-      oscillator.stop();
-      ctx.close();
-    }, 500);
-  } catch {
-    // Browsers may block audio until the user interacts with the page.
-  }
+  playNotificationSound();
 };
 
 const mapStoredUnread = (message: StoredMessage): RealtimeMessage => ({

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { playNotificationSound } from "../../utils/notificationSound";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import {
@@ -171,21 +172,8 @@ export default function PatientAssignes() {
 
       const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, vous êtes attendu par ${nurseName} ${roomText}.`;
 
-      // short beep using WebAudio
       try {
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.type = 'sine';
-        o.frequency.value = 880;
-        g.gain.value = 0.08;
-        o.connect(g);
-        g.connect(ctx.destination);
-        o.start();
-        setTimeout(() => {
-          o.stop();
-          try { ctx.close(); } catch (e) {}
-        }, 500);
+        playNotificationSound();
       } catch (e) {
         // ignore audio errors
       }
