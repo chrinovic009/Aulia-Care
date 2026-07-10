@@ -31,7 +31,7 @@ const formatLabStatus = (status?: string | null) => {
 };
 
 const getLabRequestViewState = (request: { status?: string | null; results?: Array<{ resultName?: string | null; resultValue?: string | null }> | null }, patientWorkflowStatus?: string | null) => {
-  const hasResults = Boolean(request.results?.length);
+  const hasResults = Boolean(request.results?.some((result) => (result.resultValue || "").trim()));
   const normalizedWorkflow = (patientWorkflowStatus || "").toUpperCase();
   const normalizedRequestStatus = (request.status || "").toUpperCase();
   const alreadyTreatedStatuses = new Set([
@@ -215,7 +215,7 @@ export default function ExamensMedecin() {
                               {request.results?.map((result, index) => (
                                 <div key={`${request.id}-${index}`} className="rounded-lg border border-slate-200 bg-white/80 p-2.5 dark:border-slate-800 dark:bg-slate-900/70">
                                   <p className="font-medium text-slate-700 dark:text-slate-200">
-                                    {result.resultName}: {result.resultValue} {result.units || ""}
+                                    {result.resultName || "Résultat"}: {result.resultValue?.trim() || "Non renseigné"}{result.units ? ` ${result.units}` : ""}
                                     {result.verified ? " • Validé" : ""}
                                   </p>
                                   <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">

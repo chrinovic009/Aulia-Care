@@ -44,8 +44,26 @@ export type RecordVitalSignsPayload = {
   physicianId?: string;
 };
 
+export type NurseOrientationHistoryItem = {
+  id: string;
+  patientId: string;
+  patientName: string | null;
+  service?: string | null;
+  physicianId?: string | null;
+  physicianName?: string | null;
+  nurseName?: string | null;
+  eventDate: string;
+  notes?: string | null;
+};
+
 export const fetchPatientsAwaitingVitals = async (): Promise<NursePatient[]> => {
   return apiFetch<NursePatient[]>(API_CONFIG.NURSE.AWAITING_VITALS);
+};
+
+export const fetchNurseOrientationHistory = async (
+  period: 'today' | 'yesterday' | 'week' | 'all' = 'today',
+): Promise<NurseOrientationHistoryItem[]> => {
+  return apiFetch<NurseOrientationHistoryItem[]>(`${API_CONFIG.NURSE.ORIENTATION_HISTORY}?period=${period}`);
 };
 
 export const recordPatientVitalSigns = async (

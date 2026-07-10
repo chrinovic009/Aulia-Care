@@ -10,7 +10,15 @@ export const doctorLabel = (doctor?: DoctorPatient["assignedDoctor"] | null) =>
   doctor?.displayName || [doctor?.firstName, doctor?.lastName].filter(Boolean).join(" ") || "Aucun medecin";
 
 export const patientSearchText = (patient: DoctorPatient) =>
-  [formatDoctorPatientName(patient), patient.phone, patient.email, serviceLabel(patient), patient.workflowStatus, doctorLabel(patient.assignedDoctor)]
+  [
+    formatDoctorPatientName(patient),
+    patient.phone,
+    patient.email,
+    serviceLabel(patient),
+    patient.workflowStatus,
+    patient.hasPendingAppointmentWithoutConsultation ? 'Non reçu' : null,
+    doctorLabel(patient.assignedDoctor),
+  ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();

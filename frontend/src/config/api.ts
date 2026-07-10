@@ -35,6 +35,7 @@ export const API_CONFIG = {
   // Nurse endpoints
   NURSE: {
     AWAITING_VITALS: "/patients/nurse/awaiting-vitals",
+    ORIENTATION_HISTORY: "/patients/nurse/orientation-history",
     RECORD_VITAL_SIGNS: (patientId: string) => `/patients/${patientId}/vital-signs`,
   },
 

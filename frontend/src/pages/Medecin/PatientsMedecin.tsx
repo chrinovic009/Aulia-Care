@@ -82,6 +82,7 @@ export default function PatientsMedecin() {
         patient.email,
         serviceLabel(patient),
         patient.workflowStatus,
+        patient.hasPendingAppointmentWithoutConsultation ? 'Non reçu' : null,
         doctorLabel(patient.assignedDoctor),
       ].filter(Boolean).join(" ").toLowerCase();
       return matchesFilter && (!normalized || haystack.includes(normalized));
@@ -90,6 +91,9 @@ export default function PatientsMedecin() {
 
   const selectedPatient = patients.find((patient) => patient.id === selectedPatientId) || filteredPatients[0] || null;
   const selectedPatientPosition = selectedPatient ? patients.findIndex((patient) => patient.id === selectedPatient.id) + 1 : undefined;
+
+  const patientStatusLabel = (patient: DoctorPatient) =>
+    patient.hasPendingAppointmentWithoutConsultation ? 'Non reçu' : patient.workflowStatus || 'Statut inconnu';
 
   const metrics = useMemo(() => ({
     total: patients.length,
@@ -178,6 +182,9 @@ export default function PatientsMedecin() {
                     <p className="font-semibold text-slate-900 dark:text-white">{formatDoctorPatientName(patient)}</p>
                     <p className="mt-1 text-xs text-slate-500">{serviceLabel(patient)}</p>
                     <p className="mt-1 text-xs text-slate-500">Envoye vers: {doctorLabel(patient.assignedDoctor)}</p>
+                    {patient.hasPendingAppointmentWithoutConsultation ? (
+                      <span className="mt-2 inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">Non reçu</span>
+                    ) : null}
                   </div>
                   <AccessBadge access={patient.access} />
                 </div>
@@ -214,7 +221,7 @@ function PatientRecord({ patient, position }: { patient: DoctorPatient; position
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge label={patient.workflowStatus || "Statut inconnu"} />
+              <StatusBadge label={patient.hasPendingAppointmentWithoutConsultation ? 'Non reçu' : patient.workflowStatus || "Statut inconnu"} />
               <AccessBadge access={patient.access} />
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                 {patient.priority ? `Priorité : ${patient.priority}` : "Priorité normale"}
@@ -313,7 +320,13 @@ function PatientRecord({ patient, position }: { patient: DoctorPatient; position
               key={request.id}
               title={`${formatExamRequestId(index + 1, patient)} - ${request.specimenType || "Examen"}`}
               subtitle={`${request.status} - ${formatDate(request.requestedAt)}`}
-              text={request.results?.length ? request.results.map((result) => `${result.resultName}: ${result.resultValue} ${result.units || ""}`).join(", ") : "Resultat en attente."}
+              text={
+                request.results?.length
+                  ? request.results
+                      .map((result) => `${result.resultName || "Résultat"}: ${result.resultValue?.trim() || "Non renseigné"}${result.units ? ` ${result.units}` : ""}`)
+                      .join(", ")
+                  : "Resultat en attente."
+              }
             />
           ))}
         </Section>
@@ -779,7 +792,10 @@ function TimelineCard({ title, subtitle, text }: { title: string; subtitle: stri
 }
 
 function StatusBadge({ label }: { label: string }) {
-  return <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{label}</span>;
+  const classes = label === 'Non reçu'
+    ? 'rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-200'
+    : 'rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200';
+  return <span className={classes}>{label}</span>;
 }
 
 function AccessBadge({ access }: { access?: DoctorPatient["access"] }) {

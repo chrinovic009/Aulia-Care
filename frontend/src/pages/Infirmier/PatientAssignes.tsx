@@ -4,10 +4,12 @@ import { useNavigate } from "react-router-dom";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import {
+  fetchNurseOrientationHistory,
   fetchPatientsAwaitingVitals,
   formatPatientName,
   isUrgentPatient,
   NursePatient,
+  NurseOrientationHistoryItem,
   recordPatientVitalSigns,
   RecordVitalSignsPayload,
 } from "../../api/nurse";
@@ -45,10 +47,14 @@ const formatDate = (value?: string | null) => {
 
 export default function PatientAssignes() {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [patients, setPatients] = useState<NursePatient[]>([]);
+  const [historyItems, setHistoryItems] = useState<NurseOrientationHistoryItem[]>([]);
+  const [historyPeriod, setHistoryPeriod] = useState<'today' | 'yesterday' | 'week' | 'all'>('today');
   const [searchQuery, setSearchQuery] = useState("");
   const [serviceFilter, setServiceFilter] = useState("Tous");
   const [isLoading, setIsLoading] = useState(true);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<NursePatient | null>(null);
@@ -70,8 +76,22 @@ export default function PatientAssignes() {
     }
   };
 
+  const loadHistory = async (period: 'today' | 'yesterday' | 'week' | 'all' = 'today') => {
+    setIsHistoryLoading(true);
+    setError(null);
+    try {
+      const data = await fetchNurseOrientationHistory(period);
+      setHistoryItems(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Impossible de charger l'historique de l'orientation.");
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadPatients();
+    loadHistory(historyPeriod);
     Promise.all([
       apiFetch<any[]>("/users").catch(() => []),
       fetchServices().catch(() => []),
@@ -80,6 +100,10 @@ export default function PatientAssignes() {
       setServicesCatalog(services || []);
     });
   }, []);
+
+  useEffect(() => {
+    loadHistory(historyPeriod);
+  }, [historyPeriod]);
 
   const services = useMemo(
     () => ["Tous", ...Array.from(new Set(patients.map((patient) => patient.service || "Non affecte")))],
@@ -119,7 +143,7 @@ export default function PatientAssignes() {
   const openVitalsModal = (patient: NursePatient) => {
     // Trigger audio announcement when opening vitals modal
     try {
-      announcePatient(patient).catch(() => {});
+      announcePatient(patient, currentUser).catch(() => {});
     } catch {}
 
     setSelectedPatient(patient);
@@ -139,10 +163,9 @@ export default function PatientAssignes() {
   };
 
   // Announce patient and play a short tone through speakers
-  const announcePatient = async (patient: NursePatient) => {
+  const announcePatient = async (patient: NursePatient, currentUser: any) => {
     try {
-      const { currentUser } = useAuth();
-      const nurseName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'l\'infirmier';
+      const nurseName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : "l'infirmier";
       const serviceName = (currentUser?.serviceResponsabilites && currentUser.serviceResponsabilites[0]?.service?.name) || patient.service || 'votre service';
       const roomText = serviceName ? `dans la salle du service ${serviceName}` : 'dans la salle attribuée au service';
 
@@ -167,12 +190,34 @@ export default function PatientAssignes() {
         // ignore audio errors
       }
 
-      // Use SpeechSynthesis to speak the text
       if ('speechSynthesis' in window) {
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.lang = 'fr-FR';
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utter);
+        const speakWithVoice = (voices: SpeechSynthesisVoice[]) => {
+          const frenchVoice = voices.find(
+            (voice) =>
+              voice.lang?.toLowerCase().startsWith('fr') ||
+              voice.name?.toLowerCase().includes('french') ||
+              voice.name?.toLowerCase().includes('français') ||
+              voice.name?.toLowerCase().includes('francais'),
+          );
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.lang = 'fr-FR';
+          if (frenchVoice) {
+            utter.voice = frenchVoice;
+          }
+          utter.rate = 0.95;
+          utter.pitch = 1.05;
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utter);
+        };
+
+        const voices = window.speechSynthesis.getVoices() || [];
+        if (voices.length > 0) {
+          speakWithVoice(voices);
+        } else {
+          window.speechSynthesis.onvoiceschanged = () => {
+            speakWithVoice(window.speechSynthesis.getVoices() || []);
+          };
+        }
       }
     } catch (e) {
       // ignore
@@ -195,7 +240,7 @@ export default function PatientAssignes() {
       await recordPatientVitalSigns(selectedPatient.id, vitalsForm);
       setSelectedPatient(null);
       setVitalsForm(emptyVitalsForm);
-      await loadPatients();
+      await Promise.all([loadPatients(), loadHistory(historyPeriod)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible d'enregistrer les signes vitaux.");
     } finally {
@@ -392,6 +437,69 @@ export default function PatientAssignes() {
               </article>
             );
           })
+        )}
+      </section>
+
+      <section className="mt-8 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Historique du jour</p>
+            <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">Bon de rendu - orientation infirmière</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Affiche les orientations prises aujourd’hui. Les patients orientés quittent la file infirmier.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {(['today', 'yesterday', 'week', 'all'] as const).map((period) => (
+              <button
+                key={period}
+                type="button"
+                onClick={() => setHistoryPeriod(period)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold ${historyPeriod === period ? 'bg-slate-900 text-white dark:bg-slate-700' : 'border border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-white'}`}
+              >
+                {period === 'today' ? "Aujourd'hui" : period === 'yesterday' ? 'Hier' : period === 'week' ? '7 derniers jours' : 'Tous'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {isHistoryLoading ? (
+          <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+            Chargement de l'historique d'orientation...
+          </div>
+        ) : historyItems.length === 0 ? (
+          <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+            Aucune orientation infirmière n'a été enregistrée pour cette période.
+          </div>
+        ) : (
+          <div className="mt-6 space-y-3">
+            {historyItems.map((item) => (
+              <article key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.patientName || 'Patient inconnu'}</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Service : {item.service || 'Non affecté'}</p>
+                  </div>
+                  <div className="text-right text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {formatDateTime(item.eventDate)}
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg bg-white p-3 text-sm text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                    <p className="font-semibold text-slate-900 dark:text-white">Infirmier</p>
+                    <p>{item.nurseName || 'Non renseigné'}</p>
+                  </div>
+                  <div className="rounded-lg bg-white p-3 text-sm text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                    <p className="font-semibold text-slate-900 dark:text-white">Médecin orienté</p>
+                    <p>{item.physicianName || 'Non renseigné'}</p>
+                  </div>
+                </div>
+                {item.notes && (
+                  <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">Notes : {item.notes}</p>
+                )}
+              </article>
+            ))}
+          </div>
         )}
       </section>
 

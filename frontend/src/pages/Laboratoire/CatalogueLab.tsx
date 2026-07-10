@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "../../context/AuthContext";
 import { AdminPageShell, DataTable, Panel, StatCard } from "../Administration/adminUi";
 import {
   fetchLaboratoryCatalogue,
@@ -27,6 +28,7 @@ const tabs = [
 ];
 
 export default function CatalogueLab() {
+  const { currentUser } = useAuth();
   const [catalogue, setCatalogue] = useState<LabCataloguePayload | null>(null);
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [isLoading, setIsLoading] = useState(true);
@@ -46,6 +48,7 @@ export default function CatalogueLab() {
   const [showConsumableForm, setShowConsumableForm] = useState(false);
   const [showConsumableRequirementForm, setShowConsumableRequirementForm] = useState(false);
   const [showStockForm, setShowStockForm] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [sampleRequirementForm, setSampleRequirementForm] = useState({ labTestId: '', labSampleTypeId: '', volumeRequired: '', volumeUnit: 'mL', storageCondition: '', maxAgeMinutes: '', instructions: '' });
   const [consumableForm, setConsumableForm] = useState({ name: '', code: '', description: '', unit: '', active: true });
   const [consumableRequirementForm, setConsumableRequirementForm] = useState({ labTestId: '', labConsumableId: '', quantity: '1', unit: '' });
@@ -85,6 +88,177 @@ export default function CatalogueLab() {
       }),
     );
   }, [catalogue]);
+
+  const filterText = searchQuery.trim().toLowerCase();
+  const matchesSearch = (fields: Array<string | number | undefined | null>) => {
+    if (!filterText) return true;
+    return fields.some((field) => String(field || '').toLowerCase().includes(filterText));
+  };
+
+  const stockRows = useMemo(() => {
+    if (!catalogue) return [];
+    return catalogue.consumables.flatMap((consumable) =>
+      consumable.stock.map((stockLine) => ({ consumable, stockLine })),
+    );
+  }, [catalogue]);
+
+  const filteredSections = useMemo(
+    () => catalogue?.sections.filter((section) => matchesSearch([section.name, section.description])) ?? [],
+    [catalogue, filterText],
+  );
+
+  const filteredCategories = useMemo(
+    () => catalogue?.categories.filter((category) =>
+      matchesSearch([category.name, category.code, category.description, category.section?.name]),
+    ) ?? [],
+    [catalogue, filterText],
+  );
+
+  const filteredTests = useMemo(
+    () => catalogue?.tests.filter((test) =>
+      matchesSearch([test.code, test.name, test.description, test.section?.name, test.category?.name, test.unit, test.referenceRange]),
+    ) ?? [],
+    [catalogue, filterText],
+  );
+
+  const filteredParameters = useMemo(
+    () => catalogue?.tests.flatMap((test) => test.parameterTemplates).filter((parameter) =>
+      matchesSearch([parameter.code, parameter.name, parameter.unit, parameter.resultType, parameter.referenceRange]),
+    ) ?? [],
+    [catalogue, filterText],
+  );
+
+  const filteredSampleTypes = useMemo(
+    () => catalogue?.sampleTypes.filter((sampleType) =>
+      matchesSearch([sampleType.name, sampleType.description, sampleType.sampleRequirements.map((req) => `${req.labTest?.name || ''} ${req.volumeRequired || ''} ${req.storageCondition || ''} ${req.instructions || ''}`).join(' ')]),
+    ) ?? [],
+    [catalogue, filterText],
+  );
+
+  const filteredSampleRequirements = useMemo(
+    () => catalogue?.tests.flatMap((test) => test.sampleRequirements).filter((requirement) =>
+      matchesSearch([requirement.labTest?.name, requirement.labSampleType?.name, requirement.volumeRequired, requirement.volumeUnit, requirement.storageCondition, requirement.instructions]),
+    ) ?? [],
+    [catalogue, filterText],
+  );
+
+  const filteredConsumables = useMemo(
+    () => catalogue?.consumables.filter((consumable) =>
+      matchesSearch([consumable.name, consumable.code, consumable.description, consumable.unit, consumable.stock.map((stockLine) => `${stockLine.quantity} ${stockLine.location || ''}`).join(' ')]),
+    ) ?? [],
+    [catalogue, filterText],
+  );
+
+  const filteredStockRows = useMemo(
+    () => stockRows.filter(({ consumable, stockLine }) =>
+      matchesSearch([consumable.name, consumable.code, consumable.unit, stockLine.location, stockLine.quantity, stockLine.minimumLevel, stockLine.criticalLevel]),
+    ),
+    [stockRows, filterText],
+  );
+
+  const formatStockStatus = (quantity: string, minimumLevel?: string | null, criticalLevel?: string | null) => {
+    const qty = Number(quantity || '0');
+    const min = Number(minimumLevel || '0');
+    const critical = Number(criticalLevel || '0');
+    if (critical > 0 && qty <= critical) return 'Critique';
+    if (min > 0 && qty <= min) return 'Alerte';
+    return 'Suffisant';
+  };
+
+  const printStockReport = () => {
+    if (!catalogue) return;
+    const rows = filteredStockRows.length > 0 ? filteredStockRows : stockRows;
+    const responsibleName = currentUser?.displayName || [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(" ") || "Responsable laboratoire";
+    const html = `
+      <html>
+        <head>
+          <title>État du stock laboratoire</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+            .page { max-width: 960px; margin: 0 auto; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+            .brand { display: flex; align-items: center; gap: 14px; }
+            .logo { width: 56px; height: 56px; object-fit: contain; }
+            .title { font-size: 24px; font-weight: 700; margin: 0; }
+            .subtitle { margin: 8px 0 0; color: #4b5563; font-size: 14px; }
+            .responsible { margin-top: 12px; font-size: 13px; font-weight: 600; color: #111827; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #d1d5db; padding: 10px; text-align: left; vertical-align: top; font-size: 12px; }
+            th { background: #f8fafc; font-weight: 700; }
+            .status-critique { color: #b91c1c; font-weight: 700; }
+            .status-alerte { color: #b45309; font-weight: 700; }
+            .status-suffisant { color: #047857; font-weight: 700; }
+            .footer { margin-top: 24px; font-size: 12px; color: #6b7280; border-top: 1px solid #d1d5db; padding-top: 12px; }
+            .signature { margin-top: 36px; display: flex; justify-content: space-between; gap: 20px; }
+            .signature-block { width: 45%; text-align: left; }
+            .signature-line { margin-top: 60px; border-top: 1px solid #111827; width: 100%; }
+            @media print { body { margin: 0; } .page { padding: 18mm; } }
+          </style>
+        </head>
+        <body>
+          <div class="page">
+            <div class="header">
+              <div class="brand">
+                <img src="/images/favicon.png" alt="Logo clinique" class="logo" />
+                <div>
+                  <div class="title">État du stock laboratoire</div>
+                  <div class="subtitle">Service de laboratoire - D7 Clinique</div>
+                  <div class="subtitle">Imprimé le ${new Date().toLocaleDateString('fr-FR')}</div>
+                  <div class="responsible">Responsable laboratoire: ${responsibleName}</div>
+                </div>
+              </div>
+              <div style="text-align:right; font-size:12px; color:#4b5563;">
+                <div>Document administratif</div>
+                <div>Etat du stock consommables</div>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Consommable</th>
+                  <th>Code</th>
+                  <th>Quantité</th>
+                  <th>Unité</th>
+                  <th>Minimum</th>
+                  <th>Critique</th>
+                  <th>Localisation</th>
+                  <th>Statut</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(({ consumable, stockLine }) => {
+                  const status = formatStockStatus(stockLine.quantity, stockLine.minimumLevel, stockLine.criticalLevel);
+                  const statusClass = status === 'Critique' ? 'status-critique' : status === 'Alerte' ? 'status-alerte' : 'status-suffisant';
+                  return `
+                    <tr>
+                      <td>${consumable.name}</td>
+                      <td>${consumable.code || '—'}</td>
+                      <td>${stockLine.quantity}</td>
+                      <td>${consumable.unit || '—'}</td>
+                      <td>${stockLine.minimumLevel || '—'}</td>
+                      <td>${stockLine.criticalLevel || '—'}</td>
+                      <td>${stockLine.location || '—'}</td>
+                      <td class="${statusClass}">${status}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+            <div class="footer">Etat du stock des consommables de laboratoire généré automatiquement depuis le portail de laboratoire D7 Clinique.</div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+      printWindow.print();
+    }, 300);
+  };
 
   const showSuccess = (message: string) => {
     window.alert(message);
@@ -366,12 +540,23 @@ export default function CatalogueLab() {
       title="Catalogue laboratoire"
       subtitle="Supervision complète du catalogue de services et des définitions d'examens."
       actions={
-        <button
-          onClick={loadCatalogue}
-          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-        >
-          Actualiser
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={loadCatalogue}
+            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+          >
+            Actualiser
+          </button>
+          {activeTab === "Stock" ? (
+            <button
+              type="button"
+              onClick={printStockReport}
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Imprimer état de stock
+            </button>
+          ) : null}
+        </div>
       }
     >
 
@@ -385,17 +570,27 @@ export default function CatalogueLab() {
 
       <Panel title="Sections du catalogue" subtitle="Naviguez par domaine et inspectez la structure du catalogue." >
         <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {tabs.map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab)}
-                className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${activeTab === tab ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"}`}
-              >
-                {tab}
-              </button>
-            ))}
+          <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+            <div className="flex flex-wrap gap-2">
+              {tabs.map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${activeTab === tab ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"}`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+            <label className="block w-full min-w-[220px]">
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Rechercher sections, examens, consommables, échantillons..."
+                className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+              />
+            </label>
           </div>
 
           {isLoading ? (
@@ -408,7 +603,7 @@ export default function CatalogueLab() {
                 <div className="space-y-6">
                   <DataTable
                     headers={["Section", "Description", "Catégories", "Examens", "Statut"]}
-                    rows={catalogue.sections.map((section) => [
+                    rows={filteredSections.map((section) => [
                       section.name,
                       section.description || "-",
                       section.categories.length,
@@ -477,7 +672,7 @@ export default function CatalogueLab() {
                 <div className="space-y-6">
                   <DataTable
                     headers={["Catégorie", "Section", "Code", "Examens", "Statut"]}
-                    rows={catalogue.categories.map((category) => [
+                    rows={filteredCategories.map((category) => [
                       category.name,
                       category.section?.name || "Hors section",
                       category.code || "-",
@@ -571,7 +766,7 @@ export default function CatalogueLab() {
                 <div className="space-y-6">
                   <DataTable
                     headers={["Code", "Examen", "Section", "Catégorie", "Type résultat", "Prix", "TAT", "Actif"]}
-                    rows={catalogue.tests.map((test) => [
+                    rows={filteredTests.map((test) => [
                       test.code,
                       test.name,
                       test.section?.name || "-",
@@ -764,17 +959,15 @@ export default function CatalogueLab() {
                 <div className="space-y-6">
                   <DataTable
                     headers={["Examen", "Paramètre", "Code", "Type résultat", "Unité", "Référence", "Statut"]}
-                    rows={catalogue.tests.flatMap((test) =>
-                      test.parameterTemplates.map((parameter) => [
-                        test.name,
-                        parameter.name,
-                        parameter.code,
-                        parameter.resultType,
-                        parameter.unit || "-",
-                        parameter.referenceRange || "-",
-                        parameter.active ? "Active" : "Inactive",
-                      ]),
-                    )}
+                    rows={filteredParameters.map((parameter) => [
+                      parameter.labTest?.name || "-",
+                      parameter.name,
+                      parameter.code,
+                      parameter.resultType,
+                      parameter.unit || "-",
+                      parameter.referenceRange || "-",
+                      parameter.active ? "Active" : "Inactive",
+                    ])}
                   />
 
                   <button
@@ -909,7 +1102,7 @@ export default function CatalogueLab() {
                 <div className="space-y-6">
                   <DataTable
                     headers={["Type d'échantillon", "Description", "Actif", "Exigences"]}
-                    rows={catalogue.sampleTypes.map((sampleType) => [
+                    rows={filteredSampleTypes.map((sampleType) => [
                       sampleType.name,
                       sampleType.description || "-",
                       sampleType.active ? "Oui" : "Non",
@@ -981,16 +1174,14 @@ export default function CatalogueLab() {
                 <div className="space-y-6">
                   <DataTable
                     headers={["Examen", "Échantillon", "Volume", "Condition stockage", "Âge max", "Instructions"]}
-                    rows={catalogue.tests.flatMap((test) =>
-                      test.sampleRequirements.map((requirement) => [
-                        test.name,
-                        requirement.labSampleType.name,
-                        requirement.volumeRequired ? `${Number(requirement.volumeRequired).toLocaleString("fr-FR")} ${requirement.volumeUnit || "mL"}` : "-",
-                        requirement.storageCondition || "-",
-                        requirement.maxAgeMinutes ? `${requirement.maxAgeMinutes} min` : "-",
-                        requirement.instructions || "-",
-                      ]),
-                    )}
+                    rows={filteredSampleRequirements.map((requirement) => [
+                      requirement.labTest?.name || "-",
+                      requirement.labSampleType?.name || "-",
+                      requirement.volumeRequired ? `${Number(requirement.volumeRequired).toLocaleString("fr-FR")} ${requirement.volumeUnit || "mL"}` : "-",
+                      requirement.storageCondition || "-",
+                      requirement.maxAgeMinutes ? `${requirement.maxAgeMinutes} min` : "-",
+                      requirement.instructions || "-",
+                    ])}
                   />
 
                   <button
@@ -1105,7 +1296,7 @@ export default function CatalogueLab() {
                 <div className="space-y-6">
                   <DataTable
                     headers={["Consommable", "Code", "Unité", "Stock total", "Nb tests associés"]}
-                    rows={catalogue.consumables.map((consumable) => [
+                    rows={filteredConsumables.map((consumable) => [
                       consumable.name,
                       consumable.code,
                       consumable.unit,

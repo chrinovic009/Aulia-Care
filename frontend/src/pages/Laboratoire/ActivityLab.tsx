@@ -44,6 +44,7 @@ export default function ActivityLab() {
   const [resultForm, setResultForm] = useState({
     resultName: "",
     resultValue: "",
+    referenceRange: "",
     interpretation: "",
   });
   const [recentRequestsSearch, setRecentRequestsSearch] = useState("");
@@ -171,7 +172,8 @@ export default function ActivityLab() {
       const firstItem = detail?.items?.[0];
       setResultForm({
         resultName: firstItem?.labTest?.name || "",
-        resultValue: firstItem?.labTest?.referenceRange || "",
+        resultValue: firstItem?.results?.[0]?.resultValue || "",
+        referenceRange: firstItem?.labTest?.referenceRange || firstItem?.results?.[0]?.referenceRange || "",
         interpretation: firstItem?.results?.[0]?.interpretation || "",
       });
       setShowSendChoice(false);
@@ -271,28 +273,37 @@ export default function ActivityLab() {
     const patientName = [requestDetail.patient?.firstName, requestDetail.patient?.lastName].filter(Boolean).join(" ") || "Patient inconnu";
     const examName = currentItem?.labTest?.name || requestDetail.items?.[0]?.labTest?.name || "Analyse laboratoire";
     const resultName = currentItem?.labTest?.name || latestResult?.resultName || currentItem?.results?.[0]?.resultName || "Résultat laboratoire";
-    const resultValue = currentItem?.labTest?.referenceRange || latestResult?.resultValue || currentItem?.results?.[0]?.resultValue || "—";
-    const interpretation = latestResult?.interpretation || currentItem?.results?.[0]?.interpretation || "—";
+    const resultValue = resultForm.resultValue || latestResult?.resultValue || currentItem?.results?.[0]?.resultValue || "—";
+    const referenceRange = resultForm.referenceRange || currentItem?.labTest?.referenceRange || "—";
+    const interpretation = resultForm.interpretation || latestResult?.interpretation || currentItem?.results?.[0]?.interpretation || "—";
     const requestedAt = formatDate(requestDetail?.items?.[0]?.requestedAt || null);
     const displayRequestIdForPrint = displayRequestId || requestDetail.id || "—";
     const translatedRequestStatusForPrint = translatedRequestStatus;
 
+    const currentUserName = currentUser?.displayName || [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(" ") || "Responsable laboratoire";
     const html = `
       <html>
         <head>
-          <title>Résultat de laboratoire - ${patientName}</title>
+          <title>Bon de rendu des résultats biomédicaux - ${patientName}</title>
           <style>
             body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 24px; }
             .page { max-width: 900px; margin: 0 auto; }
             .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #111827; padding-bottom: 12px; margin-bottom: 20px; }
+            .brand-block { display: flex; align-items: center; gap: 16px; }
+            .logo { width: 56px; height: 56px; object-fit: contain; }
             .clinic { font-size: 22px; font-weight: 700; }
             .details { font-size: 12px; color: #4b5563; margin-top: 4px; }
+            .document-title { font-size: 28px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin: 0 0 4px; }
+            .document-subtitle { font-size: 14px; color: #111827; margin: 0 0 10px; }
+            .responsible { font-size: 13px; color: #111827; font-weight: 700; margin-top: 4px; }
             .section { margin-bottom: 18px; }
             .section-title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #111827; margin-bottom: 8px; }
             table { width: 100%; border-collapse: collapse; font-size: 12px; }
             td { border: 1px solid #d1d5db; padding: 8px 10px; vertical-align: top; }
             .label { width: 32%; font-weight: 700; background: #f9fafb; }
             .footer { margin-top: 24px; font-size: 11px; color: #6b7280; border-top: 1px solid #d1d5db; padding-top: 10px; }
+            .signature-section { margin-top: 32px; display: flex; justify-content: space-between; gap: 24px; }
+            .signature-line { border-top: 1px solid #111827; margin-top: 50px; width: 260px; }
             @media print { body { padding: 0; } .page { padding: 18mm; } }
           </style>
         </head>
@@ -300,13 +311,15 @@ export default function ActivityLab() {
           <div class="page">
             <div class="header">
               <div class="brand-block">
-                <img src="/images/favicon.png" alt="Logo clinique" width="56" />
-                <div class="clinic">D7 Clinique</div>
-                <div class="details">Centre hospitalier régional - Résultat de laboratoire</div>
-                <div class="details">Adresse: Zone de santé, Dilala | Tel: +243 987 299 227</div>
+                <img class="logo" src="/images/favicon.png" alt="Logo clinique" />
+                <div>
+                  <div class="document-title">Bon de rendu des résultats biomédicaux</div>
+                  <div class="document-subtitle">D7 Clinique - Service de laboratoire</div>
+                  <div class="responsible">Responsable laboratoire: ${currentUserName}</div>
+                </div>
               </div>
               <div style="text-align: right; font-size: 12px; color: #4b5563;">
-                <div><strong>Document</strong></div>
+                <div><strong>Document administratif</strong></div>
                 <div>Imprimé le ${new Date().toLocaleDateString("fr-FR")}</div>
               </div>
             </div>
@@ -342,7 +355,8 @@ export default function ActivityLab() {
               <table>
                 <tbody>
                   <tr><td class="label">Nom du résultat</td><td>${resultName}</td></tr>
-                  <tr><td class="label">Valeur de référence</td><td>${resultValue}</td></tr>
+                  <tr><td class="label">Résultat</td><td>${resultValue}</td></tr>
+                  <tr><td class="label">Valeur de référence</td><td>${referenceRange}</td></tr>
                   <tr><td class="label">Interprétation</td><td>${interpretation}</td></tr>
                 </tbody>
               </table>
@@ -629,9 +643,17 @@ export default function ActivityLab() {
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Valeur de référence</label>
+                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Résultat</label>
                         <input
                           value={resultForm.resultValue}
+                          onChange={(event) => setResultForm((current) => ({ ...current, resultValue: event.target.value }))}
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Valeur de référence</label>
+                        <input
+                          value={resultForm.referenceRange}
                           readOnly
                           className="w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600 focus:border-emerald-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
                         />

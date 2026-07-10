@@ -6,6 +6,7 @@ interface HistoryRecord {
   id: string;
   type: "payment" | "invoice";
   patientName: string;
+  patientCompany?: string | null;
   patientPhone?: string;
   patientEmail?: string;
   amount: number;
@@ -22,6 +23,7 @@ const HistoriqueCaissier: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [companyFilter, setCompanyFilter] = useState("");
   const [filterType, setFilterType] = useState<"ALL" | "PAYMENT" | "INVOICE">("ALL");
   const [dateRange, setDateRange] = useState<"ALL" | "TODAY" | "WEEK" | "MONTH">("ALL");
   const [printingData, setPrintingData] = useState<HistoryRecord[] | null>(null);
@@ -54,6 +56,7 @@ const HistoriqueCaissier: React.FC = () => {
         id: p.id,
         type: "payment" as const,
         patientName: p.patientName,
+        patientCompany: p.patientCompany || null,
         patientPhone: p.patientPhone,
         patientEmail: p.patientEmail,
         amount: p.amount,
@@ -65,6 +68,7 @@ const HistoriqueCaissier: React.FC = () => {
         id: i.id,
         type: "invoice" as const,
         patientName: i.patientName,
+        patientCompany: i.patientCompany || null,
         patientPhone: i.patientPhone,
         patientEmail: i.patientEmail,
         amount: i.totalAmount,
@@ -99,12 +103,19 @@ const HistoriqueCaissier: React.FC = () => {
       results = results.filter((r) => new Date(r.createdAt) >= monthAgo);
     }
 
+    // Filter by company / subscriber
+    if (companyFilter) {
+      const companyQuery = companyFilter.toLowerCase();
+      results = results.filter((r) => (r.patientCompany || "").toLowerCase().includes(companyQuery));
+    }
+
     // Filter by search query
     if (query) {
       const q = query.toLowerCase();
       results = results.filter(
         (r) =>
           (r.patientName || "").toLowerCase().includes(q) ||
+          (r.patientCompany || "").toLowerCase().includes(q) ||
           (r.patientPhone || "").toLowerCase().includes(q) ||
           (r.reference || "").toLowerCase().includes(q) ||
           (r.id || "").toLowerCase().includes(q)
@@ -112,7 +123,7 @@ const HistoriqueCaissier: React.FC = () => {
     }
 
     return results;
-  }, [combined, filterType, dateRange, query]);
+  }, [combined, filterType, dateRange, query, companyFilter]);
 
   const totals = useMemo(() => {
     const paymentsTotalAmount = filtered
@@ -208,11 +219,17 @@ const HistoriqueCaissier: React.FC = () => {
       </div>
 
       <div className="mb-4 space-y-3">
-        <div>
+        <div className="grid gap-2 lg:grid-cols-[1.5fr_1fr]">
           <input
             placeholder="Rechercher transaction, patient, référence, ID..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            className="w-full px-3 py-2 border rounded"
+          />
+          <input
+            placeholder="Filtrer par entreprise / assurance"
+            value={companyFilter}
+            onChange={(e) => setCompanyFilter(e.target.value)}
             className="w-full px-3 py-2 border rounded"
           />
         </div>
@@ -275,6 +292,7 @@ const HistoriqueCaissier: React.FC = () => {
               <th className="p-3 text-left">Date & Heure</th>
               <th className="p-3 text-left">Type</th>
               <th className="p-3 text-left">Patient</th>
+              <th className="p-3 text-left">Entreprise</th>
               <th className="p-3 text-left">Téléphone</th>
               <th className="p-3 text-left">Méthode/Type</th>
               <th className="p-3 text-left">Référence</th>
@@ -284,7 +302,7 @@ const HistoriqueCaissier: React.FC = () => {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-4 text-sm text-gray-600 text-center">
+                <td colSpan={8} className="p-4 text-sm text-gray-600 text-center">
                   Aucun historique trouvé.
                 </td>
               </tr>
@@ -307,6 +325,7 @@ const HistoriqueCaissier: React.FC = () => {
                     </span>
                   </td>
                   <td className="p-3 font-medium">{record.patientName}</td>
+                  <td className="p-3 text-sm">{record.patientCompany || "—"}</td>
                   <td className="p-3 text-sm">{record.patientPhone || "—"}</td>
                   <td className="p-3 text-sm">{record.method || record.invoiceType || "—"}</td>
                   <td className="p-3 text-sm">{record.reference || "—"}</td>

@@ -27,6 +27,7 @@ export interface InvoiceDetail {
   id: string;
   patientId: string;
   patientName: string;
+  patientCompany?: string | null;
   invoiceNumber?: string;
   type: string;
   status: string;
@@ -49,6 +50,7 @@ export interface PaymentRecord {
   id: string;
   patientId: string;
   patientName: string;
+  patientCompany?: string | null;
   invoiceId: string;
   amount: number;
   method: string;

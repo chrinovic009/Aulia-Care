@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import {
@@ -41,6 +42,7 @@ const summarizeClinicalSummary = (value?: string | null, fallback?: string | nul
 export default function DashboardMedecin() {
   const location = useLocation();
   const isConsultationPage = location.pathname.includes("/doctor/consultations");
+  const { currentUser } = useAuth();
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<DoctorPatient | null>(null);
   const [query, setQuery] = useState("");
@@ -213,6 +215,61 @@ export default function DashboardMedecin() {
     await loadPatients();
   };
 
+  const callPatient = (patient: DoctorPatient) => {
+    const doctorName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'le medecin';
+    const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, vous êtes attendu par ${doctorName}. Veuillez vous présenter au cabinet.`;
+
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 880;
+      gain.gain.value = 0.08;
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start();
+      setTimeout(() => {
+        oscillator.stop();
+        try { ctx.close(); } catch {
+          // ignore
+        }
+      }, 500);
+    } catch {
+      // ignore audio errors
+    }
+
+    if ('speechSynthesis' in window) {
+      const speakWithVoice = (voices: SpeechSynthesisVoice[]) => {
+        const frenchVoice = voices.find(
+          (voice) =>
+            voice.lang?.toLowerCase().startsWith('fr') ||
+            voice.name?.toLowerCase().includes('french') ||
+            voice.name?.toLowerCase().includes('français') ||
+            voice.name?.toLowerCase().includes('francais'),
+        );
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'fr-FR';
+        if (frenchVoice) {
+          utter.voice = frenchVoice;
+        }
+        utter.rate = 0.95;
+        utter.pitch = 1.05;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utter);
+      };
+
+      const voices = window.speechSynthesis.getVoices() || [];
+      if (voices.length > 0) {
+        speakWithVoice(voices);
+      } else {
+        window.speechSynthesis.onvoiceschanged = () => {
+          speakWithVoice(window.speechSynthesis.getVoices() || []);
+        };
+      }
+    }
+  };
+
   const filteredPatients = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return patients;
@@ -314,9 +371,18 @@ export default function DashboardMedecin() {
                     {selectedPatient.gender || "-"} - {selectedPatient.phone || "Telephone non renseigne"} - {serviceName(selectedPatient) || "Service non renseigne"}
                   </p>
                 </div>
-                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                  {selectedPatient.workflowStatus || "Statut non renseigne"}
-                </span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => callPatient(selectedPatient)}
+                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600"
+                  >
+                    Appeler le patient
+                  </button>
+                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                    {selectedPatient.workflowStatus || "Statut non renseigne"}
+                  </span>
+                </div>
               </div>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-5">
@@ -420,7 +486,18 @@ export default function DashboardMedecin() {
                     <Empty />
                   ) : (
                     selectedPatient.labRequests?.map((request) => (
-                      <Item key={request.id} title={request.specimenType || request.status} subtitle={formatDateTime(request.requestedAt)} text={request.results?.map((result) => `${result.resultName}: ${result.resultValue} ${result.units || ""}`).join(", ") || "Resultat en attente."} />
+                      <Item
+                        key={request.id}
+                        title={request.specimenType || request.status}
+                        subtitle={formatDateTime(request.requestedAt)}
+                        text={
+                          request.results?.length
+                            ? request.results
+                                .map((result) => `${result.resultName || "Résultat"}: ${result.resultValue?.trim() || "Non renseigné"}${result.units ? ` ${result.units}` : ""}`)
+                                .join(", ")
+                            : "Resultat en attente."
+                        }
+                      />
                     ))
                   )}
                 </Panel>
