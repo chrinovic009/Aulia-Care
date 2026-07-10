@@ -143,6 +143,14 @@ const Admission: React.FC = () => {
     }
   }, [form.profession]);
 
+  useEffect(() => {
+    if (form.insurance.company && form.category !== 'S') {
+      setForm((current: any) => ({ ...current, category: 'S' }));
+    } else if (!form.insurance.company && form.category === 'S') {
+      setForm((current: any) => ({ ...current, category: 'P' }));
+    }
+  }, [form.insurance.company, form.category]);
+
   // load services catalog on mount
   useEffect(() => {
     (async () => {

@@ -26,6 +26,7 @@ export type DoctorPatient = {
   labRequests?: Array<{ id: string; status: string; requestedAt: string; specimenType?: string | null; notes?: string | null; results?: Array<{ resultName: string; resultValue: string; units?: string | null; verified?: boolean; interpretation?: string | null }> }>;
   imagingRequests?: Array<{ id: string; status: string; createdAt: string; modality: string; bodyPart: string; report?: { impression?: string | null } | null }>;
   hospitalizations?: Array<{ id: string; status: string; admittedAt: string; admissionReason?: string | null; bedNumber?: string | null; physician?: { displayName?: string | null } | null; nurseInCharge?: { displayName?: string | null } | null }>;
+  hasPendingAppointmentWithoutConsultation?: boolean;
   assignedDoctor?: { id: string; displayName?: string | null; firstName?: string | null; lastName?: string | null; specialty?: string | null } | null;
   access?: { mode: "WRITE" | "READ_ONLY"; canWrite: boolean; reason: string };
   latestConsultation?: { id: string; status: string; chiefComplaint?: string | null; clinicalSummary?: string | null; diagnosis?: string | null; createdAt: string; providerId?: string | null; provider?: { id: string; displayName?: string | null; firstName?: string | null; lastName?: string | null } | null } | null;

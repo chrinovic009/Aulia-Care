@@ -4,6 +4,7 @@ interface HistoryRecord {
   id: string;
   type: "payment" | "invoice";
   patientName: string;
+  patientCompany?: string | null;
   patientPhone?: string;
   patientEmail?: string;
   amount: number;
@@ -88,6 +89,7 @@ export const HistoryPrintTemplate: React.FC<HistoryPrintProps> = ({
             <th style={{ padding: "3mm", textAlign: "left", borderRight: "1px solid #ddd" }}>Date & Heure</th>
             <th style={{ padding: "3mm", textAlign: "left", borderRight: "1px solid #ddd" }}>Type</th>
             <th style={{ padding: "3mm", textAlign: "left", borderRight: "1px solid #ddd" }}>Patient</th>
+            <th style={{ padding: "3mm", textAlign: "left", borderRight: "1px solid #ddd" }}>Entreprise</th>
             <th style={{ padding: "3mm", textAlign: "left", borderRight: "1px solid #ddd" }}>Méthode</th>
             <th style={{ padding: "3mm", textAlign: "left", borderRight: "1px solid #ddd" }}>Référence</th>
             <th style={{ padding: "3mm", textAlign: "right" }}>Montant (FC)</th>
@@ -130,6 +132,9 @@ export const HistoryPrintTemplate: React.FC<HistoryPrintProps> = ({
                   {record.patientName}
                   {record.patientPhone && <br />}
                   {record.patientPhone && <span style={{ fontSize: "9px", color: "#666" }}>{record.patientPhone}</span>}
+                </td>
+                <td style={{ padding: "3mm", borderRight: "1px solid #ddd" }}>
+                  {record.patientCompany || "—"}
                 </td>
                 <td style={{ padding: "3mm", borderRight: "1px solid #ddd" }}>
                   {record.method || record.invoiceType || "—"}

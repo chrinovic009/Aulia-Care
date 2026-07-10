@@ -276,6 +276,7 @@ export class PatientsService {
     }
 
     const isParamedicalVoucher = String(createAdmissionDto.admissionType || '').toUpperCase() === 'BON_PARAMEDICAL';
+    const isCorporateSubscriber = Boolean(String(createAdmissionDto.insuranceProvider || '').trim());
     const resolvedTariff = resolvedService
       ? await this.prisma.serviceTarif.findFirst({
           where: { serviceId: resolvedService.id, actif: true },
@@ -311,7 +312,7 @@ export class PatientsService {
       nationality: createAdmissionDto.nationality,
       insuranceProvider: createAdmissionDto.insuranceProvider,
       insuranceNumber: createAdmissionDto.insuranceNumber,
-      workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+      workflowStatus: isCorporateSubscriber ? PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
       admissionType: createAdmissionDto.admissionType,
       priority: createAdmissionDto.priority,
       arrivalAt: createAdmissionDto.arrivalAt ? new Date(createAdmissionDto.arrivalAt) : new Date(),
@@ -424,35 +425,49 @@ export class PatientsService {
       },
     });
 
-    const notifications = await Promise.all(
-      cashierUsers.map((cashier) =>
-        this.prisma.notification.create({
-          data: {
-            recipientId: cashier.id,
-            type: 'ALERT',
-            status: 'UNREAD',
-            priority: 'HIGH',
-            title: 'Nouveau paiement en attente',
-            message: isParamedicalVoucher
-              ? `Le patient ${result.patient.firstName} ${result.patient.lastName} attend le paiement du bon paramedical ${createAdmissionDto.voucherNumber || ''}.`
-              : `Le patient ${result.patient.firstName} ${result.patient.lastName} attend le reglement des frais de fiche d'admission de ${admissionFee} FC.`,
-            relatedEntity: 'Invoice',
-            relatedId: result.invoice.id,
-            sendAt: new Date(),
-          },
-        }),
-      ),
-    );
+    if (!isCorporateSubscriber) {
+      const cashierUsers = await this.prisma.user.findMany({
+        where: {
+          OR: [
+            { primaryRole: 'CASHIER' },
+            { roles: { some: { role: { slug: 'CASHIER' } } } },
+          ],
+        },
+      });
 
-    notifications.forEach((notification) => {
-      this.notificationsGateway.notify('notification.created', notification);
-    });
+      const notifications = await Promise.all(
+        cashierUsers.map((cashier) =>
+          this.prisma.notification.create({
+            data: {
+              recipientId: cashier.id,
+              type: 'ALERT',
+              status: 'UNREAD',
+              priority: 'HIGH',
+              title: 'Nouveau paiement en attente',
+              message: isParamedicalVoucher
+                ? `Le patient ${result.patient.firstName} ${result.patient.lastName} attend le paiement du bon paramedical ${createAdmissionDto.voucherNumber || ''}.`
+                : `Le patient ${result.patient.firstName} ${result.patient.lastName} attend le reglement des frais de fiche d'admission de ${admissionFee} FC.`,
+              relatedEntity: 'Invoice',
+              relatedId: result.invoice.id,
+              sendAt: new Date(),
+            },
+          }),
+        ),
+      );
+
+      notifications.forEach((notification) => {
+        this.notificationsGateway.notify('notification.created', notification);
+      });
+    }
+
     this.notificationsGateway.notify('patient.created', result.patient);
 
     return {
       patient: result.patient,
       invoice: result.invoice,
-      message: 'Admission enregistrée et facture créée. Le caissier a été notifié.',
+      message: isCorporateSubscriber
+        ? 'Admission enregistrée pour abonné entreprise. Paiement géré par la société et non requis immédiatement.'
+        : 'Admission enregistrée et facture créée. Le caissier a été notifié.',
     };
   }
 
@@ -779,6 +794,94 @@ export class PatientsService {
     });
   }
 
+  async getNurseOrientationHistory(period: 'today' | 'yesterday' | 'week' | 'all' = 'today') {
+    const now = new Date();
+    let startDate: Date | undefined;
+    let endDate: Date | undefined;
+
+    if (period === 'today') {
+      startDate = new Date(now);
+      startDate.setHours(0, 0, 0, 0);
+    } else if (period === 'yesterday') {
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 1);
+      startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 1);
+    } else if (period === 'week') {
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - 7);
+      startDate.setHours(0, 0, 0, 0);
+    }
+
+    const where: Prisma.MedicalHistoryWhereInput = {
+      deletedAt: null,
+      kind: 'NURSE_ORIENTATION',
+      patient: {
+        deletedAt: null,
+      },
+    };
+
+    if (startDate && endDate) {
+      where.eventDate = { gte: startDate, lt: endDate };
+    } else if (startDate) {
+      where.eventDate = { gte: startDate };
+    }
+
+    const history = await this.prisma.medicalHistory.findMany({
+      where,
+      include: {
+        patient: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            service: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+        createdBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+          },
+        },
+      },
+      orderBy: {
+        eventDate: 'desc',
+      },
+      take: 50,
+    });
+
+    return history.map((item) => {
+      let details: any = {};
+      try {
+        details = item.details ? JSON.parse(item.details) : {};
+      } catch {
+        details = {};
+      }
+
+      return {
+        id: item.id,
+        patientId: item.patientId,
+        patientName: item.patient ? `${item.patient.firstName} ${item.patient.lastName}`.trim() : null,
+        service: item.patient?.service?.name || null,
+        physicianId: details.physicianId || null,
+        physicianName: details.physicianName || null,
+        nurseName: item.createdBy
+          ? item.createdBy.displayName || `${item.createdBy.firstName || ''} ${item.createdBy.lastName || ''}`.trim()
+          : null,
+        eventDate: item.eventDate.toISOString(),
+        notes: details.notes || null,
+      };
+    });
+  }
+
   async recordVitalSigns(patientId: string, dto: RecordVitalSignsDto, recordedById?: string) {
     await this.findOne(patientId);
 
@@ -927,6 +1030,7 @@ export class PatientsService {
         labRequests: { orderBy: { requestedAt: 'desc' }, take: 5, include: { results: true } },
         imagingRequests: { orderBy: { createdAt: 'desc' }, take: 5, include: { report: true } },
         prescriptions: { orderBy: { prescribingDate: 'desc' }, take: 5, include: { lineItems: true } },
+        appointments: { where: { deletedAt: null }, orderBy: { scheduledAt: 'desc' }, take: 10 },
       },
       orderBy: [{ updatedAt: 'desc' }],
     });
@@ -948,7 +1052,10 @@ export class PatientsService {
       labRequests: patient.labRequests,
       imagingRequests: patient.imagingRequests,
       prescriptions: patient.prescriptions,
+      appointments: patient.appointments,
       latestConsultation: patient.consultations[0] || null,
+      hasPendingAppointmentWithoutConsultation:
+        patient.appointments.some((appt) => appt.status !== 'CANCELLED') && patient.consultations.length === 0,
     }));
   }
 
@@ -958,11 +1065,22 @@ export class PatientsService {
     const patients = await this.prisma.patient.findMany({
       where: {
         deletedAt: null,
-        consultations: {
-          some: {
-            deletedAt: null,
+        OR: [
+          {
+            consultations: {
+              some: {
+                deletedAt: null,
+              },
+            },
           },
-        },
+          {
+            appointments: {
+              some: {
+                deletedAt: null,
+              },
+            },
+          },
+        ],
       },
       include: {
         service: true,
@@ -991,6 +1109,7 @@ export class PatientsService {
         imagingRequests: { orderBy: { createdAt: 'desc' }, take: 10, include: { report: true, requestedBy: true } },
         prescriptions: { orderBy: { prescribingDate: 'desc' }, take: 10, include: { lineItems: { include: { medication: true } }, prescriber: true } },
         hospitalizations: { orderBy: { admittedAt: 'desc' }, take: 5, include: { physician: true, nurseInCharge: true } },
+        appointments: { where: { deletedAt: null }, orderBy: { scheduledAt: 'desc' }, take: 10 },
       },
       orderBy: { updatedAt: 'desc' },
     });
@@ -1008,6 +1127,8 @@ export class PatientsService {
       const access = accessMap.get(patient.id);
       const latestConsultation = access?.latestConsultation || null;
       const assignedDoctor = latestConsultation?.provider || null;
+      const hasPendingAppointmentWithoutConsultation =
+        patient.appointments?.some((appointment) => appointment.status !== 'CANCELLED') && patient.consultations.length === 0;
 
       return {
         id: patient.id,

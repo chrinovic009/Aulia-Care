@@ -37,6 +37,12 @@ export class PatientsController {
     return this.patientsService.getPatientsAwaitingNurseVitals();
   }
 
+  @Get('nurse/orientation-history')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE')
+  getNurseOrientationHistory(@Query('period') period: 'today' | 'yesterday' | 'week' | 'all' = 'today') {
+    return this.patientsService.getNurseOrientationHistory(period);
+  }
+
   @Get('doctor/assigned')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
   getPatientsAssignedToDoctor(@Request() req: any) {
