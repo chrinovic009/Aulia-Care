@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { playNotificationSound } from "../../utils/notificationSound";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import {
@@ -217,24 +218,10 @@ export default function DashboardMedecin() {
 
   const callPatient = (patient: DoctorPatient) => {
     const doctorName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'le medecin';
-    const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, vous êtes attendu par ${doctorName}. Veuillez vous présenter au cabinet.`;
+    const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, vous êtes attendu par le medecin ${doctorName}. Veuillez vous présenter à son cabinet.`;
 
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const oscillator = ctx.createOscillator();
-      const gain = ctx.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.value = 880;
-      gain.gain.value = 0.08;
-      oscillator.connect(gain);
-      gain.connect(ctx.destination);
-      oscillator.start();
-      setTimeout(() => {
-        oscillator.stop();
-        try { ctx.close(); } catch {
-          // ignore
-        }
-      }, 500);
+      playNotificationSound();
     } catch {
       // ignore audio errors
     }
