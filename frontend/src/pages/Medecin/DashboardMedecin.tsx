@@ -216,9 +216,44 @@ export default function DashboardMedecin() {
     await loadPatients();
   };
 
+  const findFrenchVoice = (voices: SpeechSynthesisVoice[]) => {
+    const normalized = (voice: SpeechSynthesisVoice) => `${voice.lang || ''} ${voice.name || ''}`.toLowerCase();
+    const femalePatterns = [
+      'female',
+      'femme',
+      'française',
+      'francais',
+      'français',
+      'amelie',
+      'marie',
+      'julie',
+      'celine',
+      'sylvie',
+      'valerie',
+      'lea',
+      'lucie',
+      'dominique',
+    ];
+
+    const frenchVoices = voices.filter(
+      (voice) =>
+        voice.lang?.toLowerCase().startsWith('fr') ||
+        voice.name?.toLowerCase().includes('french') ||
+        voice.name?.toLowerCase().includes('français') ||
+        voice.name?.toLowerCase().includes('francais'),
+    );
+
+    return (
+      frenchVoices.find((voice) => femalePatterns.some((pattern) => normalized(voice).includes(pattern))) ||
+      frenchVoices[0] ||
+      voices.find((voice) => voice.lang?.toLowerCase().startsWith('fr')) ||
+      voices[0]
+    );
+  };
+
   const callPatient = (patient: DoctorPatient) => {
-    const doctorName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'le medecin';
-    const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, vous êtes attendu par le medecin ${doctorName}. Veuillez vous présenter à son cabinet.`;
+    const doctorName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'le médecin';
+    const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, le docteur ${doctorName} vous attend au cabinet. Veuillez vous présenter immédiatement.`;
 
     try {
       playNotificationSound();
@@ -228,13 +263,7 @@ export default function DashboardMedecin() {
 
     if ('speechSynthesis' in window) {
       const speakWithVoice = (voices: SpeechSynthesisVoice[]) => {
-        const frenchVoice = voices.find(
-          (voice) =>
-            voice.lang?.toLowerCase().startsWith('fr') ||
-            voice.name?.toLowerCase().includes('french') ||
-            voice.name?.toLowerCase().includes('français') ||
-            voice.name?.toLowerCase().includes('francais'),
-        );
+        const frenchVoice = findFrenchVoice(voices);
         const utter = new SpeechSynthesisUtterance(text);
         utter.lang = 'fr-FR';
         if (frenchVoice) {

@@ -63,6 +63,7 @@ export default function PatientAssignes() {
   const [vitalsForm, setVitalsForm] = useState<VitalsForm>(emptyVitalsForm);
   const [physicians, setPhysicians] = useState<any[]>([]);
   const [servicesCatalog, setServicesCatalog] = useState<any[]>([]);
+  const isSavingRef = useRef(false);
 
   const loadPatients = async () => {
     setIsLoading(true);
@@ -164,13 +165,48 @@ export default function PatientAssignes() {
   };
 
   // Announce patient and play a short tone through speakers
+  const findFrenchVoice = (voices: SpeechSynthesisVoice[]) => {
+    const normalized = (voice: SpeechSynthesisVoice) => `${voice.lang || ''} ${voice.name || ''}`.toLowerCase();
+    const femalePatterns = [
+      'female',
+      'femme',
+      'française',
+      'francais',
+      'français',
+      'amelie',
+      'marie',
+      'julie',
+      'celine',
+      'sylvie',
+      'valerie',
+      'lea',
+      'lucie',
+      'dominique',
+    ];
+
+    const frenchVoices = voices.filter(
+      (voice) =>
+        voice.lang?.toLowerCase().startsWith('fr') ||
+        voice.name?.toLowerCase().includes('french') ||
+        voice.name?.toLowerCase().includes('français') ||
+        voice.name?.toLowerCase().includes('francais'),
+    );
+
+    return (
+      frenchVoices.find((voice) => femalePatterns.some((pattern) => normalized(voice).includes(pattern))) ||
+      frenchVoices[0] ||
+      voices.find((voice) => voice.lang?.toLowerCase().startsWith('fr')) ||
+      voices[0]
+    );
+  };
+
   const announcePatient = async (patient: NursePatient, currentUser: any) => {
     try {
-      const nurseName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : "l'infirmier";
+      const nurseName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : "l'infirmière";
       const serviceName = (currentUser?.serviceResponsabilites && currentUser.serviceResponsabilites[0]?.service?.name) || patient.service || 'votre service';
-      const roomText = serviceName ? `dans la salle du service ${serviceName}` : 'dans la salle attribuée au service';
+      const roomText = serviceName ? `dans le service ${serviceName}` : 'dans le service attribué';
 
-      const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, vous êtes attendu par ${nurseName} ${roomText}.`;
+      const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, l'infirmière ${nurseName} vous attend ${roomText}.`;
 
       try {
         playNotificationSound();
@@ -180,13 +216,7 @@ export default function PatientAssignes() {
 
       if ('speechSynthesis' in window) {
         const speakWithVoice = (voices: SpeechSynthesisVoice[]) => {
-          const frenchVoice = voices.find(
-            (voice) =>
-              voice.lang?.toLowerCase().startsWith('fr') ||
-              voice.name?.toLowerCase().includes('french') ||
-              voice.name?.toLowerCase().includes('français') ||
-              voice.name?.toLowerCase().includes('francais'),
-          );
+          const frenchVoice = findFrenchVoice(voices);
           const utter = new SpeechSynthesisUtterance(text);
           utter.lang = 'fr-FR';
           if (frenchVoice) {
@@ -218,10 +248,13 @@ export default function PatientAssignes() {
 
   const saveVitals = async () => {
     if (!selectedPatient) return;
+    if (isSavingRef.current) return;
     if (!vitalsForm.physicianId) {
       setError("Veuillez choisir le medecin a qui envoyer le patient.");
       return;
     }
+
+    isSavingRef.current = true;
     setIsSaving(true);
     setError(null);
     try {
@@ -232,6 +265,7 @@ export default function PatientAssignes() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible d'enregistrer les signes vitaux.");
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -431,10 +465,24 @@ export default function PatientAssignes() {
       <section className="mt-8 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Historique du jour</p>
+            <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+              {historyPeriod === 'today'
+                ? "Historique du jour"
+                : historyPeriod === 'yesterday'
+                ? "Historique d'hier"
+                : historyPeriod === 'week'
+                ? "Historique des 7 derniers jours"
+                : "Historique complet"}
+            </p>
             <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">Bon de rendu - orientation infirmière</h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Affiche les orientations prises aujourd’hui. Les patients orientés quittent la file infirmier.
+              {historyPeriod === 'today'
+                ? "Affiche les orientations prises aujourd’hui. Les patients orientés quittent la file infirmier."
+                : historyPeriod === 'yesterday'
+                ? "Affiche les orientations infirmières enregistrées hier."
+                : historyPeriod === 'week'
+                ? "Affiche les orientations infirmières enregistrées au cours des 7 derniers jours."
+                : "Affiche toutes les orientations infirmières enregistrées."}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">

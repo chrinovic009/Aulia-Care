@@ -710,15 +710,10 @@ export class PatientsService {
   }
 
   async getPatientsAwaitingNurseVitals() {
-    const urgentPriorities = ['URGENT', 'URGENCE', 'HIGH', 'HAUTE', 'CRITICAL', 'CRITIQUE', 'PRIORITAIRE'];
-
     const patients = await this.prisma.patient.findMany({
       where: {
         deletedAt: null,
-        OR: [
-          { workflowStatus: PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE },
-          { priority: { in: urgentPriorities, mode: 'insensitive' } },
-        ],
+        workflowStatus: PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE,
       },
       include: {
         service: {

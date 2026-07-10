@@ -59,7 +59,6 @@ const Admission: React.FC = () => {
     voucherNumber: "",
     voucherIssuer: "",
     voucherNotes: "",
-    voucherAmount: "",
   });
   const [existingPatient, setExistingPatient] = useState<any>(null);
   const { currentUser } = useAuth();
@@ -176,10 +175,6 @@ const Admission: React.FC = () => {
     }));
   }, [form.serviceId, servicesList]);
 
-  const toggleAllergy = (a: string) => {
-    setForm((f: any) => ({ ...f, allergies: f.allergies.includes(a) ? f.allergies.filter((x: string) => x !== a) : [...f.allergies, a] }));
-  };
-
   const addContact = () => {
     setForm((f: any) => ({ ...f, contacts: [...f.contacts, { name: "", relation: "", phone: "", address: "" }] }));
   };
@@ -219,7 +214,6 @@ const Admission: React.FC = () => {
       voucherNumber: "",
       voucherIssuer: "",
       voucherNotes: "",
-      voucherAmount: "",
     });
   };
 
@@ -292,7 +286,7 @@ const Admission: React.FC = () => {
         receptionistId: currentUser?.id,
         receptionist: form.receptionist,
         arrivalAt: form.arrival,
-        amountDue: isVoucherAdmission ? Number(form.voucherAmount || 0) : ADMISSION_FEE_AMOUNT,
+amountDue: isVoucherAdmission ? 0 : ADMISSION_FEE_AMOUNT,
         voucherNumber: form.voucherNumber,
         voucherIssuer: form.voucherIssuer,
         voucherNotes: form.voucherNotes,
@@ -454,9 +448,7 @@ const Admission: React.FC = () => {
                 <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">2. Informations administratives</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
                   <div className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm">N° dossier: {form.dossierNumber}</div>
-                  <select value={form.admissionType} onChange={(e) => setForm({ ...form, admissionType: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {servicesList.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
-                  </select>
+                  <input type="hidden" value={form.admissionType} />
                   <input type="datetime-local" value={form.arrival} onChange={(e) => setForm({ ...form, arrival: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   <input placeholder="Réceptionniste" value={form.receptionist} readOnly className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
@@ -468,23 +460,24 @@ const Admission: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
                     <input placeholder="Numero du bon" value={form.voucherNumber} onChange={(e) => setForm({ ...form, voucherNumber: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     <input placeholder="Institution / medecin emetteur" value={form.voucherIssuer} onChange={(e) => setForm({ ...form, voucherIssuer: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    <input type="number" placeholder="Montant a payer" value={form.voucherAmount} onChange={(e) => setForm({ ...form, voucherAmount: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     <textarea placeholder="Besoin inscrit sur le bon / notes" value={form.voucherNotes} onChange={(e) => setForm({ ...form, voucherNotes: e.target.value })} rows={3} className="sm:col-span-2 lg:col-span-3 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                 </div>
               ) : null}
 
-              <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700 mt-4">
-                <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">4. Orientation médicale</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
-                  <select value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })} className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {servicesList.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
-                  </select>
-                  <select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {(servicesList.find((s) => s.id === form.serviceId)?.responsables || []).map((r: any) => (<option key={r.id} value={r.user?.displayName || r.user?.username}>{r.user?.displayName || r.user?.username}</option>))}
-                  </select>
+              {form.admissionMode === "PARAMEDICAL_VOUCHER" ? (
+                <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700 mt-4">
+                  <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">4. Orientation médicale</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
+                    <select value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })} className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      {servicesList.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+                    </select>
+                    <select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      {(servicesList.find((s) => s.id === form.serviceId)?.responsables || []).map((r: any) => (<option key={r.id} value={r.user?.displayName || r.user?.username}>{r.user?.displayName || r.user?.username}</option>))}
+                    </select>
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700 mt-4">
                 <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">5. Niveau priorité</h3>
@@ -511,16 +504,6 @@ const Admission: React.FC = () => {
                 <button onClick={addContact} className="px-3 py-1 rounded bg-gray-100 dark:bg-slate-800 text-gray-900 dark:text-white border border-gray-300 dark:border-slate-600 hover:bg-gray-200 dark:hover:bg-slate-700 text-sm font-medium">+ Ajouter contact</button>
               </div>
 
-              <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700 mt-4">
-                <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">8. Allergies & alertes médicales</h3>
-                <div className="flex gap-2 flex-wrap">
-                  {['Allergies', 'Diabète', 'Hypertension', 'Asthme', 'Épilepsie'].map((a) => (
-                    <button key={a} onClick={() => toggleAllergy(a)} className={`px-3 py-1 rounded text-sm font-medium transition ${form.allergies.includes(a) ? 'bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100 border border-red-300 dark:border-red-700' : 'border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800'}`}>
-                      {a}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </>
           )}
         </div>
