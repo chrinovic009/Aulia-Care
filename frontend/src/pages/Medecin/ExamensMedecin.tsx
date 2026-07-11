@@ -30,7 +30,7 @@ const formatLabStatus = (status?: string | null) => {
   return labels[normalized] || status || "Statut inconnu";
 };
 
-const getLabRequestViewState = (request: { status?: string | null; results?: Array<{ resultName?: string | null; resultValue?: string | null }> | null }, patientWorkflowStatus?: string | null) => {
+const getLabRequestViewState = (request: { status?: string | null; results?: Array<{ resultName?: string | null; resultValue?: string | null; units?: string | null; referenceRange?: string | null }> | null }, patientWorkflowStatus?: string | null) => {
   const hasResults = Boolean(request.results?.some((result) => (result.resultValue || "").trim()));
   const normalizedWorkflow = (patientWorkflowStatus || "").toUpperCase();
   const normalizedRequestStatus = (request.status || "").toUpperCase();
@@ -69,6 +69,17 @@ const getLabRequestViewState = (request: { status?: string | null; results?: Arr
     message: "L'examen a été transmis au laboratoire et est en cours de traitement.",
     showResults: false,
   };
+};
+
+const formatLabResultTextWithReference = (result: { resultName?: string | null; resultValue?: string | null; units?: string | null; referenceRange?: string | null }) => {
+  const resultValue = result.resultValue?.trim() || "Non renseigné";
+  const units = result.units?.trim();
+  const valueLine = `${result.resultName || "Résultat"}: ${resultValue}${units ? ` ${units}` : ""}`;
+  const reference = result.referenceRange?.trim();
+  if (!reference) {
+    return valueLine;
+  }
+  return `${valueLine}\nRéférence: ${reference}${units ? ` ${units}` : ""}`;
 };
 
 export default function ExamensMedecin() {
@@ -185,6 +196,8 @@ export default function ExamensMedecin() {
                     {selectedLabTest ? (
                       <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
                         Section: {selectedLabTest.section?.name || "-"} | Categorie: {selectedLabTest.category?.name || "-"} | Prix: {Number(selectedLabTest.price || 0).toLocaleString("fr-FR")} FC | Delai: {selectedLabTest.turnaroundTimeMinutes || "-"} min
+                        {selectedLabTest.unit ? ` | Unité: ${selectedLabTest.unit}` : ""}
+                        {selectedLabTest.referenceRange ? ` | Référence: ${selectedLabTest.referenceRange}` : ""}
                       </div>
                     ) : null}
                     <Input label="Specimen / precision" value={form.specimenType} onChange={(value) => setForm((current) => ({ ...current, specimenType: value }))} />
@@ -214,8 +227,8 @@ export default function ExamensMedecin() {
                             <div className="mt-3 space-y-2">
                               {request.results?.map((result, index) => (
                                 <div key={`${request.id}-${index}`} className="rounded-lg border border-slate-200 bg-white/80 p-2.5 dark:border-slate-800 dark:bg-slate-900/70">
-                                  <p className="font-medium text-slate-700 dark:text-slate-200">
-                                    {result.resultName || "Résultat"}: {result.resultValue?.trim() || "Non renseigné"}{result.units ? ` ${result.units}` : ""}
+                                  <p className="font-medium text-slate-700 dark:text-slate-200 whitespace-pre-line">
+                                    {formatLabResultTextWithReference(result)}
                                     {result.verified ? " • Validé" : ""}
                                   </p>
                                   <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { playNotificationSound } from "../../utils/notificationSound";
@@ -61,8 +61,18 @@ export default function PatientAssignes() {
   const [selectedPatient, setSelectedPatient] = useState<NursePatient | null>(null);
   const [detailsPatient, setDetailsPatient] = useState<NursePatient | null>(null);
   const [vitalsForm, setVitalsForm] = useState<VitalsForm>(emptyVitalsForm);
-  const [physicians, setPhysicians] = useState<any[]>([]);
-  const [servicesCatalog, setServicesCatalog] = useState<any[]>([]);
+  const [physicians, setPhysicians] = useState<Array<{
+    id?: string;
+    primaryRole?: string;
+    displayName?: string;
+    username?: string;
+    firstName?: string;
+    lastName?: string;
+  }>>([]);
+  const [servicesCatalog, setServicesCatalog] = useState<Array<{
+    id?: string;
+    responsables?: Array<{ user?: { id?: string } }>;
+  }>>([]);
   const isSavingRef = useRef(false);
 
   const loadPatients = async () => {
@@ -95,13 +105,13 @@ export default function PatientAssignes() {
     loadPatients();
     loadHistory(historyPeriod);
     Promise.all([
-      apiFetch<any[]>("/users").catch(() => []),
+      apiFetch<Array<{ id?: string; primaryRole?: string; displayName?: string; username?: string; firstName?: string; lastName?: string }>>("/users").catch(() => []),
       fetchServices().catch(() => []),
     ]).then(([users, services]) => {
       setPhysicians((users || []).filter((user) => user.primaryRole === "PHYSICIAN"));
       setServicesCatalog(services || []);
     });
-  }, []);
+  }, [historyPeriod]);
 
   useEffect(() => {
     loadHistory(historyPeriod);
@@ -145,8 +155,10 @@ export default function PatientAssignes() {
   const openVitalsModal = (patient: NursePatient) => {
     // Trigger audio announcement when opening vitals modal
     try {
-      announcePatient(patient, currentUser).catch(() => {});
-    } catch {}
+      announcePatient(patient, currentUser).catch(() => undefined);
+    } catch {
+      // ignore
+    }
 
     setSelectedPatient(patient);
     setVitalsForm({
@@ -200,7 +212,7 @@ export default function PatientAssignes() {
     );
   };
 
-  const announcePatient = async (patient: NursePatient, currentUser: any) => {
+  const announcePatient = async (patient: NursePatient, currentUser: ReturnType<typeof useAuth>['currentUser']) => {
     try {
       const nurseName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : "l'infirmière";
       const serviceName = (currentUser?.serviceResponsabilites && currentUser.serviceResponsabilites[0]?.service?.name) || patient.service || 'votre service';
@@ -210,7 +222,7 @@ export default function PatientAssignes() {
 
       try {
         playNotificationSound();
-      } catch (e) {
+      } catch {
         // ignore audio errors
       }
 
@@ -237,7 +249,7 @@ export default function PatientAssignes() {
           };
         }
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
   };
@@ -278,7 +290,7 @@ export default function PatientAssignes() {
   const servicePhysicianIds = useMemo(() => {
     if (!selectedPatient?.serviceId) return new Set<string>();
     const service = servicesCatalog.find((item) => item.id === selectedPatient.serviceId);
-    return new Set((service?.responsables || []).map((responsable: any) => responsable.user?.id).filter(Boolean));
+    return new Set((service?.responsables || []).map((responsable: { user?: { id?: string } }) => responsable.user?.id).filter(Boolean));
   }, [selectedPatient?.serviceId, servicesCatalog]);
 
   const sortedPhysicians = useMemo(() => {
