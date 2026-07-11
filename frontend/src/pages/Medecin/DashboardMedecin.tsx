@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { playNotificationSound } from "../../utils/notificationSound";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import {
@@ -38,6 +37,16 @@ const summarizeClinicalSummary = (value?: string | null, fallback?: string | nul
   } catch {
     return value || fallback || "Aucune note clinique.";
   }
+};
+
+const formatLabResultTextWithReference = (result: { resultName?: string | null; resultValue?: string | null; units?: string | null; referenceRange?: string | null }) => {
+  const valueLine = `${result.resultName || "Résultat"}: ${result.resultValue?.trim() || "Non renseigné"}${result.units ? ` ${result.units}` : ""}`;
+  const reference = result.referenceRange?.trim();
+  if (!reference) {
+    return valueLine;
+  }
+  const unitSuffix = result.units ? ` ${result.units}` : "";
+  return `${valueLine}\nRéférence: ${reference}${unitSuffix}`;
 };
 
 export default function DashboardMedecin() {
@@ -255,11 +264,6 @@ export default function DashboardMedecin() {
     const doctorName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'le médecin';
     const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, le docteur ${doctorName} vous attend au cabinet. Veuillez vous présenter immédiatement.`;
 
-    try {
-      playNotificationSound();
-    } catch {
-      // ignore audio errors
-    }
 
     if ('speechSynthesis' in window) {
       const speakWithVoice = (voices: SpeechSynthesisVoice[]) => {
@@ -509,8 +513,8 @@ export default function DashboardMedecin() {
                         text={
                           request.results?.length
                             ? request.results
-                                .map((result) => `${result.resultName || "Résultat"}: ${result.resultValue?.trim() || "Non renseigné"}${result.units ? ` ${result.units}` : ""}`)
-                                .join(", ")
+                                .map((result) => formatLabResultTextWithReference(result))
+                                .join("\n")
                             : "Resultat en attente."
                         }
                       />
@@ -575,7 +579,7 @@ function Item({ title, subtitle, text }: { title: string; subtitle: string; text
     <div className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950">
       <p className="font-semibold text-slate-900 dark:text-white">{title}</p>
       <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
-      <p className="mt-2 text-slate-600 dark:text-slate-300">{text}</p>
+      <p className="mt-2 whitespace-pre-line text-slate-600 dark:text-slate-300">{text}</p>
     </div>
   );
 }

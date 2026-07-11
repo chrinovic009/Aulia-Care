@@ -5,6 +5,15 @@ import { fetchLaboratoryActivity, fetchLaboratoryRequestDetail, LabActivityPaylo
 import { fetchPatientsFromDatabase, type PatientRecord } from "../../api/reception";
 import { useAuth } from "../../context/AuthContext";
 
+type LabRequestResult = {
+  resultStatus?: string | null;
+  resultName?: string | null;
+  resultValue?: string | null;
+  interpretation?: string | null;
+  units?: string | null;
+  referenceRange?: string | null;
+};
+
 type LabRequestDetailItem = {
   id?: string;
   status?: string | null;
@@ -15,10 +24,11 @@ type LabRequestDetailItem = {
     section?: { name?: string | null } | null;
     category?: { name?: string | null } | null;
     referenceRange?: string | null;
+    unit?: string | null;
     parameterTemplates?: Array<{ id: string; name?: string | null; unit?: string | null }>;
     consumableRequirements?: Array<{ id: string; labConsumable?: { name?: string | null; unit?: string | null } | null; quantity?: string | number | null; unit?: string | null }>;
   } | null;
-  results?: Array<{ resultStatus?: string | null; resultName?: string | null; resultValue?: string | null; interpretation?: string | null }>;
+  results?: LabRequestResult[];
   samples?: Array<{ id: string; status?: string | null; labSampleType?: { name?: string | null } | null }>;
 };
 
@@ -26,7 +36,7 @@ type LabRequestDetail = {
   id?: string;
   status?: string | null;
   items?: LabRequestDetailItem[];
-  results?: Array<{ resultStatus?: string | null; resultName?: string | null; resultValue?: string | null; interpretation?: string | null }>;
+  results?: LabRequestResult[];
   patient?: { id?: string; firstName?: string | null; lastName?: string | null; phone?: string | null; email?: string | null; address?: string | null } | null;
   consultation?: { provider?: { firstName?: string | null; lastName?: string | null; displayName?: string | null; phone?: string | null } | null } | null;
   requestedBy?: { phone?: string | null } | null;
@@ -280,7 +290,17 @@ export default function ActivityLab() {
     const displayRequestIdForPrint = displayRequestId || requestDetail.id || "—";
     const translatedRequestStatusForPrint = translatedRequestStatus;
 
-    const currentUserName = currentUser?.displayName || [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(" ") || "Responsable laboratoire";
+    const resultUnit = (latestResult as LabRequestResult)?.units?.trim() || currentItem?.labTest?.unit?.trim() || "";
+    const resultValueWithUnit = resultValue && resultValue !== "—" ? `${resultValue}${resultUnit ? ` ${resultUnit}` : ""}` : resultValue;
+    const formattedReferenceRange = (() => {
+      const normalizedRange = String(referenceRange || "").trim();
+      if (!normalizedRange || normalizedRange === "—") return "—";
+      if (resultUnit && !normalizedRange.toLowerCase().includes(resultUnit.toLowerCase())) {
+        return `${normalizedRange} ${resultUnit}`;
+      }
+      return normalizedRange;
+    })();
+
     const html = `
       <html>
         <head>
@@ -288,14 +308,15 @@ export default function ActivityLab() {
           <style>
             body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 24px; }
             .page { max-width: 900px; margin: 0 auto; }
-            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #111827; padding-bottom: 12px; margin-bottom: 20px; }
-            .brand-block { display: flex; align-items: center; gap: 16px; }
+            .header { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; border-bottom: 2px solid #111827; padding-bottom: 12px; margin-bottom: 20px; }
+            .brand-block { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
             .logo { width: 56px; height: 56px; object-fit: contain; }
             .clinic { font-size: 22px; font-weight: 700; }
             .details { font-size: 12px; color: #4b5563; margin-top: 4px; }
-            .document-title { font-size: 28px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin: 0 0 4px; }
-            .document-subtitle { font-size: 14px; color: #111827; margin: 0 0 10px; }
-            .responsible { font-size: 13px; color: #111827; font-weight: 700; margin-top: 4px; }
+            .document-title { font-size: 18px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin: 0 0 4px; }
+            .document-subtitle { font-size: 14px; color: #111827; margin: 0 0 4px; }
+            .responsible { font-size: 13px; color: #111827; font-weight: 700; margin-top: 2px; }
+            .meta-block { font-size: 12px; color: #4b5563; text-align: left; }
             .section { margin-bottom: 18px; }
             .section-title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #111827; margin-bottom: 8px; }
             table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -315,10 +336,9 @@ export default function ActivityLab() {
                 <div>
                   <div class="document-title">Bon de rendu des résultats biomédicaux</div>
                   <div class="document-subtitle">D7 Clinique - Service de laboratoire</div>
-                  <div class="responsible">Responsable laboratoire: ${currentUserName}</div>
                 </div>
               </div>
-              <div style="text-align: right; font-size: 12px; color: #4b5563;">
+              <div class="meta-block">
                 <div><strong>Document administratif</strong></div>
                 <div>Imprimé le ${new Date().toLocaleDateString("fr-FR")}</div>
               </div>
@@ -355,17 +375,18 @@ export default function ActivityLab() {
               <table>
                 <tbody>
                   <tr><td class="label">Nom du résultat</td><td>${resultName}</td></tr>
-                  <tr><td class="label">Résultat</td><td>${resultValue}</td></tr>
-                  <tr><td class="label">Valeur de référence</td><td>${referenceRange}</td></tr>
+                  <tr><td class="label">Résultat</td><td>${resultValueWithUnit}</td></tr>
+                  <tr><td class="label">Valeur de référence</td><td>${formattedReferenceRange}</td></tr>
                   <tr><td class="label">Interprétation</td><td>${interpretation}</td></tr>
                 </tbody>
               </table>
             </div>
 
             <div class="footer">
-              Document administratif généré depuis la plateforme de laboratoire D7 Clinique.
+              <div class="responsible">Responsable laboratoire</div>
             </div>
           </div>
+
         </body>
       </html>
     `;
