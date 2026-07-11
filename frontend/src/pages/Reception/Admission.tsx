@@ -69,6 +69,8 @@ const Admission: React.FC = () => {
   const [servicesList, setServicesList] = useState<any[]>([]);
   const [modalStep, setModalStep] = useState<ModalStep>(null);
 
+  const selectedService = useMemo(() => servicesList.find((s) => s.id === form.serviceId), [servicesList, form.serviceId]);
+  const selectedServiceFee = Number(selectedService?.tarifs?.[0]?.prix ?? ADMISSION_FEE_AMOUNT);
 
   const age = useMemo(() => {
     if (!form.dob) return "";
@@ -286,7 +288,7 @@ const Admission: React.FC = () => {
         receptionistId: currentUser?.id,
         receptionist: form.receptionist,
         arrivalAt: form.arrival,
-amountDue: isVoucherAdmission ? 0 : ADMISSION_FEE_AMOUNT,
+        amountDue: isVoucherAdmission ? 0 : selectedServiceFee,
         voucherNumber: form.voucherNumber,
         voucherIssuer: form.voucherIssuer,
         voucherNotes: form.voucherNotes,
@@ -513,8 +515,8 @@ amountDue: isVoucherAdmission ? 0 : ADMISSION_FEE_AMOUNT,
             <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">Résumé admission</h3>
             <div className="mt-3 text-sm space-y-2">
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Patient:</span> {form.name || (existingPatient ? existingPatient.name : '—')}</div>
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Service:</span> {existingPatient ? (existingPatient.service || (existingPatient.serviceId ? servicesList.find((s)=>s.id===existingPatient.serviceId)?.name : '—')) : (servicesList.find((s)=>s.id===form.serviceId)?.name || '—')}</div>
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Frais de fiche:</span> {ADMISSION_FEE_AMOUNT} USD</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Service:</span> {existingPatient ? (existingPatient.service || (existingPatient.serviceId ? servicesList.find((s)=>s.id===existingPatient.serviceId)?.name : '—')) : (selectedService?.name || servicesList.find((s)=>s.id===form.serviceId)?.name || '—')}</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Frais de fiche:</span> {isNaN(selectedServiceFee) ? ADMISSION_FEE_AMOUNT : selectedServiceFee} USD</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Médecin:</span> {existingPatient ? existingPatient.doctor : form.doctor}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Priorité:</span> {existingPatient ? existingPatient.priority : form.priority}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Assurance:</span> {existingPatient ? (existingPatient.insurance?.company ? '✅ Validée' : '—') : (form.insurance.company ? '✅ Validée' : '—')}</div>
