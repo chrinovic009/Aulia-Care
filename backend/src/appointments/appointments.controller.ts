@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
@@ -25,8 +25,8 @@ export class AppointmentsController {
 
   @Post()
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
-  create(@Body() createAppointmentDto: CreateAppointmentDto) {
-    return this.appointmentsService.create(createAppointmentDto);
+  create(@Body() createAppointmentDto: CreateAppointmentDto, @Request() req: any) {
+    return this.appointmentsService.create(createAppointmentDto, req.user?.userId || req.user?.id);
   }
 
   @Patch(':id')

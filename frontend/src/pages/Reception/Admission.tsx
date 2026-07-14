@@ -1,4 +1,4 @@
-ï»¿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { createPatientAdmission, findPatientByEmail, findPatientByPhone, searchPatients, fetchServices, fetchPatientsFromDatabase } from "../../api/reception";
@@ -8,18 +8,17 @@ type ModalStep = null | "success";
 const relationOptions = [
   "parent",
   "enfant",
-  "frÃ¨re",
-  "sÅ“ur",
+  "frère",
+  "sœur",
   "ami(e)",
   "tante",
   "oncle",
   "grand-parent",
-  "Ã©poux",
-  "Ã©pouse",
-  "collÃ¨gue",
+  "époux",
+  "épouse",
+  "collègue",
 ];
 
-const ADMISSION_FEE_AMOUNT = 20;
 const EMAIL_DOMAINS = ["@gmail.com", "@outlook.com", "@hotmail.com", "@yahoo.com"];
 
 const normalizeEmailLocalPart = (value: string) =>
@@ -28,6 +27,19 @@ const normalizeEmailLocalPart = (value: string) =>
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "");
+
+const normalizeText = (value?: string | null) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+const activePrice = (service?: any) => Number(service?.tarifs?.[0]?.prix || 0);
+const isReceptionBillingService = (service: any) => {
+  const name = normalizeText(service?.name);
+  return name.includes("consultation generale") || name.includes("consultation specialiste");
+};
 
 const Admission: React.FC = () => {
   const navigate = useNavigate();
@@ -44,7 +56,8 @@ const Admission: React.FC = () => {
     profession: "",
     nationality: "Congolaise",
     dossierNumber: `D-${Date.now().toString().slice(-6)}`,
-    admissionType: "Consultation",
+    admissionType: "CONSULTATION_GENERALE",
+    consultationKind: "CONSULTATION_GENERALE",
     arrival: new Date().toISOString(),
     receptionist: "",
     serviceId: "",
@@ -54,7 +67,7 @@ const Admission: React.FC = () => {
     contacts: [] as any[],
     allergies: [] as string[],
     documents: [] as any[],
-    amountDue: ADMISSION_FEE_AMOUNT,
+    billingServiceId: "",
     paymentRequestId: "",
     voucherNumber: "",
     voucherIssuer: "",
@@ -68,6 +81,7 @@ const Admission: React.FC = () => {
   const [phoneMatchPatient, setPhoneMatchPatient] = useState<any>(null);
   const [emailMatchPatient, setEmailMatchPatient] = useState<any>(null);
   const [servicesList, setServicesList] = useState<any[]>([]);
+  const [billingServices, setBillingServices] = useState<any[]>([]);
   const [modalStep, setModalStep] = useState<ModalStep>(null);
 
 
@@ -82,7 +96,7 @@ const Admission: React.FC = () => {
     (async () => {
       try {
         if (currentUser) {
-          const name = currentUser.firstName ? `${currentUser.firstName} ${currentUser.lastName || ""}`.trim() : currentUser.displayName || currentUser.username || "RÃ©ceptionniste";
+          const name = currentUser.firstName ? `${currentUser.firstName} ${currentUser.lastName || ""}`.trim() : currentUser.displayName || currentUser.username || "Réceptionniste";
           setForm((f: any) => ({ ...f, receptionist: name }));
 
           // compute position as number of patients in db + 1
@@ -128,9 +142,9 @@ const Admission: React.FC = () => {
   }, [form.name, form.phone, form.email]);
 
   const PROFESSIONS = [
-    'Infirmier', 'MÃ©decin', 'SecrÃ©taire', 'Enseignant', 'IngÃ©nieur', 'Ã‰tudiant', 'CommerÃ§ant', 'RetraitÃ©', 'Artisan', 'Conducteur',
-    'Agriculteur', 'Cadre', 'Technicien', 'Pharmacien', 'Laborantin', 'InfirmiÃ¨re', 'Sage-femme', 'Architecte', 'Banquier', 'Avocat',
-    'Informaticien', 'ElÃ¨ve', 'Etudiant', 'Babysitter'
+    'Infirmier', 'Médecin', 'Secrétaire', 'Enseignant', 'Ingénieur', 'Étudiant', 'Commerçant', 'Retraité', 'Artisan', 'Conducteur',
+    'Agriculteur', 'Cadre', 'Technicien', 'Pharmacien', 'Laborantin', 'Infirmière', 'Sage-femme', 'Architecte', 'Banquier', 'Avocat',
+    'Informaticien', 'Elève', 'Etudiant', 'Babysitter'
   ];
 
   useEffect(() => {
@@ -148,10 +162,20 @@ const Admission: React.FC = () => {
     (async () => {
       try {
         const svcs = await fetchServices();
-        const patientServices = (svcs || []).filter((service: any) => !["reception", "rÃ©ception", "caisse"].includes(String(service.name || "").trim().toLowerCase()));
+        const billableReceptionServices = (svcs || []).filter(isReceptionBillingService);
+        const patientServices = (svcs || []).filter((service: any) => {
+          const name = normalizeText(service.name);
+          const department = normalizeText(service.department?.name);
+          return !["reception", "secretariat", "caisse"].includes(name) && department !== "administration" && !isReceptionBillingService(service);
+        });
         setServicesList(patientServices);
+        setBillingServices(billableReceptionServices);
         if (patientServices.length > 0 && !form.serviceId) {
-          setForm((f: any) => ({ ...f, serviceId: patientServices[0].id }));
+          setForm((f: any) => ({
+            ...f,
+            serviceId: patientServices[0].id,
+            billingServiceId: billableReceptionServices.find((service: any) => normalizeText(service.name).includes("generale"))?.id || billableReceptionServices[0]?.id || "",
+          }));
         }
       } catch (e) {
         // ignore
@@ -197,9 +221,10 @@ const Admission: React.FC = () => {
       profession: "",
       nationality: "",
       dossierNumber: `D-${Date.now().toString().slice(-6)}`,
-      admissionType: "Consultation",
+      admissionType: "CONSULTATION_GENERALE",
+      consultationKind: "CONSULTATION_GENERALE",
       arrival: new Date().toISOString().slice(0, 16),
-      receptionist: currentUser?.firstName ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() : currentUser?.displayName || currentUser?.username || "RÃ©ceptionniste",
+      receptionist: currentUser?.firstName ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() : currentUser?.displayName || currentUser?.username || "Réceptionniste",
       serviceId: servicesList[0]?.id || '',
       doctor: servicesList[0]?.responsables?.[0]?.user?.displayName || '',
       priority: "Normal",
@@ -207,7 +232,7 @@ const Admission: React.FC = () => {
       contacts: [],
       allergies: [],
       documents: [],
-      amountDue: ADMISSION_FEE_AMOUNT,
+      billingServiceId: billingServices.find((service: any) => normalizeText(service.name).includes("generale"))?.id || billingServices[0]?.id || "",
       voucherNumber: "",
       voucherIssuer: "",
       voucherNotes: "",
@@ -217,6 +242,9 @@ const Admission: React.FC = () => {
 
   const conflictPatient = existingPatient || phoneMatchPatient || emailMatchPatient;
   const contactMatchPatient = phoneMatchPatient || emailMatchPatient;
+  const selectedBillingService = billingServices.find((service) => service.id === form.billingServiceId);
+  const selectedOrientationService = servicesList.find((service) => service.id === form.serviceId);
+  const amountToPay = form.admissionMode === "PARAMEDICAL_VOUCHER" ? activePrice(selectedOrientationService) : activePrice(selectedBillingService);
 
   const splitFullName = (value: string) => {
     const parts = value.trim().split(/\s+/).filter(Boolean);
@@ -248,7 +276,7 @@ const Admission: React.FC = () => {
   const handleSaveClick = async () => {
     const isVoucherAdmission = form.admissionMode === "PARAMEDICAL_VOUCHER";
     if (!isVoucherAdmission && conflictPatient) {
-      window.alert(`Un patient existe dÃ©jÃ  avec le mÃªme nom, tÃ©lÃ©phone ou email. VÃ©rifiez son dossier avant de crÃ©er une admission.`);
+      window.alert(`Un patient existe déjà avec le même nom, téléphone ou email. Vérifiez son dossier avant de créer une admission.`);
       return;
     }
 
@@ -279,37 +307,38 @@ const Admission: React.FC = () => {
         insuranceProvider: form.insurance.company,
         insuranceNumber: form.insurance.policy,
         admissionType: isVoucherAdmission ? "BON_PARAMEDICAL" : form.admissionType,
+        consultationKind: form.consultationKind,
+        billingServiceId: form.billingServiceId,
         serviceId: form.serviceId,
         priority: form.priority,
         receptionistId: currentUser?.id,
         receptionist: form.receptionist,
         arrivalAt: form.arrival,
-        amountDue: isVoucherAdmission ? Number(form.voucherAmount || 0) : ADMISSION_FEE_AMOUNT,
         voucherNumber: form.voucherNumber,
         voucherIssuer: form.voucherIssuer,
         voucherNotes: form.voucherNotes,
       } as any);
 
       setModalStep('success');
-      console.log('Admission enregistrÃ©e', result);
+      console.log('Admission enregistrée', result);
     } catch (error: any) {
-      window.alert(error?.message || 'Une erreur est survenue lors de lâ€™enregistrement de lâ€™admission.');
+      window.alert(error?.message || 'Une erreur est survenue lors de l’enregistrement de l’admission.');
     }
   };
 
   const renderPatientDetails = () => (
     <div className="bg-white dark:bg-slate-900 p-5 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700">
-      <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">Patient dÃ©jÃ  enregistrÃ©</h3>
+      <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">Patient déjà enregistré</h3>
       <div className="grid grid-cols-1 gap-3 text-sm text-gray-700 dark:text-gray-300">
         <div><span className="font-medium">Nom:</span> {existingPatient.firstName ? `${existingPatient.firstName} ${existingPatient.lastName}` : existingPatient.name}</div>
-        <div><span className="font-medium">CatÃ©gorie:</span> {existingPatient.insuranceProvider ? "AbonnÃ©" : "Particulier"}</div>
-        <div><span className="font-medium">Entreprise:</span> {existingPatient.insuranceProvider || "â€”"}</div>
-        <div><span className="font-medium">TÃ©lÃ©phone:</span> {existingPatient.phone}</div>
+        <div><span className="font-medium">Catégorie:</span> {existingPatient.insuranceProvider ? "Abonné" : "Particulier"}</div>
+        <div><span className="font-medium">Entreprise:</span> {existingPatient.insuranceProvider || "—"}</div>
+        <div><span className="font-medium">Téléphone:</span> {existingPatient.phone}</div>
         <div><span className="font-medium">Email:</span> {existingPatient.email}</div>
         <div><span className="font-medium">Adresse:</span> {existingPatient.address}</div>
-        <div><span className="font-medium">Service:</span> {existingPatient.service || 'â€”'}</div>
-        <div><span className="font-medium">MÃ©decin:</span> {existingPatient.doctor || 'â€”'}</div>
-        <div><span className="font-medium">PrioritÃ©:</span> {existingPatient.priority || 'â€”'}</div>
+        <div><span className="font-medium">Service:</span> {existingPatient.service || '—'}</div>
+        <div><span className="font-medium">Médecin:</span> {existingPatient.doctor || '—'}</div>
+        <div><span className="font-medium">Priorité:</span> {existingPatient.priority || '—'}</div>
         <div><span className="font-medium">Allergies:</span> {(existingPatient.allergies || []).join(", ") || "Aucune"}</div>
       </div>
       <div className="mt-4 flex flex-col sm:flex-row gap-2">
@@ -326,7 +355,7 @@ const Admission: React.FC = () => {
       <div className="mb-4 grid gap-3 md:grid-cols-2">
         <button
           type="button"
-          onClick={() => setForm((current: any) => ({ ...current, admissionMode: "ORDINARY" }))}
+          onClick={() => setForm((current: any) => ({ ...current, admissionMode: "ORDINARY", admissionType: current.consultationKind || "CONSULTATION_GENERALE" }))}
           className={`rounded-lg border p-4 text-left transition ${
             form.admissionMode === "ORDINARY"
               ? "border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-100"
@@ -334,7 +363,7 @@ const Admission: React.FC = () => {
           }`}
         >
           <p className="font-semibold">Admission classique</p>
-          <p className="mt-1 text-sm opacity-80">Patient reÃ§u avec fiche complÃ¨te, paiement de fiche puis infirmerie.</p>
+          <p className="mt-1 text-sm opacity-80">Patient reçu avec fiche complète, paiement de fiche puis infirmerie.</p>
         </button>
         <button
           type="button"
@@ -345,8 +374,8 @@ const Admission: React.FC = () => {
               : "border-gray-200 bg-white text-gray-700 dark:border-slate-700 dark:bg-slate-900 dark:text-gray-300"
           }`}
         >
-          <p className="font-semibold">Bon paramÃ©dical externe</p>
-          <p className="mt-1 text-sm opacity-80">Patient orientÃ© directement vers un service paramÃ©dical, avec paiement et traÃ§abilitÃ©.</p>
+          <p className="font-semibold">Bon paramédical externe</p>
+          <p className="mt-1 text-sm opacity-80">Patient orienté directement vers un service paramédical, avec paiement et traçabilité.</p>
         </button>
       </div>
       <div className="grid grid-cols-12 gap-4 sm:gap-6">
@@ -359,12 +388,12 @@ const Admission: React.FC = () => {
                 <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">1. Informations personnelles</h3>
                 {contactMatchPatient && !existingPatient ? (
                   <div className="mb-3 rounded-lg border border-red-200 dark:border-red-700 bg-red-50 dark:bg-red-900/40 p-3 text-sm text-red-800 dark:text-red-100">
-                    Ce contact correspond dÃ©jÃ  Ã  un patient existant : <strong>{contactMatchPatient.name}</strong>. Vous pouvez confirmer la relation avant de continuer.
+                    Ce contact correspond déjà à un patient existant : <strong>{contactMatchPatient.name}</strong>. Vous pouvez confirmer la relation avant de continuer.
                   </div>
                 ) : null}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
                   <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="S">AbonnÃ©</option>
+                    <option value="S">Abonné</option>
                     <option value="P">Particulier</option>
                   </select>
                   <input placeholder="Nom complet" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -384,11 +413,11 @@ const Admission: React.FC = () => {
                     <option value="O">Autre</option>
                   </select>
                   <input type="date" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <div className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm">Ã‚ge: {age}</div>
+                  <div className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm">Âge: {age}</div>
                   <div className="space-y-1">
-                    <input placeholder="TÃ©lÃ©phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <input placeholder="Téléphone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     {phoneMatchPatient && !existingPatient ? (
-                      <p className="text-xs text-red-600 dark:text-red-400">Ce tÃ©lÃ©phone correspond dÃ©jÃ  Ã  : {phoneMatchPatient.name}</p>
+                      <p className="text-xs text-red-600 dark:text-red-400">Ce téléphone correspond déjà à : {phoneMatchPatient.name}</p>
                     ) : null}
                   </div>
                   <div className="space-y-1">
@@ -414,7 +443,7 @@ const Admission: React.FC = () => {
                     </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400">Vide: l'email sera genere en prenomnom@gmail.com.</p>
                     {emailMatchPatient && !existingPatient ? (
-                      <p className="text-xs text-red-600 dark:text-red-400">Cet email correspond dÃ©jÃ  Ã  : {emailMatchPatient.name}</p>
+                      <p className="text-xs text-red-600 dark:text-red-400">Cet email correspond déjà à : {emailMatchPatient.name}</p>
                     ) : null}
                   </div>
                   <input placeholder="Adresse" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="col-span-1 sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -430,14 +459,14 @@ const Admission: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <input placeholder="NationalitÃ©" value={form.nationality} onChange={(e) => setForm({ ...form, nationality: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input placeholder="Nationalité" value={form.nationality} onChange={(e) => setForm({ ...form, nationality: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   {form.category === "S" ? (
                     <>
-                      <input placeholder="Entreprise / SociÃ©tÃ©" value={form.insurance.company} onChange={(e) => setForm({ ...form, insurance: { ...form.insurance, company: e.target.value } })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                      <input placeholder="NÂ° police" value={form.insurance.policy} onChange={(e) => setForm({ ...form, insurance: { ...form.insurance, policy: e.target.value } })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <input placeholder="Entreprise / Société" value={form.insurance.company} onChange={(e) => setForm({ ...form, insurance: { ...form.insurance, company: e.target.value } })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <input placeholder="N° police" value={form.insurance.policy} onChange={(e) => setForm({ ...form, insurance: { ...form.insurance, policy: e.target.value } })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </>
                   ) : (
-                    <div className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm">Particulier : aucune entreprise exigÃ©e.</div>
+                    <div className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm">Particulier : aucune entreprise exigée.</div>
                   )}
                 </div>
               </div>
@@ -445,29 +474,47 @@ const Admission: React.FC = () => {
               <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700 mt-4">
                 <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">2. Informations administratives</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
-                  <div className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm">NÂ° dossier: {form.dossierNumber}</div>
-                  <select value={form.admissionType} onChange={(e) => setForm({ ...form, admissionType: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {servicesList.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
-                  </select>
+                  <div className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm">N° dossier: {form.dossierNumber}</div>
+                  {form.admissionMode === "ORDINARY" ? (
+                    <select
+                      value={form.consultationKind}
+                      onChange={(e) => {
+                        const consultationKind = e.target.value;
+                        const target = consultationKind === "CONSULTATION_SPECIALISTE" ? "specialiste" : "generale";
+                        const billingService = billingServices.find((service) => normalizeText(service.name).includes(target));
+                        setForm({ ...form, consultationKind, admissionType: consultationKind, billingServiceId: billingService?.id || "" });
+                      }}
+                      className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="CONSULTATION_GENERALE">Consultation générale</option>
+                      <option value="CONSULTATION_SPECIALISTE">Consultation spécialiste</option>
+                    </select>
+                  ) : (
+                    <div className="rounded-md border border-emerald-200 dark:border-emerald-800 px-3 py-2 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-100 text-sm">
+                      Bon paramédical facturé selon le service choisi.
+                    </div>
+                  )}
                   <input type="datetime-local" value={form.arrival} onChange={(e) => setForm({ ...form, arrival: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                  <input placeholder="RÃ©ceptionniste" value={form.receptionist} readOnly className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input placeholder="Réceptionniste" value={form.receptionist} readOnly className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
 
               {form.admissionMode === "PARAMEDICAL_VOUCHER" ? (
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-emerald-200 dark:border-emerald-800 mt-4">
-                  <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">3. Bon paramÃ©dical</h3>
+                  <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">3. Bon paramédical</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
                     <input placeholder="Numero du bon" value={form.voucherNumber} onChange={(e) => setForm({ ...form, voucherNumber: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                     <input placeholder="Institution / medecin emetteur" value={form.voucherIssuer} onChange={(e) => setForm({ ...form, voucherIssuer: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    <input type="number" placeholder="Montant a payer" value={form.voucherAmount} onChange={(e) => setForm({ ...form, voucherAmount: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+                    <div className="rounded-md border border-emerald-200 dark:border-emerald-800 px-3 py-2 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-100 text-sm">
+                      Tarif service: {amountToPay > 0 ? `${amountToPay} CDF` : "Aucun tarif actif"}
+                    </div>
                     <textarea placeholder="Besoin inscrit sur le bon / notes" value={form.voucherNotes} onChange={(e) => setForm({ ...form, voucherNotes: e.target.value })} rows={3} className="sm:col-span-2 lg:col-span-3 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
                 </div>
               ) : null}
 
               <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700 mt-4">
-                <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">4. Orientation mÃ©dicale</h3>
+                <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">4. Orientation médicale</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
                   <select value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })} className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                     {servicesList.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
@@ -479,11 +526,11 @@ const Admission: React.FC = () => {
               </div>
 
               <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700 mt-4">
-                <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">5. Niveau prioritÃ©</h3>
+                <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">5. Niveau priorité</h3>
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                  <button onClick={() => setForm({ ...form, priority: "Normal" })} className={`px-3 py-1 rounded-full text-sm font-medium transition ${form.priority === "Normal" ? "bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100" : "border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>ðŸŸ¢ Normal</button>
-                  <button onClick={() => setForm({ ...form, priority: "Prioritaire" })} className={`px-3 py-1 rounded-full text-sm font-medium transition ${form.priority === "Prioritaire" ? "bg-yellow-100 dark:bg-yellow-900 text-yellow-900 dark:text-yellow-100" : "border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>ðŸŸ¡ Prioritaire</button>
-                  <button onClick={() => setForm({ ...form, priority: "Urgence" })} className={`px-3 py-1 rounded-full text-sm font-medium transition ${form.priority === "Urgence" ? "bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100" : "border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>ðŸ”´ Urgence critique</button>
+                  <button onClick={() => setForm({ ...form, priority: "Normal" })} className={`px-3 py-1 rounded-full text-sm font-medium transition ${form.priority === "Normal" ? "bg-green-100 dark:bg-green-900 text-green-900 dark:text-green-100" : "border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>?? Normal</button>
+                  <button onClick={() => setForm({ ...form, priority: "Prioritaire" })} className={`px-3 py-1 rounded-full text-sm font-medium transition ${form.priority === "Prioritaire" ? "bg-yellow-100 dark:bg-yellow-900 text-yellow-900 dark:text-yellow-100" : "border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>?? Prioritaire</button>
+                  <button onClick={() => setForm({ ...form, priority: "Urgence" })} className={`px-3 py-1 rounded-full text-sm font-medium transition ${form.priority === "Urgence" ? "bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100" : "border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"}`}>?? Urgence critique</button>
                 </div>
               </div>
 
@@ -493,10 +540,10 @@ const Admission: React.FC = () => {
                   <div key={i} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-2">
                     <input placeholder="Nom" value={c.name} onChange={(e) => updateContact(i, "name", e.target.value)} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     <select value={c.relation} onChange={(e) => updateContact(i, "relation", e.target.value)} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <option value="">SÃ©lectionner relation</option>
+                      <option value="">Sélectionner relation</option>
                       {relationOptions.map((opt) => (<option key={opt} value={opt}>{opt}</option>))}
                     </select>
-                    <input placeholder="TÃ©lÃ©phone" value={c.phone} onChange={(e) => updateContact(i, "phone", e.target.value)} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <input placeholder="Téléphone" value={c.phone} onChange={(e) => updateContact(i, "phone", e.target.value)} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     <input placeholder="Adresse" value={c.address} onChange={(e) => updateContact(i, "address", e.target.value)} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                 ))}
@@ -504,9 +551,9 @@ const Admission: React.FC = () => {
               </div>
 
               <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700 mt-4">
-                <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">8. Allergies & alertes mÃ©dicales</h3>
+                <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">8. Allergies & alertes médicales</h3>
                 <div className="flex gap-2 flex-wrap">
-                  {['Allergies', 'DiabÃ¨te', 'Hypertension', 'Asthme', 'Ã‰pilepsie'].map((a) => (
+                  {['Allergies', 'Diabète', 'Hypertension', 'Asthme', 'Épilepsie'].map((a) => (
                     <button key={a} onClick={() => toggleAllergy(a)} className={`px-3 py-1 rounded text-sm font-medium transition ${form.allergies.includes(a) ? 'bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100 border border-red-300 dark:border-red-700' : 'border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800'}`}>
                       {a}
                     </button>
@@ -519,20 +566,21 @@ const Admission: React.FC = () => {
 
         <aside className="col-span-12 lg:col-span-4">
           <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700">
-            <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">RÃ©sumÃ© admission</h3>
+            <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">Résumé admission</h3>
             <div className="mt-3 text-sm space-y-2">
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Patient:</span> {form.name || (existingPatient ? existingPatient.name : 'â€”')}</div>
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Service:</span> {existingPatient ? (existingPatient.service || (existingPatient.serviceId ? servicesList.find((s)=>s.id===existingPatient.serviceId)?.name : 'â€”')) : (servicesList.find((s)=>s.id===form.serviceId)?.name || 'â€”')}</div>
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Frais de fiche:</span> {ADMISSION_FEE_AMOUNT} USD</div>
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">MÃ©decin:</span> {existingPatient ? existingPatient.doctor : form.doctor}</div>
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">PrioritÃ©:</span> {existingPatient ? existingPatient.priority : form.priority}</div>
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Assurance:</span> {existingPatient ? (existingPatient.insurance?.company ? 'âœ… ValidÃ©e' : 'â€”') : (form.insurance.company ? 'âœ… ValidÃ©e' : 'â€”')}</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Patient:</span> {form.name || (existingPatient ? existingPatient.name : '—')}</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Service:</span> {existingPatient ? (existingPatient.service || (existingPatient.serviceId ? servicesList.find((s)=>s.id===existingPatient.serviceId)?.name : '—')) : (servicesList.find((s)=>s.id===form.serviceId)?.name || '—')}</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Facturation:</span> {form.admissionMode === "PARAMEDICAL_VOUCHER" ? selectedOrientationService?.name || "Bon paramédical" : selectedBillingService?.name || form.consultationKind}</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Montant caisse:</span> {amountToPay > 0 ? `${amountToPay} CDF` : "Tarif non configuré"}</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Médecin:</span> {existingPatient ? existingPatient.doctor : form.doctor}</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Priorité:</span> {existingPatient ? existingPatient.priority : form.priority}</div>
+              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Assurance:</span> {existingPatient ? (existingPatient.insurance?.company ? '? Validée' : '—') : (form.insurance.company ? '? Validée' : '—')}</div>
             </div>
 
             <div className="mt-4 space-y-2">
               <button
                 onClick={handleSaveClick}
-                disabled={!!existingPatient}
+                disabled={!!existingPatient || amountToPay <= 0}
                 className={`w-full rounded px-3 py-2 font-medium text-sm transition ${existingPatient ? "bg-gray-300 text-gray-600 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"}`}
               >
                 Enregistrer & Envoyez
@@ -542,19 +590,19 @@ const Admission: React.FC = () => {
           </div>
 
           <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700 mt-4">
-            <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">DÃ©tection auto</h3>
+            <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">Détection auto</h3>
             {existingPatient ? (
               <div className="p-3 border border-gray-300 dark:border-slate-600 rounded bg-blue-50 dark:bg-slate-800">
                 <div className="font-medium text-gray-900 dark:text-white">{existingPatient.name}</div>
                 <div className="text-xs text-gray-600 dark:text-gray-400">{existingPatient.phone}</div>
-                <div className="mt-3 text-sm text-gray-700 dark:text-gray-300">Patient trouvÃ©. Tous les champs sont remplacÃ©s par ses dÃ©tails.</div>
+                <div className="mt-3 text-sm text-gray-700 dark:text-gray-300">Patient trouvé. Tous les champs sont remplacés par ses détails.</div>
                 <div className="mt-3 flex flex-col sm:flex-row gap-2">
                   <button onClick={resetForm} className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 text-xs font-medium">Nouvelle admission</button>
                   <button onClick={() => navigate("/reception/patients", { state: { patientId: existingPatient.id, openAppointment: true } })} className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 text-xs font-medium">Nouvelle visite</button>
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-gray-500 dark:text-gray-400">Tapez le nom complet (casse non sensible) ou le tÃ©lÃ©phone pour dÃ©tecter un patient existant.</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Tapez le nom complet (casse non sensible) ou le téléphone pour détecter un patient existant.</div>
             )}
           </div>
         </aside>
@@ -565,8 +613,8 @@ const Admission: React.FC = () => {
           <div className="w-full max-w-xl rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl border border-gray-200 dark:border-slate-700">
             {modalStep === "success" && (
               <>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Admission enregistrÃ©e</h3>
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">La fiche de {form.name || 'ce patient'} a Ã©tÃ© enregistrÃ©e. Une notification de paiement a Ã©tÃ© envoyÃ©e au caissier.</p>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Admission enregistrée</h3>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">La fiche de {form.name || 'ce patient'} a été enregistrée. Une notification de paiement a été envoyée au caissier.</p>
                 <div className="mt-4 flex gap-3">
                   <button onClick={() => { setModalStep(null); resetForm(); }} className="rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 px-4 py-2 text-sm">Fermer</button>
                 </div>

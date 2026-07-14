@@ -66,7 +66,7 @@ export const HistoryPrintTemplate: React.FC<HistoryPrintProps> = ({
                 Total Paiements ({records.filter((r) => r.type === "payment").length})
               </td>
               <td style={{ padding: "3mm", textAlign: "right", fontWeight: "bold", color: "#4caf50" }}>
-                {totalPayments.toLocaleString("fr-FR", { minimumFractionDigits: 0 })} USD
+                {totalPayments.toLocaleString("fr-FR", { minimumFractionDigits: 0 })} CDF
               </td>
             </tr>
             <tr>
@@ -74,7 +74,7 @@ export const HistoryPrintTemplate: React.FC<HistoryPrintProps> = ({
                 Total Factures ({records.filter((r) => r.type === "invoice").length})
               </td>
               <td style={{ padding: "3mm", textAlign: "right", fontWeight: "bold", color: "#ff9800" }}>
-                {totalInvoices.toLocaleString("fr-FR", { minimumFractionDigits: 0 })} USD
+                {totalInvoices.toLocaleString("fr-FR", { minimumFractionDigits: 0 })} CDF
               </td>
             </tr>
           </tbody>

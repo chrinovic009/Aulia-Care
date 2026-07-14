@@ -484,7 +484,8 @@ export default function ReceptionPatients() {
     const payload = {
       patientId: selectedPatient.id,
       requestedById: currentUser?.id || undefined,
-      serviceUnitId: selectedService?.id || undefined,
+      serviceId: selectedService?.id || undefined,
+      serviceUnitId: selectedService?.serviceUnitId || selectedService?.unitId || undefined,
       scheduledAt: datetime,
       reason: [notes || type || "Nouvelle visite", doctorId ? `Medecin: ${doctorId}` : ""].filter(Boolean).join(" - "),
       status: "SCHEDULED",
@@ -493,14 +494,6 @@ export default function ReceptionPatients() {
     try {
       const api = await import('../../api/reception');
       const created = await api.createAppointmentInDatabase(payload);
-      // update patient history on backend
-      try {
-        const ev = { date: new Date().toLocaleDateString('fr-FR'), event: `Rendez-vous ${type} le ${datetime} ${doctorId ? `avec ${doctorId}` : ''}` };
-        await updatePatientRecord({ id: selectedPatient.id, history: [ev, ...(selectedPatient.history || [])] } as any);
-        setPatients((prev) => prev.map((p) => (p.id === selectedPatient.id ? { ...p, history: [ev, ...(p.history || [])] } : p)));
-      } catch (e) {
-        // best-effort
-      }
       alert('Rendez-vous créé');
       setShowAppointmentModal(false);
       return created;

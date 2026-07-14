@@ -36,6 +36,18 @@ export class LaboratoryController {
     return this.laboratoryService.getActivityOverview();
   }
 
+  @Get('settings')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_TECHNICIAN', 'LAB_MANAGER')
+  settings() {
+    return this.laboratoryService.getSettings();
+  }
+
+  @Post('settings')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
+  updateSettings(@Body() body: any) {
+    return this.laboratoryService.updateSettings(body);
+  }
+
   @Get('dashboard/overview')
   @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_TECHNICIAN', 'LAB_MANAGER')
   dashboardOverview() {

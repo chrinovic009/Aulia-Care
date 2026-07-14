@@ -63,6 +63,14 @@ export class CreateAdmissionDto {
 
   @IsString()
   @IsOptional()
+  consultationKind?: string;
+
+  @IsString()
+  @IsOptional()
+  billingServiceId?: string;
+
+  @IsString()
+  @IsOptional()
   priority?: string;
 
   @IsString()
@@ -97,5 +105,6 @@ export class CreateAdmissionDto {
   voucherNotes?: string;
 
   @IsNumber()
-  amountDue: number;
+  @IsOptional()
+  amountDue?: number;
 }

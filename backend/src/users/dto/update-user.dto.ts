@@ -1,4 +1,4 @@
-import { IsDateString, IsEmail, IsEnum, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsEmail, IsEnum, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
 import { RoleSlug, UserStatus } from '@prisma/client';
 
 export class UpdateUserDto {
@@ -94,6 +94,14 @@ export class UpdateUserDto {
   @IsString()
   @IsOptional()
   serviceUnitId?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isResponsible?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  isDepartmentResponsible?: boolean;
 
   @IsString()
   @IsOptional()

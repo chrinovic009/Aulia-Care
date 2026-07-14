@@ -171,11 +171,11 @@ const FacturationCaissier: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 mb-4">
         <div className="p-3 bg-white rounded shadow text-center">
           <div className="text-sm text-gray-500">Montant total</div>
-          <div className="text-xl font-bold">{totals.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} USD</div>
+          <div className="text-xl font-bold">{totals.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} CDF</div>
         </div>
         <div className="p-3 bg-white rounded shadow text-center">
           <div className="text-sm text-gray-500">Soldes à recouvrer</div>
-          <div className="text-xl font-bold text-red-600">{totals.totalDue.toLocaleString(undefined, { minimumFractionDigits: 0 })} USD</div>
+          <div className="text-xl font-bold text-red-600">{totals.totalDue.toLocaleString(undefined, { minimumFractionDigits: 0 })} CDF</div>
         </div>
         <div className="p-3 bg-white rounded shadow text-center">
           <div className="text-sm text-gray-500">En attente</div>
@@ -259,10 +259,10 @@ const FacturationCaissier: React.FC = () => {
                   <td className="p-3">{inv.patientName}</td>
                   <td className="p-3 text-sm">{inv.patientPhone || "—"}</td>
                   <td className="p-3 text-right font-medium">
-                    {inv.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} USD
+                    {inv.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} CDF
                   </td>
                   <td className={`p-3 text-right font-medium ${inv.balanceDue > 0 ? "text-red-600" : "text-green-600"}`}>
-                    {inv.balanceDue.toLocaleString(undefined, { minimumFractionDigits: 0 })} USD
+                    {inv.balanceDue.toLocaleString(undefined, { minimumFractionDigits: 0 })} CDF
                   </td>
                   <td className="p-3">
                     <span className={getStatusBadge(inv.status)}>{getStatusLabel(inv.status)}</span>

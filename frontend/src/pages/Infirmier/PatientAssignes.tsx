@@ -12,6 +12,8 @@ import {
 } from "../../api/nurse";
 import { apiFetch } from "../../config/api";
 import { fetchServices } from "../../api/reception";
+import { useAuth } from "../../context/AuthContext";
+import { callPatientToWaitingRoom } from "../../utils/patientCall";
 
 type VitalsForm = RecordVitalSignsPayload;
 
@@ -44,6 +46,7 @@ const formatDate = (value?: string | null) => {
 
 export default function PatientAssignes() {
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [patients, setPatients] = useState<NursePatient[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [serviceFilter, setServiceFilter] = useState("Tous");
@@ -116,6 +119,13 @@ export default function PatientAssignes() {
   }, [patients, searchQuery, serviceFilter]);
 
   const openVitalsModal = (patient: NursePatient) => {
+    const nurseName = currentUser?.displayName || [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(" ") || "l infirmier";
+    const message = callPatientToWaitingRoom({
+      patientName: formatPatientName(patient),
+      destination: "l infirmerie pour le prelevement des signes vitaux",
+      staffName: nurseName,
+    });
+    setError(`Appel diffuse: ${message}`);
     setSelectedPatient(patient);
     setVitalsForm({
       temperature: patient.vitals.temperature || "",

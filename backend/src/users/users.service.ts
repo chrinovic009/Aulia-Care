@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PatientWorkflowStatus, RoleSlug } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -9,12 +9,43 @@ import * as bcrypt from 'bcrypt';
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private normalize(value?: string | null) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
+  private async resolvePrimaryRole(dto: {
+    primaryRole?: RoleSlug | null;
+    departmentId?: string | null;
+    isResponsible?: boolean;
+    isDepartmentResponsible?: boolean;
+  }) {
+    if (!dto.departmentId) return dto.primaryRole;
+
+    const department = await this.prisma.department.findUnique({
+      where: { id: dto.departmentId },
+      select: { name: true },
+    });
+    if (!department) {
+      throw new BadRequestException('Departement introuvable.');
+    }
+
+    const isLaboratory = this.normalize(department.name) === 'laboratoire';
+    if (!isLaboratory) return dto.primaryRole || RoleSlug.NURSE;
+
+    return dto.isResponsible || dto.isDepartmentResponsible ? RoleSlug.LAB_MANAGER : RoleSlug.LAB_TECHNICIAN;
+  }
+
   async create(dto: CreateUserDto) {
+    const primaryRole = await this.resolvePrimaryRole(dto);
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const employeeDetails = {
       gender: dto.gender ?? null,
       dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null,
-      position: dto.position ?? dto.primaryRole,
+      position: dto.position ?? primaryRole,
       employeeNumber: dto.employeeNumber ?? null,
       departmentId: dto.departmentId ?? null,
       serviceUnitId: dto.serviceUnitId ?? null,
@@ -28,7 +59,7 @@ export class UsersService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         passwordHash,
-        primaryRole: dto.primaryRole,
+        primaryRole,
 
         specialty: dto.specialty ?? null,
         phone: dto.phone ?? null,
@@ -146,6 +177,7 @@ export class UsersService {
         'NURSE',
         'PHYSICIAN',
         'LAB_TECHNICIAN',
+        'LAB_MANAGER',
         'RADIOLOGIST',
         'PHARMACIST',
         'CASHIER',
@@ -156,6 +188,7 @@ export class UsersService {
         'NURSE',
         'PHYSICIAN',
         'LAB_TECHNICIAN',
+        'LAB_MANAGER',
         'RADIOLOGIST',
         'PHARMACIST',
         'CASHIER',
@@ -163,10 +196,11 @@ export class UsersService {
       ],
       RECEPTIONIST: ['RECEPTIONIST', 'PATIENT'],
       NURSE: ['NURSE', 'PHYSICIAN', 'PATIENT'],
-      PHYSICIAN: ['PHYSICIAN', 'NURSE', 'LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST'],
-      LAB_TECHNICIAN: ['LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN'],
-      RADIOLOGIST: ['LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN'],
-      PHARMACIST: ['LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN'],
+      PHYSICIAN: ['PHYSICIAN', 'NURSE', 'LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'PHARMACIST'],
+      LAB_TECHNICIAN: ['LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN'],
+      LAB_MANAGER: ['LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN'],
+      RADIOLOGIST: ['LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN'],
+      PHARMACIST: ['LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN'],
       PATIENT: ['RECEPTIONIST', 'NURSE', 'PHYSICIAN'],
     };
 
@@ -275,6 +309,7 @@ export class UsersService {
       NURSE: 'Infirmier',
       PHYSICIAN: 'Medecin',
       LAB_TECHNICIAN: 'Laboratoire',
+      LAB_MANAGER: 'Responsable laboratoire',
       RADIOLOGIST: 'Radiologie',
       PHARMACIST: 'Pharmacie',
       CASHIER: 'Caisse',
@@ -303,6 +338,19 @@ export class UsersService {
     const employeeData: any = {};
     const contractData: any = {};
 
+    if (dto.departmentId !== undefined || dto.primaryRole !== undefined || dto.isResponsible !== undefined || dto.isDepartmentResponsible !== undefined) {
+      const existing = await this.prisma.user.findUnique({
+        where: { id },
+        select: { primaryRole: true, Employee: { select: { departmentId: true }, take: 1 } },
+      });
+      data.primaryRole = await this.resolvePrimaryRole({
+        primaryRole: dto.primaryRole || existing?.primaryRole || RoleSlug.NURSE,
+        departmentId: dto.departmentId !== undefined ? dto.departmentId || undefined : existing?.Employee?.[0]?.departmentId,
+        isResponsible: dto.isResponsible,
+        isDepartmentResponsible: dto.isDepartmentResponsible,
+      });
+    }
+
     if (dto.password) {
       data.passwordHash = await bcrypt.hash(dto.password, 10);
       delete data.password;
@@ -315,6 +363,8 @@ export class UsersService {
       'employeeNumber',
       'departmentId',
       'serviceUnitId',
+      'isResponsible',
+      'isDepartmentResponsible',
       'contractType',
       'salary',
       'salaryFrequency',

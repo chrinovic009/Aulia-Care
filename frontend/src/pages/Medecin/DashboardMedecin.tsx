@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Mic, MicOff, PhoneCall, Sparkles } from "lucide-react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { Modal } from "../../components/ui/modal";
@@ -12,6 +12,8 @@ import {
   saveClinicalSections,
 } from "../../api/doctor";
 import { apiFetch, ApiError } from "../../config/api";
+import { useAuth } from "../../context/AuthContext";
+import { callPatientToWaitingRoom } from "../../utils/patientCall";
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "-";
@@ -42,8 +44,92 @@ const summarizeClinicalSummary = (value?: string | null, fallback?: string | nul
   }
 };
 
+declare global {
+  interface Window {
+    SpeechRecognition?: any;
+    webkitSpeechRecognition?: any;
+  }
+}
+
+const normalizeVoiceText = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+const appendClinicalValue = (current: string, addition?: string) => {
+  const cleanAddition = String(addition || "").trim();
+  if (!cleanAddition) return current;
+  const parts = current.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.some((part) => normalizeVoiceText(part) === normalizeVoiceText(cleanAddition))) return current;
+  return [...parts, cleanAddition].join(", ");
+};
+
+const extractClinicalVoiceFields = (transcript: string) => {
+  const text = normalizeVoiceText(transcript);
+  const extracted: Partial<{
+    chiefComplaint: string;
+    onset: string;
+    painLocation: string;
+    intensity: string;
+    associatedSymptoms: string;
+    aggravatingFactors: string;
+  }> = {};
+
+  const onsetMatch = text.match(/depuis\s+([^.,;!?]+)/);
+  if (onsetMatch?.[1]) {
+    extracted.onset = onsetMatch[1].trim();
+  }
+
+  const painLocations: string[] = [];
+  if (text.includes("au-dessus de l'estomac") || text.includes("au dessus de l'estomac") || text.includes("epigastr") || text.includes("estomac")) {
+    painLocations.push("Zone epigastrique");
+  }
+  if (text.includes("dos")) {
+    painLocations.push("Irradiation dorsale");
+  }
+  if (text.includes("ventre") || text.includes("abdom")) {
+    painLocations.push("Region abdominale");
+  }
+  if (painLocations.length) {
+    extracted.painLocation = painLocations.join(", ");
+  }
+
+  if (text.includes("tres douloureux") || text.includes("tres douloureuse") || text.includes("forte douleur") || text.includes("insupportable")) {
+    extracted.intensity = "7-10";
+  } else if (text.includes("modere") || text.includes("supportable")) {
+    extracted.intensity = "4-6";
+  } else if (text.includes("leger") || text.includes("faible")) {
+    extracted.intensity = "1-3";
+  }
+
+  const symptoms: string[] = [];
+  if (text.includes("barre") && text.includes("doul")) symptoms.push("Douleur en barre");
+  if (text.includes("lance dans le dos") || text.includes("dos")) symptoms.push("Irradiation vers le dos");
+  if (text.includes("nausee")) symptoms.push("Nausees");
+  if (text.includes("vom")) symptoms.push("Vomissements");
+  if (text.includes("fievre")) symptoms.push("Fievre");
+  if (text.includes("fatigue")) symptoms.push("Fatigue");
+  if (symptoms.length) {
+    extracted.associatedSymptoms = symptoms.join(", ");
+  }
+
+  if (text.includes("soulage") || text.includes("aggrave")) {
+    extracted.aggravatingFactors = transcript.trim();
+  }
+
+  if (extracted.painLocation || extracted.associatedSymptoms) {
+    extracted.chiefComplaint = extracted.painLocation?.includes("epigastrique")
+      ? "Douleur epigastrique"
+      : "Douleur ou symptomes rapportes par le patient";
+  }
+
+  return extracted;
+};
+
 export default function DashboardMedecin() {
   const location = useLocation();
+  const { currentUser } = useAuth();
   const isConsultationPage = location.pathname.includes("/doctor/consultations");
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<DoctorPatient | null>(null);
@@ -58,6 +144,13 @@ export default function DashboardMedecin() {
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
   const { isOpen: isConflictOpen, openModal: openConflictModal, closeModal: closeConflictModal } = useModal(false);
   const lotPanelRef = useRef<HTMLDivElement | null>(null);
+  const speechRecognitionRef = useRef<any>(null);
+  const speechFinalTextRef = useRef("");
+  const speechVisibleTextRef = useRef("");
+  const speechSilenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceMessage, setVoiceMessage] = useState<string | null>(null);
   const [clinicalForm, setClinicalForm] = useState({
     chiefComplaint: "",
     knownDiseases: "",
@@ -100,7 +193,6 @@ export default function DashboardMedecin() {
 
   useEffect(() => {
     loadPatients();
-    apiFetch("/administration/stock").then(setStock).catch(() => setStock({}));
     const handler = () => loadPatients();
     window.addEventListener("d7:patient.updated", handler);
     window.addEventListener("d7:consultation.created", handler);
@@ -268,6 +360,136 @@ export default function DashboardMedecin() {
     await loadPatients();
   };
 
+  const applyVoiceTranscriptToForm = (transcript: string) => {
+    const cleanTranscript = transcript.trim();
+    if (!cleanTranscript) return;
+    const extracted = extractClinicalVoiceFields(cleanTranscript);
+
+    setClinicalForm((current) => ({
+      ...current,
+      chiefComplaint: extracted.chiefComplaint || current.chiefComplaint,
+      onset: extracted.onset || current.onset,
+      painLocation: appendClinicalValue(current.painLocation, extracted.painLocation),
+      intensity: extracted.intensity || current.intensity,
+      associatedSymptoms: appendClinicalValue(current.associatedSymptoms, extracted.associatedSymptoms),
+      aggravatingFactors: extracted.aggravatingFactors || current.aggravatingFactors,
+    }));
+
+    const filledFields = Object.values(extracted).filter(Boolean).length;
+    setVoiceMessage(
+      filledFields
+        ? `Assistance vocale: ${filledFields} champ(s) pre-rempli(s). Verifiez puis sauvegardez.`
+        : "Assistance vocale: transcription capturee, mais aucun champ clinique fiable n'a ete detecte.",
+    );
+  };
+
+  const stopVoiceAssistant = (reason: "manual" | "silence" = "manual") => {
+    if (speechSilenceTimerRef.current) {
+      clearTimeout(speechSilenceTimerRef.current);
+      speechSilenceTimerRef.current = null;
+    }
+    const recognition = speechRecognitionRef.current;
+    speechRecognitionRef.current = null;
+    setIsVoiceListening(false);
+    try {
+      recognition?.stop?.();
+    } catch {
+      // Browser recognition can already be stopped.
+    }
+
+    const transcript = speechVisibleTextRef.current || speechFinalTextRef.current || voiceTranscript;
+    applyVoiceTranscriptToForm(transcript);
+    if (reason === "silence") {
+      setVoiceMessage((current) => current || "Ecoute arretee apres silence prolonge.");
+    }
+  };
+
+  const scheduleVoiceSilenceStop = () => {
+    if (speechSilenceTimerRef.current) clearTimeout(speechSilenceTimerRef.current);
+    speechSilenceTimerRef.current = setTimeout(() => stopVoiceAssistant("silence"), 9000);
+  };
+
+  const startVoiceAssistant = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceMessage("Assistance vocale indisponible: utilisez Chrome ou Edge avec un microphone autorise.");
+      return;
+    }
+
+    speechFinalTextRef.current = "";
+    speechVisibleTextRef.current = "";
+    setVoiceTranscript("");
+    setVoiceMessage("Ecoute active: posez vos questions, puis laissez le patient repondre.");
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "fr-FR";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event: any) => {
+      let interim = "";
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const text = result?.[0]?.transcript || "";
+        if (result.isFinal) {
+          speechFinalTextRef.current = `${speechFinalTextRef.current} ${text}`.trim();
+        } else {
+          interim = `${interim} ${text}`.trim();
+        }
+      }
+      const visibleTranscript = `${speechFinalTextRef.current} ${interim}`.trim();
+      speechVisibleTextRef.current = visibleTranscript;
+      setVoiceTranscript(visibleTranscript);
+      scheduleVoiceSilenceStop();
+    };
+
+    recognition.onerror = () => {
+      setVoiceMessage("Le microphone n'a pas pu etre utilise. Verifiez l'autorisation du navigateur.");
+      setIsVoiceListening(false);
+    };
+
+    recognition.onend = () => {
+      if (speechRecognitionRef.current === recognition) {
+        setIsVoiceListening(false);
+        speechRecognitionRef.current = null;
+      }
+    };
+
+    speechRecognitionRef.current = recognition;
+    setIsVoiceListening(true);
+    recognition.start();
+    scheduleVoiceSilenceStop();
+  };
+
+  const toggleVoiceAssistant = () => {
+    if (isVoiceListening) {
+      stopVoiceAssistant("manual");
+      return;
+    }
+    startVoiceAssistant();
+  };
+
+  const callSelectedPatient = () => {
+    if (!selectedPatient) return;
+    const doctorName = currentUser?.displayName || [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(" ") || "le medecin";
+    const destination = `la consultation ${serviceName(selectedPatient) || "medicale"}`;
+    const message = callPatientToWaitingRoom({
+      patientName: formatDoctorPatientName(selectedPatient),
+      destination,
+      staffName: doctorName,
+    });
+    setActionMessage(`Appel diffuse: ${message}`);
+  };
+
+  useEffect(() => () => {
+    if (speechSilenceTimerRef.current) clearTimeout(speechSilenceTimerRef.current);
+    try {
+      speechRecognitionRef.current?.stop?.();
+    } catch {
+      // Ignore cleanup errors.
+    }
+  }, []);
+
   const filteredPatients = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return patients;
@@ -369,9 +591,18 @@ export default function DashboardMedecin() {
                     {selectedPatient.gender || "-"} - {selectedPatient.phone || "Telephone non renseigne"} - {serviceName(selectedPatient) || "Service non renseigne"}
                   </p>
                 </div>
-                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                  {selectedPatient.workflowStatus || "Statut non renseigne"}
-                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={callSelectedPatient}
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                  >
+                    <PhoneCall size={16} /> Appeler le patient
+                  </button>
+                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                    {selectedPatient.workflowStatus || "Statut non renseigne"}
+                  </span>
+                </div>
               </div>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-5">
@@ -389,6 +620,37 @@ export default function DashboardMedecin() {
               {isConsultationPage ? (
               <div className="mt-6">
                 <Panel title="Consultation medicale">
+                  <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 dark:border-blue-900/60 dark:bg-blue-950/30">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="flex items-center gap-2 text-sm font-semibold text-blue-900 dark:text-blue-100">
+                          <Sparkles size={16} /> Assistance vocale clinique
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-blue-700 dark:text-blue-200">
+                          Capture l'echange medecin-patient, transcrit localement via le navigateur et pre-remplit les champs detectes.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={toggleVoiceAssistant}
+                        className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                          isVoiceListening
+                            ? "bg-red-600 text-white hover:bg-red-700"
+                            : "bg-blue-600 text-white hover:bg-blue-700"
+                        }`}
+                      >
+                        {isVoiceListening ? <MicOff size={16} /> : <Mic size={16} />}
+                        {isVoiceListening ? "Desactiver" : "Activer l'assistance vocale"}
+                      </button>
+                    </div>
+                    {voiceMessage && <p className="mt-3 text-xs font-medium text-blue-800 dark:text-blue-100">{voiceMessage}</p>}
+                    {voiceTranscript && (
+                      <div className="mt-3 max-h-28 overflow-y-auto rounded-lg border border-blue-100 bg-white p-3 text-xs leading-5 text-slate-700 dark:border-blue-900/60 dark:bg-slate-950 dark:text-slate-200">
+                        {voiceTranscript}
+                      </div>
+                    )}
+                  </div>
+
                   <FormInput label="Motif de consultation" value={clinicalForm.chiefComplaint} onChange={(value) => setClinicalForm((current) => ({ ...current, chiefComplaint: value }))} />
 
                   <SectionBox title="Antecedents medicaux">
@@ -495,6 +757,8 @@ export default function DashboardMedecin() {
         </section>
       </div>
 
+      {false && (
+      <>
       <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="mb-4">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Approvisionnement pharmaceutique</h2>
@@ -578,6 +842,8 @@ export default function DashboardMedecin() {
           </div>
         </div>
       </Modal>
+      </>
+      )}
     </div>
   );
 }

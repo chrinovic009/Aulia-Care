@@ -1,6 +1,27 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
+
+const normalizeResultParameters = (parameters: any[]) =>
+  parameters.map((parameter) => ({
+    id: parameter.id,
+    name: parameter.labTestParameter?.name || 'Parametre',
+    value: parameter.valueNumeric?.toString() || parameter.valueText || null,
+    unit: parameter.labTestParameter?.unit || null,
+    referenceRange: parameter.labTestParameter?.referenceRange || null,
+    interpretation: parameter.interpretation || null,
+    outOfRange: isOutOfRange(parameter),
+  }));
+
+const isOutOfRange = (parameter: any) => {
+  const value = Number(parameter.valueNumeric);
+  if (!Number.isFinite(value)) return false;
+  const min = Number(parameter.labTestParameter?.minValue);
+  const max = Number(parameter.labTestParameter?.maxValue);
+  if (Number.isFinite(min) && value < min) return true;
+  if (Number.isFinite(max) && value > max) return true;
+  return false;
+};
 
 @Injectable()
 export class LaboratoryService {
@@ -9,13 +30,64 @@ export class LaboratoryService {
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
+  private async technicianDirectReleaseEnabled() {
+    const config = await this.prisma.labConfiguration.findUnique({
+      where: { key: 'technicianDirectRelease' },
+    });
+    return Boolean((config?.value as any)?.enabled);
+  }
+
+  async getSettings() {
+    return {
+      technicianDirectRelease: await this.technicianDirectReleaseEnabled(),
+    };
+  }
+
+  async updateSettings(dto: any) {
+    const enabled = Boolean(dto?.technicianDirectRelease);
+    await this.prisma.labConfiguration.upsert({
+      where: { key: 'technicianDirectRelease' },
+      update: {
+        value: { enabled },
+        description: 'Autorise les techniciens laboratoire a envoyer un resultat valide directement au demandeur.',
+      },
+      create: {
+        key: 'technicianDirectRelease',
+        value: { enabled },
+        description: 'Autorise les techniciens laboratoire a envoyer un resultat valide directement au demandeur.',
+      },
+    });
+    return this.getSettings();
+  }
+
   findAll() {
     return this.prisma.labRequest.findMany({
-      where: { deletedAt: null },
+      where: {
+        deletedAt: null,
+        OR: [
+          { externalReference: null },
+          { status: { not: 'REQUESTED' as any } },
+        ],
+      },
       include: {
         patient: true,
         requestedBy: true,
         consultation: { include: { provider: true } },
+        items: {
+          include: {
+            labTest: {
+              include: {
+                category: true,
+                section: true,
+                parameterTemplates: true,
+                sampleRequirements: { include: { labSampleType: true } },
+                consumableRequirements: { include: { labConsumable: { include: { stock: true } } } },
+              },
+            },
+            assignedTo: true,
+            results: { include: { parameters: { include: { labTestParameter: true } }, reportedBy: true } },
+          },
+        },
         results: { include: { reportedBy: true }, orderBy: { reportedAt: 'desc' } },
       },
       orderBy: { requestedAt: 'desc' },
@@ -29,6 +101,21 @@ export class LaboratoryService {
         patient: true,
         requestedBy: true,
         consultation: { include: { provider: true } },
+        items: {
+          include: {
+            labTest: {
+              include: {
+                category: true,
+                section: true,
+                parameterTemplates: true,
+                sampleRequirements: { include: { labSampleType: true } },
+                consumableRequirements: { include: { labConsumable: { include: { stock: true } } } },
+              },
+            },
+            assignedTo: true,
+            results: { include: { parameters: { include: { labTestParameter: true } }, reportedBy: true } },
+          },
+        },
         results: { include: { reportedBy: true }, orderBy: { reportedAt: 'desc' } },
       },
     });
@@ -576,6 +663,27 @@ export class LaboratoryService {
       },
     });
 
+    const notification = await this.prisma.notification.create({
+      data: {
+        recipientId: dto.technicianId,
+        type: 'TASK',
+        status: 'UNREAD',
+        priority: item.labRequest?.priority === 'CRITICAL' ? 'CRITICAL' : item.labRequest?.priority === 'URGENT' ? 'HIGH' : 'MEDIUM',
+        title: 'Analyse laboratoire attribuee',
+        message: `Une analyse vous a ete attribuee. Les autres techniciens la verront en lecture seule.`,
+        relatedEntity: 'LabRequestItem',
+        relatedId: item.id,
+        sendAt: new Date(),
+      },
+    });
+    this.notificationsGateway.notifyToUser(dto.technicianId, 'notification.created', notification);
+    this.notificationsGateway.notify('lab.item.assigned', {
+      itemId: item.id,
+      labRequestId: item.labRequestId,
+      technicianId: dto.technicianId,
+      assignedById: currentUser?.userId || currentUser?.id,
+    });
+
     return updated;
   }
 
@@ -608,6 +716,14 @@ export class LaboratoryService {
         note: dto.reason || 'Analyse réaffectée',
         createdAt: new Date(),
       },
+    });
+
+    this.notificationsGateway.notify('lab.item.assigned', {
+      itemId: item.id,
+      labRequestId: item.labRequestId,
+      previousTechnicianId: item.assignedToId,
+      technicianId: dto.technicianId,
+      assignedById: currentUser?.userId || currentUser?.id,
     });
 
     return {
@@ -656,23 +772,85 @@ export class LaboratoryService {
     minAge?: string;
     maxAge?: string;
   }, createdById?: string) {
-    return this.prisma.labTest.create({
-      data: {
-        code: dto.code.trim(),
-        name: dto.name.trim(),
-        categoryId: dto.categoryId,
-        sectionId: dto.sectionId || undefined,
-        description: dto.description?.trim() || undefined,
-        price: dto.price,
-        turnaroundTimeMinutes: dto.turnaroundTimeMinutes ? Number(dto.turnaroundTimeMinutes) : undefined,
-        resultType: dto.resultType as any,
-        unit: dto.unit?.trim() || undefined,
-        referenceRange: dto.referenceRange?.trim() || undefined,
-        genderRestriction: dto.genderRestriction ? (dto.genderRestriction as any) : 'ALL',
-        minAge: dto.minAge ? Number(dto.minAge) : undefined,
-        maxAge: dto.maxAge ? Number(dto.maxAge) : undefined,
-        createdById: createdById || undefined,
-      },
+    const testName = dto.name.trim();
+    const price = Number(dto.price || 0);
+    if (price <= 0) {
+      throw new BadRequestException('Le prix CDF de l examen est obligatoire.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const labDepartment = await tx.department.upsert({
+        where: { name: 'LABORATOIRE' },
+        update: {},
+        create: {
+          name: 'LABORATOIRE',
+          code: 'laboratoire',
+          type: 'LABORATORY',
+          description: 'Analyses biomedicales, prelevements, resultats et validations.',
+        },
+      });
+
+      const service = await tx.service.upsert({
+        where: { name: testName },
+        update: {
+          description: dto.description?.trim() || undefined,
+          active: true,
+          isParamedical: true,
+        },
+        create: {
+          name: testName,
+          description: dto.description?.trim() || 'Examen laboratoire',
+          active: true,
+          isParamedical: true,
+        },
+      });
+
+      await (tx as any).serviceUnit.upsert({
+        where: {
+          departmentId_name: {
+            departmentId: labDepartment.id,
+            name: testName,
+          },
+        },
+        update: { active: true },
+        create: {
+          departmentId: labDepartment.id,
+          name: testName,
+          active: true,
+        },
+      });
+
+      await tx.serviceTarif.updateMany({
+        where: { serviceId: service.id, actif: true },
+        data: { actif: false, dateFin: new Date() },
+      });
+
+      await tx.serviceTarif.create({
+        data: {
+          serviceId: service.id,
+          prix: price,
+          actif: true,
+        },
+      });
+
+      return tx.labTest.create({
+        data: {
+          code: dto.code.trim(),
+          name: testName,
+          categoryId: dto.categoryId,
+          sectionId: dto.sectionId || undefined,
+          description: dto.description?.trim() || undefined,
+          price,
+          turnaroundTimeMinutes: dto.turnaroundTimeMinutes ? Number(dto.turnaroundTimeMinutes) : undefined,
+          resultType: dto.resultType as any,
+          unit: dto.unit?.trim() || undefined,
+          referenceRange: dto.referenceRange?.trim() || undefined,
+          genderRestriction: dto.genderRestriction ? (dto.genderRestriction as any) : 'ALL',
+          minAge: dto.minAge ? Number(dto.minAge) : undefined,
+          maxAge: dto.maxAge ? Number(dto.maxAge) : undefined,
+          createdById: createdById || undefined,
+        },
+      });
     });
   }
 
@@ -799,7 +977,7 @@ export class LaboratoryService {
             results: {
               include: {
                 reportedBy: true,
-                parameters: true,
+                parameters: { include: { labTestParameter: true } },
                 technicalValidatedBy: true,
                 biologicalValidatedBy: true,
               },
@@ -808,7 +986,7 @@ export class LaboratoryService {
         },
         results: {
           include: {
-            parameters: true,
+            parameters: { include: { labTestParameter: true } },
             reportedBy: true,
             technicalValidatedBy: true,
             biologicalValidatedBy: true,
@@ -847,7 +1025,7 @@ export class LaboratoryService {
           prescriberName: requestData.consultation?.provider?.displayName || null,
           serviceName: null,
           prescriptionDate: requestData.requestedAt,
-          parameters: (resultData.parameters || []).map((parameter: any) => ({
+          rawParameters: (resultData.parameters || []).map((parameter: any) => ({
             id: parameter.id,
             name: 'Paramètre',
             value: parameter.valueNumeric?.toString() || parameter.valueText || null,
@@ -856,6 +1034,7 @@ export class LaboratoryService {
             interpretation: parameter.interpretation || null,
             outOfRange: false,
           })),
+          parameters: normalizeResultParameters(resultData.parameters || []),
           validations: [{
             id: `${resultData.id}-v1`,
             decision: resultData.resultStatus || 'PENDING',
@@ -886,7 +1065,13 @@ export class LaboratoryService {
   }
 
   async applyValidationDecision(id: string, dto: any, currentUserId?: string) {
-    const result = await this.prisma.labResult.findUnique({ where: { id } });
+    const result = await this.prisma.labResult.findUnique({
+      where: { id },
+      include: {
+        labRequest: { include: { patient: true, consultation: true } },
+        labRequestItem: true,
+      },
+    });
     if (!result) {
       throw new NotFoundException('Résultat introuvable');
     }
@@ -912,42 +1097,148 @@ export class LaboratoryService {
       },
     });
 
+    if (decision === 'VALIDATE') {
+      await this.prisma.labRequest.update({
+        where: { id: result.labRequestId },
+        data: { status: 'AVAILABLE', completedAt: new Date(), sentAt: new Date() },
+      });
+      if (result.labRequestItemId) {
+        await this.prisma.labRequestItem.update({
+          where: { id: result.labRequestItemId },
+          data: { status: 'AVAILABLE', completedAt: new Date() },
+        });
+      }
+
+      const recipientId = result.labRequest.requestedById || result.labRequest.consultation?.providerId;
+      if (recipientId) {
+        const notification = await this.prisma.notification.create({
+          data: {
+            recipientId,
+            patientId: result.labRequest.patientId,
+            type: 'ALERT',
+            status: 'UNREAD',
+            priority: 'HIGH',
+            title: 'Resultat laboratoire valide',
+            message: `Le resultat ${result.resultName || result.labRequest.specimenType || 'laboratoire'} de ${result.labRequest.patient.firstName} ${result.labRequest.patient.lastName} est valide et disponible.`,
+            relatedEntity: 'LabRequest',
+            relatedId: result.labRequestId,
+            sendAt: new Date(),
+          },
+        });
+        this.notificationsGateway.notifyToUser(recipientId, 'notification.created', notification);
+      }
+    } else if (decision === 'CORRECTION' && result.labRequestItemId) {
+      await this.prisma.labRequestItem.update({
+        where: { id: result.labRequestItemId },
+        data: { status: 'IN_ANALYSIS' },
+      });
+    }
+
     return updated;
   }
 
   async addResult(id: string, dto: any, reportedById?: string) {
     const request = await this.findOne(id);
+    if (request.externalReference) {
+      const invoice = await this.prisma.invoice.findUnique({ where: { id: request.externalReference } });
+      if (invoice && invoice.status !== 'PAID') {
+        throw new BadRequestException('Le resultat ne peut pas etre saisi avant validation du paiement par la caisse.');
+      }
+    }
+
+    const directRelease = await this.technicianDirectReleaseEnabled();
     const recipientId = request.requestedById || request.consultation?.providerId;
+    const itemForResult = dto.labRequestItemId
+      ? await this.prisma.labRequestItem.findUnique({ where: { id: dto.labRequestItemId }, include: { assignedTo: true } })
+      : null;
+    const reporter = reportedById
+      ? await this.prisma.user.findUnique({ where: { id: reportedById }, select: { primaryRole: true } })
+      : null;
+    const isManager = reporter?.primaryRole === 'LAB_MANAGER';
+    if (itemForResult?.assignedToId && itemForResult.assignedToId !== reportedById && !isManager) {
+      throw new BadRequestException('Cette analyse a ete attribuee a un autre technicien. Vous pouvez la consulter mais pas enregistrer de resultat.');
+    }
+
     const result = await this.prisma.$transaction(async (tx) => {
       const created = await tx.labResult.create({
         data: {
           labRequestId: id,
+          labRequestItemId: dto.labRequestItemId || undefined,
           resultCode: dto.resultCode || dto.resultName || 'RESULT',
           resultName: dto.resultName,
+          resultType: dto.resultType || 'MULTI_PARAMETER',
+          resultStatus: directRelease ? 'BIOLOGICALLY_VALIDATED' : 'PENDING',
           resultValue: dto.resultValue,
+          numericValue: dto.numericValue || undefined,
+          textValue: dto.textValue || undefined,
           units: dto.units || null,
           referenceRange: dto.referenceRange || null,
           interpretation: dto.interpretation || null,
           reportedById,
+          technicalValidatedById: reportedById,
+          technicalValidationAt: new Date(),
+          biologicalValidatedById: directRelease ? reportedById : undefined,
+          biologicalValidationAt: directRelease ? new Date() : undefined,
+          comments: dto.comments || null,
         },
       });
+
+      const parameters = Array.isArray(dto.parameters) ? dto.parameters : [];
+      for (const parameter of parameters) {
+        if (!parameter.labTestParameterId && !parameter.valueNumeric && !parameter.valueText) continue;
+        await tx.labResultParameter.create({
+          data: {
+            labResultId: created.id,
+            labTestParameterId: parameter.labTestParameterId || undefined,
+            valueNumeric: parameter.valueNumeric || undefined,
+            valueText: parameter.valueText || undefined,
+            interpretation: parameter.interpretation || undefined,
+          },
+        });
+      }
 
       await tx.labRequest.update({
         where: { id },
         data: {
-          status: dto.verified ? 'VERIFIED' : 'COMPLETED',
-          completedAt: new Date(),
+          status: directRelease ? 'AVAILABLE' : 'TECHNICAL_VALIDATION',
+          completedAt: directRelease ? new Date() : undefined,
           performedAt: new Date(),
         },
       });
-      const notification = recipientId
+
+      if (dto.labRequestItemId) {
+        await tx.labRequestItem.update({
+          where: { id: dto.labRequestItemId },
+          data: {
+            status: directRelease ? 'AVAILABLE' : 'TECHNICAL_VALIDATION',
+            completedAt: new Date(),
+          },
+        });
+      }
+
+      await tx.labRequestEvent.create({
+        data: {
+          labRequestId: id,
+          labRequestItemId: dto.labRequestItemId || undefined,
+          action: directRelease ? 'RESULT_RELEASED' : 'RESULT_RECORDED',
+          fromStatus: request.status,
+          toStatus: directRelease ? 'AVAILABLE' : 'TECHNICAL_VALIDATION',
+          performedById: reportedById,
+          note: directRelease
+            ? 'Resultat enregistre et envoye directement selon la politique active.'
+            : 'Resultat technique enregistre, en attente de validation responsable.',
+          createdAt: new Date(),
+        },
+      });
+
+      const notification = recipientId && directRelease
         ? await tx.notification.create({
             data: {
               recipientId,
               patientId: request.patientId,
               type: 'ALERT',
               status: 'UNREAD',
-              priority: dto.verified ? 'HIGH' : 'MEDIUM',
+              priority: 'HIGH',
               title: 'Resultat laboratoire disponible',
               message: `Le resultat ${dto.resultName || request.specimenType || 'laboratoire'} de ${request.patient.firstName} ${request.patient.lastName} est disponible.`,
               relatedEntity: 'LabRequest',
@@ -957,12 +1248,45 @@ export class LaboratoryService {
           })
         : null;
 
-      return { created, notification };
+      const managerUsers = directRelease
+        ? []
+        : await tx.user.findMany({
+            where: {
+              OR: [
+                { primaryRole: 'LAB_MANAGER' as any },
+                { roles: { some: { role: { slug: 'LAB_MANAGER' as any } } } },
+              ],
+            },
+          });
+
+      const managerNotifications = await Promise.all(
+        managerUsers.map((user) =>
+          tx.notification.create({
+            data: {
+              recipientId: user.id,
+              patientId: request.patientId,
+              type: 'TASK',
+              status: 'UNREAD',
+              priority: request.priority === 'CRITICAL' ? 'CRITICAL' : request.priority === 'URGENT' ? 'HIGH' : 'MEDIUM',
+              title: 'Resultat technique a valider',
+              message: `Resultat ${dto.resultName || request.specimenType || 'laboratoire'} soumis pour ${request.patient.firstName} ${request.patient.lastName}.`,
+              relatedEntity: 'LabResult',
+              relatedId: created.id,
+              sendAt: new Date(),
+            },
+          }),
+        ),
+      );
+
+      return { created, notification, managerNotifications };
     });
 
     if (result.notification && recipientId) {
       this.notificationsGateway.notifyToUser(recipientId, 'notification.created', result.notification);
     }
+    result.managerNotifications.forEach((notification) => {
+      this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification);
+    });
     this.notificationsGateway.notify('lab.result.created', {
       labRequestId: id,
       patientId: request.patientId,

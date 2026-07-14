@@ -12,6 +12,8 @@ import {
   createLabSampleType,
   createLabSection,
   createLabTestSampleRequirement,
+  fetchLaboratorySettings,
+  updateLaboratorySettings,
 } from "../../api/laboratory";
 import { ClipboardList, FlaskConical, Layers, Microscope, Package } from "lucide-react";
 
@@ -31,6 +33,7 @@ export default function CatalogueLab() {
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [technicianDirectRelease, setTechnicianDirectRelease] = useState(false);
 
   const [sectionForm, setSectionForm] = useState({ name: '', description: '', order: '0', active: true });
   const [categoryForm, setCategoryForm] = useState({ sectionId: '', name: '', code: '', description: '', order: '0', active: true });
@@ -58,8 +61,12 @@ export default function CatalogueLab() {
   const loadCatalogue = async () => {
     setIsLoading(true);
     try {
-      const data = await fetchLaboratoryCatalogue();
+      const [data, settings] = await Promise.all([
+        fetchLaboratoryCatalogue(),
+        fetchLaboratorySettings().catch(() => ({ technicianDirectRelease: false })),
+      ]);
       setCatalogue(data);
+      setTechnicianDirectRelease(settings.technicianDirectRelease);
     } catch (err) {
       console.error("Impossible de charger le catalogue laboratoire", err);
       setCatalogue(null);
@@ -88,6 +95,23 @@ export default function CatalogueLab() {
 
   const showSuccess = (message: string) => {
     window.alert(message);
+  };
+
+  const handleToggleTechnicianDirectRelease = async (enabled: boolean) => {
+    setTechnicianDirectRelease(enabled);
+    try {
+      const settings = await updateLaboratorySettings({ technicianDirectRelease: enabled });
+      setTechnicianDirectRelease(settings.technicianDirectRelease);
+      showSuccess(
+        settings.technicianDirectRelease
+          ? "Les techniciens peuvent envoyer directement les resultats valides."
+          : "Les resultats techniciens passeront par la validation du responsable.",
+      );
+    } catch (error) {
+      console.error(error);
+      setTechnicianDirectRelease(!enabled);
+      window.alert("Impossible de modifier la politique d'envoi des resultats.");
+    }
   };
 
   const handleCreateSection = async () => {
@@ -383,6 +407,31 @@ export default function CatalogueLab() {
         <StatCard icon={<Package size={20} />} label="Consommables référencés" value={totalConsumables} tone="violet" />
       </div>
 
+      <Panel title="Politique de validation" subtitle="Le responsable laboratoire decide si les techniciens peuvent publier directement les resultats.">
+        <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+              {technicianDirectRelease ? "Envoi direct technicien autorise" : "Validation responsable obligatoire"}
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              {technicianDirectRelease
+                ? "Un resultat saisi par un technicien peut etre transmis au medecin demandeur sans attente de validation biologique."
+                : "Chaque resultat technique est transmis au responsable laboratoire pour validation, correction ou refus avant publication."}
+            </p>
+          </div>
+          <label className="inline-flex cursor-pointer items-center gap-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <span>Validation responsable</span>
+            <input
+              type="checkbox"
+              checked={technicianDirectRelease}
+              onChange={(event) => handleToggleTechnicianDirectRelease(event.target.checked)}
+              className="h-5 w-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>Envoi direct</span>
+          </label>
+        </div>
+      </Panel>
+
       <Panel title="Sections du catalogue" subtitle="Naviguez par domaine et inspectez la structure du catalogue." >
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
@@ -577,7 +626,7 @@ export default function CatalogueLab() {
                       test.section?.name || "-",
                       test.category?.name || "-",
                       test.resultType,
-                      `${Number(test.price || "0").toLocaleString("fr-FR", { style: "currency", currency: "USD" })}`,
+                      `${Number(test.price || "0").toLocaleString("fr-FR", { style: "currency", currency: "CDF" })}`,
                       test.turnaroundTimeMinutes ? `${test.turnaroundTimeMinutes} min` : "-",
                       test.active ? "Oui" : "Non",
                     ])}

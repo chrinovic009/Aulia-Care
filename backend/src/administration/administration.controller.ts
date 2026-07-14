@@ -58,25 +58,25 @@ export class AdministrationController {
   }
 
   @Get('stock')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST', 'PHYSICIAN')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
   stock() {
     return this.administrationService.stockCatalog();
   }
 
   @Post('stock/medications')
-  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  @Roles('SUPER_ADMIN', 'PHARMACIST')
   createMedication(@Body() body: any) {
     return this.administrationService.createMedication(body);
   }
 
   @Post('stock/suppliers')
-  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  @Roles('SUPER_ADMIN', 'PHARMACIST')
   createSupplier(@Body() body: any) {
     return this.administrationService.createSupplier(body);
   }
 
   @Post('stock/lots')
-  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  @Roles('SUPER_ADMIN', 'PHARMACIST')
   createStockLot(@Body() body: any) {
     return this.administrationService.createStockLot(body);
   }

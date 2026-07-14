@@ -127,7 +127,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
         <thead>
           <tr style={{ backgroundColor: "#f0f0f0", borderBottom: "1px solid #333" }}>
             <th style={{ padding: "4mm", textAlign: "left", borderRight: "1px solid #ddd" }}>Description</th>
-            <th style={{ padding: "4mm", textAlign: "right" }}>Montant (USD)</th>
+            <th style={{ padding: "4mm", textAlign: "right" }}>Montant (CDF)</th>
           </tr>
         </thead>
         <tbody>

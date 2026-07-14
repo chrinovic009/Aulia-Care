@@ -15,7 +15,18 @@ export class AdministrationService {
             rooms: { include: { beds: true } },
           },
         },
-        Employee: true,
+        Employee: {
+          include: {
+            user: {
+              include: {
+                serviceResponsabilites: {
+                  where: { actif: true },
+                  include: { service: true },
+                },
+              },
+            },
+          },
+        },
       },
       orderBy: { name: 'asc' },
     });

@@ -12,6 +12,49 @@ export class ConsultationsService {
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
+  private async recordSubscriptionChargeForInvoice(
+    tx: any,
+    patientId: string,
+    invoiceId: string,
+    label: string,
+    amount: number,
+    serviceId?: string | null,
+  ) {
+    const employee = await tx.subscriptionEmployee.findFirst({
+      where: { patientId, deletedAt: null, status: 'ACTIVE', company: { status: 'ACTIVE', deletedAt: null } },
+      include: { company: true },
+    });
+    if (!employee) return false;
+
+    const serviceDate = new Date();
+    await tx.subscriptionCharge.create({
+      data: {
+        companyId: employee.companyId,
+        employeeId: employee.id,
+        patientId,
+        invoiceId,
+        serviceId: serviceId || null,
+        label,
+        amount,
+        currency: 'CDF',
+        serviceDate,
+        month: serviceDate.getMonth() + 1,
+        year: serviceDate.getFullYear(),
+      },
+    });
+
+    await tx.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        status: 'PAID',
+        balanceDue: 0,
+        remarks: `${label} - pris en charge par abonnement entreprise ${employee.company.name}`,
+      },
+    });
+
+    return true;
+  }
+
   async create(createConsultationDto: CreateConsultationDto) {
     const consultation = await this.prisma.consultation.create({ data: createConsultationDto as any });
 
@@ -127,19 +170,6 @@ export class ConsultationsService {
     const consultation = await this.findOne(id);
     await this.ensureWriteAccess(consultation.providerId, actorId);
     const request = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.labRequest.create({
-        data: {
-          consultationId: id,
-          patientId: consultation.patientId,
-          requestedById: actorId,
-          specimenType: dto.specimenType || dto.examName || 'Examen',
-          priority: dto.priority || 'NORMAL',
-          notes: dto.notes || null,
-          status: 'REQUESTED',
-        },
-        include: { patient: true, requestedBy: true, consultation: true, results: true },
-      });
-
       const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
       let labTest = null;
 
@@ -170,47 +200,103 @@ export class ConsultationsService {
         });
       }
 
+      if (!labTest) {
+        throw new BadRequestException('Veuillez choisir un examen du catalogue laboratoire avec un tarif valide.');
+      }
+
+      const examPrice = Number(labTest.price || 0);
+      if (examPrice <= 0) {
+        throw new BadRequestException('Cet examen laboratoire n a pas encore de prix valide.');
+      }
+
+      const created = await tx.labRequest.create({
+        data: {
+          consultationId: id,
+          patientId: consultation.patientId,
+          requestedById: actorId,
+          specimenType: dto.specimenType || labTest.name || dto.examName || 'Examen',
+          priority: dto.priority || 'NORMAL',
+          notes: dto.notes || null,
+          status: 'REQUESTED',
+        },
+        include: { patient: true, requestedBy: true, consultation: true, results: true },
+      });
+
+      const invoice = await tx.invoice.create({
+        data: {
+          patientId: consultation.patientId,
+          issuedById: actorId,
+          type: 'LABORATORY',
+          status: 'PENDING',
+          totalAmount: examPrice,
+          balanceDue: examPrice,
+          remarks: `Demande laboratoire ${created.id} - ${labTest.name}`,
+        },
+      });
+
+      await tx.invoiceLine.create({
+        data: {
+          invoiceId: invoice.id,
+          label: `Examen laboratoire - ${labTest.name}`,
+          quantity: 1,
+          unitPrice: examPrice,
+          totalAmount: examPrice,
+        },
+      });
+
+      const handledBySubscription = await this.recordSubscriptionChargeForInvoice(
+        tx,
+        consultation.patientId,
+        invoice.id,
+        `Examen laboratoire - ${labTest.name}`,
+        examPrice,
+        null,
+      );
+
+      await tx.labRequest.update({
+        where: { id: created.id },
+        data: { externalReference: invoice.id },
+      });
+
       await tx.patient.update({
         where: { id: consultation.patientId },
-        data: { workflowStatus: PatientWorkflowStatus.EN_LABORATOIRE },
+        data: { workflowStatus: handledBySubscription ? PatientWorkflowStatus.EN_LABORATOIRE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
       });
 
       await tx.medicalHistory.create({
         data: {
           patientId: consultation.patientId,
           kind: 'LAB_REQUEST',
-          details: JSON.stringify({ labRequestId: created.id, ...dto }),
+          details: JSON.stringify({ labRequestId: created.id, invoiceId: invoice.id, labTestId: labTest.id, examName: labTest.name, price: examPrice, currency: 'CDF', ...dto }),
           createdById: actorId,
         },
       });
 
-      if (labTest) {
-        await tx.labRequestItem.create({
-          data: {
-            labRequestId: created.id,
-            labTestId: labTest.id,
-            status: 'REQUESTED',
-            requestedAt: created.requestedAt,
-            specimenLabel: created.specimenType || labTest.name,
-            notes: dto.notes || null,
-          },
-        });
-      }
+      await tx.labRequestItem.create({
+        data: {
+          labRequestId: created.id,
+          labTestId: labTest.id,
+          status: 'REQUESTED',
+          requestedAt: created.requestedAt,
+          specimenLabel: created.specimenType || labTest.name,
+          notes: dto.notes || null,
+        },
+      });
 
-      return created;
+      return { ...created, invoice, labTest };
     });
 
-    const labUsers = await this.prisma.user.findMany({
+    const cashiers = await this.prisma.user.findMany({
       where: {
         OR: [
-          { primaryRole: 'LAB_TECHNICIAN' as any },
-          { roles: { some: { role: { slug: 'LAB_TECHNICIAN' as any } } } },
+          { primaryRole: 'CASHIER' as any },
+          { roles: { some: { role: { slug: 'CASHIER' as any } } } },
         ],
       },
     });
 
     const notifications = await Promise.all(
-      labUsers.map((user) =>
+      cashiers.map((user) =>
         this.prisma.notification.create({
           data: {
             recipientId: user.id,
@@ -218,10 +304,10 @@ export class ConsultationsService {
             type: 'TASK',
             status: 'UNREAD',
             priority: request.priority === 'CRITICAL' ? 'CRITICAL' : request.priority === 'URGENT' ? 'HIGH' : 'MEDIUM',
-            title: 'Nouvelle demande laboratoire',
-            message: `Demande ${request.specimenType || 'laboratoire'} pour ${consultation.patient.firstName} ${consultation.patient.lastName}.`,
-            relatedEntity: 'LabRequest',
-            relatedId: request.id,
+            title: 'Paiement examen laboratoire',
+            message: `Valider ${request.labTest.name} pour ${consultation.patient.firstName} ${consultation.patient.lastName}: ${Number(request.invoice.totalAmount).toLocaleString('fr-FR')} CDF.`,
+            relatedEntity: 'Invoice',
+            relatedId: request.invoice.id,
             sendAt: new Date(),
           },
         }),
@@ -231,8 +317,8 @@ export class ConsultationsService {
     notifications.forEach((notification) => {
       this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification);
     });
-    this.notificationsGateway.notify('patient.updated', { id: consultation.patientId, workflowStatus: PatientWorkflowStatus.EN_LABORATOIRE });
-    this.notificationsGateway.notify('lab.request.created', request);
+    this.notificationsGateway.notify('patient.updated', { id: consultation.patientId, workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT });
+    this.notificationsGateway.notify('invoice.created', request.invoice);
 
     return request;
   }
@@ -318,9 +404,18 @@ export class ConsultationsService {
         ),
       );
 
+      const handledBySubscription = await this.recordSubscriptionChargeForInvoice(
+        tx,
+        consultation.patientId,
+        invoice.id,
+        `Prescription ${prescription.id}`,
+        total,
+        null,
+      );
+
       await tx.patient.update({
         where: { id: consultation.patientId },
-        data: { workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
+        data: { workflowStatus: handledBySubscription ? PatientWorkflowStatus.EN_PHARMACIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
       });
 
       await tx.medicalHistory.create({

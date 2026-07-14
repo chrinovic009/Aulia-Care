@@ -25,6 +25,7 @@ type RoleSlug =
   | "PHYSICIAN"
   | "PHARMACIST"
   | "LAB_TECHNICIAN"
+  | "LAB_MANAGER"
   | "RADIOLOGIST"
   | "SURGEON"
   | "ANESTHESIOLOGIST"
@@ -99,6 +100,7 @@ const roleFilters: Array<{ key: string; label: string }> = [
   { key: "CASHIER", label: "Caissiers" },
   { key: "PHARMACIST", label: "Pharmaciens" },
   { key: "LAB_TECHNICIAN", label: "Laborantins" },
+  { key: "LAB_MANAGER", label: "Responsables labo" },
   { key: "RADIOLOGIST", label: "Radiologues" },
   { key: "SURGEON", label: "Chirurgiens" },
   { key: "ANESTHESIOLOGIST", label: "Anesthesistes" },
@@ -277,6 +279,11 @@ export default function GestionPersAdmin() {
         next.serviceId = "";
       }
     }
+    const selectedDepartment = departments.find((department) => department.id === next.departmentId);
+    const isLaboratoryDepartment = normalizeText(selectedDepartment?.name) === "laboratoire";
+    if (isLaboratoryDepartment && (patch.departmentId !== undefined || patch.isResponsible !== undefined)) {
+      next.primaryRole = next.isResponsible ? "LAB_MANAGER" : "LAB_TECHNICIAN";
+    }
     const username = buildUsername(next.firstName, next.lastName);
     if (!editingUser && (patch.firstName !== undefined || patch.lastName !== undefined)) {
       next.username = username;
@@ -305,6 +312,8 @@ export default function GestionPersAdmin() {
         email: form.email || `${form.firstName}${form.lastName}@gmail.com`.toLowerCase(),
         password: form.password || undefined,
         primaryRole: form.primaryRole,
+        isResponsible: form.isResponsible,
+        isDepartmentResponsible: form.isResponsible,
         phone: form.phone || undefined,
         status: form.status,
         specialty: form.specialty || undefined,
@@ -658,6 +667,11 @@ function EmployeeForm({
               </div>
             ) : null}
             <FormSelect label="Responsable du service" value={form.isResponsible ? "YES" : "NO"} onChange={(value) => onChange({ isResponsible: value === "YES" })} options={[["NO", "Non"], ["YES", "Oui"]]} />
+            {normalizeText(departments.find((department) => department.id === form.departmentId)?.name) === "laboratoire" ? (
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-xs font-medium text-emerald-700 sm:col-span-2">
+                Role applique automatiquement : {form.isResponsible ? "Responsable laboratoire" : "Laborantin"}.
+              </div>
+            ) : null}
             <FormSelect label="Statut" value={form.status} onChange={(status) => onChange({ status: status as UserStatus })} options={[["ACTIVE", "Actif"], ["INACTIVE", "Inactif"], ["SUSPENDED", "Suspendu"]]} />
             <FormInput label="Salaire" type="number" value={form.salary} onChange={(salary) => onChange({ salary })} />
             <FormSelect label="Frequence paie" value={form.salaryFrequency} onChange={(salaryFrequency) => onChange({ salaryFrequency })} options={[["MONTHLY", "Mensuel"], ["WEEKLY", "Hebdomadaire"], ["DAILY", "Journalier"]]} />
@@ -794,6 +808,8 @@ function roleLabel(user: AdminUser) {
       return "Pharmacien";
     case "LAB_TECHNICIAN":
       return "Laborantin";
+    case "LAB_MANAGER":
+      return "Responsable laboratoire";
     case "RADIOLOGIST":
       return "Radiologue";
     case "SURGEON":
@@ -817,6 +833,14 @@ function buildUsername(firstName: string, lastName: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z0-9_]/g, "")
     .toLowerCase();
+}
+
+function normalizeText(value?: string | null) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 function generatePassword(role: RoleSlug, firstName: string, lastName: string, position: number) {
