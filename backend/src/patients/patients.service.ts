@@ -23,11 +23,61 @@ const splitFullName = (value: string) => {
   return { firstName, lastName };
 };
 
-// Admission fee fixed value used later
-
 @Injectable()
 export class PatientsService {
   constructor(private readonly prisma: PrismaService, private readonly notificationsGateway: NotificationsGateway) {}
+
+  private normalizeText(value?: string | null) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
+  private async resolveBillableServiceForAdmission(createAdmissionDto: any, resolvedService: any, isParamedicalVoucher: boolean) {
+    if (isParamedicalVoucher) {
+      if (!resolvedService?.id) {
+        throw new BadRequestException('Veuillez choisir le service paramedical demande par le bon.');
+      }
+      return resolvedService;
+    }
+
+    if (createAdmissionDto.billingServiceId) {
+      const service = await this.prisma.service.findUnique({
+        where: { id: createAdmissionDto.billingServiceId },
+        include: { tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' }, take: 1 } },
+      });
+      if (!service) throw new BadRequestException('Service de facturation reception introuvable.');
+      return service;
+    }
+
+    const consultationKind = this.normalizeText(createAdmissionDto.consultationKind || createAdmissionDto.admissionType);
+    const keywords = consultationKind.includes('special') || consultationKind.includes('specialiste')
+      ? ['consultation specialiste', 'specialiste']
+      : ['consultation generale', 'generale'];
+
+    const services = await this.prisma.service.findMany({
+      include: { tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' }, take: 1 } },
+    });
+    const service = services.find((item) => {
+      const name = this.normalizeText(item.name);
+      return keywords.some((keyword) => name.includes(keyword));
+    });
+    if (!service) {
+      throw new BadRequestException('Configurez d abord le tarif reception pour la consultation generale et la consultation specialiste.');
+    }
+    return service;
+  }
+
+  private getActiveServicePrice(service: any) {
+    const activeTarif = service?.tarifs?.[0];
+    const price = Number(activeTarif?.prix);
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new BadRequestException(`Aucun tarif actif CDF n est configure pour le service ${service?.name || 'selectionne'}.`);
+    }
+    return price;
+  }
 
   async create(createPatientDto: CreatePatientDto) {
     const { service, receptionist, ...patientData } = createPatientDto;
@@ -267,16 +317,26 @@ export class PatientsService {
       }
     }
 
-    // Resolve service only for orientation / assignment. Admission billing uses a distinct admission fee.
     let resolvedService: any = null;
     if (createAdmissionDto.serviceId) {
-      resolvedService = await this.prisma.service.findUnique({ where: { id: createAdmissionDto.serviceId } });
+      resolvedService = await this.prisma.service.findUnique({
+        where: { id: createAdmissionDto.serviceId },
+        include: { tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' }, take: 1 } },
+      });
     } else if (createAdmissionDto.service) {
-      resolvedService = await this.prisma.service.findUnique({ where: { name: createAdmissionDto.service } });
+      resolvedService = await this.prisma.service.findUnique({
+        where: { name: createAdmissionDto.service },
+        include: { tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' }, take: 1 } },
+      });
     }
 
     const isParamedicalVoucher = String(createAdmissionDto.admissionType || '').toUpperCase() === 'BON_PARAMEDICAL';
-    const admissionFee = isParamedicalVoucher ? Number(createAdmissionDto.amountDue || 0) : 20;
+    const billableService = await this.resolveBillableServiceForAdmission(createAdmissionDto, resolvedService, isParamedicalVoucher);
+    const admissionFee = this.getActiveServicePrice(billableService);
+    const invoiceType = isParamedicalVoucher ? 'SERVICE' : 'ADMISSION_FEE';
+    const invoiceLabel = isParamedicalVoucher
+      ? `Bon paramedical - ${billableService.name}`
+      : `${this.normalizeText(createAdmissionDto.consultationKind).includes('special') ? 'Consultation specialiste' : 'Consultation generale'} - Reception`;
 
     const receptionistConnect = actorId
       ? { connect: { id: actorId } }
@@ -335,10 +395,20 @@ export class PatientsService {
           totalAmount: admissionFee,
           balanceDue: admissionFee,
           dueDate: new Date(),
-          type: isParamedicalVoucher ? 'SERVICE' : 'ADMISSION_FEE',
+          type: invoiceType,
           remarks: isParamedicalVoucher
             ? `Bon paramedical ${createAdmissionDto.voucherNumber || 'sans numero'} - ${resolvedService?.name || createAdmissionDto.service || ''}`
-            : `Frais de fiche d'admission - ${resolvedService?.name || createAdmissionDto.service || ''}`,
+            : invoiceLabel,
+        },
+      });
+      await prisma.invoiceLine.create({
+        data: {
+          invoiceId: invoice.id,
+          serviceId: billableService.id,
+          label: invoiceLabel,
+          quantity: 1,
+          unitPrice: admissionFee,
+          totalAmount: admissionFee,
         },
       });
 
@@ -380,6 +450,10 @@ export class PatientsService {
                 serviceName: resolvedService?.name || createAdmissionDto.service || null,
               }
             : null,
+          consultationKind: createAdmissionDto.consultationKind || null,
+          billingServiceId: billableService.id,
+          billingServiceName: billableService.name,
+          billingAmount: admissionFee,
         }),
         createdById: actorId || createAdmissionDto.receptionistId || null,
       },
@@ -423,7 +497,7 @@ export class PatientsService {
             title: 'Nouveau paiement en attente',
             message: isParamedicalVoucher
               ? `Le patient ${result.patient.firstName} ${result.patient.lastName} attend le paiement du bon paramedical ${createAdmissionDto.voucherNumber || ''}.`
-              : `Le patient ${result.patient.firstName} ${result.patient.lastName} attend le reglement des frais de fiche d'admission de ${admissionFee} FC.`,
+              : `Le patient ${result.patient.firstName} ${result.patient.lastName} attend le reglement de ${invoiceLabel} (${admissionFee} CDF).`,
             relatedEntity: 'Invoice',
             relatedId: result.invoice.id,
             sendAt: new Date(),

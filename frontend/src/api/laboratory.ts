@@ -119,6 +119,15 @@ export type LabActivityPayload = {
 
 export const fetchLaboratoryActivity = () => apiFetch<LabActivityPayload>('/laboratory/activity');
 
+export type LabSettingsPayload = {
+  technicianDirectRelease: boolean;
+};
+
+export const fetchLaboratorySettings = () => apiFetch<LabSettingsPayload>('/laboratory/settings');
+
+export const updateLaboratorySettings = (payload: LabSettingsPayload) =>
+  apiFetch<LabSettingsPayload>('/laboratory/settings', { method: 'POST', body: JSON.stringify(payload) });
+
 export const createLabSection = (payload: { name: string; description?: string; order?: number; active?: boolean }) =>
   apiFetch('/laboratory/catalogue/sections', { method: 'POST', body: JSON.stringify(payload) });
 

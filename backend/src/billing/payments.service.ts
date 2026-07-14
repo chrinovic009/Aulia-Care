@@ -12,7 +12,7 @@ export class PaymentsService {
   async createPayment(createPaymentDto: CreatePaymentDto, actorId?: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: createPaymentDto.invoiceId },
-      include: { patient: true },
+      include: { patient: { include: { service: { include: { responsables: { where: { actif: true }, include: { user: true } }, staff: { where: { actif: true }, include: { user: true } } } } } } },
     });
 
     if (!invoice) {
@@ -51,10 +51,20 @@ export class PaymentsService {
         },
       });
 
+      const normalizedServiceName = String(invoice.patient?.service?.name || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
       const nextWorkflowStatus =
         invoice.type === 'PHARMACY'
           ? PatientWorkflowStatus.EN_PHARMACIE
-          : PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE;
+          : invoice.type === 'LABORATORY' || normalizedServiceName.includes('laboratoire')
+            ? PatientWorkflowStatus.EN_LABORATOIRE
+            : normalizedServiceName.includes('radio') || normalizedServiceName.includes('imagerie')
+              ? PatientWorkflowStatus.EN_RADIOLOGIE
+              : invoice.type === 'SERVICE'
+                ? PatientWorkflowStatus.EN_ATTENTE_MEDECIN
+                : PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE;
 
       const updatedPatient = await prisma.patient.update({
         where: { id: invoice.patientId },
@@ -103,15 +113,45 @@ export class PaymentsService {
         });
       }
 
-      const targetRole = invoice.type === 'PHARMACY' ? 'PHARMACIST' : 'NURSE';
+      const targetRole = invoice.type === 'PHARMACY' ? 'PHARMACIST' : invoice.type === 'LABORATORY' ? 'LAB_TECHNICIAN' : 'NURSE';
+      const serviceUserIds = invoice.type === 'SERVICE'
+        ? [
+            ...(invoice.patient?.service?.responsables || []).map((item: any) => item.userId || item.user?.id),
+            ...(invoice.patient?.service?.staff || []).map((item: any) => item.userId || item.user?.id),
+          ].filter(Boolean)
+        : [];
       const targetUsers = await prisma.user.findMany({
         where: {
-          OR: [
-            { primaryRole: targetRole as any },
-            { roles: { some: { role: { slug: targetRole as any } } } },
-          ],
+          ...(serviceUserIds.length ? { id: { in: serviceUserIds } } : {}),
+          OR: serviceUserIds.length
+            ? undefined
+            : invoice.type === 'LABORATORY'
+            ? [
+                { primaryRole: 'LAB_TECHNICIAN' as any },
+                { primaryRole: 'LAB_MANAGER' as any },
+                { roles: { some: { role: { slug: 'LAB_TECHNICIAN' as any } } } },
+                { roles: { some: { role: { slug: 'LAB_MANAGER' as any } } } },
+              ]
+            : [
+                { primaryRole: targetRole as any },
+                { roles: { some: { role: { slug: targetRole as any } } } },
+              ],
         },
       });
+
+      const labRequest = invoice.type === 'LABORATORY'
+        ? await prisma.labRequest.findFirst({
+            where: { externalReference: invoice.id, deletedAt: null },
+            include: { patient: true, requestedBy: true, items: { include: { labTest: true } } },
+          })
+        : null;
+
+      if (labRequest) {
+        await prisma.labRequest.update({
+          where: { id: labRequest.id },
+          data: { status: 'RECEIVED', receivedAt: new Date() },
+        });
+      }
 
       const notifications = await Promise.all(
         targetUsers.map((user) =>
@@ -121,13 +161,17 @@ export class PaymentsService {
               type: 'ALERT',
               status: 'UNREAD',
               priority: 'HIGH',
-              title: invoice.type === 'PHARMACY' ? 'Prescription payee' : 'Patient pret pour infirmerie',
+              title: invoice.type === 'PHARMACY' ? 'Prescription payee' : invoice.type === 'LABORATORY' ? 'Examen laboratoire paye' : 'Patient pret pour infirmerie',
               message:
                 invoice.type === 'PHARMACY'
                   ? `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} a paye sa prescription et attend la pharmacie.`
-                  : `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} est en attente de l'infirmerie apres paiement.`,
-              relatedEntity: 'Patient',
-              relatedId: updatedPatient.id,
+                  : invoice.type === 'LABORATORY'
+                    ? `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} a paye son examen laboratoire. Vous pouvez traiter la demande.`
+                    : invoice.type === 'SERVICE'
+                      ? `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} a paye ${invoice.patient?.service?.name || 'le service demande'} et attend votre prise en charge.`
+                    : `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} est en attente de l'infirmerie apres paiement.`,
+              relatedEntity: invoice.type === 'LABORATORY' ? 'LabRequest' : 'Patient',
+              relatedId: invoice.type === 'LABORATORY' ? labRequest?.id || invoice.id : updatedPatient.id,
               sendAt: new Date(),
             },
           }),
@@ -159,17 +203,21 @@ export class PaymentsService {
             invoiceId: invoice.id,
             hospitalizationId: hospitalization?.id,
             patientUserId: patientUserAccess.user.id,
+            labRequestId: labRequest?.id,
           },
         },
       });
 
-      return { payment, updatedInvoice, updatedPatient, notifications, hospitalization, receptionistMessage };
+      return { payment, updatedInvoice, updatedPatient, notifications, hospitalization, receptionistMessage, labRequest };
     });
 
     result.notifications.forEach((notification) => {
       this.notificationsGateway.notify('notification.created', notification);
     });
     this.notificationsGateway.notify('patient.updated', result.updatedPatient);
+    if (result.labRequest) {
+      this.notificationsGateway.notify('lab.request.created', result.labRequest);
+    }
 
     if (result.receptionistMessage) {
       this.notificationsGateway.notifyToUser(result.receptionistMessage.recipientId, 'message.received', {

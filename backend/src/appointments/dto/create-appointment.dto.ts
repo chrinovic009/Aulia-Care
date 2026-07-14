@@ -14,6 +14,10 @@ export class CreateAppointmentDto {
   @IsOptional()
   serviceUnitId?: string;
 
+  @IsString()
+  @IsOptional()
+  serviceId?: string;
+
   @IsDateString()
   @IsNotEmpty()
   scheduledAt: string;

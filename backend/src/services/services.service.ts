@@ -37,16 +37,20 @@ const isParamedicalServiceName = (name: string) => {
 export class ServicesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: CreateServiceDto) {
+  async create(data: CreateServiceDto & { departmentId?: string }) {
     const isParamedical = data.isParamedical !== undefined
       ? data.isParamedical
       : isParamedicalServiceName(data.name);
 
-    const svc = await this.prisma.service.create({ data: { ...data, isParamedical } as any });
+    const { departmentId, ...serviceData } = data;
+    const svc = await this.prisma.service.create({ data: { ...serviceData, isParamedical } as any });
 
-    // Ensure department exists for service according to category keywords
     try {
-      await this.ensureDepartmentForService(svc.name);
+      if (departmentId) {
+        await this.ensureServiceUnitForDepartment(svc.name, departmentId);
+      } else {
+        await this.ensureDepartmentForService(svc.name);
+      }
     } catch (err) {
       // don't block service creation on department creation errors
       // log if necessary
@@ -121,9 +125,9 @@ export class ServicesService {
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .trim();
-    if (['reception', 'caisse', 'secretariat'].includes(normalizedName)) {
+    if (normalizedName.includes('caisse') || normalizedName.includes('cashier')) {
       throw new BadRequestException(
-        'Ce service est operationnel interne et ne peut pas avoir de tarif patient',
+        'La caisse est un service de validation des paiements et ne peut pas avoir de tarif patient',
       );
     }
     return this.prisma.serviceTarif.create({ data: dto });
@@ -137,6 +141,50 @@ export class ServicesService {
       .trim();
 
     const normalizedServiceName = normalize(serviceName);
+
+    const institutionalCategories: { keywords: string[]; departmentName: string; departmentType: string }[] = [
+      { keywords: ['medecine generale', 'pediatrie', 'gynecologie', 'obstetrique', 'cardiologie', 'pneumologie', 'neurologie', 'gastro', 'nephrologie', 'endocrinologie', 'diabetologie', 'dermatologie', 'rhumatologie', 'infectiologie', 'oncologie', 'geriatrie', 'sport'], departmentName: 'MEDECINE GENERALE', departmentType: 'MEDICAL' },
+      { keywords: ['chirurgie', 'bloc operatoire', 'orthopedique', 'traumatologique', 'neurochirurgie', 'orl', 'maxillo'], departmentName: 'CHIRURGIE', departmentType: 'SURGERY' },
+      { keywords: ['examen specialise', 'dialyse', 'endoscopie', 'exploration'], departmentName: 'EXAMENS SPECIALISES', departmentType: 'MEDICAL' },
+      { keywords: ['imagerie', 'diagnostic', 'radiologie', 'echographie', 'mammographie', 'scanner', 'irm'], departmentName: 'IMAGERIE & DIAGNOSTICS', departmentType: 'RADIOLOGY' },
+      { keywords: ['laboratoire', 'hematologie', 'biochimie', 'microbiologie', 'immunologie', 'pathologie'], departmentName: 'LABORATOIRE', departmentType: 'LABORATORY' },
+      { keywords: ['pharmacie', 'pharmaceutique', 'medicament'], departmentName: 'PHARMACIE', departmentType: 'PHARMACY' },
+      { keywords: ['sante mentale', 'psychiatrie', 'psychologie', 'addictologie'], departmentName: 'SANTE MENTALE', departmentType: 'MEDICAL' },
+      { keywords: ['reeducation', 'kinesitherapie', 'ergotherapie', 'orthophonie', 'nutrition', 'dietetique'], departmentName: 'REEDUCATION', departmentType: 'NURSING' },
+      { keywords: ['urgence', 'reanimation', 'soins intensifs', 'dechocage'], departmentName: 'URGENCES', departmentType: 'MEDICAL' },
+      { keywords: ['hospitalisation', 'salle de reveil', 'ambulatoire'], departmentName: 'HOSPITALISATION', departmentType: 'NURSING' },
+      { keywords: ['prevention', 'vaccination', 'consultation', 'check-up', 'teleconsultation', 'medecine du travail'], departmentName: 'PREVENTION & CONSULTATION', departmentType: 'MEDICAL' },
+      { keywords: ['administration', 'reception', 'caisse', 'secretariat'], departmentName: 'ADMINISTRATION', departmentType: 'ADMINISTRATION' },
+    ];
+
+    const institutionalCategory = institutionalCategories.find((category) =>
+      category.keywords.some((keyword) => normalizedServiceName.includes(keyword)),
+    );
+
+    if (institutionalCategory) {
+      const departmentName = institutionalCategory.departmentName;
+      const code = departmentName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9 ]/g, '')
+        .toLowerCase()
+        .replace(/\s+/g, '_')
+        .slice(0, 50);
+
+      const department = await this.prisma.department.upsert({
+        where: { name: departmentName },
+        update: {},
+        create: {
+          name: departmentName,
+          type: institutionalCategory.departmentType as any,
+          code,
+          description: `Departement institutionnel ${departmentName}`,
+        },
+      });
+
+      await this.ensureServiceUnitForDepartment(serviceName, department.id);
+      return;
+    }
 
     const CATEGORY_MAP: { serviceNames: string[]; departmentName: string; departmentType: string }[] = [
       {
@@ -250,17 +298,21 @@ export class ServicesService {
       },
     });
 
+    await this.ensureServiceUnitForDepartment(serviceName, department.id);
+  }
+
+  private async ensureServiceUnitForDepartment(serviceName: string, departmentId: string) {
     await (this.prisma as any).serviceUnit.upsert({
       where: {
         departmentId_name: {
-          departmentId: department.id,
+          departmentId,
           name: serviceName,
         },
       },
       update: {},
       create: {
         name: serviceName,
-        departmentId: department.id,
+        departmentId,
         location: null,
         contactNumber: null,
         active: true,
@@ -283,6 +335,7 @@ export class ServicesService {
       'RADIOLOGIST',
       'ANESTHESIOLOGIST',
       'LAB_TECHNICIAN',
+      'LAB_MANAGER',
       'PHARMACIST',
       'NURSE',
       'RECEPTIONIST',
@@ -353,6 +406,7 @@ export class ServicesService {
       'NURSE',
       'RADIOLOGIST',
       'LAB_TECHNICIAN',
+      'LAB_MANAGER',
       'ANESTHESIOLOGIST',
       'PHARMACIST',
       'ADMIN',

@@ -1,21 +1,24 @@
 const historyKindLabels: Record<string, string> = {
-  MEDICAL_CONSULTATION: "Consultation médicale",
-  NURSE_ORIENTATION: "Orientation infirmière",
-  ADMISSION_METADATA: "Admission réception",
+  MEDICAL_CONSULTATION: "Consultation medicale",
+  NURSE_ORIENTATION: "Orientation infirmiere",
+  ADMISSION_METADATA: "Admission reception",
+  NOUVELLE_VISITE: "Nouvelle visite",
   LAB_REQUEST: "Demande d'examen",
-  PRESCRIPTION_CREATED: "Prescription créée",
-  HOSPITALIZATION_DECLARED: "Hospitalisation déclarée",
-  SURGERY_PLANNED: "Intervention programmée",
-  NURSE_ROUND_DONE: "Tournée infirmière effectuée",
-  NURSE_OBSERVATION: "Observation infirmière",
-  NURSE_PROBLEM: "Problème infirmier signalé",
-  VITAL_SIGNS_RECORDED: "Signes vitaux enregistrés",
-  PAYMENT_RECORDED: "Paiement enregistré",
-  DISCHARGE_AUTHORIZED: "Sortie autorisée",
+  PRESCRIPTION_CREATED: "Prescription creee",
+  HOSPITALIZATION_DECLARED: "Hospitalisation declaree",
+  SURGERY_PLANNED: "Intervention programmee",
+  NURSE_ROUND_DONE: "Tournee infirmiere effectuee",
+  NURSE_OBSERVATION: "Observation infirmiere",
+  NURSE_PROBLEM: "Probleme infirmier signale",
+  VITAL_SIGNS_RECORDED: "Signes vitaux enregistres",
+  PAYMENT_RECORDED: "Paiement enregistre",
+  DISCHARGE_AUTHORIZED: "Sortie autorisee",
+  RESULT_RECORDED: "Resultat laboratoire enregistre",
+  RESULT_RELEASED: "Resultat laboratoire transmis",
 };
 
 export const medicalHistoryKindLabel = (kind?: string | null): string => {
-  if (!kind) return "Événement médical";
+  if (!kind) return "Evenement medical";
   return historyKindLabels[kind] || kind
     .toLowerCase()
     .split("_")

@@ -14,6 +14,10 @@ export class UpdateAppointmentDto {
   @IsOptional()
   serviceUnitId?: string;
 
+  @IsString()
+  @IsOptional()
+  serviceId?: string;
+
   @IsDateString()
   @IsOptional()
   scheduledAt?: string;

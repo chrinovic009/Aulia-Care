@@ -226,6 +226,7 @@ model Service {
   responsables    ServiceResponsable[]
   staff           ServiceStaff[]
   tarifs          ServiceTarif[]
+  subscriptionCharges SubscriptionCharge[]
 
   @@index([clinicId])
 }
@@ -250,7 +251,7 @@ model AdmissionFee {
   id         String    @id @default(uuid())
   label      String    @default("Frais de fiche d'admission")
   amount     Decimal   @db.Decimal(12, 2)
-  currency   String    @default("USD")
+  currency   String    @default("CDF")
   active     Boolean   @default(true)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -350,6 +351,8 @@ model Patient {
   InsurancePolicy        InsurancePolicy[]
   InsuranceClaim         InsuranceClaim[]
   InsuranceAuthorization InsuranceAuthorization[]
+  subscriptionEmployees  SubscriptionEmployee[]
+  subscriptionCharges    SubscriptionCharge[]
 
   @@index([lastName, firstName])
   @@index([dateOfBirth])
@@ -1215,6 +1218,8 @@ model Invoice {
   patient        Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
   payments       Payment[]
   InsuranceClaim InsuranceClaim[]
+  subscriptionCharges SubscriptionCharge[]
+  monthlySubscriptionInvoices MonthlySubscriptionInvoice[]
 
   @@index([status])
   @@index([clinicId])
@@ -1696,6 +1701,7 @@ enum InvoiceType {
   LABORATORY
   RADIOLOGY
   SURGERY
+  SUBSCRIPTION_MONTHLY
   OTHER
 }
 
@@ -2058,6 +2064,143 @@ model InsuranceAuthorization {
 }
 
 /// == Pharmacie avancée (achats, lots, valorisation) ==
+model SubscriptionCompany {
+  id                 String                    @id @default(uuid())
+  name               String
+  legalName          String?
+  registrationNumber String?
+  taxNumber          String?
+  address            String?
+  phone              String?
+  email              String?
+  contactName        String?
+  contactPhone       String?
+  contactEmail       String?
+  contractNumber     String?                   @unique
+  status             SubscriptionCompanyStatus @default(ACTIVE)
+  billingDay         Int                       @default(30)
+  creditLimit        Decimal?                  @db.Decimal(12, 2)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  deletedAt          DateTime?
+
+  employees          SubscriptionEmployee[]
+  charges            SubscriptionCharge[]
+  monthlyInvoices    MonthlySubscriptionInvoice[]
+
+  @@index([name])
+  @@index([status])
+}
+
+model SubscriptionEmployee {
+  id               String                     @id @default(uuid())
+  companyId        String
+  patientId        String?
+  firstName        String
+  lastName         String
+  middleName       String?
+  gender           String?
+  profession       String?
+  dateOfBirth      DateTime?
+  age              Int?
+  phone            String?
+  email            String?
+  address          String?
+  nationality      String?
+  policyNumber     String
+  employeeNumber   String?
+  status           SubscriptionEmployeeStatus @default(ACTIVE)
+  firstAdmissionAt DateTime?
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+  deletedAt        DateTime?
+
+  company          SubscriptionCompany        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  patient          Patient?                   @relation(fields: [patientId], references: [id])
+  charges          SubscriptionCharge[]
+
+  @@unique([companyId, policyNumber])
+  @@index([patientId])
+  @@index([companyId, status])
+}
+
+model SubscriptionCharge {
+  id          String                   @id @default(uuid())
+  companyId   String
+  employeeId  String?
+  patientId   String?
+  invoiceId   String?
+  serviceId   String?
+  label       String
+  amount      Decimal                  @db.Decimal(12, 2)
+  currency    String                   @default("CDF")
+  serviceDate DateTime                 @default(now())
+  month       Int
+  year        Int
+  status      SubscriptionChargeStatus @default(PENDING_MONTHLY_INVOICE)
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  deletedAt   DateTime?
+
+  company     SubscriptionCompany      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee    SubscriptionEmployee?    @relation(fields: [employeeId], references: [id])
+  patient     Patient?                 @relation(fields: [patientId], references: [id])
+  invoice     Invoice?                 @relation(fields: [invoiceId], references: [id])
+  service     Service?                 @relation(fields: [serviceId], references: [id])
+
+  @@index([companyId, year, month])
+  @@index([patientId])
+  @@index([status])
+}
+
+model MonthlySubscriptionInvoice {
+  id          String                           @id @default(uuid())
+  companyId   String
+  invoiceId   String?
+  month       Int
+  year        Int
+  totalAmount Decimal                          @db.Decimal(12, 2)
+  status      MonthlySubscriptionInvoiceStatus @default(DRAFT)
+  generatedAt DateTime                         @default(now())
+  dueDate     DateTime?
+  paidAt      DateTime?
+  notes       String?
+  createdAt   DateTime                         @default(now())
+  updatedAt   DateTime                         @updatedAt
+  deletedAt   DateTime?
+
+  company     SubscriptionCompany              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoice     Invoice?                         @relation(fields: [invoiceId], references: [id])
+
+  @@unique([companyId, year, month])
+  @@index([status])
+}
+
+enum SubscriptionCompanyStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum SubscriptionEmployeeStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+}
+
+enum SubscriptionChargeStatus {
+  PENDING_MONTHLY_INVOICE
+  INVOICED
+  CANCELLED
+}
+
+enum MonthlySubscriptionInvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  CANCELLED
+}
+
 enum PurchaseOrderStatus {
   DRAFT
   ORDERED
@@ -2122,7 +2265,7 @@ model PurchaseOrderLine {
   quantity        Int
   unitPrice       Decimal  @db.Decimal(12, 2)
   totalPrice      Decimal  @db.Decimal(12, 2)
-  currency        String?  @default("USD")
+  currency        String?  @default("CDF")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -2322,7 +2465,7 @@ model EmployeeContract {
   startDate  DateTime
   endDate    DateTime?
   salary     Decimal?     @db.Decimal(12, 2)
-  currency   String?      @default("USD")
+  currency   String?      @default("CDF")
   frequency  String? // e.g. MONTHLY
   active     Boolean      @default(true)
   createdAt  DateTime     @default(now())

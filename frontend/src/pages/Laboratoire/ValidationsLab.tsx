@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ClipboardList, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardList, Printer, RefreshCw, ShieldCheck } from "lucide-react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { AdminPageShell, DataTable, Panel, StatCard, formatDate } from "../Administration/adminUi";
@@ -142,14 +142,101 @@ export default function ValidationsLab() {
     }
   };
 
+  const printLabResult = () => {
+    if (!selectedItem) return;
+    const rows = (selectedItem.parameters || []).map((parameter) => `
+      <tr>
+        <td>${escapeHtml(parameter.name)}</td>
+        <td>${escapeHtml(parameter.value || "-")}</td>
+        <td>${escapeHtml(parameter.unit || "-")}</td>
+        <td>${escapeHtml(parameter.referenceRange || "-")}</td>
+        <td>${escapeHtml(parameter.interpretation || (parameter.outOfRange ? "Hors limites" : "Dans les limites"))}</td>
+      </tr>
+    `).join("");
+    const html = `<!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Resultat laboratoire - ${escapeHtml(selectedItem.patientName)}</title>
+          <style>
+            @page { size: A4; margin: 16mm; }
+            body { font-family: Inter, Arial, sans-serif; color: #111827; margin: 0; }
+            .header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #991b1b; padding-bottom: 14px; }
+            .brand { display: flex; gap: 12px; align-items: center; }
+            .logo { width: 58px; height: 58px; object-fit: contain; }
+            .clinic { font-size: 20px; font-weight: 800; color: #991b1b; letter-spacing: .04em; }
+            .meta { text-align: right; font-size: 11px; color: #4b5563; line-height: 1.6; }
+            h1 { margin: 22px 0 8px; text-align: center; font-size: 18px; text-transform: uppercase; }
+            .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; margin: 18px 0; font-size: 12px; }
+            .label { color: #6b7280; font-size: 10px; text-transform: uppercase; }
+            .value { font-weight: 700; margin-top: 2px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 11px; }
+            th { background: #f3f4f6; color: #111827; text-align: left; text-transform: uppercase; font-size: 10px; }
+            th, td { border: 1px solid #d1d5db; padding: 9px; vertical-align: top; }
+            .footer { margin-top: 32px; display: grid; grid-template-columns: 1fr 220px; gap: 24px; align-items: end; }
+            .note { font-size: 10px; color: #6b7280; border-top: 1px solid #d1d5db; padding-top: 10px; }
+            .signature { border-top: 1px solid #111827; padding-top: 8px; text-align: center; font-size: 11px; min-height: 72px; }
+            .service { text-align: right; font-weight: 800; color: #991b1b; margin-bottom: 48px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="brand">
+              <img class="logo" src="/images/logo/logo.png" />
+              <div>
+                <div class="clinic">D7 CLINIC</div>
+                <div style="font-size:11px;color:#4b5563;">Laboratoire d'analyses medicales</div>
+              </div>
+            </div>
+            <div class="meta">
+              <div>Demande: ${escapeHtml(selectedItem.requestId)}</div>
+              <div>Date reception: ${escapeHtml(formatDate(selectedItem.prescriptionDate || selectedItem.submittedAt))}</div>
+              <div>Date validation: ${escapeHtml(formatDate(selectedItem.decision?.decisionDate || selectedItem.technicalValidationAt))}</div>
+            </div>
+          </div>
+          <h1>Bon de resultat laboratoire</h1>
+          <div class="grid">
+            <div><div class="label">Patient</div><div class="value">${escapeHtml(selectedItem.patientName)}</div></div>
+            <div><div class="label">Age / Sexe</div><div class="value">${selectedItem.patientAge ?? "-"} ans / ${escapeHtml(selectedItem.patientGender || "-")}</div></div>
+            <div><div class="label">Examen</div><div class="value">${escapeHtml(selectedItem.testName)}</div></div>
+            <div><div class="label">Prescripteur</div><div class="value">${escapeHtml(selectedItem.prescriberName || "-")}</div></div>
+            <div><div class="label">Technicien</div><div class="value">${escapeHtml(selectedItem.technicianName || "-")}</div></div>
+            <div><div class="label">Validateur</div><div class="value">${escapeHtml(selectedItem.decision?.validatorName || selectedItem.validations?.[0]?.validatorName || "-")}</div></div>
+          </div>
+          <table>
+            <thead><tr><th>Parametre</th><th>Resultat</th><th>Unite</th><th>Valeurs de reference</th><th>Interpretation</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="5">Aucun parametre detaille.</td></tr>'}</tbody>
+          </table>
+          <div class="footer">
+            <div class="note">Document genere par D7 Clinic. Les resultats doivent etre interpretes par le medecin demandeur selon le contexte clinique du patient.</div>
+            <div>
+              <div class="service">Service Laboratoire</div>
+              <div class="signature">Signature / Sceau du responsable</div>
+            </div>
+          </div>
+        </body>
+      </html>`;
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  };
+
   return (
     <AdminPageShell
       title={isManager ? "Validations laboratoire" : "Suivi de mes analyses"}
       subtitle={isManager ? "Validation biologique, refus et correction des résultats laboratoire." : "Consultation des statuts de vos analyses et des décisions du responsable."}
       actions={
-        <button onClick={loadItems} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-          <RefreshCw size={16} /> Actualiser
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={printLabResult} disabled={!selectedItem} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50 dark:border-slate-800 dark:bg-white/[0.03] dark:text-slate-200">
+            <Printer size={16} /> Imprimer resultat
+          </button>
+          <button onClick={loadItems} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+            <RefreshCw size={16} /> Actualiser
+          </button>
+        </div>
       }
     >
       <PageMeta title="Validations laboratoire | D7 Clinique" description="Workflow complet de validation biologique et suivi des analyses." />
@@ -316,4 +403,13 @@ export default function ValidationsLab() {
       </div>
     </AdminPageShell>
   );
+}
+
+function escapeHtml(value: string) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
