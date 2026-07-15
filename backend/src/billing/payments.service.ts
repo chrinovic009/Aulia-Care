@@ -77,7 +77,7 @@ export class PaymentsService {
 
       let labRequest: any = null;
       if (invoice.type === 'LABORATORY') {
-        const labRequestMatch = invoice.remarks?.match(/LabRequest:([a-zA-Z0-9-]+)/);
+        const labRequestMatch = invoice.remarks?.match(/(?:LabRequest|Demande laboratoire):?\s*([a-zA-Z0-9-]+)/i);
         if (labRequestMatch?.[1]) {
           labRequest = await prisma.labRequest.update({
             where: { id: labRequestMatch[1] },

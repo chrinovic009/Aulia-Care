@@ -2,7 +2,58 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 
-const normalizeResultParameters = (parameters: any[]) =>
+type LabTestParameterRef = {
+  name?: string | null;
+  unit?: string | null;
+  referenceRange?: string | null;
+  minValue?: string | null;
+  maxValue?: string | null;
+};
+
+type RawResultParameter = {
+  id?: string;
+  labTestParameter?: LabTestParameterRef | null;
+  valueNumeric?: number | string | null;
+  valueText?: string | null;
+  interpretation?: string | null;
+};
+
+type LabRequestSummaryShape = {
+  id: string;
+  displayId?: string;
+  patient?: { firstName?: string | null; lastName?: string | null } | null;
+  status?: string | null;
+  priority?: string | null;
+  requestedAt?: Date | string | null;
+  items?: any[];
+  results?: any[];
+  specimenType?: string | null;
+};
+
+type LabResultLite = {
+  resultStatus?: string | null;
+  reportedAt?: Date | string | null;
+  id?: string;
+  parameters?: RawResultParameter[];
+  interpretation?: string | null;
+  comments?: string | null;
+};
+
+type LabRequestItemLite = {
+  id?: string;
+  assignedTo?: { id?: string; displayName?: string | null; firstName?: string | null; lastName?: string | null } | null;
+  assignedToId?: string | null;
+  labRequestId?: string;
+  status?: string | null;
+  results?: LabResultLite[] | null;
+  labTest?: { turnaroundTimeMinutes?: number | null; name?: string | null; price?: number | null; unit?: string | null; referenceRange?: string | null } | null;
+  requestedAt?: string | Date | null;
+  analysisStartedAt?: string | Date | null;
+  completedAt?: string | Date | null;
+  labRequest?: { priority?: string | null; patient?: { firstName?: string | null; lastName?: string | null } } | null;
+};
+
+const normalizeResultParameters = (parameters: RawResultParameter[]) =>
   parameters.map((parameter) => ({
     id: parameter.id,
     name: parameter.labTestParameter?.name || 'Parametre',
@@ -13,7 +64,7 @@ const normalizeResultParameters = (parameters: any[]) =>
     outOfRange: isOutOfRange(parameter),
   }));
 
-const isOutOfRange = (parameter: any) => {
+const isOutOfRange = (parameter: RawResultParameter) => {
   const value = Number(parameter.valueNumeric);
   if (!Number.isFinite(value)) return false;
   const min = Number(parameter.labTestParameter?.minValue);
@@ -34,7 +85,8 @@ export class LaboratoryService {
     const config = await this.prisma.labConfiguration.findUnique({
       where: { key: 'technicianDirectRelease' },
     });
-    return Boolean((config?.value as any)?.enabled);
+    const value = config?.value as { enabled?: boolean } | undefined;
+    return Boolean(value?.enabled);
   }
 
   async getSettings() {
@@ -43,7 +95,7 @@ export class LaboratoryService {
     };
   }
 
-  async updateSettings(dto: any) {
+  async updateSettings(dto: { technicianDirectRelease?: boolean }) {
     const enabled = Boolean(dto?.technicianDirectRelease);
     await this.prisma.labConfiguration.upsert({
       where: { key: 'technicianDirectRelease' },
@@ -191,24 +243,45 @@ export class LaboratoryService {
   }
 
   private async buildLabRequestVisibilityWhere() {
-    const paidInvoiceLabRequestIds = await this.prisma.invoice.findMany({
+    const paidInvoices = await this.prisma.invoice.findMany({
       where: { type: 'LABORATORY', status: 'PAID' },
-      select: { remarks: true },
+      select: { id: true, remarks: true },
     });
 
-    const paidRequestIds = paidInvoiceLabRequestIds
-      .map((invoice) => String(invoice.remarks || '').match(/LabRequest:([a-zA-Z0-9-]+)/)?.[1])
-      .filter((value): value is string => Boolean(value));
+    const paidInvoiceIds = paidInvoices.map((invoice) => invoice.id);
+    const ids: string[] = [];
+    const remarkRegex = /(?:LabRequest|Demande laboratoire):?\s*([a-zA-Z0-9-]+)/gi;
+
+    for (const invoice of paidInvoices) {
+      const text = String(invoice.remarks || '');
+      for (const match of text.matchAll(remarkRegex)) {
+        if (match && match[1]) ids.push(match[1]);
+      }
+    }
+
+    const paidRequestIds = Array.from(new Set(ids)).filter(Boolean);
+    const paidInvoiceConditions: any[] = [];
+
+    if (paidInvoiceIds.length > 0) {
+      paidInvoiceConditions.push({ externalReference: { in: paidInvoiceIds } });
+    }
+    if (paidRequestIds.length > 0) {
+      paidInvoiceConditions.push({ id: { in: paidRequestIds } });
+    }
+
+    if (paidInvoiceConditions.length === 0) {
+      return { deletedAt: null, id: { in: [] } };
+    }
 
     return {
       deletedAt: null,
-      id: { in: paidRequestIds },
-    } as const;
+      OR: paidInvoiceConditions,
+    };
   }
 
-  private async buildLabReferenceCode(patient: any, requestStatus: string, resultStatus?: string | null) {
+  private async buildLabReferenceCode(patient: { firstName?: string | null; lastName?: string | null; createdAt?: Date | string } | null | undefined, requestStatus: string, resultStatus?: string | null) {
     const patientNumber = patient?.createdAt
-      ? await this.prisma.patient.count({ where: { createdAt: { lt: patient.createdAt } } }) + 1
+      ? await this.prisma.patient.count({ where: { createdAt: { lt: patient.createdAt as any } } }) + 1
       : 1;
 
     const firstNameInitial = String(patient?.firstName || '').trim().charAt(0).toUpperCase() || 'X';
@@ -287,23 +360,25 @@ export class LaboratoryService {
     >();
 
     assignedItems.forEach((item) => {
-      if (!item.assignedTo) {
+      const it = item as unknown as LabRequestItemLite;
+      if (!it.assignedTo) {
         return;
       }
       const technicianName =
-        item.assignedTo.displayName ||
-        [item.assignedTo.firstName, item.assignedTo.lastName].filter(Boolean).join(' ') ||
+        it.assignedTo.displayName ||
+        [it.assignedTo.firstName, it.assignedTo.lastName].filter(Boolean).join(' ') ||
         'Technicien';
-      const existing = technicianMap.get(item.assignedTo.id) ?? {
+      const technicianId = it.assignedTo.id || 'unknown';
+      const existing = technicianMap.get(technicianId) ?? {
         technician: technicianName,
         assignedItems: 0,
         openItems: 0,
       };
       existing.assignedItems += 1;
-      if (['REQUESTED', 'COLLECTED', 'RECEIVED', 'IN_ANALYSIS', 'TECHNICAL_VALIDATION', 'BIOLOGICAL_VALIDATION'].includes(item.status)) {
+      if (['REQUESTED', 'COLLECTED', 'RECEIVED', 'IN_ANALYSIS', 'TECHNICAL_VALIDATION', 'BIOLOGICAL_VALIDATION'].includes(String(it.status || '')) ) {
         existing.openItems += 1;
       }
-      technicianMap.set(item.assignedTo.id, existing);
+      technicianMap.set(technicianId, existing);
     });
 
     const lowStockAlerts = lowStockEntries
@@ -321,7 +396,7 @@ export class LaboratoryService {
         criticalLevel: stock.criticalLevel?.toString() ?? null,
       }));
 
-    const criticalAlerts = [] as Array<any>;
+    const criticalAlerts = [] as Array<{ title: string; message: string; priority: string; createdAt: string; displayId?: string }>;
     for (const request of recentRequests.filter((item) => ['URGENT', 'CRITICAL'].includes((item.priority || '').toUpperCase())).slice(0, 5)) {
       const displayId = await this.buildLabReferenceCode(request.patient, request.status, request.results?.[0]?.resultStatus);
       criticalAlerts.push({
@@ -333,7 +408,16 @@ export class LaboratoryService {
       });
     }
 
-    const recentRequestSummaries = [] as Array<any>;
+    const recentRequestSummaries = [] as Array<{
+      id: string;
+      displayId: string;
+      patientName: string;
+      status?: string | null;
+      priority: string;
+      requestedAt?: string | null;
+      assignedTo?: string | null;
+      specimenType: string;
+    }>;
     for (const request of recentRequests) {
       const assignedItem = request.items?.find((item) => item.assignedTo);
       const assignedTo = assignedItem
@@ -394,25 +478,28 @@ export class LaboratoryService {
     const todayItems = todayRequests.flatMap((request) => request.items || []);
     const processedToday = todayItems.filter((item) => {
       const normalizedStatus = String(item.status || '').toUpperCase();
-      const hasValidatedResult = (item.results || []).some((result: any) => ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED'].includes(String(result.resultStatus || '').toUpperCase()));
+      const hasValidatedResult = (item.results || []).some((result: LabResultLite) => ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED'].includes(String(result.resultStatus || '').toUpperCase()));
       return ['COMPLETED', 'AVAILABLE', 'SENT', 'VERIFIED'].includes(normalizedStatus) || hasValidatedResult;
     }).length;
 
     const pendingItems = requests.flatMap((request) => request.items || []).filter((item) => {
-      const normalizedStatus = String(item.status || '').toUpperCase();
-      const hasValidatedResult = (item.results || []).some((result: any) => ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED'].includes(String(result.resultStatus || '').toUpperCase()));
+      const it = item as unknown as LabRequestItemLite;
+      const normalizedStatus = String(it.status || '').toUpperCase();
+      const hasValidatedResult = (it.results || []).some((result: LabResultLite) => ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED'].includes(String(result.resultStatus || '').toUpperCase()));
       return !['COMPLETED', 'AVAILABLE', 'SENT', 'VERIFIED'].includes(normalizedStatus) && !hasValidatedResult;
     });
 
     const validatedToday = requests.filter((request) => request.sentAt && request.sentAt >= today && request.sentAt < tomorrow).length;
     const overdueItems = requests.flatMap((request) => request.items || []).filter((item) => {
-      const turnaroundMinutes = Number(item.labTest?.turnaroundTimeMinutes || 0);
-      if (!turnaroundMinutes || !item.requestedAt) {
+      const it = item as unknown as LabRequestItemLite;
+      const turnaroundMinutes = Number(it.labTest?.turnaroundTimeMinutes || 0);
+      if (!turnaroundMinutes || !it.requestedAt) {
         return false;
       }
-      const deadline = new Date(new Date(item.requestedAt).getTime() + turnaroundMinutes * 60000);
-      const normalizedStatus = String(item.status || '').toUpperCase();
-      const hasValidatedResult = (item.results || []).some((result: any) => ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED'].includes(String(result.resultStatus || '').toUpperCase()));
+      const requestedAtTime = new Date(it.requestedAt as any).getTime();
+      const deadline = new Date(requestedAtTime + turnaroundMinutes * 60000);
+      const normalizedStatus = String(it.status || '').toUpperCase();
+      const hasValidatedResult = (it.results || []).some((result: LabResultLite) => ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED'].includes(String(result.resultStatus || '').toUpperCase()));
       return now > deadline && !['COMPLETED', 'AVAILABLE', 'SENT', 'VERIFIED'].includes(normalizedStatus) && !hasValidatedResult;
     });
 
@@ -1653,6 +1740,9 @@ export class LaboratoryService {
         });
       }
 
+      // Determine whether we can directly send the result/notification
+      const canDirectSend = directRelease;
+
       await tx.labRequest.update({
         where: { id },
         data: {
@@ -1667,8 +1757,9 @@ export class LaboratoryService {
         await this.consumeConsumablesForValidatedResult(tx, created.id, created.labRequestItemId, reportedById);
       }
 
+      let notification: any = null;
       if (canDirectSend && recipientId) {
-        const notification = await tx.notification.create({
+        notification = await tx.notification.create({
           data: {
             recipientId,
             patientId: request.patientId,
@@ -1682,8 +1773,6 @@ export class LaboratoryService {
             sendAt: new Date(),
           },
         });
-
-        return { created, notification };
       }
 
       if (!canDirectSend) {

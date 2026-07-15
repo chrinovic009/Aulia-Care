@@ -230,7 +230,7 @@ export class ConsultationsService {
           status: 'PENDING',
           totalAmount: examPrice,
           balanceDue: examPrice,
-          remarks: `Demande laboratoire ${created.id} - ${labTest.name}`,
+          remarks: `LabRequest:${created.id} - Demande laboratoire ${created.id} - ${labTest.name}`,
         },
       });
 

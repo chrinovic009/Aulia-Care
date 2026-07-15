@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, AlertTriangle, Beaker, ClipboardList, Layers, ToggleLeft, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, Beaker, ClipboardList, Layers, Users, X } from "lucide-react";
 import { AdminPageShell, Panel, StatCard, DataTable, formatDate } from "../Administration/adminUi";
 import { 
   fetchLaboratoryActivity, 

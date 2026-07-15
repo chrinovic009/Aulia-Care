@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { AdminPageShell, DataTable, Panel, StatCard } from "../Administration/adminUi";
 import {
@@ -97,10 +97,10 @@ export default function CatalogueLab() {
   }, [catalogue]);
 
   const filterText = searchQuery.trim().toLowerCase();
-  const matchesSearch = (fields: Array<string | number | undefined | null>) => {
+  const matchesSearch = useCallback((fields: Array<string | number | undefined | null>) => {
     if (!filterText) return true;
     return fields.some((field) => String(field || '').toLowerCase().includes(filterText));
-  };
+  }, [filterText]);
 
   const stockRows = useMemo(() => {
     if (!catalogue) return [];
@@ -111,56 +111,56 @@ export default function CatalogueLab() {
 
   const filteredSections = useMemo(
     () => catalogue?.sections.filter((section) => matchesSearch([section.name, section.description])) ?? [],
-    [catalogue, filterText],
+    [catalogue, matchesSearch],
   );
 
   const filteredCategories = useMemo(
     () => catalogue?.categories.filter((category) =>
-      matchesSearch([category.name, category.code, category.description, category.section?.name]),
+      matchesSearch([category.name, category.code, category.description]),
     ) ?? [],
-    [catalogue, filterText],
+    [catalogue, matchesSearch],
   );
 
   const filteredTests = useMemo(
     () => catalogue?.tests.filter((test) =>
-      matchesSearch([test.code, test.name, test.description, test.section?.name, test.category?.name, test.unit, test.referenceRange]),
+      matchesSearch([test.code, test.name, test.description, test.category?.name, test.unit, test.referenceRange]),
     ) ?? [],
-    [catalogue, filterText],
+    [catalogue, matchesSearch],
   );
 
   const filteredParameters = useMemo(
-    () => catalogue?.tests.flatMap((test) => test.parameterTemplates).filter((parameter) =>
-      matchesSearch([parameter.code, parameter.name, parameter.unit, parameter.resultType, parameter.referenceRange]),
-    ) ?? [],
-    [catalogue, filterText],
+    () => catalogue?.tests.flatMap((test) =>
+      (test.parameterTemplates || []).map((parameter) => ({ ...parameter, labTest: { id: test.id, name: test.name } }))
+    ).filter((parameter) => matchesSearch([parameter.code, parameter.name, parameter.unit, parameter.resultType, parameter.referenceRange])) ?? [],
+    [catalogue, matchesSearch],
   );
 
   const filteredSampleTypes = useMemo(
     () => catalogue?.sampleTypes.filter((sampleType) =>
-      matchesSearch([sampleType.name, sampleType.description, sampleType.sampleRequirements.map((req) => `${req.labTest?.name || ''} ${req.volumeRequired || ''} ${req.storageCondition || ''} ${req.instructions || ''}`).join(' ')]),
+      matchesSearch([sampleType.name, sampleType.description]),
     ) ?? [],
-    [catalogue, filterText],
+    [catalogue, matchesSearch],
   );
 
   const filteredSampleRequirements = useMemo(
-    () => catalogue?.tests.flatMap((test) => test.sampleRequirements).filter((requirement) =>
-      matchesSearch([requirement.labTest?.name, requirement.labSampleType?.name, requirement.volumeRequired, requirement.volumeUnit, requirement.storageCondition, requirement.instructions]),
-    ) ?? [],
-    [catalogue, filterText],
+    () => catalogue?.tests.flatMap((test) =>
+      (test.sampleRequirements || []).map((requirement) => ({ ...requirement, labTest: { id: test.id, name: test.name } }))
+    ).filter((requirement) => matchesSearch([requirement.labTest?.name, requirement.labSampleType?.name, requirement.volumeRequired, requirement.volumeUnit, requirement.storageCondition, requirement.instructions])) ?? [],
+    [catalogue, matchesSearch],
   );
 
   const filteredConsumables = useMemo(
     () => catalogue?.consumables.filter((consumable) =>
-      matchesSearch([consumable.name, consumable.code, consumable.description, consumable.unit, consumable.stock.map((stockLine) => `${stockLine.quantity} ${stockLine.location || ''}`).join(' ')]),
+      matchesSearch([consumable.name, consumable.code, consumable.description, consumable.unit]),
     ) ?? [],
-    [catalogue, filterText],
+    [catalogue, matchesSearch],
   );
 
   const filteredStockRows = useMemo(
-    () => stockRows.filter(({ consumable, stockLine }) =>
-      matchesSearch([consumable.name, consumable.code, consumable.unit, stockLine.location, stockLine.quantity, stockLine.minimumLevel, stockLine.criticalLevel]),
+    () => stockRows.filter(({ consumable }) =>
+      matchesSearch([consumable.name, consumable.code, consumable.unit]),
     ),
-    [stockRows, filterText],
+    [stockRows, matchesSearch],
   );
 
   const formatStockStatus = (quantity: string, minimumLevel?: string | null, criticalLevel?: string | null) => {
@@ -208,10 +208,9 @@ export default function CatalogueLab() {
               <div class="brand">
                 <img src="/images/favicon.png" alt="Logo clinique" class="logo" />
                 <div>
-                  <div class="title">État du stock laboratoire</div>
+                  <div class="title">ÉTAT DE STOCK DU LABORATOIRE</div>
                   <div class="subtitle">Service de laboratoire - D7 Clinique</div>
                   <div class="subtitle">Imprimé le ${new Date().toLocaleDateString('fr-FR')}</div>
-                  <div class="responsible">Responsable laboratoire: ${responsibleName}</div>
                 </div>
               </div>
               <div style="text-align:right; font-size:12px; color:#4b5563;">
@@ -251,7 +250,7 @@ export default function CatalogueLab() {
                 }).join('')}
               </tbody>
             </table>
-            <div class="footer">Etat du stock des consommables de laboratoire généré automatiquement depuis le portail de laboratoire D7 Clinique.</div>
+            <div class="responsible">Responsable laboratoire: ${responsibleName}</div>
           </div>
         </body>
       </html>
@@ -299,7 +298,7 @@ export default function CatalogueLab() {
       await createLabSection({
         name: sectionForm.name,
         description: sectionForm.description || undefined,
-        order: sectionForm.order !== '' ? sectionForm.order : undefined,
+        order: sectionForm.order !== '' ? Number(sectionForm.order) : undefined,
         active: sectionForm.active,
       });
       setSectionForm({ name: '', description: '', order: '0', active: true });
@@ -327,7 +326,7 @@ export default function CatalogueLab() {
         name: categoryForm.name,
         code: categoryForm.code || undefined,
         description: categoryForm.description || undefined,
-        order: categoryForm.order !== '' ? categoryForm.order : undefined,
+        order: categoryForm.order !== '' ? Number(categoryForm.order) : undefined,
         active: categoryForm.active,
       });
       setCategoryForm({ sectionId: '', name: '', code: '', description: '', order: '0', active: true });
@@ -356,14 +355,14 @@ export default function CatalogueLab() {
         categoryId: testForm.categoryId,
         sectionId: testForm.sectionId || undefined,
         description: testForm.description || undefined,
-        price: String(testForm.price),
-        turnaroundTimeMinutes: testForm.turnaroundTimeMinutes !== '' ? String(testForm.turnaroundTimeMinutes) : undefined,
+        price: Number(testForm.price),
+        turnaroundTimeMinutes: testForm.turnaroundTimeMinutes !== '' ? Number(testForm.turnaroundTimeMinutes) : undefined,
         resultType: testForm.resultType,
         unit: testForm.unit || undefined,
         referenceRange: testForm.referenceRange || undefined,
         genderRestriction: testForm.genderRestriction,
-        minAge: testForm.minAge !== '' ? String(testForm.minAge) : undefined,
-        maxAge: testForm.maxAge !== '' ? String(testForm.maxAge) : undefined,
+        minAge: testForm.minAge !== '' ? Number(testForm.minAge) : undefined,
+        maxAge: testForm.maxAge !== '' ? Number(testForm.maxAge) : undefined,
         active: testForm.active,
       });
       setTestForm({ code: '', name: '', categoryId: '', sectionId: '', description: '', price: '0', turnaroundTimeMinutes: '30', resultType: 'MULTI_PARAMETER', unit: '', referenceRange: '', genderRestriction: 'ALL', minAge: '', maxAge: '', active: true });
@@ -395,7 +394,7 @@ export default function CatalogueLab() {
         referenceRange: parameterForm.referenceRange || undefined,
         minValue: parameterForm.minValue || undefined,
         maxValue: parameterForm.maxValue || undefined,
-        order: parameterForm.order !== '' ? parameterForm.order : undefined,
+        order: parameterForm.order !== '' ? Number(parameterForm.order) : undefined,
         active: parameterForm.active,
       });
       setParameterForm({ labTestId: '', code: '', name: '', unit: '', resultType: 'NUMERIC', referenceRange: '', minValue: '', maxValue: '', order: '0', active: true });
@@ -422,26 +421,16 @@ export default function CatalogueLab() {
 
     setIsSaving(true);
     try {
-      const createdSampleType = await createLabSampleType({
+      await createLabSampleType({
         name: sampleTypeForm.name,
         description: sampleTypeForm.description || undefined,
         active: sampleTypeForm.active,
       });
 
-      await createLabTestSampleRequirement({
-        labTestId: sampleTypeForm.labTestId,
-        labSampleTypeId: createdSampleType.id,
-        volumeRequired: undefined,
-        volumeUnit: undefined,
-        storageCondition: undefined,
-        maxAgeMinutes: undefined,
-        instructions: undefined,
-      });
-
       setSampleTypeForm({ labTestId: '', name: '', description: '', active: true });
       setShowSampleTypeForm(false);
       await loadCatalogue();
-      showSuccess('Type d échantillon créé et lié à l examen avec succès.');
+      showSuccess('Type d échantillon créé avec succès. Utilisez "Ajouter une exigence d\'échantillon" pour le lier à un examen.');
     } catch (error) {
       console.error(error);
       window.alert('Impossible de créer le type d échantillon.');
@@ -461,10 +450,10 @@ export default function CatalogueLab() {
       await createLabTestSampleRequirement({
         labTestId: sampleRequirementForm.labTestId,
         labSampleTypeId: sampleRequirementForm.labSampleTypeId,
-        volumeRequired: sampleRequirementForm.volumeRequired !== '' ? String(sampleRequirementForm.volumeRequired) : undefined,
+        volumeRequired: sampleRequirementForm.volumeRequired !== '' ? Number(sampleRequirementForm.volumeRequired) : undefined,
         volumeUnit: sampleRequirementForm.volumeUnit || undefined,
         storageCondition: sampleRequirementForm.storageCondition || undefined,
-        maxAgeMinutes: sampleRequirementForm.maxAgeMinutes !== '' ? String(sampleRequirementForm.maxAgeMinutes) : undefined,
+        maxAgeMinutes: sampleRequirementForm.maxAgeMinutes !== '' ? Number(sampleRequirementForm.maxAgeMinutes) : undefined,
         instructions: sampleRequirementForm.instructions || undefined,
       });
       setSampleRequirementForm({ labTestId: '', labSampleTypeId: '', volumeRequired: '', volumeUnit: 'mL', storageCondition: '', maxAgeMinutes: '', instructions: '' });
@@ -517,7 +506,7 @@ export default function CatalogueLab() {
       await createLabTestConsumableRequirement({
         labTestId: consumableRequirementForm.labTestId,
         labConsumableId: consumableRequirementForm.labConsumableId,
-        quantity: String(consumableRequirementForm.quantity),
+        quantity: Number(consumableRequirementForm.quantity),
         unit: consumableRequirementForm.unit || undefined,
       });
       setConsumableRequirementForm({ labTestId: '', labConsumableId: '', quantity: '1', unit: '' });
@@ -542,9 +531,9 @@ export default function CatalogueLab() {
     try {
       await createLabConsumableStock({
         labConsumableId: stockForm.labConsumableId,
-        quantity: String(stockForm.quantity),
-        minimumLevel: stockForm.minimumLevel !== '' ? String(stockForm.minimumLevel) : undefined,
-        criticalLevel: stockForm.criticalLevel !== '' ? String(stockForm.criticalLevel) : undefined,
+        quantity: Number(stockForm.quantity),
+        minimumLevel: stockForm.minimumLevel !== '' ? Number(stockForm.minimumLevel) : undefined,
+        criticalLevel: stockForm.criticalLevel !== '' ? Number(stockForm.criticalLevel) : undefined,
         location: stockForm.location || undefined,
       });
       setStockForm({ labConsumableId: '', quantity: '0', minimumLevel: '', criticalLevel: '', location: '' });

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PatientWorkflowStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -78,151 +78,46 @@ export class PharmacyService {
     return prescriptions.filter((prescription) => prescription.status !== 'DISPENSED');
   }
 
-  async dispensePrescription(prescriptionId: string, actorId?: string) {
-    if (!actorId) {
-      throw new BadRequestException('Utilisateur non identifié.');
-    }
-
-    const prescription = await this.prisma.prescription.findUnique({
-      where: { id: prescriptionId },
-      include: {
-        patient: true,
-        lineItems: { include: { medication: true } },
-        pharmacyDispenses: true,
-      },
-    });
-
-    if (!prescription) {
-      throw new NotFoundException('Ordonnance introuvable.');
-    }
-
-    if (prescription.status === 'DISPENSED' || prescription.pharmacyDispenses.length > 0) {
-      throw new BadRequestException("Cette ordonnance a déjà été délivrée.");
-    }
-
-    const invoice = await this.prisma.invoice.findFirst({
+  async dispensePrescription(id: string, body: any, actorId?: string) {
+    // 1. Vérifier que l'ordonnance est bien payée d'abord
+    const paidInvoice = await this.prisma.invoice.findFirst({
       where: {
-        deletedAt: null,
-        type: 'PHARMACY',
+        remarks: { contains: `Prescription:${id}` },
         status: 'PAID',
-        remarks: { contains: `Prescription:${prescriptionId}` },
       },
     });
 
-    if (!invoice) {
+    if (!paidInvoice) {
       throw new BadRequestException('La prescription doit être payée avant délivrance.');
     }
 
-    if (!prescription.lineItems?.length) {
-      throw new BadRequestException('Ordonnance sans lignes de traitement.');
-    }
-
-    const medicationIds = prescription.lineItems.map((line) => line.medicationId);
-    const lots = await this.prisma.stockLot.findMany({
-      where: {
-        medicationId: { in: medicationIds },
-        quantity: { gt: 0 },
-      },
-      orderBy: [{ medicationId: 'asc' }, { receivedAt: 'asc' }, { expiryDate: 'asc' }],
+    // 2. Récupérer l'ordonnance et ses lignes
+    const prescription = await this.prisma.prescription.findUnique({
+      where: { id },
+      include: { lineItems: true }
     });
 
-    const lotsByMedication = new Map<string, Array<any>>();
-    for (const lot of lots) {
-      const items = lotsByMedication.get(lot.medicationId) || [];
-      items.push({ ...lot });
-      lotsByMedication.set(lot.medicationId, items);
+    if (!prescription) {
+      throw new NotFoundException('Prescription introuvable.');
     }
 
-    const dispenseLines: Array<any> = [];
-    const stockUpdates: Array<{ id: string; quantity: number }> = [];
-    const stockTransactions: Array<any> = [];
-
-    for (const line of prescription.lineItems) {
-      const requiredQuantity = Number(line.quantity || 0);
-      let remaining = requiredQuantity;
-      const medicationLots = lotsByMedication.get(line.medicationId) || [];
-      const availableQuantity = medicationLots.reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
-      if (availableQuantity < requiredQuantity) {
-        throw new BadRequestException(`Stock insuffisant pour ${line.medication?.name || 'ce médicament'}.`);
-      }
-
-      let lineUnitPrice = 0;
-      const defaultLotPrice = medicationLots.find((lot) => lot.purchasePrice !== null)?.purchasePrice;
-      if (defaultLotPrice !== undefined && defaultLotPrice !== null) {
-        lineUnitPrice = Number(defaultLotPrice);
-      }
-      for (const lot of medicationLots) {
-        if (remaining <= 0) break;
-        const used = Math.min(Number(lot.quantity || 0), remaining);
-        if (used <= 0) continue;
-        remaining -= used;
-        lot.quantity = Number(lot.quantity) - used;
-        stockUpdates.push({ id: lot.id, quantity: lot.quantity });
-        stockTransactions.push({
-          medicationId: line.medicationId,
-          lotId: lot.id,
-          type: 'DISPENSE',
-          quantity: -used,
-          unitPrice: lot.purchasePrice ?? 0,
-          reference: `Prescription:${prescriptionId}`,
-          performedById: actorId,
-          clinicId: prescription.patient?.clinicId || null,
-        });
-        if (lineUnitPrice === 0) {
-          lineUnitPrice = Number(lot.purchasePrice || 0);
-        }
-      }
-
-      dispenseLines.push({
-        medicationId: line.medicationId,
-        quantity: requiredQuantity,
-        unitPrice: lineUnitPrice,
-        totalPrice: lineUnitPrice * requiredQuantity,
-      });
+    if (prescription.status === 'DISPENSED') {
+      throw new BadRequestException('Cette ordonnance a déjà été délivrée.');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      for (const update of stockUpdates) {
-        await tx.stockLot.update({
-          where: { id: update.id },
-          data: { quantity: update.quantity },
-        });
+    // 3. Consommer le stock et enregistrer la transaction
+    return await this.prisma.$transaction(async (tx) => {
+      // Votre logique de boucle de déstockage existante...
+      for (const line of prescription.lineItems) {
+        const quantity = Number(line.quantity);
+        await this.consumeMedication(tx, line.medicationId, quantity, actorId, 'Délivrance ordonnance');
       }
 
-      for (const transaction of stockTransactions) {
-        await tx.stockTransaction.create({ data: transaction });
-      }
-
-      const pharmacyDispense = await tx.pharmacyDispense.create({
-        data: {
-          prescriptionId,
-          dispensedById: actorId,
-          location: 'Pharmacie',
-          status: 'DISPENSED',
-          notes: `Délivrance effectuée pour la prescription ${prescriptionId}`,
-          lines: {
-            create: dispenseLines.map((line) => ({
-              medicationId: line.medicationId,
-              quantity: line.quantity,
-              unitPrice: line.unitPrice,
-              totalPrice: line.totalPrice,
-            })),
-          },
-        },
-        include: { lines: true },
+      // Mettre à jour le statut de l'ordonnance
+      return tx.prescription.update({
+        where: { id },
+        data: { status: 'DISPENSED' }
       });
-
-      await tx.prescription.update({
-        where: { id: prescriptionId },
-        data: { status: 'DISPENSED' },
-      });
-
-      await tx.patient.update({
-        where: { id: prescription.patientId },
-        data: { workflowStatus: PatientWorkflowStatus.TERMINE },
-      });
-
-      return pharmacyDispense;
     });
   }
 
@@ -466,49 +361,6 @@ export class PharmacyService {
         pharmacyDispenses: { include: { lines: { include: { medication: true } }, dispensedBy: true } },
       },
       orderBy: { prescribingDate: 'desc' },
-    });
-  }
-
-  async dispensePrescription(id: string, body: any, actorId?: string) {
-    const prescription = await this.prisma.prescription.findUnique({
-      where: { id },
-      include: { patient: true, lineItems: { include: { medication: { include: { StockLot: true } } } } },
-    });
-    if (!prescription) throw new NotFoundException('Prescription introuvable');
-    if (prescription.status === 'DISPENSED') throw new BadRequestException('Prescription deja delivree.');
-
-    return this.prisma.$transaction(async (tx) => {
-      const dispense = await tx.pharmacyDispense.create({
-        data: {
-          prescriptionId: id,
-          dispensedById: actorId,
-          status: 'DISPENSED',
-          notes: body?.notes || null,
-          location: body?.location || 'Pharmacie',
-        },
-      });
-
-      for (const line of prescription.lineItems) {
-        await this.consumeMedication(tx, line.medicationId, Number(line.quantity || 0), actorId, `Prescription ${id}`);
-        const latestLot = line.medication.StockLot.slice().sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())[0];
-        const unitPrice = Number(latestLot?.purchasePrice || 0);
-        await tx.pharmacyDispenseLine.create({
-          data: {
-            pharmacyDispenseId: dispense.id,
-            medicationId: line.medicationId,
-            quantity: line.quantity,
-            unitPrice,
-            totalPrice: unitPrice * Number(line.quantity || 0),
-          },
-        });
-      }
-
-      await tx.prescription.update({ where: { id }, data: { status: 'DISPENSED' } });
-      await tx.patient.update({ where: { id: prescription.patientId }, data: { workflowStatus: 'TERMINE' } });
-      return tx.pharmacyDispense.findUnique({
-        where: { id: dispense.id },
-        include: { lines: { include: { medication: true } }, prescription: { include: { patient: true } } },
-      });
     });
   }
 
