@@ -347,39 +347,38 @@ export default function ActivityLab() {
       }
       return normalizedRange;
     })();
+    const logoSrc = `${window.location.origin}/images/favicon.png`;
 
     const html = `
       <html>
         <head>
+          <meta charset="utf-8" />
           <title>Bon de rendu des résultats biomédicaux - ${patientName}</title>
           <style>
-            body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 24px; }
-            .page { max-width: 900px; margin: 0 auto; }
-            .header { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; border-bottom: 2px solid #111827; padding-bottom: 12px; margin-bottom: 20px; }
-            .brand-block { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-            .logo { width: 56px; height: 56px; object-fit: contain; }
-            .clinic { font-size: 22px; font-weight: 700; }
-            .details { font-size: 12px; color: #4b5563; margin-top: 4px; }
-            .document-title { font-size: 18px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; margin: 0 0 4px; }
-            .document-subtitle { font-size: 14px; color: #111827; margin: 0 0 4px; }
-            .responsible { font-size: 13px; color: #111827; font-weight: 700; margin-top: 2px; }
-            .meta-block { font-size: 12px; color: #4b5563; text-align: left; }
-            .section { margin-bottom: 18px; }
-            .section-title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #111827; margin-bottom: 8px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 12px; }
-            td { border: 1px solid #d1d5db; padding: 8px 10px; vertical-align: top; }
-            .label { width: 32%; font-weight: 700; background: #f9fafb; }
-            .footer { margin-top: 24px; font-size: 11px; color: #6b7280; border-top: 1px solid #d1d5db; padding-top: 10px; }
-            .signature-section { margin-top: 32px; display: flex; justify-content: space-between; gap: 24px; }
-            .signature-line { border-top: 1px solid #111827; margin-top: 10px; width: 260px; }
-            @media print { body { padding: 0; } .page { padding: 18mm; } }
+            body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 24px; background: #fff; }
+            .page { max-width: 900px; margin: 0 auto; padding: 10mm 12mm 14mm; border: 1px solid #d1d5db; border-radius: 10px; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 2px solid #111827; padding-bottom: 14px; margin-bottom: 20px; }
+            .brand-block { display: flex; align-items: center; gap: 12px; }
+            .logo { width: 64px; height: 64px; object-fit: contain; }
+            .document-title { font-size: 20px; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; margin: 0 0 4px; }
+            .document-subtitle { font-size: 14px; color: #374151; margin: 0; }
+            .meta-block { font-size: 12px; color: #4b5563; text-align: right; }
+            .section { margin-bottom: 20px; }
+            .section-title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #111827; margin-bottom: 8px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 10px; }
+            th, td { border: 1px solid #d1d5db; padding: 8px 10px; vertical-align: top; }
+            th { background: #f9fafb; font-weight: 700; text-align: left; }
+            .label { width: 20%; font-weight: 700; background: #f9fafb; }
+            .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #d1d5db; display: flex; justify-content: flex-end; }
+            .responsible { font-size: 13px; font-weight: 700; color: #111827; }
+            @media print { body { padding: 0; background: #fff; } .page { border: none; border-radius: 0; padding: 0; } }
           </style>
-        </head> 
+        </head>
         <body>
           <div class="page">
             <div class="header">
               <div class="brand-block">
-                <img class="logo" src="/images/favicon.png" alt="Logo clinique" />
+                <img class="logo" src="${logoSrc}" alt="Logo clinique" />
                 <div>
                   <div class="document-title">Bon de rendu des résultats biomédicaux</div>
                   <div class="document-subtitle">D7 Clinique - Service de laboratoire</div>
@@ -395,12 +394,22 @@ export default function ActivityLab() {
               <div class="section-title">Informations patient</div>
               <table>
                 <tbody>
-                  <tr><td class="label">Nom complet</td><td>${patientName}</td></tr>
-                  <tr><td class="label">ID demande</td><td>${displayRequestIdForPrint}</td></tr>
-                  <tr><td class="label">Statut</td><td>${translatedRequestStatusForPrint}</td></tr>
-                  <tr><td class="label">Téléphone</td><td>${requestDetail.patient?.phone || "—"}</td></tr>
-                  <tr><td class="label">Email</td><td>${requestDetail.patient?.email || "—"}</td></tr>
-                  <tr><td class="label">Adresse</td><td>${requestDetail.patient?.address || "—"}</td></tr>
+                  <tr>
+                    <th class="label">Nom complet</th>
+                    <th class="label">ID demande</th>
+                    <th class="label">Statut</th>
+                    <th class="label">Téléphone</th>
+                    <th class="label">Email</th>
+                    <th class="label">Adresse</th>
+                  </tr>
+                  <tr>
+                    <td>${patientName}</td>
+                    <td>${displayRequestIdForPrint}</td>
+                    <td>${translatedRequestStatusForPrint}</td>
+                    <td>${requestDetail.patient?.phone || "—"}</td>
+                    <td>${requestDetail.patient?.email || "—"}</td>
+                    <td>${requestDetail.patient?.address || "—"}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -409,10 +418,18 @@ export default function ActivityLab() {
               <div class="section-title">Examen demandé</div>
               <table>
                 <tbody>
-                  <tr><td class="label">Examen</td><td>${examName}</td></tr>
-                  <tr><td class="label">Statut</td><td>${requestDetail.status || "—"}</td></tr>
-                  <tr><td class="label">Demandé le</td><td>${requestedAt}</td></tr>
-                  <tr><td class="label">Prescripteur</td><td>${requestDetail.consultation?.provider?.displayName || requestDetail.consultation?.provider?.firstName || "—"}</td></tr>
+                  <tr>
+                    <th class="label">Examen</th>
+                    <th class="label">Statut</th>
+                    <th class="label">Demandé le</th>
+                    <th class="label">Prescripteur</th>
+                  </tr>
+                  <tr>
+                    <td>${examName}</td>
+                    <td>${requestDetail.status || "—"}</td>
+                    <td>${requestedAt}</td>
+                    <td>${requestDetail.consultation?.provider?.displayName || requestDetail.consultation?.provider?.firstName || "—"}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -421,16 +438,24 @@ export default function ActivityLab() {
               <div class="section-title">Résultat</div>
               <table>
                 <tbody>
-                  <tr><td class="label">Nom de l'examen</td><td>${resultName}</td></tr>
-                  <tr><td class="label">Résultat</td><td>${resultValueWithUnit}</td></tr>
-                  <tr><td class="label">Valeur de référence</td><td>${formattedReferenceRange}</td></tr>
-                  <tr><td class="label">Interprétation</td><td>${interpretation}</td></tr>
+                  <tr>
+                    <th class="label">Nom du résultat</th>
+                    <th class="label">Résultat</th>
+                    <th class="label">Valeur de référence</th>
+                    <th class="label">Interprétation</th>
+                  </tr>
+                  <tr>
+                    <td>${resultName}</td>
+                    <td>${resultValueWithUnit}</td>
+                    <td>${formattedReferenceRange}</td>
+                    <td>${interpretation}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
 
             <div class="footer">
-              <div class="responsible" style="text-align: right; margin-top: 2cm;">Responsable laboratoire</div>
+              <div class="responsible">Responsable laboratoire</div>
             </div>
           </div>
         </body>
