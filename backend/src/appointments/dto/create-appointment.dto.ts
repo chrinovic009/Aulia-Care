@@ -16,7 +16,7 @@ export class CreateAppointmentDto {
 
   @IsString()
   @IsOptional()
-  recipientId?: string;
+  serviceId?: string;
 
   @IsDateString()
   @IsNotEmpty()

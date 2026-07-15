@@ -2,6 +2,7 @@ import {
   IsEmail,
   IsDateString,
   IsEnum,
+  IsBoolean,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -64,6 +65,8 @@ export class CreateUserDto {
   @IsOptional() @IsString() employeeNumber?: string;
   @IsOptional() @IsString() departmentId?: string;
   @IsOptional() @IsString() serviceUnitId?: string;
+  @IsOptional() @IsBoolean() isResponsible?: boolean;
+  @IsOptional() @IsBoolean() isDepartmentResponsible?: boolean;
   @IsOptional() @IsString() contractType?: string;
   @IsOptional() @IsNumber() salary?: number;
   @IsOptional() @IsString() salaryFrequency?: string;

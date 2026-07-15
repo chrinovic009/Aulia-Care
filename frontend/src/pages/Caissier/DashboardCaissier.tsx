@@ -211,11 +211,11 @@ const DashboardCaissier: React.FC = () => {
       {error && <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-5">
-        <Metric label="Total encaisse" value={`${fmt(totals.totalCollected)} USD`} />
-        <Metric label="Aujourd'hui" value={`${fmt(totals.totalCollectedToday)} USD`} hint={`${totals.paymentsTodayCount} paiement(s)`} />
+        <Metric label="Total encaisse" value={`${fmt(totals.totalCollected)} CDF`} />
+        <Metric label="Aujourd'hui" value={`${fmt(totals.totalCollectedToday)} CDF`} hint={`${totals.paymentsTodayCount} paiement(s)`} />
         <Metric label="En attente paiement" value={String(totals.pendingCount)} tone="orange" />
         <Metric label="Autorisations sortie" value={String(totals.validationCount)} tone="blue" />
-        <Metric label="Reste a recouvrer" value={`${fmt(totals.totalOutstanding)} USD`} tone="red" />
+        <Metric label="Reste a recouvrer" value={`${fmt(totals.totalOutstanding)} CDF`} tone="red" />
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
@@ -240,9 +240,9 @@ const DashboardCaissier: React.FC = () => {
                       <div className="mt-2 text-sm">
                         {patient.invoice ? (
                           <>
-                            <span className="font-semibold">Facture admission: {fmt(patient.invoice.totalAmount)} USD</span>
+                            <span className="font-semibold">Facture admission: {fmt(patient.invoice.totalAmount)} CDF</span>
                             <span className="ml-3 rounded bg-red-100 px-2 py-1 text-xs text-red-800">
-                              Reste: {fmt(patient.invoice.balanceDue)} USD
+                              Reste: {fmt(patient.invoice.balanceDue)} CDF
                             </span>
                           </>
                         ) : (
@@ -296,7 +296,7 @@ const DashboardCaissier: React.FC = () => {
                   <div className="text-xs text-gray-500">{payment.method} - {payment.reference || "-"}</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm font-medium">{fmt(payment.amount)} USD</div>
+                  <div className="text-sm font-medium">{fmt(payment.amount)} CDF</div>
                   <div className="text-xs text-gray-500">{new Date(payment.createdAt).toLocaleTimeString("fr-FR")}</div>
                 </div>
               </div>
@@ -319,9 +319,9 @@ const DashboardCaissier: React.FC = () => {
             </div>
 
             <div className="mb-4 grid gap-3 sm:grid-cols-3">
-              <Metric label="Total factures" value={`${fmt(billingSummary.totalAmount)} USD`} />
-              <Metric label="Total paye" value={`${fmt(billingSummary.totalPaid)} USD`} tone="green" />
-              <Metric label="Reste a payer" value={`${fmt(billingSummary.balanceDue)} USD`} tone="red" />
+              <Metric label="Total factures" value={`${fmt(billingSummary.totalAmount)} CDF`} />
+              <Metric label="Total paye" value={`${fmt(billingSummary.totalPaid)} CDF`} tone="green" />
+              <Metric label="Reste a payer" value={`${fmt(billingSummary.balanceDue)} CDF`} tone="red" />
             </div>
 
             <div className="overflow-auto rounded border">
@@ -339,9 +339,9 @@ const DashboardCaissier: React.FC = () => {
                   {billingSummary.invoices.map((invoice) => (
                     <tr key={invoice.id} className="border-t">
                       <td className="p-3">{invoice.type}</td>
-                      <td className="p-3 text-right">{fmt(invoice.totalAmount)} USD</td>
-                      <td className="p-3 text-right text-green-700">{fmt(invoice.paidAmount)} USD</td>
-                      <td className="p-3 text-right text-red-700">{fmt(invoice.balanceDue)} USD</td>
+                      <td className="p-3 text-right">{fmt(invoice.totalAmount)} CDF</td>
+                      <td className="p-3 text-right text-green-700">{fmt(invoice.paidAmount)} CDF</td>
+                      <td className="p-3 text-right text-red-700">{fmt(invoice.balanceDue)} CDF</td>
                       <td className="p-3">{invoice.status}</td>
                     </tr>
                   ))}
@@ -354,7 +354,7 @@ const DashboardCaissier: React.FC = () => {
               <div className="grid gap-3 md:grid-cols-[1fr_160px_1.5fr_auto]">
                 <select value={discountInvoiceId} onChange={(e) => setDiscountInvoiceId(e.target.value)} className="rounded border px-3 py-2 text-sm">
                   {billingSummary.invoices.map((invoice) => (
-                    <option key={invoice.id} value={invoice.id}>{invoice.type} - reste {fmt(invoice.balanceDue)} USD</option>
+                    <option key={invoice.id} value={invoice.id}>{invoice.type} - reste {fmt(invoice.balanceDue)} CDF</option>
                   ))}
                 </select>
                 <input value={discountAmount} onChange={(e) => setDiscountAmount(e.target.value)} placeholder="Montant" className="rounded border px-3 py-2 text-sm" />

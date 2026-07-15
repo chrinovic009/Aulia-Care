@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useLocation } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
+import { AlertTriangle, Mic, MicOff, PhoneCall, Sparkles } from "lucide-react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import {
@@ -9,6 +9,17 @@ import {
   formatDoctorPatientName,
   saveClinicalSections,
 } from "../../api/doctor";
+import { apiFetch, ApiError } from "../../config/api";
+import { useAuth } from "../../context/AuthContext";
+import { callPatientToWaitingRoom } from "../../utils/patientCall";
+
+// Petit hook utilitaire pour gérer l'état d'une modale
+function useModal(initialState = false) {
+  const [isOpen, setIsOpen] = useState(initialState);
+  const openModal = () => setIsOpen(true);
+  const closeModal = () => setIsOpen(false);
+  return { isOpen, openModal, closeModal };
+}
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "-";
@@ -39,26 +50,110 @@ const summarizeClinicalSummary = (value?: string | null, fallback?: string | nul
   }
 };
 
-const formatLabResultTextWithReference = (result: { resultName?: string | null; resultValue?: string | null; units?: string | null; referenceRange?: string | null }) => {
-  const valueLine = `${result.resultName || "Résultat"}: ${result.resultValue?.trim() || "Non renseigné"}${result.units ? ` ${result.units}` : ""}`;
-  const reference = result.referenceRange?.trim();
-  if (!reference) {
-    return valueLine;
+declare global {
+  interface Window {
+    SpeechRecognition?: any;
+    webkitSpeechRecognition?: any;
   }
-  const unitSuffix = result.units ? ` ${result.units}` : "";
-  return `${valueLine}\nRéférence: ${reference}${unitSuffix}`;
+}
+
+const normalizeVoiceText = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+const appendClinicalValue = (current: string, addition?: string) => {
+  const cleanAddition = String(addition || "").trim();
+  if (!cleanAddition) return current;
+  const parts = current.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.some((part) => normalizeVoiceText(part) === normalizeVoiceText(cleanAddition))) return current;
+  return [...parts, cleanAddition].join(", ");
+};
+
+const extractClinicalVoiceFields = (transcript: string) => {
+  const text = normalizeVoiceText(transcript);
+  const extracted: Partial<{
+    chiefComplaint: string;
+    onset: string;
+    painLocation: string;
+    intensity: string;
+    associatedSymptoms: string;
+    aggravatingFactors: string;
+  }> = {};
+
+  const onsetMatch = text.match(/depuis\s+([^.,;!?]+)/);
+  if (onsetMatch?.[1]) {
+    extracted.onset = onsetMatch[1].trim();
+  }
+
+  const painLocations: string[] = [];
+  if (text.includes("au-dessus de l'estomac") || text.includes("au dessus de l'estomac") || text.includes("epigastr") || text.includes("estomac")) {
+    painLocations.push("Zone epigastrique");
+  }
+  if (text.includes("dos")) {
+    painLocations.push("Irradiation dorsale");
+  }
+  if (text.includes("ventre") || text.includes("abdom")) {
+    painLocations.push("Region abdominale");
+  }
+  if (painLocations.length) {
+    extracted.painLocation = painLocations.join(", ");
+  }
+
+  if (text.includes("tres douloureux") || text.includes("tres douloureuse") || text.includes("forte douleur") || text.includes("insupportable")) {
+    extracted.intensity = "7-10";
+  } else if (text.includes("modere") || text.includes("supportable")) {
+    extracted.intensity = "4-6";
+  } else if (text.includes("leger") || text.includes("faible")) {
+    extracted.intensity = "1-3";
+  }
+
+  const symptoms: string[] = [];
+  if (text.includes("barre") && text.includes("doul")) symptoms.push("Douleur en barre");
+  if (text.includes("lance dans le dos") || text.includes("dos")) symptoms.push("Irradiation vers le dos");
+  if (text.includes("nausee")) symptoms.push("Nausees");
+  if (text.includes("vom")) symptoms.push("Vomissements");
+  if (text.includes("fievre")) symptoms.push("Fievre");
+  if (text.includes("fatigue")) symptoms.push("Fatigue");
+  if (symptoms.length) {
+    extracted.associatedSymptoms = symptoms.join(", ");
+  }
+
+  if (text.includes("soulage") || text.includes("aggrave")) {
+    extracted.aggravatingFactors = transcript.trim();
+  }
+
+  if (extracted.painLocation || extracted.associatedSymptoms) {
+    extracted.chiefComplaint = extracted.painLocation?.includes("epigastrique")
+      ? "Douleur epigastrique"
+      : "Douleur ou symptomes rapportes par le patient";
+  }
+
+  return extracted;
 };
 
 export default function DashboardMedecin() {
   const location = useLocation();
-  const isConsultationPage = location.pathname.includes("/doctor/consultations");
   const { currentUser } = useAuth();
+  const isConsultationPage = location.pathname.includes("/doctor/consultations");
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<DoctorPatient | null>(null);
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [conflictMedication, setConflictMedication] = useState<any | null>(null);
+  const [conflictMessage, setConflictMessage] = useState<string | null>(null);
+  const { isOpen: isConflictOpen, openModal: openConflictModal, closeModal: closeConflictModal } = useModal(false);
+  
+  const speechRecognitionRef = useRef<any>(null);
+  const speechFinalTextRef = useRef("");
+  const speechSilenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceMessage, setVoiceMessage] = useState<string | null>(null);
   const [clinicalForm, setClinicalForm] = useState({
     chiefComplaint: "",
     knownDiseases: "",
@@ -80,6 +175,7 @@ export default function DashboardMedecin() {
     treatmentPlan: "",
     followUp: "",
   });
+
   type ClinicalSummaryPayload = {
     medicalHistory?: {
       knownDiseases?: string;
@@ -146,6 +242,18 @@ export default function DashboardMedecin() {
       window.removeEventListener("d7:clinicalDataUpdated", handler);
       window.removeEventListener("d7:lab.request.created", handler);
       window.removeEventListener("d7:lab.result.created", handler);
+    };
+  }, []);
+
+  // Nettoyage de la reconnaissance vocale au démontage pour libérer le micro
+  useEffect(() => {
+    return () => {
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
+      }
+      if (speechSilenceTimerRef.current) {
+        clearTimeout(speechSilenceTimerRef.current);
+      }
     };
   }, []);
 
@@ -225,25 +333,88 @@ export default function DashboardMedecin() {
     await loadPatients();
   };
 
+  // 🟢 AJOUT DE LA MÉTHODE MANQUANTE : toggleVoiceAssistant
+  const toggleVoiceAssistant = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setVoiceMessage("La reconnaissance vocale n'est pas supportée par votre navigateur.");
+      return;
+    }
+
+    if (isVoiceListening) {
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
+      }
+      setIsVoiceListening(false);
+      setVoiceMessage("Assistance vocale désactivée.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "fr-FR";
+
+    speechFinalTextRef.current = "";
+    setVoiceTranscript("");
+    setVoiceMessage("Écoute active... Parlez naturellement.");
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = "";
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          speechFinalTextRef.current += event.results[i][0].transcript + " ";
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+
+      const fullTranscript = (speechFinalTextRef.current + interimTranscript).trim();
+      setVoiceTranscript(fullTranscript);
+
+      const fields = extractClinicalVoiceFields(fullTranscript);
+      setClinicalForm((current) => ({
+        ...current,
+        chiefComplaint: fields.chiefComplaint ? appendClinicalValue(current.chiefComplaint, fields.chiefComplaint) : current.chiefComplaint,
+        onset: fields.onset || current.onset,
+        painLocation: fields.painLocation ? appendClinicalValue(current.painLocation, fields.painLocation) : current.painLocation,
+        intensity: fields.intensity || current.intensity,
+        associatedSymptoms: fields.associatedSymptoms ? appendClinicalValue(current.associatedSymptoms, fields.associatedSymptoms) : current.associatedSymptoms,
+        aggravatingFactors: fields.aggravatingFactors ? appendClinicalValue(current.aggravatingFactors, fields.aggravatingFactors) : current.aggravatingFactors,
+      }));
+
+      if (speechSilenceTimerRef.current) {
+        clearTimeout(speechSilenceTimerRef.current);
+      }
+      speechSilenceTimerRef.current = setTimeout(() => {
+        setVoiceMessage("Écoute en arrière-plan (silence temporaire)...");
+      }, 3000);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Erreur d'assistance vocale :", event.error);
+      setVoiceMessage(`Erreur : ${event.error}`);
+      setIsVoiceListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsVoiceListening(false);
+      setVoiceMessage("Microphone désactivé.");
+    };
+
+    speechRecognitionRef.current = recognition;
+    recognition.start();
+    setIsVoiceListening(true);
+  };
+
   const findFrenchVoice = (voices: SpeechSynthesisVoice[]) => {
     const normalized = (voice: SpeechSynthesisVoice) => `${voice.lang || ''} ${voice.name || ''}`.toLowerCase();
     const femalePatterns = [
-      'female',
-      'femme',
-      'française',
-      'francais',
-      'français',
-      'amelie',
-      'marie',
-      'julie',
-      'celine',
-      'sylvie',
-      'valerie',
-      'lea',
-      'lucie',
-      'dominique',
+      'female', 'femme', 'française', 'francais', 'français',
+      'amelie', 'marie', 'julie', 'celine', 'sylvie',
+      'valerie', 'lea', 'lucie', 'dominique'
     ];
-
     const frenchVoices = voices.filter(
       (voice) =>
         voice.lang?.toLowerCase().startsWith('fr') ||
@@ -251,7 +422,6 @@ export default function DashboardMedecin() {
         voice.name?.toLowerCase().includes('français') ||
         voice.name?.toLowerCase().includes('francais'),
     );
-
     return (
       frenchVoices.find((voice) => femalePatterns.some((pattern) => normalized(voice).includes(pattern))) ||
       frenchVoices[0] ||
@@ -263,8 +433,6 @@ export default function DashboardMedecin() {
   const callPatient = (patient: DoctorPatient) => {
     const doctorName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'le médecin';
     const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, le docteur ${doctorName} vous attend au cabinet. Veuillez vous présenter immédiatement.`;
-
-
     if ('speechSynthesis' in window) {
       const speakWithVoice = (voices: SpeechSynthesisVoice[]) => {
         const frenchVoice = findFrenchVoice(voices);
@@ -278,7 +446,6 @@ export default function DashboardMedecin() {
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utter);
       };
-
       const voices = window.speechSynthesis.getVoices() || [];
       if (voices.length > 0) {
         speakWithVoice(voices);
@@ -420,6 +587,37 @@ export default function DashboardMedecin() {
               {isConsultationPage ? (
               <div className="mt-6">
                 <Panel title="Consultation medicale">
+                  <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 dark:border-blue-900/60 dark:bg-blue-950/30">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="flex items-center gap-2 text-sm font-semibold text-blue-900 dark:text-blue-100">
+                          <Sparkles size={16} /> Assistance vocale clinique
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-blue-700 dark:text-blue-200">
+                          Capture l'echange medecin-patient, transcrit localement via le navigateur et pre-remplit les champs detectes.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={toggleVoiceAssistant}
+                        className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                          isVoiceListening
+                            ? "bg-red-600 text-white hover:bg-red-700"
+                            : "bg-blue-600 text-white hover:bg-blue-700"
+                        }`}
+                      >
+                        {isVoiceListening ? <MicOff size={16} /> : <Mic size={16} />}
+                        {isVoiceListening ? "Desactiver" : "Activer l'assistance vocale"}
+                      </button>
+                    </div>
+                    {voiceMessage && <p className="mt-3 text-xs font-medium text-blue-800 dark:text-blue-100">{voiceMessage}</p>}
+                    {voiceTranscript && (
+                      <div className="mt-3 max-h-28 overflow-y-auto rounded-lg border border-blue-100 bg-white p-3 text-xs leading-5 text-slate-700 dark:border-blue-900/60 dark:bg-slate-950 dark:text-slate-200">
+                        {voiceTranscript}
+                      </div>
+                    )}
+                  </div>
+
                   <FormInput label="Motif de consultation" value={clinicalForm.chiefComplaint} onChange={(value) => setClinicalForm((current) => ({ ...current, chiefComplaint: value }))} />
 
                   <SectionBox title="Antecedents medicaux">
@@ -496,7 +694,7 @@ export default function DashboardMedecin() {
                     <Empty />
                   ) : (
                     selectedPatient.prescriptions?.map((prescription) => (
-                      <Item key={prescription.id} title={prescription.status} subtitle={formatDateTime(prescription.prescribingDate)} text={prescription.instruction || prescription.lineItems?.map((line) => [line.dosage, line.frequency, line.notes].filter(Boolean).join(" - ")).join(", ") || "Prescription sans detail."} />
+                      <Item key={prescription.id} title={prescription.status} subtitle={formatDateTime(prescription.prescribingDate)} text={prescription.instruction || prescription.lineItems?.map((line: any) => [line.dosage, line.frequency, line.notes].filter(Boolean).join(" - ")).join(", ") || "Prescription sans detail."} />
                     ))
                   )}
                 </Panel>
@@ -513,7 +711,7 @@ export default function DashboardMedecin() {
                         text={
                           request.results?.length
                             ? request.results
-                                .map((result) => formatLabResultTextWithReference(result))
+                                .map((result: any) => formatLabResultTextWithReference(result))
                                 .join("\n")
                             : "Resultat en attente."
                         }
@@ -536,7 +734,6 @@ export default function DashboardMedecin() {
           )}
         </section>
       </div>
-
     </div>
   );
 }
@@ -710,4 +907,14 @@ function FormSelect({
 
 function Empty() {
   return <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-500 dark:bg-slate-950">Aucune donnee disponible.</p>;
+}
+
+// 🟢 AJOUT DE LA MÉTHODE MANQUANTE : formatLabResultTextWithReference (évite le plantage sur l'onglet Labo)
+function formatLabResultTextWithReference(result: any) {
+  if (!result) return "";
+  const name = result.analyteName || result.name || "Test";
+  const val = result.value !== undefined ? result.value : "";
+  const unit = result.unit ? ` ${result.unit}` : "";
+  const range = result.referenceRange ? ` (Norme: ${result.referenceRange})` : "";
+  return `${name}: ${val}${unit}${range}`;
 }

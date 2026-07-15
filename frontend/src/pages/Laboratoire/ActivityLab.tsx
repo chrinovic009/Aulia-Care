@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, Beaker, ClipboardList, Layers, ToggleLeft, Users, X } from "lucide-react";
 import { AdminPageShell, Panel, StatCard, DataTable, formatDate } from "../Administration/adminUi";
-import { fetchLaboratoryActivity, fetchLaboratoryRequestDetail, LabActivityPayload, submitLaboratoryResult, updateDirectResultAuthorization } from "../../api/laboratory";
+import { 
+  fetchLaboratoryActivity, 
+  fetchLaboratoryRequest, 
+  LabActivityPayload, 
+  updateLaboratorySettings ,
+  apiFetch
+} from "../../api/laboratory";
 import { fetchPatientsFromDatabase, type PatientRecord } from "../../api/reception";
 import { useAuth } from "../../context/AuthContext";
 
@@ -177,14 +183,14 @@ export default function ActivityLab() {
     setIsDetailLoading(true);
     setSelectedRequest(requestId);
     try {
-      const detail = await fetchLaboratoryRequestDetail(requestId);
-      setRequestDetail(detail);
-      const firstItem = detail?.items?.[0];
+      const detail = await fetchLaboratoryRequest(requestId);
+      setRequestDetail(detail as unknown as LabRequestDetail);
+      const firstItem = detail?.results?.[0];
       setResultForm({
-        resultName: firstItem?.labTest?.name || "",
-        resultValue: firstItem?.results?.[0]?.resultValue || "",
-        referenceRange: firstItem?.labTest?.referenceRange || firstItem?.results?.[0]?.referenceRange || "",
-        interpretation: firstItem?.results?.[0]?.interpretation || "",
+        resultName: firstItem?.resultName || "",
+        resultValue: firstItem?.resultValue || "",
+        referenceRange: "",
+        interpretation: firstItem?.interpretation || "",
       });
       setShowSendChoice(false);
       setDeliveryMode("validation");
@@ -210,11 +216,16 @@ export default function ActivityLab() {
 
     setIsSubmittingResult(true);
     try {
-      await submitLaboratoryResult(selectedRequest, {
-        ...resultForm,
-        labRequestItemId: currentItem?.id || null,
-        deliveryMode: isItemAssigned ? deliveryMode : undefined,
+      // Utilisation directe d'apiFetch vers ton endpoint pour soumettre le résultat
+      await apiFetch(`/laboratory/requests/${selectedRequest}/results`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...resultForm,
+          labRequestItemId: currentItem?.id || null,
+          deliveryMode: isItemAssigned ? deliveryMode : undefined,
+        })
       });
+
       setShowSendChoice(false);
       setRequestDetail(null);
       setSelectedRequest(null);
@@ -253,8 +264,11 @@ export default function ActivityLab() {
 
     setIsSavingAuthorization(true);
     try {
-      const response = await updateDirectResultAuthorization(!directResultAuthorizationEnabled);
-      setDirectResultAuthorizationEnabled(Boolean(response.enabled));
+      // Utilisation de la fonction updateLaboratorySettings déclarée dans laboratory.ts
+      await updateLaboratorySettings({
+        technicianDirectRelease: !directResultAuthorizationEnabled
+      });
+      setDirectResultAuthorizationEnabled(!directResultAuthorizationEnabled);
       await loadActivity();
     } catch (error) {
       console.error("Impossible de mettre à jour l'autorisation d'envoi direct", error);
@@ -386,7 +400,6 @@ export default function ActivityLab() {
               <div class="responsible">Responsable laboratoire</div>
             </div>
           </div>
-
         </body>
       </html>
     `;
@@ -415,34 +428,6 @@ export default function ActivityLab() {
         </button>
       }
     >
-      <section className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-              <ToggleLeft size={18} className="text-emerald-700" />
-              Envoi direct des résultats
-            </p>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-              {isLabManager
-                ? ""
-                : "Activez ce réglage pour autoriser les techniciens actifs selon leur shift à envoyer directement les résultats au patient ou au médecin."}
-            </p>
-          </div>
-          <label className="inline-flex cursor-pointer items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600"
-              checked={directResultAuthorizationEnabled}
-              onChange={handleAuthorizationToggle}
-              disabled={!isLabManager || isSavingAuthorization}
-            />
-            <span>{directResultAuthorizationEnabled ? "Autorisation activée" : "Autorisation désactivée"}</span>
-          </label>
-        </div>
-        <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-          Si l’option est désactivée, les techniciens transmettent d’abord le résultat au responsable pour validation avant envoi.
-        </p>
-      </section>
 
       <section className="grid gap-4 xl:grid-cols-3">
         <StatCard icon={<ClipboardList size={20} />} label="Demandes totales" value={activity?.totalRequests ?? "–"} tone="blue" />

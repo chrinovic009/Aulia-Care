@@ -124,6 +124,6 @@ export function formatDate(value?: string | null) {
   return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-export function formatMoney(value: number | string | null | undefined, currency = "USD") {
+export function formatMoney(value: number | string | null | undefined, currency = "CDF") {
   return `${Number(value || 0).toLocaleString("fr-FR")} ${currency}`;
 }

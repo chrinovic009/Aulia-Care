@@ -309,6 +309,15 @@ function formatHistoryDetails(kind: string | undefined, details?: string | null)
       ].join("\n");
     }
 
+    if (kind === "NOUVELLE_VISITE") {
+      return [
+        `Service oriente: ${parsed.serviceName || "-"}`,
+        `Date prevue: ${parsed.scheduledAt ? new Date(parsed.scheduledAt).toLocaleString("fr-FR") : "-"}`,
+        `Motif: ${parsed.reason || "-"}`,
+        `Statut parcours: ${parsed.workflowStatus || "-"}`,
+      ].join("\n");
+    }
+
     return Object.entries(parsed)
       .filter(([, value]) => value !== null && value !== "" && value !== undefined)
       .map(([key, value]) => `${humanizeKey(key)}: ${formatObjectValue(value)}`)

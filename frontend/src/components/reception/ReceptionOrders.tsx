@@ -51,7 +51,7 @@ const mapPatientToReceptionRecord = (patient: PatientRecord, index: number): Rec
       : (patient as any).service?.name;
   const statusSummary =
     workflowStatus === "EN_ATTENTE_DE_PAIEMENT"
-      ? `Paiement en attente - ${patient.amountDue ?? 20} USD`
+      ? `Paiement en attente - ${patient.amountDue ?? 20} CDF`
       : workflowStatus === "EN_ATTENTE_INFIRMERIE"
       ? "Attente infirmerie"
       : workflowStatus === "EN_ATTENTE_VALIDATION_CAISSE"

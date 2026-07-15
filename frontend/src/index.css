@@ -191,6 +191,41 @@
   }
 }
 
+@layer components {
+  .d7-scrollable-modal {
+    @apply max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain;
+  }
+
+  .d7-responsive-page {
+    @apply min-h-screen px-3 py-4 sm:px-6 lg:px-8;
+  }
+}
+
+@media (max-width: 640px) {
+  .fixed.inset-0[class*="z-50"],
+  .fixed.inset-0[class*="z-[60]"],
+  .fixed.inset-0[class*="z-99999"] {
+    align-items: flex-start !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    padding: 0.75rem !important;
+  }
+
+  .fixed.inset-0[class*="z-50"] > div:not([class*="fixed"]),
+  .fixed.inset-0[class*="z-[60]"] > div:not([class*="fixed"]),
+  .fixed.inset-0[class*="z-99999"] > div:not([class*="fixed"]) {
+    max-height: calc(100dvh - 1.5rem);
+    width: 100%;
+    overflow-y: auto;
+  }
+
+  .fixed.inset-0[class*="z-50"] aside,
+  .fixed.inset-0[class*="z-[60]"] aside {
+    max-height: 100dvh;
+    overflow-y: auto;
+  }
+}
+
 @layer utilities {
   .menu-item {
     @apply relative flex items-center w-full gap-3 px-3 py-2 font-medium rounded-lg text-sm;

@@ -25,6 +25,7 @@ type RoleSlug =
   | "PHYSICIAN"
   | "PHARMACIST"
   | "LAB_TECHNICIAN"
+  | "LAB_MANAGER"
   | "RADIOLOGIST"
   | "SURGEON"
   | "ANESTHESIOLOGIST"
@@ -99,6 +100,7 @@ const roleFilters: Array<{ key: string; label: string }> = [
   { key: "CASHIER", label: "Caissiers" },
   { key: "PHARMACIST", label: "Pharmaciens" },
   { key: "LAB_TECHNICIAN", label: "Laborantins" },
+  { key: "LAB_MANAGER", label: "Responsables labo" },
   { key: "RADIOLOGIST", label: "Radiologues" },
   { key: "SURGEON", label: "Chirurgiens" },
   { key: "ANESTHESIOLOGIST", label: "Anesthesistes" },
@@ -304,6 +306,8 @@ export default function GestionPersAdmin() {
         email: form.email || `${form.firstName}${form.lastName}@gmail.com`.toLowerCase(),
         password: form.password || undefined,
         primaryRole: form.primaryRole,
+        isResponsible: form.isResponsible,
+        isDepartmentResponsible: form.isResponsible,
         phone: form.phone || undefined,
         status: form.status,
         specialty: form.specialty || undefined,
@@ -808,6 +812,8 @@ function roleLabel(user: AdminUser) {
       return gender === "F" ? "Pharmacienne" : "Pharmacien";
     case "LAB_TECHNICIAN":
       return "Laborantin";
+    case "LAB_MANAGER":
+      return "Responsable laboratoire";
     case "RADIOLOGIST":
       return "Radiologue";
     case "SURGEON":
@@ -831,6 +837,14 @@ function buildUsername(firstName: string, lastName: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z0-9_]/g, "")
     .toLowerCase();
+}
+
+function normalizeText(value?: string | null) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 function generatePassword(role: RoleSlug, firstName: string, lastName: string, position: number) {
