@@ -183,7 +183,7 @@ export default function ExamensMedecin() {
                         label="Examen du catalogue laboratoire"
                         value={form.labTestId}
                         onChange={(value) => setForm((current) => ({ ...current, labTestId: value, examName: labTests.find((test) => test.id === value)?.name || current.examName }))}
-                        options={[["", "Choisir un examen"], ...labTests.map((test) => [test.id, `${test.name} - ${Number(test.price || 0).toLocaleString("fr-FR")} USD - ${test.turnaroundTimeMinutes || "-"} min`] as [string, string])]}
+                        options={[["", "Choisir un examen"], ...labTests.map((test) => [test.id, `${test.name} - ${Number(test.price || 0).toLocaleString("fr-FR")} CDF - ${test.turnaroundTimeMinutes || "-"} min`] as [string, string])]}
                       />
                     ) : (
                       <Select
@@ -195,7 +195,7 @@ export default function ExamensMedecin() {
                     )}
                     {selectedLabTest ? (
                       <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
-                        Section: {selectedLabTest.section?.name || "-"} | Categorie: {selectedLabTest.category?.name || "-"} | Prix: {Number(selectedLabTest.price || 0).toLocaleString("fr-FR")} FC | Delai: {selectedLabTest.turnaroundTimeMinutes || "-"} min
+                        Section: {selectedLabTest.section?.name || "-"} | Categorie: {selectedLabTest.category?.name || "-"} | Prix: {Number(selectedLabTest.price || 0).toLocaleString("fr-FR")} CDF | Delai: {selectedLabTest.turnaroundTimeMinutes || "-"} min
                         {selectedLabTest.unit ? ` | Unité: ${selectedLabTest.unit}` : ""}
                         {selectedLabTest.referenceRange ? ` | Référence: ${selectedLabTest.referenceRange}` : ""}
                       </div>
