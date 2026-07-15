@@ -9,6 +9,7 @@ interface InvoiceDetail {
   patientName: string;
   patientPhone?: string;
   patientEmail?: string;
+  patientWorkflowStatus?: string | null;
   invoiceNumber?: string;
   type: string;
   status: string;
@@ -24,8 +25,103 @@ interface InvoiceDetail {
     paidAt: string;
     reference?: string;
   }>;
+  invoiceLines?: Array<{
+    id: string;
+    label: string;
+    quantity: number;
+    unitPrice: number;
+    totalAmount: number;
+  }>;
   createdAt: string;
 }
+
+interface VisitSummary {
+  patientId: string;
+  patientName: string;
+  patientPhone?: string;
+  patientEmail?: string;
+  patientWorkflowStatus?: string | null;
+  invoices: InvoiceDetail[];
+  totalAmount: number;
+  paidAmount: number;
+  balanceDue: number;
+  status: string;
+}
+
+const normalizeInvoiceText = (value?: string | null) =>
+  (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+const buildFrenchVisitDescription = (invoice: InvoiceDetail) => {
+  const lines = (invoice.invoiceLines || []).map((line) => line.label).filter(Boolean);
+  if (lines.length > 0) {
+    return lines
+      .map((line) => {
+        const label = normalizeInvoiceText(line);
+        const lower = label.toLowerCase();
+
+        if (lower.includes("laboratoire") || lower.includes("examen laboratoire") || lower.includes("analyse")) {
+          const detail = label.replace(/^.*?(laboratoire|examen laboratoire|analyse)[\s:-]*/i, "").trim();
+          if (!detail) {
+            return "Laboratoire||Examen de laboratoire";
+          }
+          if (lower.includes("hematologie") || lower.includes("hématologie")) {
+            return "Laboratoire||Examen d'hématologie";
+          }
+          if (lower.includes("glucose")) {
+            return `Laboratoire||${detail}`;
+          }
+          return `Laboratoire||${detail}`;
+        }
+
+        if (lower.includes("quinine")) {
+          return "Pharmacie||Quinine 300 mg";
+        }
+        if (lower.includes("amoxicilline") || lower.includes("antibiotique") || lower.includes("medicament") || lower.includes("pharmacie")) {
+          return `Pharmacie||${label}`;
+        }
+
+        if (lower.includes("consultation") || lower.includes("medecin")) {
+          return "Consultation||Consultation médicale";
+        }
+
+        if (lower.includes("imagerie") || lower.includes("radiologie") || lower.includes("radio")) {
+          return "Imagerie||Examen d'imagerie";
+        }
+
+        if (lower.includes("admission") || lower.includes("hospitalisation")) {
+          return "Admission||Frais d'admission";
+        }
+
+        return `Service médical||${label}`;
+      })
+      .join("||");
+  }
+
+  const normalizedType = normalizeInvoiceText(invoice.type).toLowerCase();
+  const normalizedRemarks = normalizeInvoiceText(invoice.remarks).toLowerCase();
+
+  if (normalizedType.includes("laboratoire") || normalizedRemarks.includes("laboratoire") || normalizedType.includes("lab")) {
+    if (normalizedRemarks.includes("hematologie")) {
+      return "Laboratoire||Examen d'hématologie";
+    }
+    if (normalizedRemarks.includes("biochimie") || normalizedRemarks.includes("chimie")) {
+      return "Laboratoire||Analyse biochimique";
+    }
+    return "Laboratoire||Examen de laboratoire";
+  }
+
+  if (normalizedType.includes("pharm") || normalizedRemarks.includes("pharmacie") || normalizedRemarks.includes("medicament")) {
+    if (normalizedRemarks.includes("quinine")) {
+      return "Pharmacie||Quinine 300 mg";
+    }
+    return "Pharmacie||Médicament";
+  }
+
+  return "Service médical||Prestation clinique";
+};
 
 const FacturationCaissier: React.FC = () => {
   const [invoices, setInvoices] = useState<InvoiceDetail[]>([]);
@@ -35,6 +131,7 @@ const FacturationCaissier: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<"ALL" | "PENDING" | "PAID" | "PARTIALLY_PAID">("ALL");
   const [printingInvoice, setPrintingInvoice] = useState<InvoiceDetail | null>(null);
   const [printingInvoicePosition, setPrintingInvoicePosition] = useState<number | undefined>(undefined);
+  const [printingVisit, setPrintingVisit] = useState<VisitSummary | null>(null);
 
   const load = async () => {
     try {
@@ -97,15 +194,59 @@ const FacturationCaissier: React.FC = () => {
     };
   }, [invoices]);
 
+  const visitSummaries = useMemo<VisitSummary[]>(() => {
+    const grouped = new Map<string, VisitSummary>();
+
+    invoices.forEach((invoice) => {
+      const existing = grouped.get(invoice.patientId);
+      const paidAmount = (invoice.payments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      const balanceDue = Math.max(Number(invoice.totalAmount || 0) - paidAmount, 0);
+      const status = balanceDue <= 0 ? "PAID" : paidAmount > 0 ? "PARTIALLY_PAID" : "PENDING";
+
+      if (existing) {
+        existing.invoices.push(invoice);
+        existing.totalAmount += Number(invoice.totalAmount || 0);
+        existing.paidAmount += paidAmount;
+        existing.balanceDue += balanceDue;
+        existing.status = existing.balanceDue > 0 ? (existing.paidAmount > 0 ? "PARTIALLY_PAID" : "PENDING") : "PAID";
+      } else {
+        grouped.set(invoice.patientId, {
+          patientId: invoice.patientId,
+          patientName: invoice.patientName,
+          patientPhone: invoice.patientPhone,
+          patientEmail: invoice.patientEmail,
+          patientWorkflowStatus: invoice.patientWorkflowStatus,
+          invoices: [invoice],
+          totalAmount: Number(invoice.totalAmount || 0),
+          paidAmount,
+          balanceDue,
+          status,
+        });
+      }
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [invoices]);
+
   const handlePrintInvoice = (invoice: InvoiceDetail) => {
     const index = filtered.findIndex((item) => item.id === invoice.id);
     setPrintingInvoicePosition(index >= 0 ? index + 1 : undefined);
     setPrintingInvoice(invoice);
-    // Open print dialog after component renders
+    setPrintingVisit(null);
     setTimeout(() => {
       window.print();
       setPrintingInvoice(null);
       setPrintingInvoicePosition(undefined);
+    }, 150);
+  };
+
+  const handlePrintVisit = (visit: VisitSummary) => {
+    setPrintingVisit(visit);
+    setPrintingInvoice(null);
+    setPrintingInvoicePosition(undefined);
+    setTimeout(() => {
+      window.print();
+      setPrintingVisit(null);
     }, 150);
   };
 
@@ -269,13 +410,23 @@ const FacturationCaissier: React.FC = () => {
                   </td>
                   <td className="p-3 text-sm">{new Date(inv.issuedAt).toLocaleDateString("fr-FR")}</td>
                   <td className="p-3 text-center">
+                  <div className="flex items-center justify-center gap-2">
                     <button
                       onClick={() => handlePrintInvoice(inv)}
                       className="px-3 py-1 bg-slate-900 text-white rounded text-xs hover:bg-slate-800"
                     >
-                      Imprimer
+                      Imprimer facture
                     </button>
-                  </td>
+                    {visitSummaries.find((visit) => visit.patientId === inv.patientId)?.patientWorkflowStatus !== "TERMINE" && (
+                      <button
+                        onClick={() => handlePrintVisit(visitSummaries.find((visit) => visit.patientId === inv.patientId)!)}
+                        className="px-3 py-1 bg-emerald-600 text-white rounded text-xs hover:bg-emerald-700"
+                      >
+                        Imprimer visite
+                      </button>
+                    )}
+                  </div>
+                </td>
                 </tr>
                 );
               })
@@ -302,6 +453,39 @@ const FacturationCaissier: React.FC = () => {
           remarks={printingInvoice.remarks}
           invoiceId={printingInvoice.id}
           invoicePosition={printingInvoicePosition}
+        />
+      )}
+      {printingVisit && (
+        <InvoicePrintTemplate
+          patientName={printingVisit.patientName}
+          patientPhone={printingVisit.patientPhone}
+          patientEmail={printingVisit.patientEmail}
+          invoiceType="SYNTHESE_VISITE"
+          totalAmount={printingVisit.totalAmount}
+          balanceDue={printingVisit.balanceDue}
+          status={printingVisit.status}
+          issuedAt={new Date().toISOString()}
+          dueDate={new Date().toISOString()}
+          invoiceId={printingVisit.patientId}
+          invoicePosition={1}
+          visitItems={printingVisit.invoices.map((invoice) => {
+            const paidAmount = (invoice.payments || []).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+            const balanceDue = Math.max(Number(invoice.totalAmount || 0) - paidAmount, 0);
+            const itemStatus = balanceDue <= 0 ? "PAID" : paidAmount > 0 ? "PARTIALLY_PAID" : "PENDING";
+            return {
+              description: buildFrenchVisitDescription(invoice),
+              amount: Number(invoice.totalAmount || 0),
+              paidAmount,
+              balanceDue,
+              status: itemStatus,
+              issuedAt: invoice.issuedAt,
+              invoiceNumber: invoice.invoiceNumber,
+            };
+          })}
+          visitTotalAmount={printingVisit.totalAmount}
+          visitPaidAmount={printingVisit.paidAmount}
+          visitBalanceDue={printingVisit.balanceDue}
+          visitWorkflowStatus={printingVisit.patientWorkflowStatus}
         />
       )}
     </div>

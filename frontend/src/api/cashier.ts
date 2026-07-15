@@ -28,6 +28,7 @@ export interface InvoiceDetail {
   patientId: string;
   patientName: string;
   patientCompany?: string | null;
+  patientWorkflowStatus?: string | null;
   invoiceNumber?: string;
   type: string;
   status: string;
@@ -42,6 +43,13 @@ export interface InvoiceDetail {
     method: string;
     paidAt: string;
     reference?: string;
+  }>;
+  invoiceLines?: Array<{
+    id: string;
+    label: string;
+    quantity: number;
+    unitPrice: number;
+    totalAmount: number;
   }>;
   createdAt: string;
 }
