@@ -366,15 +366,15 @@ export default function ActivityLab() {
             .meta-block { font-size: 12px; color: #4b5563; text-align: left; }
             .section { margin-bottom: 18px; }
             .section-title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #111827; margin-bottom: 8px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 12px; }
             td { border: 1px solid #d1d5db; padding: 8px 10px; vertical-align: top; }
             .label { width: 32%; font-weight: 700; background: #f9fafb; }
             .footer { margin-top: 24px; font-size: 11px; color: #6b7280; border-top: 1px solid #d1d5db; padding-top: 10px; }
             .signature-section { margin-top: 32px; display: flex; justify-content: space-between; gap: 24px; }
-            .signature-line { border-top: 1px solid #111827; margin-top: 50px; width: 260px; }
+            .signature-line { border-top: 1px solid #111827; margin-top: 10px; width: 260px; }
             @media print { body { padding: 0; } .page { padding: 18mm; } }
           </style>
-        </head>
+        </head> 
         <body>
           <div class="page">
             <div class="header">
@@ -421,7 +421,7 @@ export default function ActivityLab() {
               <div class="section-title">Résultat</div>
               <table>
                 <tbody>
-                  <tr><td class="label">Nom du résultat</td><td>${resultName}</td></tr>
+                  <tr><td class="label">Nom de l'examen</td><td>${resultName}</td></tr>
                   <tr><td class="label">Résultat</td><td>${resultValueWithUnit}</td></tr>
                   <tr><td class="label">Valeur de référence</td><td>${formattedReferenceRange}</td></tr>
                   <tr><td class="label">Interprétation</td><td>${interpretation}</td></tr>
@@ -430,7 +430,7 @@ export default function ActivityLab() {
             </div>
 
             <div class="footer">
-              <div class="responsible">Responsable laboratoire</div>
+              <div class="responsible" style="text-align: right; margin-top: 2cm;">Responsable laboratoire</div>
             </div>
           </div>
         </body>
