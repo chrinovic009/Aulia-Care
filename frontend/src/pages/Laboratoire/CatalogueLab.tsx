@@ -298,7 +298,7 @@ export default function CatalogueLab() {
       await createLabSection({
         name: sectionForm.name,
         description: sectionForm.description || undefined,
-        order: sectionForm.order !== '' ? Number(sectionForm.order) : undefined,
+        order: sectionForm.order !== '' ? String(sectionForm.order) : undefined,
         active: sectionForm.active,
       });
       setSectionForm({ name: '', description: '', order: '0', active: true });
@@ -326,7 +326,7 @@ export default function CatalogueLab() {
         name: categoryForm.name,
         code: categoryForm.code || undefined,
         description: categoryForm.description || undefined,
-        order: categoryForm.order !== '' ? Number(categoryForm.order) : undefined,
+        order: categoryForm.order !== '' ? String(categoryForm.order) : undefined,
         active: categoryForm.active,
       });
       setCategoryForm({ sectionId: '', name: '', code: '', description: '', order: '0', active: true });
@@ -394,7 +394,7 @@ export default function CatalogueLab() {
         referenceRange: parameterForm.referenceRange || undefined,
         minValue: parameterForm.minValue || undefined,
         maxValue: parameterForm.maxValue || undefined,
-        order: parameterForm.order !== '' ? Number(parameterForm.order) : undefined,
+        order: parameterForm.order !== '' ? String(parameterForm.order) : undefined,
         active: parameterForm.active,
       });
       setParameterForm({ labTestId: '', code: '', name: '', unit: '', resultType: 'NUMERIC', referenceRange: '', minValue: '', maxValue: '', order: '0', active: true });
@@ -423,6 +423,7 @@ export default function CatalogueLab() {
     try {
       await createLabSampleType({
         name: sampleTypeForm.name,
+        labTestId: sampleTypeForm.labTestId || undefined,
         description: sampleTypeForm.description || undefined,
         active: sampleTypeForm.active,
       });

@@ -137,6 +137,7 @@ export class LaboratoryService {
               },
             },
             assignedTo: true,
+            samples: { include: { labSampleType: true } },
             results: { include: { parameters: { include: { labTestParameter: true } }, reportedBy: true } },
           },
         },
@@ -165,6 +166,7 @@ export class LaboratoryService {
               },
             },
             assignedTo: true,
+            samples: { include: { labSampleType: true } },
             results: { include: { parameters: { include: { labTestParameter: true } }, reportedBy: true } },
           },
         },
@@ -934,7 +936,11 @@ export class LaboratoryService {
         events: { orderBy: { createdAt: 'desc' }, take: 5 },
       },
       orderBy: { requestedAt: 'desc' },
-    })).filter((item: any) => visibleRequestIds.has(item.labRequestId));
+    })).filter((item: any) => visibleRequestIds.has(item.labRequestId))
+      .filter((item: any) => {
+        const hasValidatedResult = (item.results || []).some((result: any) => ['TECHNICAL_VALIDATED', 'BIOLOGICALLY_VALIDATED', 'VERIFIED', 'AVAILABLE', 'SENT', 'COMPLETED'].includes((result.resultStatus || '').toUpperCase()));
+        return !hasValidatedResult;
+      });
 
     return {
       technicians: technicians.sort((a, b) => b.workload.pending - a.workload.pending),
@@ -1201,14 +1207,25 @@ export class LaboratoryService {
     });
   }
 
-  async createSampleType(dto: { name: string; description?: string; active?: boolean }) {
-    return this.prisma.labSampleType.create({
+  async createSampleType(dto: { name: string; labTestId?: string; description?: string; active?: boolean }) {
+    const createdSampleType = await this.prisma.labSampleType.create({
       data: {
         name: dto.name.trim(),
         description: dto.description?.trim() || undefined,
         active: dto.active ?? true,
       },
     });
+
+    if (dto.labTestId) {
+      await this.prisma.labTestSampleRequirement.create({
+        data: {
+          labTestId: dto.labTestId,
+          labSampleTypeId: createdSampleType.id,
+        },
+      });
+    }
+
+    return createdSampleType;
   }
 
   async createSampleRequirement(dto: {

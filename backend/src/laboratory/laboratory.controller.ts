@@ -162,7 +162,7 @@ export class LaboratoryController {
     return this.laboratoryService.setDirectResultAuthorization(Boolean(body?.enabled), req.user?.userId);
   }
 
-  @Post(':id/results')
+  @Post('requests/:id/results')
   @Roles('SUPER_ADMIN', 'LAB_TECHNICIAN', 'LAB_MANAGER')
   addResult(@Param('id') id: string, @Body() body: any, @Request() req: any) {
     return this.laboratoryService.addResult(id, body, req.user?.userId);
