@@ -7,6 +7,10 @@ export class CreateLabSampleTypeDto {
 
   @IsOptional()
   @IsString()
+  labTestId?: string;
+
+  @IsOptional()
+  @IsString()
   description?: string;
 
   @IsOptional()

@@ -8,7 +8,7 @@ import {
   updateLaboratorySettings ,
   apiFetch
 } from "../../api/laboratory";
-import { fetchPatientsFromDatabase, type PatientRecord } from "../../api/reception";
+import { type PatientRecord } from "../../api/reception";
 import { useAuth } from "../../context/AuthContext";
 
 type LabRequestResult = {
@@ -32,6 +32,7 @@ type LabRequestDetailItem = {
     referenceRange?: string | null;
     unit?: string | null;
     parameterTemplates?: Array<{ id: string; name?: string | null; unit?: string | null }>;
+    sampleRequirements?: Array<{ id: string; labSampleType?: { name?: string | null } | null; volumeRequired?: string | number | null; volumeUnit?: string | null; storageCondition?: string | null; maxAgeMinutes?: string | number | null; instructions?: string | null }>;
     consumableRequirements?: Array<{ id: string; labConsumable?: { name?: string | null; unit?: string | null } | null; quantity?: string | number | null; unit?: string | null }>;
   } | null;
   results?: LabRequestResult[];
@@ -179,26 +180,54 @@ export default function ActivityLab() {
     }
   };
 
+  const formatReferenceRange = (item?: LabRequestDetailItem | null) => {
+    const baseRange = String(item?.labTest?.referenceRange || "").trim();
+    const unit = String(item?.labTest?.unit || "").trim();
+
+    if (!baseRange) {
+      return "";
+    }
+
+    if (unit && !baseRange.toLowerCase().includes(unit.toLowerCase())) {
+      return `${baseRange} ${unit}`;
+    }
+
+    return baseRange;
+  };
+
   const openRequestDetail = async (requestId: string) => {
     setIsDetailLoading(true);
     setSelectedRequest(requestId);
     try {
       const detail = await fetchLaboratoryRequest(requestId);
       setRequestDetail(detail as unknown as LabRequestDetail);
-      const firstItem = detail?.results?.[0];
+      const firstItem = (detail as unknown as LabRequestDetail)?.items?.[0];
+      const examName = firstItem?.labTest?.name || firstItem?.results?.[0]?.resultName || "";
+      const referenceRange = formatReferenceRange(firstItem);
       setResultForm({
-        resultName: firstItem?.resultName || "",
-        resultValue: firstItem?.resultValue || "",
-        referenceRange: "",
-        interpretation: firstItem?.interpretation || "",
+        resultName: examName,
+        resultValue: firstItem?.results?.[0]?.resultValue || "",
+        referenceRange,
+        interpretation: firstItem?.results?.[0]?.interpretation || "",
       });
       setShowSendChoice(false);
       setDeliveryMode("validation");
 
       if (!patientList && detail?.patient?.id) {
         try {
-          const patients = await fetchPatientsFromDatabase();
-          setPatientList(patients);
+          const patientPositionFallback = detail?.patient?.id ? 1 : undefined;
+          setPatientList((current) => current ?? [{
+            id: detail.patient?.id || "",
+            firstName: detail.patient?.firstName || "",
+            lastName: detail.patient?.lastName || "",
+            phone: detail.patient?.phone || "",
+            email: detail.patient?.email || "",
+            address: detail.patient?.address || "",
+            createdAt: new Date().toISOString(),
+          } as PatientRecord]);
+          if (patientPositionFallback) {
+            setPatientList((current) => current ?? []);
+          }
         } catch (error) {
           console.error("Impossible de charger la liste des patients", error);
         }
@@ -220,7 +249,11 @@ export default function ActivityLab() {
       await apiFetch(`/laboratory/requests/${selectedRequest}/results`, {
         method: "POST",
         body: JSON.stringify({
-          ...resultForm,
+          resultName: resultForm.resultName || currentItem?.labTest?.name || "Résultat laboratoire",
+          resultValue: resultForm.resultValue,
+          referenceRange: resultForm.referenceRange || currentItem?.labTest?.referenceRange || null,
+          interpretation: resultForm.interpretation || null,
+          units: currentItem?.labTest?.unit || null,
           labRequestItemId: currentItem?.id || null,
           deliveryMode: isItemAssigned ? deliveryMode : undefined,
         })
@@ -610,13 +643,32 @@ export default function ActivityLab() {
                         <div>
                           <p className="text-xs uppercase tracking-wide text-slate-500">Échantillons</p>
                           <ul className="mt-2 space-y-2 text-sm text-slate-700 dark:text-slate-300">
-                            {(item?.samples || []).length === 0 ? (
-                              <li>Aucun échantillon associé.</li>
-                            ) : (item.samples || []).map((sample) => (
-                              <li key={sample.id} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
-                                {sample.labSampleType?.name || "Échantillon"} — {sample.status}
-                              </li>
-                            ))}
+                            {(() => {
+                              const sampleEntries = (item?.samples && item.samples.length > 0)
+                                ? item.samples.map((sample) => ({
+                                    id: sample.id,
+                                    name: sample.labSampleType?.name || "Échantillon",
+                                    detail: sample.status || "État non précisé",
+                                  }))
+                                : (item?.labTest?.sampleRequirements || []).map((requirement) => ({
+                                    id: requirement.id,
+                                    name: requirement.labSampleType?.name || "Échantillon",
+                                    detail: [
+                                      requirement.volumeRequired ? `${requirement.volumeRequired}${requirement.volumeUnit ? ` ${requirement.volumeUnit}` : ""}` : null,
+                                      requirement.storageCondition,
+                                      requirement.instructions,
+                                    ].filter(Boolean).join(" • ") || "Exigence d'échantillon",
+                                  }));
+
+                              return sampleEntries.length === 0 ? (
+                                <li>Aucun échantillon associé.</li>
+                              ) : sampleEntries.map((sample) => (
+                                <li key={sample.id} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
+                                  <div className="font-medium">{sample.name}</div>
+                                  {sample.detail ? <div className="mt-1 text-xs text-slate-500">{sample.detail}</div> : null}
+                                </li>
+                              ));
+                            })()}
                           </ul>
                         </div>
 

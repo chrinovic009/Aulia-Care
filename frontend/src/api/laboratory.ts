@@ -130,11 +130,25 @@ export const fetchLaboratorySettings = () => apiFetch<LabSettingsPayload>('/labo
 export const updateLaboratorySettings = (payload: LabSettingsPayload) =>
   apiFetch<LabSettingsPayload>('/laboratory/settings', { method: 'POST', body: JSON.stringify(payload) });
 
-export const createLabSection = (payload: { name: string; description?: string; order?: number; active?: boolean }) =>
-  apiFetch('/laboratory/catalogue/sections', { method: 'POST', body: JSON.stringify(payload) });
+const serializeLabPayload = <T extends Record<string, any>>(payload: T) => ({
+  ...payload,
+  ...(payload.order !== undefined ? { order: payload.order === '' ? undefined : String(payload.order) } : {}),
+  ...(payload.price !== undefined ? { price: String(payload.price) } : {}),
+  ...(payload.turnaroundTimeMinutes !== undefined ? { turnaroundTimeMinutes: payload.turnaroundTimeMinutes === '' ? undefined : String(payload.turnaroundTimeMinutes) } : {}),
+  ...(payload.minAge !== undefined ? { minAge: payload.minAge === '' ? undefined : String(payload.minAge) } : {}),
+  ...(payload.maxAge !== undefined ? { maxAge: payload.maxAge === '' ? undefined : String(payload.maxAge) } : {}),
+  ...(payload.volumeRequired !== undefined ? { volumeRequired: payload.volumeRequired === '' ? undefined : String(payload.volumeRequired) } : {}),
+  ...(payload.maxAgeMinutes !== undefined ? { maxAgeMinutes: payload.maxAgeMinutes === '' ? undefined : String(payload.maxAgeMinutes) } : {}),
+  ...(payload.quantity !== undefined ? { quantity: String(payload.quantity) } : {}),
+  ...(payload.minimumLevel !== undefined ? { minimumLevel: payload.minimumLevel === '' ? undefined : String(payload.minimumLevel) } : {}),
+  ...(payload.criticalLevel !== undefined ? { criticalLevel: payload.criticalLevel === '' ? undefined : String(payload.criticalLevel) } : {}),
+});
 
-export const createLabCategory = (payload: { sectionId?: string; name: string; code?: string; description?: string; order?: number; active?: boolean }) =>
-  apiFetch('/laboratory/catalogue/categories', { method: 'POST', body: JSON.stringify(payload) });
+export const createLabSection = (payload: { name: string; description?: string; order?: number | string; active?: boolean }) =>
+  apiFetch('/laboratory/catalogue/sections', { method: 'POST', body: JSON.stringify(serializeLabPayload(payload)) });
+
+export const createLabCategory = (payload: { sectionId?: string; name: string; code?: string; description?: string; order?: number | string; active?: boolean }) =>
+  apiFetch('/laboratory/catalogue/categories', { method: 'POST', body: JSON.stringify(serializeLabPayload(payload)) });
 
 export const createLabTest = (payload: {
   code: string;
@@ -151,7 +165,7 @@ export const createLabTest = (payload: {
   minAge?: number;
   maxAge?: number;
   active?: boolean;
-}) => apiFetch('/laboratory/catalogue/tests', { method: 'POST', body: JSON.stringify(payload) });
+}) => apiFetch('/laboratory/catalogue/tests', { method: 'POST', body: JSON.stringify(serializeLabPayload(payload)) });
 
 export const createLabTestParameter = (payload: {
   labTestId: string;
@@ -164,9 +178,9 @@ export const createLabTestParameter = (payload: {
   maxValue?: string;
   order?: number;
   active?: boolean;
-}) => apiFetch('/laboratory/catalogue/test-parameters', { method: 'POST', body: JSON.stringify(payload) });
+}) => apiFetch('/laboratory/catalogue/test-parameters', { method: 'POST', body: JSON.stringify(serializeLabPayload(payload)) });
 
-export const createLabSampleType = (payload: { name: string; description?: string; active?: boolean }) =>
+export const createLabSampleType = (payload: { name: string; labTestId?: string; description?: string; active?: boolean }) =>
   apiFetch('/laboratory/catalogue/sample-types', { method: 'POST', body: JSON.stringify(payload) });
 
 export const createLabTestSampleRequirement = (payload: {
@@ -177,7 +191,7 @@ export const createLabTestSampleRequirement = (payload: {
   storageCondition?: string;
   maxAgeMinutes?: number;
   instructions?: string;
-}) => apiFetch('/laboratory/catalogue/sample-requirements', { method: 'POST', body: JSON.stringify(payload) });
+}) => apiFetch('/laboratory/catalogue/sample-requirements', { method: 'POST', body: JSON.stringify(serializeLabPayload(payload)) });
 
 export const createLabConsumable = (payload: { name: string; code: string; description?: string; unit: string; active?: boolean }) =>
   apiFetch('/laboratory/catalogue/consumables', { method: 'POST', body: JSON.stringify(payload) });
@@ -187,7 +201,7 @@ export const createLabTestConsumableRequirement = (payload: {
   labConsumableId: string;
   quantity: number;
   unit?: string;
-}) => apiFetch('/laboratory/catalogue/consumable-requirements', { method: 'POST', body: JSON.stringify(payload) });
+}) => apiFetch('/laboratory/catalogue/consumable-requirements', { method: 'POST', body: JSON.stringify(serializeLabPayload(payload)) });
 
 export const createLabConsumableStock = (payload: {
   labConsumableId: string;
@@ -195,4 +209,4 @@ export const createLabConsumableStock = (payload: {
   minimumLevel?: number;
   criticalLevel?: number;
   location?: string;
-}) => apiFetch('/laboratory/catalogue/stock', { method: 'POST', body: JSON.stringify(payload) });
+}) => apiFetch('/laboratory/catalogue/stock', { method: 'POST', body: JSON.stringify(serializeLabPayload(payload)) });
