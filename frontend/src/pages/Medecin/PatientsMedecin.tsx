@@ -451,6 +451,17 @@ function renderHistoryDetails(kind: string, details: string) {
       );
     }
 
+    if (kind === "NOUVELLE_VISITE") {
+      return (
+        <div className="grid gap-3 md:grid-cols-2">
+          <Info label="Service oriente" value={parsed.serviceName || "-"} />
+          <Info label="Date prevue" value={parsed.scheduledAt ? new Date(parsed.scheduledAt).toLocaleString("fr-FR") : "-"} />
+          <Info label="Motif" value={parsed.reason || "-"} />
+          <Info label="Statut parcours" value={medicalHistoryKindLabel(parsed.workflowStatus) || parsed.workflowStatus || "-"} />
+        </div>
+      );
+    }
+
     return (
       <div className="grid gap-3 md:grid-cols-2">
         {Object.entries(parsed)
@@ -573,20 +584,16 @@ function printPatientRecord(patient: DoctorPatient, position?: number) {
       return details || "-";
     }
 
-    const formatHistoryValue = (key: string, value: unknown): string => {
+    const formatHistoryValue = (value: unknown): string => {
     if (value === null || value === undefined || value === "") {
       return "";
     }
 
-    const stringValue = typeof value === "string" || typeof value === "number" ? String(value) : JSON.stringify(value);
-    if (/id$/i.test(key) && stringValue) {
-      return stringValue;
-    }
-    return stringValue;
+    return typeof value === "string" || typeof value === "number" ? String(value) : JSON.stringify(value);
   };
 
-  const toLine = (label: string, key: string, value?: string | number | null) => {
-    const formatted = formatHistoryValue(key, value);
+  const toLine = (label: string, value?: string | number | null) => {
+    const formatted = formatHistoryValue(value);
     return formatted ? `<div><strong>${label} :</strong> ${formatted}</div>` : "";
   };
 
@@ -617,6 +624,15 @@ function printPatientRecord(patient: DoctorPatient, position?: number) {
       if (Array.isArray(parsed.familyContacts) && parsed.familyContacts.length) {
         rows.push(`<div><strong>Contacts familiaux :</strong> ${parsed.familyContacts.map((contact: any) => `${contact.name || "-"} (${contact.relation || "-"}) ${contact.phone || ""}`).join(" • ")}</div>`);
       }
+      return rows.length > 0 ? rows.join("") : details || "-";
+    }
+
+    if (kind === "NOUVELLE_VISITE") {
+      const rows: string[] = [];
+      if (parsed.serviceName) rows.push(toLine("Service oriente", parsed.serviceName));
+      if (parsed.scheduledAt) rows.push(toLine("Date prevue", formatDateString(parsed.scheduledAt)));
+      if (parsed.reason) rows.push(toLine("Motif", parsed.reason));
+      if (parsed.workflowStatus) rows.push(toLine("Statut parcours", parsed.workflowStatus));
       return rows.length > 0 ? rows.join("") : details || "-";
     }
 

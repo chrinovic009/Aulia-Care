@@ -109,6 +109,16 @@ const receptionNavItems: NavItem[] = [
     path: "/reception/rendez-vous",
   },
   {
+    icon: <DollarLineIcon />,
+    name: "Services & tarifs",
+    path: "/reception/services",
+  },
+  {
+    icon: <DocsIcon />,
+    name: "Abonnements",
+    path: "/reception/abonnements",
+  },
+  {
     icon: <BoxCubeIcon />,
     name: "Hospitalisations",
     path: "/reception/hospitalisations",
@@ -283,7 +293,8 @@ const AppSidebar: React.FC = () => {
 
   const { currentUser } = useAuth();
   const isLabManager = Boolean(
-    currentUser?.primaryRole === 'LAB_MANAGER' ||
+    currentUser?.primaryRole === "LAB_MANAGER" ||
+    currentUser?.role === "LAB_MANAGER" ||
     currentUser?.serviceResponsabilites?.some((responsability) =>
       responsability?.service?.name?.toLowerCase().includes('laboratoire'),
     ),

@@ -1,4 +1,5 @@
 import { apiFetch } from "../config/api";
+export { apiFetch }; // <-- Cette ligne permet d'autoriser d'autres fichiers à l'importer depuis laboratory.ts
 
 export type LabRequestSummary = {
   id: string;
@@ -120,19 +121,14 @@ export type LabActivityPayload = {
 
 export const fetchLaboratoryActivity = () => apiFetch<LabActivityPayload>('/laboratory/activity');
 
-export const fetchLaboratoryRequestDetail = (id: string) => apiFetch<any>(`/laboratory/${id}`);
+export type LabSettingsPayload = {
+  technicianDirectRelease: boolean;
+};
 
-export const submitLaboratoryResult = (id: string, payload: any) =>
-  apiFetch<any>(`/laboratory/${id}/results`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
+export const fetchLaboratorySettings = () => apiFetch<LabSettingsPayload>('/laboratory/settings');
 
-export const updateDirectResultAuthorization = (enabled: boolean) =>
-  apiFetch<{ enabled: boolean; updatedAt: string }>('/laboratory/config/direct-result-authorization', {
-    method: 'POST',
-    body: JSON.stringify({ enabled }),
-  });
+export const updateLaboratorySettings = (payload: LabSettingsPayload) =>
+  apiFetch<LabSettingsPayload>('/laboratory/settings', { method: 'POST', body: JSON.stringify(payload) });
 
 export const createLabSection = (payload: { name: string; description?: string; order?: number; active?: boolean }) =>
   apiFetch('/laboratory/catalogue/sections', { method: 'POST', body: JSON.stringify(payload) });

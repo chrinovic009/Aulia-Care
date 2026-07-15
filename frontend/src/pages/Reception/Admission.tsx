@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { createPatientAdmission, findPatientByEmail, findPatientByPhone, searchPatients, fetchServices, fetchPatientsFromDatabase } from "../../api/reception";
@@ -19,7 +19,8 @@ const relationOptions = [
   "collègue",
 ];
 
-const ADMISSION_FEE_AMOUNT = 20;
+// Les types de consultation et tarifs sont récupérés depuis les services/tarifs en base
+
 const EMAIL_DOMAINS = ["@gmail.com", "@outlook.com", "@hotmail.com", "@yahoo.com"];
 
 const normalizeEmailLocalPart = (value: string) =>
@@ -32,6 +33,11 @@ const normalizeEmailLocalPart = (value: string) =>
 const Admission: React.FC = () => {
   const navigate = useNavigate();
   const [emailDomain, setEmailDomain] = useState("@gmail.com");
+  
+  // Type de consultation choisi (stocke l'id du service de consultation)
+  const [consultationType, setConsultationType] = useState<string>("");
+  const [consultationTypes, setConsultationTypes] = useState<Array<{ id: string; label: string; price: number }>>([]);
+
   const [form, setForm] = useState<any>({
     admissionMode: "ORDINARY",
     category: "P",
@@ -54,12 +60,13 @@ const Admission: React.FC = () => {
     contacts: [] as any[],
     allergies: [] as string[],
     documents: [] as any[],
-    amountDue: ADMISSION_FEE_AMOUNT,
+    amountDue: 0, // Tarif initial en CDF, sera mis à jour depuis la base
     paymentRequestId: "",
     voucherNumber: "",
     voucherIssuer: "",
     voucherNotes: "",
   });
+
   const [existingPatient, setExistingPatient] = useState<any>(null);
   const { currentUser } = useAuth();
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -69,8 +76,16 @@ const Admission: React.FC = () => {
   const [servicesList, setServicesList] = useState<any[]>([]);
   const [modalStep, setModalStep] = useState<ModalStep>(null);
 
+  // Met à jour le tarif de la consultation sélectionnée dans le formulaire
+  useEffect(() => {
+    if (!consultationType) return;
+    const sel = consultationTypes.find((c) => c.id === consultationType);
+    if (sel) {
+      setForm((f: any) => ({ ...f, amountDue: Number(sel.price || 0) }));
+    }
+  }, [consultationType, consultationTypes]);
+
   const selectedService = useMemo(() => servicesList.find((s) => s.id === form.serviceId), [servicesList, form.serviceId]);
-  const selectedServiceFee = Number(selectedService?.tarifs?.[0]?.prix ?? ADMISSION_FEE_AMOUNT);
 
   const age = useMemo(() => {
     if (!form.dob) return "";
@@ -79,14 +94,12 @@ const Admission: React.FC = () => {
   }, [form.dob]);
 
   useEffect(() => {
-    // If we have a logged in receptionist, set default receptionist and compute dossier number
     (async () => {
       try {
         if (currentUser) {
           const name = currentUser.firstName ? `${currentUser.firstName} ${currentUser.lastName || ""}`.trim() : currentUser.displayName || currentUser.username || "Réceptionniste";
           setForm((f: any) => ({ ...f, receptionist: name }));
 
-          // compute position as number of patients in db + 1
           try {
             const patients = await fetchPatientsFromDatabase();
             const position = (patients?.length || 0) + 1;
@@ -95,7 +108,7 @@ const Admission: React.FC = () => {
             const dossier = `D7-${firstInitial}${position}${year}`;
             setForm((f: any) => ({ ...f, dossierNumber: dossier }));
           } catch (e) {
-            // fallback: keep existing dossier
+            // fallback
           }
         }
       } catch (e) {}
@@ -152,7 +165,6 @@ const Admission: React.FC = () => {
     }
   }, [form.insurance.company, form.category]);
 
-  // load services catalog on mount
   useEffect(() => {
     (async () => {
       try {
@@ -161,6 +173,20 @@ const Admission: React.FC = () => {
         setServicesList(patientServices);
         if (patientServices.length > 0 && !form.serviceId) {
           setForm((f: any) => ({ ...f, serviceId: patientServices[0].id }));
+        }
+
+        // Extraire les services de type "consultation" et leurs tarifs actifs
+        try {
+          const consultations = (patientServices || [])
+            .filter((s: any) => /consultation/i.test(String(s.name || '')))
+            .map((s: any) => ({ id: s.id, label: s.name, price: Number((s.tarifs && s.tarifs[0] && s.tarifs[0].prix) || 0) }));
+          setConsultationTypes(consultations);
+          if (consultations.length > 0 && !consultationType) {
+            setConsultationType(consultations[0].id);
+            setForm((f: any) => ({ ...f, amountDue: Number(consultations[0].price || 0) }));
+          }
+        } catch (e) {
+          // ignore
         }
       } catch (e) {
         // ignore
@@ -190,6 +216,7 @@ const Admission: React.FC = () => {
     setPhoneMatchPatient(null);
     setEmailMatchPatient(null);
     setModalStep(null);
+    setConsultationType(consultationTypes[0]?.id || "");
     setForm({
       admissionMode: "ORDINARY",
       category: "P",
@@ -200,7 +227,7 @@ const Admission: React.FC = () => {
       email: "",
       address: "",
       profession: "",
-      nationality: "",
+      nationality: "Congolaise",
       dossierNumber: `D-${Date.now().toString().slice(-6)}`,
       admissionType: "Consultation",
       arrival: new Date().toISOString().slice(0, 16),
@@ -212,7 +239,7 @@ const Admission: React.FC = () => {
       contacts: [],
       allergies: [],
       documents: [],
-      amountDue: ADMISSION_FEE_AMOUNT,
+      amountDue: consultationTypes[0]?.price || 0,
       voucherNumber: "",
       voucherIssuer: "",
       voucherNotes: "",
@@ -288,7 +315,7 @@ const Admission: React.FC = () => {
         receptionistId: currentUser?.id,
         receptionist: form.receptionist,
         arrivalAt: form.arrival,
-        amountDue: isVoucherAdmission ? 0 : selectedServiceFee,
+        amountDue: isVoucherAdmission ? 0 : form.amountDue, // Transmission de la valeur sélectionnée en CDF
         voucherNumber: form.voucherNumber,
         voucherIssuer: form.voucherIssuer,
         voucherNotes: form.voucherNotes,
@@ -456,6 +483,36 @@ const Admission: React.FC = () => {
                 </div>
               </div>
 
+              {/* NOUVEAU : Sélection du Type de Consultation et du Tarif (Fiche) */}
+              {form.admissionMode !== "PARAMEDICAL_VOUCHER" && (
+                <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-blue-200 dark:border-slate-700 mt-4">
+                  <h3 className="font-medium mb-3 text-blue-900 dark:text-blue-400 text-sm sm:text-base">3. Type de Consultation & Tarif Fiche</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="flex flex-col">
+                      <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Sélectionner la consultation</label>
+                      <select
+                        value={consultationType}
+                        onChange={(e) => setConsultationType(e.target.value)}
+                        className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {consultationTypes.length > 0 ? (
+                          consultationTypes.map((ct) => (
+                            <option key={ct.id} value={ct.id}>{ct.label} — {Number(ct.price || 0).toLocaleString()} CDF</option>
+                          ))
+                        ) : (
+                          <option value="">Chargement...</option>
+                        )}
+                      </select>
+                    </div>
+                    <div className="flex flex-col justify-end">
+                      <div className="rounded-md border border-blue-300 dark:border-slate-600 px-3 py-2 bg-blue-50 dark:bg-slate-800 text-blue-900 dark:text-white text-base font-bold">
+                        Tarif appliqué : {form.amountDue.toLocaleString()} CDF
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {form.admissionMode === "PARAMEDICAL_VOUCHER" ? (
                 <div className="bg-white dark:bg-slate-900 p-4 rounded-lg shadow dark:shadow-lg border border-emerald-200 dark:border-emerald-800 mt-4">
                   <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">3. Bon paramédical</h3>
@@ -516,7 +573,12 @@ const Admission: React.FC = () => {
             <div className="mt-3 text-sm space-y-2">
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Patient:</span> {form.name || (existingPatient ? existingPatient.name : '—')}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Service:</span> {existingPatient ? (existingPatient.service || (existingPatient.serviceId ? servicesList.find((s)=>s.id===existingPatient.serviceId)?.name : '—')) : (selectedService?.name || servicesList.find((s)=>s.id===form.serviceId)?.name || '—')}</div>
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Frais de fiche:</span> {isNaN(selectedServiceFee) ? ADMISSION_FEE_AMOUNT : selectedServiceFee} USD</div>
+              
+              {/* Affichage mis à jour en CDF */}
+              <div className="text-gray-700 dark:text-gray-300">
+                <span className="font-medium">Frais de fiche:</span> {form.admissionMode === "PARAMEDICAL_VOUCHER" ? 0 : form.amountDue.toLocaleString()} CDF
+              </div>
+              
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Médecin:</span> {existingPatient ? existingPatient.doctor : form.doctor}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Priorité:</span> {existingPatient ? existingPatient.priority : form.priority}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Assurance:</span> {existingPatient ? (existingPatient.insurance?.company ? '✅ Validée' : '—') : (form.insurance.company ? '✅ Validée' : '—')}</div>
@@ -528,7 +590,7 @@ const Admission: React.FC = () => {
                 disabled={!!existingPatient}
                 className={`w-full rounded px-3 py-2 font-medium text-sm transition ${existingPatient ? "bg-gray-300 text-gray-600 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"}`}
               >
-                Enregistrer & Envoyez
+                Enregistrer & Envoyer
               </button>
               <button onClick={resetForm} className="w-full rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 px-3 py-2 font-medium hover:bg-gray-50 dark:hover:bg-slate-800 transition text-sm">Annuler</button>
             </div>

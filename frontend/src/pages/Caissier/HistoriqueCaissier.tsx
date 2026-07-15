@@ -196,24 +196,24 @@ const HistoriqueCaissier: React.FC = () => {
         <div className="p-3 bg-white rounded shadow text-center">
           <div className="text-sm text-gray-500">Paiements</div>
           <div className="text-xl font-bold text-green-600">{totals.paymentsCount}</div>
-          <div className="text-sm text-gray-700">{totals.paymentsTotalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} USD</div>
+          <div className="text-sm text-gray-700">{totals.paymentsTotalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} CDF</div>
         </div>
         <div className="p-3 bg-white rounded shadow text-center">
           <div className="text-sm text-gray-500">Factures</div>
           <div className="text-xl font-bold text-orange-600">{totals.invoicesCount}</div>
-          <div className="text-sm text-gray-700">{totals.invoicesTotalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} USD</div>
+          <div className="text-sm text-gray-700">{totals.invoicesTotalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} CDF</div>
         </div>
         <div className="p-3 bg-white rounded shadow text-center">
           <div className="text-sm text-gray-500">Total</div>
           <div className="text-xl font-bold">{totals.totalRecords}</div>
           <div className="text-sm text-gray-700">
-            {(totals.paymentsTotalAmount + totals.invoicesTotalAmount).toLocaleString(undefined, { minimumFractionDigits: 0 })} USD
+            {(totals.paymentsTotalAmount + totals.invoicesTotalAmount).toLocaleString(undefined, { minimumFractionDigits: 0 })} CDF
           </div>
         </div>
         <div className="p-3 bg-white rounded shadow text-center">
           <div className="text-sm text-gray-500">Solde net</div>
           <div className={`text-xl font-bold ${totals.paymentsTotalAmount >= totals.invoicesTotalAmount ? "text-green-600" : "text-red-600"}`}>
-            {(totals.paymentsTotalAmount - totals.invoicesTotalAmount).toLocaleString(undefined, { minimumFractionDigits: 0 })} USD
+            {(totals.paymentsTotalAmount - totals.invoicesTotalAmount).toLocaleString(undefined, { minimumFractionDigits: 0 })} CDF
           </div>
         </div>
       </div>
@@ -296,7 +296,7 @@ const HistoriqueCaissier: React.FC = () => {
               <th className="p-3 text-left">Téléphone</th>
               <th className="p-3 text-left">Méthode/Type</th>
               <th className="p-3 text-left">Référence</th>
-              <th className="p-3 text-right">Montant (USD)</th>
+              <th className="p-3 text-right">Montant (CDF)</th>
             </tr>
           </thead>
           <tbody>
@@ -330,7 +330,7 @@ const HistoriqueCaissier: React.FC = () => {
                   <td className="p-3 text-sm">{record.method || record.invoiceType || "—"}</td>
                   <td className="p-3 text-sm">{record.reference || "—"}</td>
                   <td className="p-3 text-right font-medium">
-                    {record.amount.toLocaleString(undefined, { minimumFractionDigits: 0 })} USD
+                    {record.amount.toLocaleString(undefined, { minimumFractionDigits: 0 })} CDF
                   </td>
                 </tr>
               ))

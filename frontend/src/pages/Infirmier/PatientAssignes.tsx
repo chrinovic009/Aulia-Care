@@ -16,6 +16,7 @@ import {
 } from "../../api/nurse";
 import { apiFetch } from "../../config/api";
 import { fetchServices } from "../../api/reception";
+import { callPatientToWaitingRoom } from "../../utils/patientCall";
 
 type VitalsForm = RecordVitalSignsPayload;
 
@@ -214,17 +215,10 @@ export default function PatientAssignes() {
 
   const announcePatient = async (patient: NursePatient, currentUser: ReturnType<typeof useAuth>['currentUser']) => {
     try {
-      const nurseName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : "l'infirmière";
-      const serviceName = (currentUser?.serviceResponsabilites && currentUser.serviceResponsabilites[0]?.service?.name) || patient.service || 'votre service';
-      const roomText = serviceName ? `dans le service ${serviceName}` : 'dans le service attribué';
+      const nurseName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : "";
 
-      const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, l'infirmière ${nurseName} vous attend ${roomText}.`;
-
-      try {
-        playNotificationSound();
-      } catch {
-        // ignore audio errors
-      }
+      const nurseTitle = currentUser?.gender === 'F' ? "l'infirmière" : "l'infirmier";
+      const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, ${nurseTitle} ${nurseName || ''} vous attend à l'infirmerie. Veuillez vous y rendre maintenant s'il vous plait`;
 
       if ('speechSynthesis' in window) {
         const speakWithVoice = (voices: SpeechSynthesisVoice[]) => {

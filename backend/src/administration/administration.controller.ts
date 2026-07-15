@@ -10,7 +10,7 @@ export class AdministrationController {
   constructor(private readonly administrationService: AdministrationService) {}
 
   @Get('departments')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN', 'RECEPTIONIST')
   departments() {
     return this.administrationService.departments();
   }
@@ -65,7 +65,7 @@ export class AdministrationController {
   }
 
   @Get('stock')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST', 'PHYSICIAN')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
   stock() {
     return this.administrationService.stockCatalog();
   }
@@ -77,7 +77,7 @@ export class AdministrationController {
   }
 
   @Post('stock/suppliers')
-  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  @Roles('SUPER_ADMIN', 'PHARMACIST')
   createSupplier(@Body() body: any) {
     return this.administrationService.createSupplier(body);
   }

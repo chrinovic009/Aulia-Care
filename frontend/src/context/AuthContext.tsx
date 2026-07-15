@@ -123,6 +123,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const isLabManager = (user: AuthUser | null) =>
+    user?.primaryRole === "LAB_MANAGER" ||
+    user?.role === "LAB_MANAGER" ||
     Boolean(
       user?.serviceResponsabilites?.some((responsibility) =>
         responsibility?.service?.name?.toLowerCase().includes('laboratoire'),

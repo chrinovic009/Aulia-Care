@@ -378,7 +378,7 @@ export default function DashboardLaboratoire() {
                       <div key={item.id} className="rounded-lg bg-slate-50 p-2 dark:bg-slate-950">
                         <div className="flex items-center justify-between gap-2">
                           <span>{item.name}</span>
-                          <span className="font-semibold">{item.percent}</span>
+                          <span className="font-semibold">{item.percent} %</span>
                         </div>
                         <div className="mt-1 text-xs text-slate-500">Restant: {item.quantity}</div>
                       </div>

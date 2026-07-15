@@ -24,9 +24,16 @@ export const fetchPrescriptions = () => apiFetch<PharmacyPrescription[]>('/pharm
 
 export const fetchReadyPrescriptions = () => apiFetch<PharmacyPrescription[]>('/pharmacy/prescriptions/ready');
 
-export const dispensePrescription = (prescriptionId: string) =>
+export const dispensePrescription = (
+  prescriptionId: string, 
+  body: { notes?: string; location?: string } = {}
+) =>
   apiFetch(`/pharmacy/prescriptions/${prescriptionId}/dispense`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
   });
 
 export const createIndependentSale = (payload: Record<string, unknown>) =>

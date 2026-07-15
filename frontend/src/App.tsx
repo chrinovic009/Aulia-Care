@@ -19,6 +19,7 @@ import ReceptionProfile from "./pages/Reception/ProfileReception";
 import ReceptionMessages from "./pages/Reception/MessagesReception";
 import HospitalisationReception from "./pages/Reception/HospitalisationReception";
 import HistoriqueReception from "./pages/Reception/HistoriqueReception";
+import AbonnementsReception from "./pages/Reception/AbonnementsReception";
 import DashboardInfirmier from "./pages/Infirmier/DashboardInfirmier";
 import PatientAssignes from "./pages/Infirmier/PatientAssignes";
 import MessagesInfirmier from "./pages/Infirmier/MessagesInfirmier";
@@ -41,6 +42,7 @@ import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import { RequireAuth, RoleGuard, HomeRedirect } from "./components/auth/RequireAuth";
 import RendezVousReception from "./pages/Reception/RendezVousReception";
+import CreateReceptionService from "./pages/Reception/CreateService";
 import DashboardAdmin from "./pages/Administration/DashboardAdmin";
 import GestionPersAdmin from "./pages/Administration/GestionPersAdmin";
 import GestionServAdmin from "./pages/Administration/GestionServAdmin";
@@ -99,6 +101,8 @@ export default function App() {
             <Route path="/reception/patients" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionPatients /></RoleGuard>} />
             <Route path="/reception/admission" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionAdmission /></RoleGuard>} />
             <Route path="/reception/rendez-vous" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><RendezVousReception /></RoleGuard>} />
+            <Route path="/reception/services" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><CreateReceptionService /></RoleGuard>} />
+            <Route path="/reception/abonnements" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><AbonnementsReception /></RoleGuard>} />
             <Route path="/reception/hospitalisations" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><HospitalisationReception /></RoleGuard>} />
             <Route path="/reception/messages" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionMessages /></RoleGuard>} />
             <Route path="/reception/historique" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><HistoriqueReception /></RoleGuard>} />

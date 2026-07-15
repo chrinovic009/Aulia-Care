@@ -163,9 +163,9 @@ export default function DashboardSupAdmin() {
         {activeTab === "Finances" && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-3">
-              <Metric label="Encaisse aujourd'hui" value={`${metrics.revenueToday.toLocaleString("fr-FR")} USD`} tone="green" />
-              <Metric label="Encaisse ce mois" value={`${metrics.revenueMonth.toLocaleString("fr-FR")} USD`} tone="green" />
-              <Metric label="Factures impayees" value={`${metrics.unpaid.toLocaleString("fr-FR")} USD`} tone="red" />
+              <Metric label="Encaisse aujourd'hui" value={`${metrics.revenueToday.toLocaleString("fr-FR")} CDF`} tone="green" />
+              <Metric label="Encaisse ce mois" value={`${metrics.revenueMonth.toLocaleString("fr-FR")} CDF`} tone="green" />
+              <Metric label="Factures impayees" value={`${metrics.unpaid.toLocaleString("fr-FR")} CDF`} tone="red" />
             </div>
 
             <div id="finances-panel" className="grid gap-4 lg:grid-cols-2">
@@ -232,7 +232,7 @@ export default function DashboardSupAdmin() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <Metric label="Effectifs totaux" value={users.length} />
                 <Metric label="Présences (aujourd'hui)" value={users.filter(u=>u.presentToday).length || 0} />
-                <Metric label="Masse salariale" value={`${computePayrollEstimate(users)} USD`} />
+                <Metric label="Masse salariale" value={`${computePayrollEstimate(users)} CDF`} />
               </div>
               <div className="mt-4">
                 <h4 className="font-medium mb-2">Répartition du personnel</h4>

@@ -137,7 +137,12 @@ export default function DashboardPharmacie() {
                         <button
                           onClick={async () => {
                             try {
-                              await dispensePrescription(item.id);
+                              // On passe un objet (même vide ou avec des notes) pour satisfaire le body attendu par NestJS
+                              await dispensePrescription(item.id, {
+                                notes: "Délivrance effectuée depuis le Dashboard Pharmacie.",
+                                location: "Pharmacie"
+                              });
+                              
                               setActionMessage("Ordonnance délivrée avec succès.");
                               load();
                             } catch (error: unknown) {
