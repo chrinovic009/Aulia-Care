@@ -17,6 +17,7 @@ export class BillingService {
             phone: true,
             email: true,
             insuranceProvider: true,
+            workflowStatus: true,
           },
         },
         payments: {
@@ -37,6 +38,37 @@ export class BillingService {
       },
     });
 
+    const invoiceIds = invoices.map((invoice) => invoice.id);
+    const invoiceLines = invoiceIds.length
+      ? await this.prisma.invoiceLine.findMany({
+          where: {
+            invoiceId: {
+              in: invoiceIds,
+            },
+            deletedAt: null,
+          },
+          select: {
+            id: true,
+            invoiceId: true,
+            label: true,
+            quantity: true,
+            unitPrice: true,
+            totalAmount: true,
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        })
+      : [];
+
+    const linesByInvoiceId = invoiceLines.reduce<Record<string, typeof invoiceLines>>((acc, line) => {
+      if (!acc[line.invoiceId]) {
+        acc[line.invoiceId] = [];
+      }
+      acc[line.invoiceId].push(line);
+      return acc;
+    }, {});
+
     return invoices.map((inv) => ({
       id: inv.id,
       patientId: inv.patientId,
@@ -44,6 +76,7 @@ export class BillingService {
       patientPhone: inv.patient?.phone,
       patientEmail: inv.patient?.email,
       patientCompany: inv.patient?.insuranceProvider || null,
+      patientWorkflowStatus: inv.patient?.workflowStatus || null,
       type: inv.type,
       status: inv.status,
       totalAmount: Number(inv.totalAmount),
@@ -54,6 +87,13 @@ export class BillingService {
       payments: inv.payments.map((payment) => ({
         ...payment,
         amount: Number(payment.amount),
+      })),
+      invoiceLines: (linesByInvoiceId[inv.id] || []).map((line) => ({
+        id: line.id,
+        label: line.label,
+        quantity: Number(line.quantity),
+        unitPrice: Number(line.unitPrice),
+        totalAmount: Number(line.totalAmount),
       })),
       createdAt: inv.createdAt,
     }));
