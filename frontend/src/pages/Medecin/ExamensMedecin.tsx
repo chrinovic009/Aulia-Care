@@ -79,7 +79,8 @@ const formatLabResultTextWithReference = (result: { resultName?: string | null; 
   if (!reference) {
     return valueLine;
   }
-  return `${valueLine}\nRéférence: ${reference}${units ? ` ${units}` : ""}`;
+  const hasUnitAlready = Boolean(units && reference.toLowerCase().includes(units.toLowerCase()));
+  return `${valueLine}\nRéférence: ${reference}${!hasUnitAlready && units ? ` ${units}` : ""}`;
 };
 
 export default function ExamensMedecin() {
