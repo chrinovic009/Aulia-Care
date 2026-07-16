@@ -16,8 +16,23 @@ interface InvoicePrintProps {
   clinicName?: string;
   clinicAddress?: string;
   clinicPhone?: string;
+  clinicEmail?: string;
   invoiceId: string;
   invoicePosition?: number;
+  invoiceLines?: Array<{
+    id: string;
+    label: string;
+    quantity: number;
+    unitPrice: number;
+    totalAmount: number;
+  }>;
+  payments?: Array<{
+    id: string;
+    amount: number;
+    method: string;
+    paidAt: string;
+    reference?: string;
+  }>;
   visitItems?: Array<{
     description: string;
     amount: number;
@@ -82,6 +97,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   patientName,
   patientPhone,
   patientEmail,
+  invoiceNumber,
   invoiceType,
   totalAmount,
   balanceDue,
@@ -89,6 +105,10 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   issuedAt,
   dueDate,
   remarks,
+  clinicName,
+  clinicAddress,
+  clinicPhone,
+  clinicEmail,
   invoicePosition,
   visitItems,
   visitTotalAmount,
@@ -97,11 +117,17 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   visitWorkflowStatus,
 }) => {
   const [firstName, ...restNames] = patientName.trim().split(/\s+/);
-  const displayInvoiceId = formatInvoiceId(invoicePosition || 1, {
+  const displayInvoiceId = invoiceNumber || formatInvoiceId(invoicePosition || 1, {
     firstName,
     lastName: restNames[restNames.length - 1] || "",
   });
   const defaultDescription = buildFrenchDescription(invoiceType, remarks);
+  const headlineType = visitItems ? "FACTURE TOTALE" : "FACTURE";
+  const invoiceTypeLabel = invoiceType === "ADMISSION_FEE" ? "Frais d'Admission" : invoiceType;
+  const clinicDisplayName = clinicName || "D7 Clinique";
+  const clinicDisplayAddress = clinicAddress || "Zone de santé, Dilala";
+  const clinicDisplayPhone = clinicPhone || "+243 987 299 227";
+  const clinicDisplayEmail = clinicEmail || "fondationd7clinic@gmail.com";
 
   return (
     <div
@@ -110,29 +136,51 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
         width: "100%",
         maxWidth: "210mm",
         margin: "0 auto",
-        padding: "5mm",
+        padding: "8mm",
         backgroundColor: "#fff",
         color: "#000",
         pageBreakInside: "avoid",
         breakInside: "avoid",
       }}
     >
-      {/* Header */}
-
-      {/* Invoice Title */}
-      <div style={{ textAlign: "center", marginBottom: "10mm" }}>
-        <h2 style={{ margin: "0", fontSize: "18px", fontWeight: "bold" }}>
-          {visitItems ? "FACTURE TOTALE" : "FACTURE"}
-        </h2>
-        <p style={{ margin: "2mm 0", fontSize: "11px", color: "#666" }}>
-          {visitItems
-            ? "Résumé des transactions de la visite et état du règlement"
-            : `Type: ${invoiceType === "ADMISSION_FEE" ? "Frais d'Admission" : invoiceType}`}
-        </p>
+      {/* Header similar to template */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8mm" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ width: 72, height: 72, background: "#0f172a", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6 }}>
+            <img src="/images/favicon.png" alt="logo" style={{ width: 40, height: 40 }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a" }}>{clinicDisplayName}</div>
+            <div style={{ fontSize: 11, color: "#6b7280", lineHeight: 1.4 }}>{clinicDisplayAddress}</div>
+            <div style={{ fontSize: 11, color: "#6b7280" }}>Tel: {clinicDisplayPhone} | {clinicDisplayEmail}</div>
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ background: "#0f172a", color: "#fff", padding: "10px 14px", borderRadius: 6, minWidth: 200 }}>
+            <div style={{ fontSize: 12, opacity: 0.9 }}>NUMBER</div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>{displayInvoiceId}</div>
+            <div style={{ marginTop: 6, fontSize: 11, opacity: 0.85 }}>DATE {new Date(issuedAt).toLocaleDateString("fr-FR")}</div>
+          </div>
+        </div>
       </div>
 
-      {/* Invoice Details */}
-      <table style={{ width: "100%", marginBottom: "10mm", fontSize: "11px" }}>
+      {/* Invoice Details (Invoice To / Invoice To layout) */}
+      <div style={{ display: "flex", gap: "12px", marginBottom: "10mm" }}>
+        <div style={{ flex: 1, border: "1px solid #eee", padding: "8px" }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#0f172a" }}>INVOICE</div>
+          <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700 }}>{patientName}</div>
+          <div style={{ fontSize: 11, color: "#6b7280" }}>{patientPhone || "-"}</div>
+          <div style={{ fontSize: 11, color: "#6b7280" }}>{patientEmail || "-"}</div>
+        </div>
+        <div style={{ flex: 1, border: "1px solid #eee", padding: "8px" }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#0f172a" }}>BILL TO</div>
+          <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700 }}>{clinicDisplayName}</div>
+          <div style={{ fontSize: 11, color: "#6b7280" }}>{clinicDisplayAddress}</div>
+          <div style={{ fontSize: 11, color: "#6b7280" }}>Tel: {clinicDisplayPhone}</div>
+        </div>
+      </div>
+
+      <table style={{ width: "100%", marginBottom: "6mm", fontSize: "11px" }}>
         <tbody>
           <tr>
             <td style={{ paddingBottom: "3mm" }}>
@@ -140,6 +188,22 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
             </td>
             <td style={{ paddingBottom: "3mm", textAlign: "right" }}>
               {displayInvoiceId}
+            </td>
+          </tr>
+          <tr>
+            <td style={{ paddingBottom: "3mm" }}>
+              <strong>Type de facture:</strong>
+            </td>
+            <td style={{ paddingBottom: "3mm", textAlign: "right" }}>
+              {invoiceTypeLabel}
+            </td>
+          </tr>
+          <tr>
+            <td style={{ paddingBottom: "3mm" }}>
+              <strong>Statut:</strong>
+            </td>
+            <td style={{ paddingBottom: "3mm", textAlign: "right" }}>
+              {status}
             </td>
           </tr>
           <tr>
@@ -164,140 +228,77 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
         </tbody>
       </table>
 
-      {/* Patient Information */}
-      <div style={{ marginBottom: "10mm" }}>
-        <h3 style={{ margin: "0 0 3mm 0", fontSize: "11px", fontWeight: "bold", textDecoration: "underline" }}>
-          PATIENT
-        </h3>
-        <table style={{ width: "100%", fontSize: "11px" }}>
-          <tbody>
-            <tr>
-              <td style={{ paddingBottom: "2mm" }}>
-                <strong>Nom:</strong>
-              </td>
-              <td style={{ paddingBottom: "2mm" }}>{patientName}</td>
-            </tr>
-            <tr>
-              <td style={{ paddingBottom: "2mm" }}>
-                <strong>Téléphone:</strong>
-              </td>
-              <td style={{ paddingBottom: "2mm" }}>{patientPhone || "-"}</td>
-            </tr>
-            <tr>
-              <td style={{ paddingBottom: "2mm" }}>
-                <strong>Email:</strong>
-              </td>
-              <td style={{ paddingBottom: "2mm" }}>{patientEmail || "-"}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      {/* Invoice Items */}
+      {/* Invoice Items: prefer invoiceLines (detailed), else visitItems */}
       <table style={{ width: "100%", marginBottom: "10mm", borderCollapse: "collapse", fontSize: "11px", pageBreakInside: "avoid" }}>
         <thead>
-          <tr style={{ backgroundColor: "#f0f0f0", borderBottom: "1px solid #333" }}>
-            <th style={{ padding: "4mm", textAlign: "left", borderRight: "1px solid #ddd" }}>Description</th>
-            <th style={{ padding: "4mm", textAlign: "right" }}>Montant (CDF)</th>
+          <tr style={{ backgroundColor: "#0f172a", color: "#fff" }}>
+            <th style={{ padding: "10px", textAlign: "left" }}>DESCRIPTION</th>
+            <th style={{ padding: "10px", textAlign: "center", width: 80 }}>QTY</th>
+            <th style={{ padding: "10px", textAlign: "right", width: 120 }}>PRICE</th>
+            <th style={{ padding: "10px", textAlign: "right", width: 120 }}>TOTAL</th>
           </tr>
         </thead>
         <tbody>
-          {visitItems && visitItems.length > 0 ? (
-            visitItems.map((item, index) => {
-              const description = item.description || `${defaultDescription.label} (${defaultDescription.detail})`;
-              const descriptionLines = description.split("||");
-              return (
-                <tr key={`${item.description}-${index}`} style={{ borderBottom: "1px solid #ddd", pageBreakInside: "avoid" }}>
-                  <td style={{ padding: "4mm", borderRight: "1px solid #ddd" }}>
-                    <div style={{ fontWeight: 600 }}>{descriptionLines[0] || description}</div>
-                    {descriptionLines[1] ? <div style={{ marginTop: "1mm", color: "#6b7280", fontSize: "10px" }}>{descriptionLines[1]}</div> : null}
-                    {item.invoiceNumber ? <div style={{ marginTop: "1mm", color: "#6b7280", fontSize: "10px" }}>Référence: {item.invoiceNumber}</div> : null}
-                  </td>
-                  <td style={{ padding: "4mm", textAlign: "right", fontWeight: "bold" }}>
-                    {Number(item.amount || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}
-                  </td>
-                </tr>
-              );
-            })
+          {invoiceLines && invoiceLines.length > 0 ? (
+            invoiceLines.map((line) => (
+              <tr key={line.id} style={{ borderBottom: "1px solid #eee" }}>
+                <td style={{ padding: "8px" }}>{line.label}</td>
+                <td style={{ padding: "8px", textAlign: "center" }}>{line.quantity ?? 1}</td>
+                <td style={{ padding: "8px", textAlign: "right" }}>{Number(line.unitPrice || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}</td>
+                <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{Number(line.totalAmount || (line.unitPrice * (line.quantity || 1))).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}</td>
+              </tr>
+            ))
+          ) : visitItems && visitItems.length > 0 ? (
+            visitItems.map((item, index) => (
+              <tr key={`${item.description}-${index}`} style={{ borderBottom: "1px solid #eee" }}>
+                <td style={{ padding: "8px" }}>{(item.description || defaultDescription.label).split("||")[0]}</td>
+                <td style={{ padding: "8px", textAlign: "center" }}>1</td>
+                <td style={{ padding: "8px", textAlign: "right" }}>{Number(item.amount || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}</td>
+                <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{Number(item.amount || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}</td>
+              </tr>
+            ))
           ) : (
-            <tr style={{ borderBottom: "1px solid #ddd", pageBreakInside: "avoid" }}>
-              <td style={{ padding: "4mm", borderRight: "1px solid #ddd" }}>
-                <div style={{ fontWeight: 600 }}>{defaultDescription.label}</div>
-                <div style={{ marginTop: "1mm", color: "#6b7280", fontSize: "10px" }}>{defaultDescription.detail}</div>
-              </td>
-              <td style={{ padding: "4mm", textAlign: "right", fontWeight: "bold" }}>
-                {totalAmount.toLocaleString("fr-FR", { minimumFractionDigits: 0 })}
-              </td>
+            <tr style={{ borderBottom: "1px solid #eee" }}>
+              <td style={{ padding: "8px" }}>{defaultDescription.label}</td>
+              <td style={{ padding: "8px", textAlign: "center" }}>1</td>
+              <td style={{ padding: "8px", textAlign: "right" }}>{totalAmount.toLocaleString("fr-FR", { minimumFractionDigits: 0 })}</td>
+              <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{totalAmount.toLocaleString("fr-FR", { minimumFractionDigits: 0 })}</td>
             </tr>
           )}
         </tbody>
       </table>
 
       {/* Totals */}
-      <div style={{ marginBottom: "10mm", fontSize: "11px" }}>
-        <table style={{ width: "300px", marginLeft: "auto", marginRight: "0" }}>
-          <tbody>
-            <tr>
-              <td style={{ paddingRight: "10mm", paddingBottom: "3mm" }}>
-                <strong>Total:</strong>
-              </td>
-              <td style={{ textAlign: "right", paddingBottom: "3mm", fontWeight: "bold", fontSize: "12px" }}>
-                {(visitItems ? visitTotalAmount ?? totalAmount : totalAmount).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} FC
-              </td>
-            </tr>
-            <tr>
-              <td style={{ paddingRight: "10mm", paddingBottom: "3mm" }}>
-                <strong>Déjà payé:</strong>
-              </td>
-              <td style={{ textAlign: "right", paddingBottom: "3mm", fontWeight: "bold", fontSize: "12px", color: "#2e7d32" }}>
-                {(visitItems ? visitPaidAmount ?? 0 : Math.max(totalAmount - balanceDue, 0)).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} FC
-              </td>
-            </tr>
-            <tr>
-              <td style={{ paddingRight: "10mm", paddingBottom: "3mm" }}>
-                <strong>Reste à payer:</strong>
-              </td>
-              <td
-                style={{
-                  textAlign: "right",
-                  paddingBottom: "3mm",
-                  fontWeight: "bold",
-                  fontSize: "12px",
-                  color: (visitItems ? visitBalanceDue ?? balanceDue : balanceDue) > 0 ? "#d32f2f" : "#4caf50",
-                }}
-              >
-                {(visitItems ? visitBalanceDue ?? balanceDue : balanceDue).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} FC
-              </td>
-            </tr>
-            <tr>
-              <td style={{ paddingRight: "10mm", paddingBottom: "3mm" }}>
-                <strong>État visite:</strong>
-              </td>
-              <td style={{ textAlign: "right", paddingBottom: "3mm", fontWeight: "bold", fontSize: "12px" }}>
-                {visitWorkflowStatus === "TERMINE" ? "Clôturée" : "En cours"}
-              </td>
-            </tr>
-            <tr>
-              <td colSpan={2} style={{ height: "3mm" }}></td>
-            </tr>
-            <tr style={{ borderTop: "2px solid #333" }}>
-              <td style={{ paddingRight: "10mm", paddingTop: "3mm" }}>
-                <strong>Statut:</strong>
-              </td>
-              <td style={{ textAlign: "right", paddingTop: "3mm", fontWeight: "bold" }}>
-                {visitItems
-                  ? ((visitBalanceDue ?? balanceDue) > 0 ? ((visitPaidAmount ?? 0) > 0 ? "PARTIELLEMENT PAYÉE" : "EN ATTENTE") : "PAYÉE")
-                  : status === "PAID"
-                    ? "PAYÉE"
-                    : status === "PENDING"
-                      ? "EN ATTENTE"
-                      : status === "PARTIALLY_PAID"
-                        ? "PARTIELLEMENT PAYÉE"
-                        : status}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      {/* Totals and payment method */}
+      <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", marginBottom: "14mm" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ border: "1px solid #eee", padding: "10px" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>PAYMENT METHOD</div>
+            {payments && payments.length > 0 ? (
+              payments.map((p) => (
+                <div key={p.id} style={{ fontSize: 11, color: "#374151", marginBottom: 4 }}>
+                  {p.method} — {Number(p.amount).toLocaleString("fr-FR")} CDF {p.reference ? `(${p.reference})` : ""}
+                </div>
+              ))
+            ) : (
+              <div style={{ fontSize: 11, color: "#6b7280" }}>Cash / Carte / Virement</div>
+            )}
+          </div>
+        </div>
+        <div style={{ width: 320 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ fontSize: 12 }}>Subtotal</div>
+            <div style={{ fontWeight: 700 }}>{(visitItems ? visitTotalAmount ?? totalAmount : totalAmount).toLocaleString("fr-FR")} CDF</div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ fontSize: 12 }}>Tax</div>
+            <div style={{ fontWeight: 700 }}>0 CDF</div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fbbf24", padding: "10px", borderRadius: 6 }}>
+            <div style={{ fontSize: 14, fontWeight: 800 }}>TOTAL</div>
+            <div style={{ fontSize: 16, fontWeight: 900 }}>{(visitItems ? visitTotalAmount ?? totalAmount : totalAmount).toLocaleString("fr-FR")} CDF</div>
+          </div>
+        </div>
       </div>
 
       {/* Remarks */}

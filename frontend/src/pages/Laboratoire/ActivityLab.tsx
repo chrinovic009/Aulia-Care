@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, Beaker, ClipboardList, Layers, Users, X } from "lucide-react";
-import { AdminPageShell, Panel, StatCard, DataTable, formatDate } from "../Administration/adminUi";
+import { AdminPageShell, Panel, StatCard, DataTable, formatDate, formatDateTime } from "../Administration/adminUi";
 import { 
   fetchLaboratoryActivity, 
   fetchLaboratoryRequest, 
@@ -18,6 +18,7 @@ type LabRequestResult = {
   interpretation?: string | null;
   units?: string | null;
   referenceRange?: string | null;
+  reportedAt?: string | null;
 };
 
 type LabRequestDetailItem = {
@@ -333,7 +334,7 @@ export default function ActivityLab() {
     const resultValue = resultForm.resultValue || latestResult?.resultValue || currentItem?.results?.[0]?.resultValue || "—";
     const referenceRange = resultForm.referenceRange || currentItem?.labTest?.referenceRange || "—";
     const interpretation = resultForm.interpretation || latestResult?.interpretation || currentItem?.results?.[0]?.interpretation || "—";
-    const requestedAt = formatDate(requestDetail?.items?.[0]?.requestedAt || null);
+    const requestedAt = formatDateTime(requestDetail?.items?.[0]?.requestedAt || null);
     const displayRequestIdForPrint = displayRequestId || requestDetail.id || "—";
     const translatedRequestStatusForPrint = translatedRequestStatus;
 
@@ -349,29 +350,39 @@ export default function ActivityLab() {
     })();
     const logoSrc = `${window.location.origin}/images/favicon.png`;
 
+    const resultSentAt = (latestResult as LabRequestResult)?.reportedAt || currentItem?.results?.[0]?.reportedAt || requestDetail?.results?.[0]?.reportedAt || null;
+
     const html = `
       <html>
         <head>
           <meta charset="utf-8" />
           <title>Bon de rendu des résultats biomédicaux - ${patientName}</title>
           <style>
-            body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 24px; background: #fff; }
-            .page { max-width: 900px; margin: 0 auto; padding: 10mm 12mm 14mm; border: 1px solid #d1d5db; border-radius: 10px; }
-            .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 2px solid #111827; padding-bottom: 14px; margin-bottom: 20px; }
-            .brand-block { display: flex; align-items: center; gap: 12px; }
-            .logo { width: 64px; height: 64px; object-fit: contain; }
-            .document-title { font-size: 20px; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; margin: 0 0 4px; }
-            .document-subtitle { font-size: 14px; color: #374151; margin: 0; }
-            .meta-block { font-size: 12px; color: #4b5563; text-align: right; }
-            .section { margin-bottom: 20px; }
-            .section-title { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #111827; margin-bottom: 8px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 10px; }
-            th, td { border: 1px solid #d1d5db; padding: 8px 10px; vertical-align: top; }
+            /* Print-friendly A4 with 0.44cm margins */
+            @page { size: A4; margin: 0.44cm; }
+            body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 0.44cm; background: #fff; }
+            /* Use box-sizing to ensure widths include padding/borders */
+            .page { box-sizing: border-box; max-width: 100%; width: 100%; margin: 0 auto; padding: 6mm; border: 1px solid #d1d5db; border-radius: 8px; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 2px solid #111827; padding-bottom: 10px; margin-bottom: 12px; }
+            .brand-block { display: flex; align-items: center; gap: 10px; }
+            .logo { width: 56px; height: 56px; object-fit: contain; }
+            .document-title { font-size: 14px; font-weight: 800; text-transform: uppercase; margin: 0 0 4px; }
+            .document-subtitle { font-size: 13px; color: #374151; margin: 0; }
+            .meta-block { font-size: 11px; color: #4b5563; text-align: right; }
+            .section { margin-bottom: 12px; }
+            .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: #111827; margin-bottom: 6px; }
+            /* Make tables slightly narrower and centered so they fit with small margins */
+            table { width: calc(100% - 2px); max-width: calc(100% - 2px); margin: 0 auto 8px; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+            th, td { border: 1px solid #d1d5db; padding: 6px 8px; vertical-align: top; word-break: break-word; }
             th { background: #f9fafb; font-weight: 700; text-align: left; }
-            .label { width: 20%; font-weight: 700; background: #f9fafb; }
-            .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #d1d5db; display: flex; justify-content: flex-end; }
+            .label { width: 18%; font-weight: 700; background: #f9fafb; }
+            .footer { margin-top: 16px; padding-top: 8px; border-top: 1px solid #d1d5db; display: flex; justify-content: flex-end; }
             .responsible { font-size: 13px; font-weight: 700; color: #111827; }
-            @media print { body { padding: 0; background: #fff; } .page { border: none; border-radius: 0; padding: 0; } }
+            @media print {
+              body { padding: 0; background: #fff; }
+              .page { border: none; border-radius: 0; padding: 0; }
+              table { font-size: 11px; }
+            }
           </style>
         </head>
         <body>
@@ -429,6 +440,9 @@ export default function ActivityLab() {
                     <td>${requestDetail.status || "—"}</td>
                     <td>${requestedAt}</td>
                     <td>${requestDetail.consultation?.provider?.displayName || requestDetail.consultation?.provider?.firstName || "—"}</td>
+                  </tr>
+                  <tr>
+                    <td colspan="4" style="border:none;padding:6px 8px 0 8px;font-size:12px;color:#6b7280">Résultat envoyé: ${resultSentAt ? new Date(resultSentAt).toLocaleString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                   </tr>
                 </tbody>
               </table>

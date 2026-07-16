@@ -694,7 +694,7 @@ export default function DashboardMedecin() {
                     <Empty />
                   ) : (
                     selectedPatient.prescriptions?.map((prescription) => (
-                      <Item key={prescription.id} title={prescription.status} subtitle={formatDateTime(prescription.prescribingDate)} text={prescription.instruction || prescription.lineItems?.map((line: any) => [line.dosage, line.frequency, line.notes].filter(Boolean).join(" - ")).join(", ") || "Prescription sans detail."} />
+                      <Item key={prescription.id} title={translatePrescriptionStatus(prescription.status)} subtitle={formatDateTime(prescription.prescribingDate)} text={prescription.instruction || prescription.lineItems?.map((line: any) => [line.dosage, line.frequency, line.notes].filter(Boolean).join(" - ")).join(", ") || "Prescription sans detail."} />
                     ))
                   )}
                 </Panel>
@@ -912,9 +912,51 @@ function Empty() {
 // 🟢 AJOUT DE LA MÉTHODE MANQUANTE : formatLabResultTextWithReference (évite le plantage sur l'onglet Labo)
 function formatLabResultTextWithReference(result: any) {
   if (!result) return "";
-  const name = result.analyteName || result.name || "Test";
-  const val = result.value !== undefined ? result.value : "";
-  const unit = result.unit ? ` ${result.unit}` : "";
-  const range = result.referenceRange ? ` (Norme: ${result.referenceRange})` : "";
-  return `${name}: ${val}${unit}${range}`;
+  const name = result.analyteName || result.name || result.resultName || "Test";
+  const val = result.resultValue ?? result.value ?? result.result ?? result.result_value ?? "";
+  const unitRaw = result.units || result.unit || result.u || "";
+  const unit = unitRaw ? String(unitRaw).trim() : "";
+  const referenceRaw = result.referenceRange ?? result.reference ?? result.reference_range ?? "";
+  const reference = referenceRaw ? String(referenceRaw).trim() : "";
+
+  const displayVal = val === null || val === undefined || String(val).trim() === "" ? "" : `${String(val).trim()}${unit ? ` ${unit}` : ""}`;
+
+  // Ensure we don't append the unit to the reference if it's already present in the reference string
+  let referenceDisplay = reference;
+  if (referenceDisplay && unit) {
+    const refLower = referenceDisplay.toLowerCase();
+    const unitLower = unit.toLowerCase();
+    if (!refLower.includes(unitLower)) {
+      referenceDisplay = `${referenceDisplay} ${unit}`;
+    }
+  }
+
+  const range = referenceDisplay ? ` (Norme: ${referenceDisplay})` : "";
+
+  return displayVal ? `${name}: ${displayVal}${referenceDisplay ? ` ${range}` : ""}` : `${name}${range ? ` ${range}` : ""}`;
+}
+
+function translatePrescriptionStatus(status?: string | null) {
+  if (!status) return "Statut inconnu";
+  const s = String(status).trim().toUpperCase();
+  switch (s) {
+    case "PENDING":
+    case "AWAITING":
+      return "En attente";
+    case "ACTIVE":
+    case "ISSUED":
+      return "Active";
+    case "COMPLETED":
+    case "DONE":
+      return "Terminé";
+    case "DISPENSED":
+      return "Dispensé";
+    case "CANCELLED":
+    case "CANCELED":
+      return "Annulée";
+    case "DRAFT":
+      return "Brouillon";
+    default:
+      return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+  }
 }
