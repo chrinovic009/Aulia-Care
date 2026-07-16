@@ -132,6 +132,7 @@ const FacturationCaissier: React.FC = () => {
   const [printingInvoice, setPrintingInvoice] = useState<InvoiceDetail | null>(null);
   const [printingInvoicePosition, setPrintingInvoicePosition] = useState<number | undefined>(undefined);
   const [printingVisit, setPrintingVisit] = useState<VisitSummary | null>(null);
+  const [previewActive, setPreviewActive] = useState(false);
 
   const load = async () => {
     try {
@@ -233,21 +234,72 @@ const FacturationCaissier: React.FC = () => {
     setPrintingInvoicePosition(index >= 0 ? index + 1 : undefined);
     setPrintingInvoice(invoice);
     setPrintingVisit(null);
-    setTimeout(() => {
+    // wait until the print area is rendered to avoid blank printouts
+    const waitAndPrint = async () => {
+      const start = Date.now();
+      const timeout = 3000;
+      // show print area in screen mode while we prepare print
+      try {
+        document.body.classList.add("print-preview");
+      } catch {}
+      while (Date.now() - start < timeout) {
+        const el = document.getElementById("invoice-print-area");
+        if (el && el.children && el.children.length > 0) {
+          // small delay to ensure styles applied
+          await new Promise((r) => setTimeout(r, 80));
+          window.print();
+          setPrintingInvoice(null);
+          setPrintingInvoicePosition(undefined);
+          try {
+            document.body.classList.remove("print-preview");
+          } catch {}
+          return;
+        }
+        // poll
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      // fallback: still try to print
       window.print();
       setPrintingInvoice(null);
       setPrintingInvoicePosition(undefined);
-    }, 150);
+      try {
+        document.body.classList.remove("print-preview");
+      } catch {}
+    };
+    void waitAndPrint();
   };
 
   const handlePrintVisit = (visit: VisitSummary) => {
     setPrintingVisit(visit);
     setPrintingInvoice(null);
     setPrintingInvoicePosition(undefined);
-    setTimeout(() => {
+    const waitAndPrintVisit = async () => {
+      const start = Date.now();
+      const timeout = 3000;
+      try {
+        document.body.classList.add("print-preview");
+      } catch {}
+      while (Date.now() - start < timeout) {
+        const el = document.getElementById("invoice-print-area");
+        if (el && el.children && el.children.length > 0) {
+          await new Promise((r) => setTimeout(r, 80));
+          window.print();
+          setPrintingVisit(null);
+          try {
+            document.body.classList.remove("print-preview");
+          } catch {}
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 50));
+      }
       window.print();
       setPrintingVisit(null);
-    }, 150);
+      try {
+        document.body.classList.remove("print-preview");
+      } catch {}
+    };
+    void waitAndPrintVisit();
   };
 
   if (loading) {
@@ -291,6 +343,8 @@ const FacturationCaissier: React.FC = () => {
       {`
         @media screen {
           #invoice-print-area { display: none; }
+          body.print-preview #main-content { display: none !important; }
+          body.print-preview #invoice-print-area { display: block !important; }
         }
         @media print {
           body { margin: 0; padding: 0; background: #fff; }
@@ -417,6 +471,29 @@ const FacturationCaissier: React.FC = () => {
                     >
                       Imprimer facture
                     </button>
+                    <button
+                      onClick={() => {
+                        setPrintingInvoice(inv);
+                        setPrintingVisit(null);
+                        try { document.body.classList.add('print-preview'); } catch {}
+                        setPreviewActive(true);
+                      }}
+                      className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                    >
+                      Prévisualiser
+                    </button>
+                    {previewActive && (
+                      <button
+                        onClick={() => {
+                          setPrintingInvoice(null);
+                          setPreviewActive(false);
+                          try { document.body.classList.remove('print-preview'); } catch {}
+                        }}
+                        className="px-3 py-1 bg-gray-500 text-white rounded text-xs hover:bg-gray-600"
+                      >
+                        Fermer aperçu
+                      </button>
+                    )}
                     {visitSummaries.find((visit) => visit.patientId === inv.patientId)?.patientWorkflowStatus !== "TERMINE" && (
                       <button
                         onClick={() => handlePrintVisit(visitSummaries.find((visit) => visit.patientId === inv.patientId)!)}
@@ -451,8 +528,14 @@ const FacturationCaissier: React.FC = () => {
           issuedAt={printingInvoice.issuedAt}
           dueDate={printingInvoice.dueDate}
           remarks={printingInvoice.remarks}
+          clinicName="D7 Clinique"
+          clinicAddress="Zone de santé, Dilala"
+          clinicPhone="+243 987 299 227"
+          clinicEmail="fondationd7clinic@gmail.com"
           invoiceId={printingInvoice.id}
           invoicePosition={printingInvoicePosition}
+          invoiceLines={printingInvoice.invoiceLines}
+          payments={printingInvoice.payments}
         />
       )}
       {printingVisit && (
@@ -466,6 +549,10 @@ const FacturationCaissier: React.FC = () => {
           status={printingVisit.status}
           issuedAt={new Date().toISOString()}
           dueDate={new Date().toISOString()}
+          clinicName="D7 Clinique"
+          clinicAddress="Zone de santé, Dilala"
+          clinicPhone="+243 987 299 227"
+          clinicEmail="fondationd7clinic@gmail.com"
           invoiceId={printingVisit.patientId}
           invoicePosition={1}
           visitItems={printingVisit.invoices.map((invoice) => {

@@ -124,6 +124,19 @@ export function formatDate(value?: string | null) {
   return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+export function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("fr-FR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function formatMoney(value: number | string | null | undefined, currency = "CDF") {
   return `${Number(value || 0).toLocaleString("fr-FR")} ${currency}`;
 }

@@ -1,13 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
+import { apiFetch } from "../../config/api";
 import {
   DoctorPatient,
   fetchDoctorVisiblePatients,
   formatDoctorPatientName,
 } from "../../api/doctor";
+import { fetchLaboratoryCatalogue } from "../../api/laboratory";
 import { formatConsultationId, formatDossierId, formatExamRequestId, formatPrescriptionId } from "../../utils/formatId";
 import { medicalHistoryKindLabel } from "../../utils/medicalHistoryLabels";
+
+type LabTestMetadata = {
+  id: string;
+  name: string;
+  price?: string;
+  section?: { name: string } | null;
+  category?: { name: string } | null;
+  referenceRange?: string | null;
+};
+
+type Department = {
+  id: string;
+  name: string;
+  isParamedical?: boolean;
+};
+
 
 const formatDate = (value?: string | null) => {
   if (!value) return "-";
@@ -35,6 +53,8 @@ const latestVital = (patient: DoctorPatient, type: string) =>
 
 export default function PatientsMedecin() {
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
+  const [labTests, setLabTests] = useState<LabTestMetadata[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"ALL" | "WRITE" | "READ_ONLY">("ALL");
@@ -55,9 +75,33 @@ export default function PatientsMedecin() {
     }
   };
 
+  const loadLabTests = async () => {
+    try {
+      const catalogue = await fetchLaboratoryCatalogue();
+      setLabTests(catalogue.tests || []);
+    } catch {
+      setLabTests([]);
+    }
+  };
+
+  const loadDepartments = async () => {
+    try {
+      const data = await apiFetch<Department[]>('/administration/departments');
+      setDepartments(data || []);
+    } catch {
+      setDepartments([]);
+    }
+  };
+
   useEffect(() => {
     loadPatients();
-    const handler = () => loadPatients();
+    loadLabTests();
+    loadDepartments();
+    const handler = () => {
+      loadPatients();
+      loadLabTests();
+      loadDepartments();
+    };
     window.addEventListener("d7:patient.updated", handler);
     window.addEventListener("d7:consultation.created", handler);
     window.addEventListener("d7:clinicalDataUpdated", handler);
@@ -91,9 +135,6 @@ export default function PatientsMedecin() {
 
   const selectedPatient = patients.find((patient) => patient.id === selectedPatientId) || filteredPatients[0] || null;
   const selectedPatientPosition = selectedPatient ? patients.findIndex((patient) => patient.id === selectedPatient.id) + 1 : undefined;
-
-  const patientStatusLabel = (patient: DoctorPatient) =>
-    patient.hasPendingAppointmentWithoutConsultation ? 'Non reçu' : patient.workflowStatus || 'Statut inconnu';
 
   const metrics = useMemo(() => ({
     total: patients.length,
@@ -197,7 +238,7 @@ export default function PatientsMedecin() {
           {!selectedPatient ? (
             <p className="text-sm text-slate-500">Selectionnez un patient.</p>
           ) : (
-            <PatientRecord patient={selectedPatient} position={selectedPatientPosition} />
+            <PatientRecord patient={selectedPatient} position={selectedPatientPosition} labTests={labTests} departments={departments} />
           )}
         </main>
       </div>
@@ -205,7 +246,7 @@ export default function PatientsMedecin() {
   );
 }
 
-function PatientRecord({ patient, position }: { patient: DoctorPatient; position?: number }) {
+function PatientRecord({ patient, position, labTests, departments }: { patient: DoctorPatient; position?: number; labTests: LabTestMetadata[]; departments: Department[] }) {
   return (
     <div className="space-y-6">
       <div className="rounded-[32px] border border-slate-200 bg-slate-50 p-6 shadow-sm ring-1 ring-slate-200/70 dark:border-slate-800 dark:bg-slate-950 dark:ring-slate-700/60">
@@ -232,7 +273,7 @@ function PatientRecord({ patient, position }: { patient: DoctorPatient; position
           <div className="grid gap-3 sm:auto-rows-min">
             <button
               type="button"
-              onClick={() => printPatientRecord(patient, position)}
+              onClick={() => printPatientRecord(patient, position, labTests, departments)}
               className="rounded-3xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:border-slate-600 dark:hover:bg-slate-900"
             >
               🖨️ Imprimer le dossier
@@ -306,7 +347,7 @@ function PatientRecord({ patient, position }: { patient: DoctorPatient; position
           {(patient.medicalHistories || []).length === 0 ? <Empty /> : (
             <div className="space-y-3">
               {patient.medicalHistories?.slice(0, 4).map((item) => (
-                <HistoryEventCard key={item.id} item={item} />
+                <HistoryEventCard key={item.id} item={item} patient={patient} labTests={labTests} departments={departments} />
               ))}
             </div>
           )}
@@ -355,7 +396,7 @@ function PatientRecord({ patient, position }: { patient: DoctorPatient; position
 
         <Section title="Historique medical">
           {(patient.medicalHistories || []).length === 0 ? <Empty /> : patient.medicalHistories?.map((item) => (
-            <HistoryEventCard key={item.id} item={item} />
+            <HistoryEventCard key={item.id} item={item} patient={patient} labTests={labTests} departments={departments} />
           ))}
         </Section>
       </div>
@@ -391,8 +432,9 @@ function ClinicalConsultation({ consultation, displayId }: { consultation: NonNu
   );
 }
 
-function HistoryEventCard({ item }: { item: NonNullable<DoctorPatient["medicalHistories"]>[number] }) {
+function HistoryEventCard({ item, patient, labTests, departments }: { item: NonNullable<DoctorPatient["medicalHistories"]>[number]; patient: DoctorPatient; labTests: LabTestMetadata[]; departments: Department[] }) {
   const title = historyTitle(item.kind);
+  const parsed = parseHistoryDetails(item.details);
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
@@ -400,9 +442,9 @@ function HistoryEventCard({ item }: { item: NonNullable<DoctorPatient["medicalHi
           <p className="font-semibold text-slate-900 dark:text-white">{title}</p>
           <p className="mt-1 text-xs text-slate-500">{formatDate(item.eventDate)} - {item.createdBy?.displayName || "Systeme"}</p>
         </div>
-        <StatusBadge label={title} />
+        <StatusBadge label={getHistoryBadgeLabel(item.kind, parsed, patient)} />
       </div>
-      <div className="mt-4">{renderHistoryDetails(item.kind, item.details)}</div>
+      <div className="mt-4">{renderHistoryDetails(item.kind, parsed, patient, labTests, departments)}</div>
     </div>
   );
 }
@@ -411,69 +453,162 @@ function historyTitle(kind: string) {
   return medicalHistoryKindLabel(kind);
 }
 
-function renderHistoryDetails(kind: string, details: string) {
+function getHistoryBadgeLabel(kind: string, parsed: any, patient: DoctorPatient) {
+  if (kind === "LAB_REQUEST") {
+    const labRequest = parsed?.labRequestId ? patient.labRequests?.find((request) => request.id === parsed.labRequestId) : undefined;
+    if (!labRequest) return medicalHistoryKindLabel(kind);
+
+    const hasResults = Boolean(labRequest.results?.some((result) => result.resultValue?.trim()));
+    const status = labRequest.status?.toString().toUpperCase();
+
+    if (hasResults || ["AVAILABLE", "SENT", "VERIFIED", "COMPLETED", "TECHNICAL_VALIDATED", "BIOLOGICALLY_VALIDATED"].includes(status || "")) {
+      return "Résultat disponible";
+    }
+    if (status === "REQUESTED" || status === "PENDING" || status === "AWAITING_PAYMENT") {
+      return "En attente de paiement";
+    }
+    return "En cours de traitement";
+  }
+
+  if (kind === "PRESCRIPTION_CREATED") {
+    const prescription = parsed?.prescriptionId ? patient.prescriptions?.find((item) => item.id === parsed.prescriptionId) : undefined;
+    if (!prescription) return medicalHistoryKindLabel(kind);
+
+    const status = prescription.status?.toString().toUpperCase();
+    if (status === "DISPENSED") return "Dispensé";
+    if (status === "PRESCRIBED" || status === "ACTIVE" || status === "ISSUED") return "En attente de dispensation";
+    return "En attente de paiement";
+  }
+
+  return medicalHistoryKindLabel(kind);
+}
+
+function parseHistoryDetails(details: string) {
   try {
     const parsed = JSON.parse(details);
-    if (typeof parsed !== "object" || !parsed) return <p className="text-slate-600 dark:text-slate-300">{details}</p>;
+    if (typeof parsed !== "object" || !parsed) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
-    if (kind === "MEDICAL_CONSULTATION") {
-      return (
-        <div className="grid gap-4 md:grid-cols-2">
-          <Info label="Antecedents" value={joinValues(parsed.medicalHistory, ["knownDiseases", "surgeries", "allergies", "currentMedications", "familyHistory"])} />
-          <Info label="Anamnese" value={joinValues(parsed.currentSymptoms, ["onset", "painLocation", "intensity", "aggravatingFactors", "associatedSymptoms"])} />
-          <Info label="Examen clinique" value={joinValues(parsed.clinicalExam, ["generalState", "auscultation", "palpation", "focusedExam"])} />
-          <Info label="Diagnostic" value={[parsed.diagnosis?.principal, ...(parsed.diagnosis?.hypotheses || [])].filter(Boolean).join(" | ") || "-"} />
-          <Info label="Traitement" value={parsed.treatmentPlan?.notes || "-"} />
-          <Info label="Suivi" value={parsed.followUp?.notes || "-"} />
-        </div>
-      );
-    }
+function renderHistoryDetails(kind: string, parsed: any, patient: DoctorPatient, labTests: LabTestMetadata[], departments: Department[]) {
+  if (!parsed || typeof parsed !== "object") {
+    return <p className="text-slate-600 dark:text-slate-300">{String(parsed || "-")}</p>;
+  }
 
-    if (kind === "NURSE_ORIENTATION") {
-      return (
-        <div className="grid gap-3 md:grid-cols-2">
-          <Info label="Medecin oriente" value={parsed.physicianName || parsed.physicianId || "-"} />
-          <Info label="Consultation creee" value={parsed.consultationId || "-"} />
-          <Info label="Observation infirmiere" value={parsed.notes || "-"} />
-        </div>
-      );
-    }
-
-    if (kind === "ADMISSION_METADATA") {
-      return (
-        <div className="grid gap-3 md:grid-cols-2">
-          <Info label="Date de naissance" value={parsed.dateOfBirth || "-"} />
-          <Info label="Age" value={parsed.age ? `${parsed.age} ans` : "-"} />
-          <Info label="Profession" value={parsed.profession || "-"} />
-          <Info label="Receptionniste" value={parsed.receptionistName || "-"} />
-          <Info label="Contacts famille" value={Array.isArray(parsed.familyContacts) && parsed.familyContacts.length ? parsed.familyContacts.map((contact: any) => `${contact.name || "-"} (${contact.relation || "-"}) ${contact.phone || ""}`).join(" | ") : "-"} />
-        </div>
-      );
-    }
-
-    if (kind === "NOUVELLE_VISITE") {
-      return (
-        <div className="grid gap-3 md:grid-cols-2">
-          <Info label="Service oriente" value={parsed.serviceName || "-"} />
-          <Info label="Date prevue" value={parsed.scheduledAt ? new Date(parsed.scheduledAt).toLocaleString("fr-FR") : "-"} />
-          <Info label="Motif" value={parsed.reason || "-"} />
-          <Info label="Statut parcours" value={medicalHistoryKindLabel(parsed.workflowStatus) || parsed.workflowStatus || "-"} />
-        </div>
-      );
-    }
-
+  if (kind === "MEDICAL_CONSULTATION") {
     return (
-      <div className="grid gap-3 md:grid-cols-2">
-        {Object.entries(parsed)
-          .filter(([, value]) => value !== null && value !== "" && value !== undefined)
-          .map(([key, value]) => (
-            <Info key={key} label={humanizeKey(key)} value={typeof value === "object" ? formatObjectValue(value) : String(value)} />
-          ))}
+      <div className="grid gap-4 md:grid-cols-2">
+        <Info label="Antecedents" value={joinValues(parsed.medicalHistory, ["knownDiseases", "surgeries", "allergies", "currentMedications", "familyHistory"])} />
+        <Info label="Anamnese" value={joinValues(parsed.currentSymptoms, ["onset", "painLocation", "intensity", "aggravatingFactors", "associatedSymptoms"])} />
+        <Info label="Examen clinique" value={joinValues(parsed.clinicalExam, ["generalState", "auscultation", "palpation", "focusedExam"])} />
+        <Info label="Diagnostic" value={[parsed.diagnosis?.principal, ...(parsed.diagnosis?.hypotheses || [])].filter(Boolean).join(" | ") || "-"} />
+        <Info label="Traitement" value={parsed.treatmentPlan?.notes || "-"} />
+        <Info label="Suivi" value={parsed.followUp?.notes || "-"} />
       </div>
     );
-  } catch {
-    return <p className="text-slate-600 dark:text-slate-300">{details}</p>;
   }
+
+  if (kind === "LAB_REQUEST") {
+    const labRequest = parsed?.labRequestId ? patient.labRequests?.find((request) => request.id === parsed.labRequestId) : undefined;
+    const labTest = labRequest
+      ? labTests.find((test) => test.id === labRequest.labTestId || test.id === (labRequest.labTest && (labRequest.labTest.id || labRequest.labTestId)) || test.name === labRequest.specimenType || test.name === labRequest.examName)
+      : undefined;
+    const examName = labRequest?.specimenType || labRequest?.examName || labTest?.name || "-";
+    const department = (labRequest?.departmentId && departments.find((dept) => String(dept.id) === String(labRequest.departmentId))?.name)
+      || labRequest?.departmentName
+      || labTest?.section?.name
+      || labTest?.category?.name
+      || "-";
+    const price = labRequest?.price ?? labRequest?.charge ?? labRequest?.chargeAmount ?? labTest?.price ?? null;
+    const results = labRequest?.results || [];
+    const resultValue = results.length > 0 ? results.map((result: any) => `${result.resultName || "Résultat"}: ${result.resultValue || "-"}${result.units ? ` ${result.units}` : ""}`).join(" | ") : "-";
+    const referenceValue = results[0]?.referenceRange || results[0]?.reference || results[0]?.reference_range || labTest?.referenceRange || labTest?.referenceRangeText || "-";
+    const interpretation = results[0]?.interpretation || results[0]?.notes || labRequest?.interpretation || "-";
+    const delayValue = labRequest ? getLabDelay({ requestedAt: labRequest.requestedAt, receivedAt: results[0]?.reportedAt || results[0]?.createdAt || labRequest.completedAt }) : "-";
+
+    return (
+      <div className="grid gap-4 md:grid-cols-2">
+        <Info label="Nom de l'examen" value={examName} />
+        <Info label="Département" value={department} />
+        <Info label="Prix de l'examen" value={formatCurrencyValue(price)} CDF/>
+        <Info label="Résultat" value={resultValue} />
+        <Info label="Valeur de référence" value={referenceValue} />
+        <Info label="Délai" value={delayValue} />
+        <Info label="Interprétation" value={interpretation} />
+      </div>
+    );
+  }
+
+  if (kind === "PRESCRIPTION_CREATED") {
+    const prescription = parsed?.prescriptionId ? patient.prescriptions?.find((item) => item.id === parsed.prescriptionId) : undefined;
+    const medicationName = prescription?.lineItems?.map((item) => item.medication?.name || "Médicament").filter(Boolean).join(" | ") || "-";
+    const route = prescription?.lineItems?.map((item) => item.route || item.routeOfAdministration || item.voie || "").filter(Boolean).join(" | ") || "-";
+    const dosage = prescription?.lineItems?.map((item) => item.dosage || item.strength || "").filter(Boolean).join(" | ") || "-";
+    const quantity = prescription?.lineItems?.map((item) => item.quantity != null ? String(item.quantity) : "").filter(Boolean).join(" | ") || "-";
+    const frequency = prescription?.lineItems?.map((item) => item.frequency || "").filter(Boolean).join(" | ") || "-";
+    const duration = prescription?.lineItems?.map((item: any) => item.durationDays ? `${item.durationDays} jour${item.durationDays > 1 ? 's' : ''}` : item.duration || "").filter(Boolean).join(" | ") || "-";
+    const advice = prescription?.lineItems?.map((item) => item.notes || item.instruction || "").filter(Boolean).join(" | ") || prescription?.instruction || "-";
+
+    return (
+      <div className="grid gap-4 md:grid-cols-2">
+        <Info label="Nom du médicament" value={medicationName} />
+        <Info label="Voie" value={route} />
+        <Info label="Posologie" value={dosage} />
+        <Info label="Quantité" value={quantity} />
+        <Info label="Fréquence" value={frequency} />
+        <Info label="Durée" value={duration} />
+        <Info label="Conseil" value={advice} />
+      </div>
+    );
+  }
+
+  if (kind === "NURSE_ORIENTATION") {
+    const consultation = parsed?.consultationId ? patient.consultations?.find((item) => item.id === parsed.consultationId) : undefined;
+    const consultationValue = consultation?.chiefComplaint || consultation?.status || parsed.consultationName || parsed.consultationTitle || "-";
+    return (
+      <div className="grid gap-3 md:grid-cols-2">
+        <Info label="Medecin oriente" value={parsed.physicianName || parsed.physicianId || "-"} />
+        <Info label="Consultation créée" value={consultationValue} />
+        <Info label="Observation infirmière" value={parsed.notes || "-"} />
+      </div>
+    );
+  }
+
+  if (kind === "ADMISSION_METADATA") {
+    return (
+      <div className="grid gap-3 md:grid-cols-2">
+        <Info label="Date de naissance" value={parsed.dateOfBirth || "-"} />
+        <Info label="Age" value={parsed.age ? `${parsed.age} ans` : "-"} />
+        <Info label="Profession" value={parsed.profession || "-"} />
+        <Info label="Receptionniste" value={parsed.receptionistName || "-"} />
+        <Info label="Contacts famille" value={Array.isArray(parsed.familyContacts) && parsed.familyContacts.length ? parsed.familyContacts.map((contact: any) => `${contact.name || "-"} (${contact.relation || "-"}) ${contact.phone || ""}`).join(" | ") : "-"} />
+      </div>
+    );
+  }
+
+  if (kind === "NOUVELLE_VISITE") {
+    return (
+      <div className="grid gap-3 md:grid-cols-2">
+        <Info label="Service oriente" value={parsed.serviceName || "-"} />
+        <Info label="Date prevue" value={parsed.scheduledAt ? new Date(parsed.scheduledAt).toLocaleString("fr-FR") : "-"} />
+        <Info label="Motif" value={parsed.reason || "-"} />
+        <Info label="Statut parcours" value={medicalHistoryKindLabel(parsed.workflowStatus) || parsed.workflowStatus || "-"} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {Object.entries(parsed)
+        .filter(([, value]) => value !== null && value !== "" && value !== undefined)
+        .map(([key, value]) => (
+          <Info key={key} label={humanizeKey(key)} value={typeof value === "object" ? formatObjectValue(value) : String(value)} />
+        ))}
+    </div>
+  );
 }
 
 function humanizeKey(key: string) {
@@ -496,6 +631,33 @@ function formatObjectValue(value: unknown) {
 function joinValues(source: any, keys: string[]) {
   if (!source) return "-";
   return keys.map((key) => source[key]).filter(Boolean).join(" | ") || "-";
+}
+
+function formatCurrencyValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "number") return `${value} CDF`;
+  return String(value);
+}
+
+function msToHuman(ms: number) {
+  if (ms <= 0) return "0s";
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ${mins % 60}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}j ${hours % 24}h`;
+}
+
+function getLabDelay({ requestedAt, receivedAt }: { requestedAt?: string | null; receivedAt?: string | null }) {
+  if (!requestedAt || !receivedAt) return "-";
+  const start = new Date(requestedAt).getTime();
+  const end = new Date(receivedAt).getTime();
+  if (!start || !end || end <= start) return "-";
+  const ms = end - start;
+  return msToHuman(ms);
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -526,7 +688,7 @@ function QuickStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function printPatientRecord(patient: DoctorPatient, position?: number) {
+function printPatientRecord(patient: DoctorPatient, position?: number, labTests: LabTestMetadata[] = [], departments: Department[] = []) {
   const formatDateString = (value?: string | null) => {
     if (!value) return "—";
     return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -554,7 +716,7 @@ function printPatientRecord(patient: DoctorPatient, position?: number) {
         <td>${formatDateString(prescription.prescribingDate)}</td>
         <td>${prescription.prescriber?.displayName || "-"}</td>
         <td>${prescription.lineItems?.map((line) => `${line.medication?.name || "Medicament"} ${line.dosage || ""} ${line.frequency || ""}`).join(" | ") || prescription.instruction || "-"}</td>
-        <td>${prescription.status}</td>
+        <td>${translatePrescriptionStatus(prescription.status)}</td>
       </tr>
     `).join("");
 
@@ -610,7 +772,14 @@ function printPatientRecord(patient: DoctorPatient, position?: number) {
     if (kind === "NURSE_ORIENTATION") {
       const rows: string[] = [];
       if (parsed.physicianName) rows.push(toLine("Médecin orienté", parsed.physicianName));
-      if (parsed.consultationId) rows.push(toLine("Consultation", parsed.consultationId));
+      if (parsed.consultationId) {
+        const linked = (patient.consultations || []).find((c: any) => c.id === parsed.consultationId);
+        if (linked) {
+          rows.push(toLine("Consultation", `${linked.chiefComplaint || 'Consultation médicale'} - ${linked.provider?.displayName || 'Médecin' } (${formatDateString(linked.createdAt)})`));
+        } else {
+          rows.push(toLine("Consultation", "-"));
+        }
+      }
       if (parsed.notes) rows.push(toLine("Observations infirmières", parsed.notes));
       return rows.length > 0 ? rows.join("") : details || "-";
     }
@@ -648,7 +817,7 @@ function printPatientRecord(patient: DoctorPatient, position?: number) {
       .join("") || details || "-";
   };
 
-  const medicalHistoryRows = (patient.medicalHistories || []).map((item) => `
+    const medicalHistoryRows = (patient.medicalHistories || []).map((item) => `
       <tr>
         <td>${formatDateString(item.eventDate)}</td>
         <td>${historyKindLabel(item.kind)}</td>
@@ -656,7 +825,100 @@ function printPatientRecord(patient: DoctorPatient, position?: number) {
       </tr>
     `).join("");
 
-  const html = `
+    // Operations (extraction depuis medicalHistories pour bloc séparé)
+    const operationItems = (patient.medicalHistories || []).filter((h) => h.kind === 'OPERATION');
+    const operationsRows = operationItems.map((op) => `
+      <tr>
+        <td>${formatDateString(op.eventDate)}</td>
+        <td>${op.details ? (() => {
+          try { const p = JSON.parse(op.details); return p.procedureName || p.title || 'Opération'; } catch { return op.details || 'Opération'; }
+        })() : 'Opération'}</td>
+        <td>${formatHistoryDetails(op.kind, op.details)}</td>
+      </tr>
+    `).join("");
+
+    // Lab requests detailed rows (includes date, price fallbacks, readable delay)
+    const labRows = (patient.labRequests || []).map((request: any) => {
+      const requestedAt = request.requestedAt ? new Date(request.requestedAt) : null;
+      const firstResult = (request.results || [])[0];
+      const resultReceivedAt = firstResult?.reportedAt || firstResult?.createdAt || request.completedAt || null;
+      const dateCell = formatDateString(request.requestedAt || request.createdAt || request.createdAt);
+
+      const delayMs = requestedAt && resultReceivedAt ? (new Date(resultReceivedAt).getTime() - requestedAt.getTime()) : null;
+      const humanDelay = delayMs ? msToHuman(delayMs) : "-";
+      const delayText = delayMs ? `${humanDelay} écoulé${humanDelay.startsWith('1') ? '' : 's'} depuis la demande jusqu'à la réception` : "-";
+
+      const labTest = labTests.find((test) => test.id === request.labTestId || test.id === request.labTest?.id || test.name === request.specimenType);
+      const examName = request.specimenType || labTest?.name || request.name || 'Examen';
+      const departmentName = departments.find((dept) => dept.id === request.departmentId)?.name || labTest?.section?.name || labTest?.category?.name || request.departmentName || request.department || 'Laboratoire';
+      const priceCandidate = labTest?.price || request.price || request.charge || request.chargeAmount;
+      const priceDisplay = formatCurrencyValue(priceCandidate);
+
+      const rVal = firstResult?.resultValue ?? firstResult?.value ?? firstResult?.result ?? "";
+      const rUnitRaw = firstResult?.units || firstResult?.unit || firstResult?.u || "";
+      const rUnit = rUnitRaw ? String(rUnitRaw).trim() : "";
+      const rReferenceRaw = firstResult?.referenceRange || firstResult?.reference || firstResult?.reference_range || labTest?.referenceRange || "";
+      let rReference = rReferenceRaw ? String(rReferenceRaw).trim() : "";
+      if (rReference && rUnit && !rReference.toLowerCase().includes(rUnit.toLowerCase())) rReference = `${rReference} ${rUnit}`;
+      const resultDisplay = rVal !== null && rVal !== undefined && String(rVal).trim() !== "" ? `${String(rVal).trim()}${rUnit ? ` ${rUnit}` : ""}` : "-";
+
+      const interpretation = request.interpretation || firstResult?.interpretation || "-";
+      const diagnostic = request.diagnostic || request.consultation?.diagnosis || "-";
+
+      return `
+        <tr>
+          <td>${dateCell}</td>
+          <td>${examName}</td>
+          <td>${departmentName}</td>
+          <td>${delayText}</td>
+          <td>${priceDisplay}</td>
+          <td>${resultDisplay}${rReference ? `<br/><small>valeur de référence: ${rReference}</small>` : ''}</td>
+          <td>${interpretation}</td>
+          <td>${diagnostic}</td>
+        </tr>
+      `;
+    }).join("");
+
+    function translatePrescriptionStatus(status?: string | null) {
+      if (!status) return "Statut inconnu";
+      const s = String(status).trim().toUpperCase();
+      switch (s) {
+        case "PENDING":
+        case "AWAITING":
+          return "En attente";
+        case "ACTIVE":
+        case "ISSUED":
+          return "Active";
+        case "COMPLETED":
+        case "DONE":
+          return "Terminé";
+        case "DISPENSED":
+          return "Dispensé";
+        case "CANCELLED":
+        case "CANCELED":
+          return "Annulée";
+        case "DRAFT":
+          return "Brouillon";
+        default:
+          return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+      }
+    }
+
+    
+
+    const displayService = (() => {
+      const s = serviceLabel(patient) || '';
+      const low = s.toLowerCase();
+      if (low.includes('administr') || low.includes('gestion')) return '-';
+      return s;
+    })();
+
+    const department =
+      typeof patient.service === 'object'
+        ? (patient.service as any)?.department || patient.service.name
+        : patient.service || '-';
+
+    const html = `
     <html>
       <head>
         <title>Dossier Patient - ${formatDoctorPatientName(patient)}</title>
@@ -715,7 +977,8 @@ function printPatientRecord(patient: DoctorPatient, position?: number) {
                 <tr><td class="label">Adresse</td><td>${patient.address || '—'}</td></tr>
                 <tr><td class="label">Profession</td><td>${patient.profession || '—'}</td></tr>
                 <tr><td class="label">Nationalité</td><td>${patient.nationality || '—'}</td></tr>
-                <tr><td class="label">Service</td><td>${serviceLabel(patient)}</td></tr>
+                <tr><td class="label">Département</td><td>${department}</td></tr>
+                <tr><td class="label">Service</td><td>${displayService}</td></tr>
                 <tr><td class="label">Médecin</td><td>${doctorLabel(patient.assignedDoctor)}</td></tr>
               </tbody>
             </table>
@@ -757,6 +1020,20 @@ function printPatientRecord(patient: DoctorPatient, position?: number) {
           </div>
           ` : ''}
 
+          ${(patient.labRequests || []).length > 0 ? `
+          <div class="section">
+            <div class="section-title">Laboratoire</div>
+            <table>
+              <thead>
+                <tr><th>Date</th><th>Examen</th><th>Délai</th><th>Prix & paiement</th><th>Résultat</th><th>Interprétation</th><th>Diagnostic</th></tr>
+              </thead>
+              <tbody>
+                ${labRows}
+              </tbody>
+            </table>
+          </div>
+          ` : ''}
+
           ${(patient.hospitalizations || []).length > 0 ? `
           <div class="section">
             <div class="section-title">Hospitalisations</div>
@@ -769,14 +1046,14 @@ function printPatientRecord(patient: DoctorPatient, position?: number) {
           </div>
           ` : ''}
 
-          ${(patient.medicalHistories || []).length > 0 ? `
+          ${(operationItems && operationItems.length) ? `
           <div class="section">
-            <div class="section-title">Historique médical</div>
+            <div class="section-title">Opérations</div>
             <table>
               <thead>
-                <tr><th>Date</th><th>Type</th><th>Détails</th></tr>
+                <tr><th>Date</th><th>Libellé</th><th>Détails</th></tr>
               </thead>
-              <tbody>${medicalHistoryRows}</tbody>
+              <tbody>${operationsRows}</tbody>
             </table>
           </div>
           ` : ''}
