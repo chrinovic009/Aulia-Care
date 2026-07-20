@@ -3,9 +3,13 @@ import { Outlet } from "react-router-dom";
 import AppHeader from "./AppHeader";
 import Backdrop from "./Backdrop";
 import AppSidebar from "./AppSidebar";
+import { useAuth } from '../context/AuthContext';
+import { useSpeechNotifications } from '../hooks/useSpeechNotifications';
 
 const LayoutContent: React.FC = () => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
+  const { currentUser } = useAuth();
+  useSpeechNotifications(currentUser?.id);
 
   return (
     <div className="min-h-screen xl:flex">

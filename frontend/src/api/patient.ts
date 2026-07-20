@@ -33,3 +33,19 @@ export type PatientProfile = {
 export const fetchMyPatientProfile = async () => {
   return apiFetch<PatientProfile>("/patients/me/profile");
 };
+
+export type WearableDashboard = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  wearableDevices: Array<{
+    id: string;
+    displayName?: string | null;
+    status: string;
+    lastSeenAt?: string | null;
+    measurements: Array<{ id: string; metric: string; value: string | number; unit: string; measuredAt: string; quality: string }>;
+    emergencyLocations: Array<{ latitude: string | number; longitude: string | number; accuracyMeters?: string | number | null; capturedAt: string }>;
+  }>;
+};
+
+export const fetchWearableDashboard = (patientId: string) => apiFetch<WearableDashboard>(`/wearables/patients/${patientId}/dashboard`);

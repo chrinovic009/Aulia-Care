@@ -1,10 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PatientWorkflowStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 
 @Injectable()
 export class BillingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly gateway: NotificationsGateway) {}
+
+  async financialForecast() {
+    const since = new Date(); since.setMonth(since.getMonth() - 5); since.setDate(1); since.setHours(0, 0, 0, 0);
+    const invoices = await this.prisma.invoice.findMany({ where: { issuedAt: { gte: since }, deletedAt: null }, select: { issuedAt: true, totalAmount: true, balanceDue: true } });
+    const buckets = new Map<string, { billed: number; outstanding: number }>();
+    invoices.forEach((invoice) => { const key = `${invoice.issuedAt.getFullYear()}-${String(invoice.issuedAt.getMonth() + 1).padStart(2, '0')}`; const current = buckets.get(key) || { billed: 0, outstanding: 0 }; current.billed += Number(invoice.totalAmount); current.outstanding += Number(invoice.balanceDue); buckets.set(key, current); });
+    const months = Array.from(buckets.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([month, values]) => ({ month, ...values }));
+    const average = months.length ? months.reduce((sum, month) => sum + month.billed, 0) / months.length : 0;
+    const trend = months.length > 1 ? months[months.length - 1].billed - months[0].billed : 0;
+    return { months, forecastNextMonth: Math.max(0, Math.round(average + trend / Math.max(months.length - 1, 1))), outstandingBalance: months.reduce((sum, month) => sum + month.outstanding, 0), method: 'Moyenne mobile simple : aide au pilotage, non prévision comptable certifiée.' };
+  }
 
   async findInvoices() {
     const invoices = await this.prisma.invoice.findMany({
@@ -245,6 +257,30 @@ export class BillingService {
           .join('\n'),
       },
     });
+  }
+
+  async requestInvoiceDiscount(invoiceId: string, amount: number, reason: string, requesterId?: string) {
+    if (!requesterId || !Number.isFinite(amount) || amount <= 0 || !reason?.trim()) throw new BadRequestException('Montant, motif et demandeur sont requis.');
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    if (!invoice) throw new NotFoundException('Facture introuvable.');
+    if (amount > Number(invoice.balanceDue)) throw new BadRequestException('La réduction ne peut pas dépasser le solde restant.');
+    const request = await this.prisma.invoiceDiscountRequest.create({ data: { invoiceId, requestedById: requesterId, amount, reason: reason.trim() } });
+    this.gateway.notify('discount.requested', request);
+    return request;
+  }
+
+  async reviewInvoiceDiscount(requestId: string, approved: boolean, reviewerId?: string, reviewNote?: string) {
+    if (!reviewerId) throw new BadRequestException('Administrateur non identifié.');
+    return this.prisma.$transaction(async (tx) => {
+      const request = await tx.invoiceDiscountRequest.findUnique({ where: { id: requestId }, include: { invoice: true } });
+      if (!request) throw new NotFoundException('Demande de réduction introuvable.');
+      if (request.status !== 'PENDING') throw new BadRequestException('Cette demande a déjà été traitée.');
+      if (!approved) return tx.invoiceDiscountRequest.update({ where: { id: requestId }, data: { status: 'REJECTED', reviewedById: reviewerId, reviewedAt: new Date(), reviewNote: reviewNote || null } });
+      const discount = Math.min(Number(request.amount), Number(request.invoice.balanceDue));
+      const invoice = await tx.invoice.update({ where: { id: request.invoiceId }, data: { totalAmount: Math.max(Number(request.invoice.totalAmount) - discount, 0), balanceDue: Math.max(Number(request.invoice.balanceDue) - discount, 0), remarks: [request.invoice.remarks, `Réduction approuvée: ${discount} FC - ${request.reason}`].filter(Boolean).join('\n') } });
+      const reviewed = await tx.invoiceDiscountRequest.update({ where: { id: requestId }, data: { status: 'APPROVED', reviewedById: reviewerId, reviewedAt: new Date(), reviewNote: reviewNote || null } });
+      return { request: reviewed, invoice };
+    }).then((result: any) => { this.gateway.notify('discount.reviewed', result); if (result?.request?.requestedById) this.gateway.notifyToUser(result.request.requestedById, 'discount.reviewed', result); return result; });
   }
 
   async authorizePatientDischarge(patientId: string) {

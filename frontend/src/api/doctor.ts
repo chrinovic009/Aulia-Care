@@ -51,6 +51,7 @@ export type AvailableMedication = {
   strength?: string | null;
   availableQuantity: number;
   unitPrice?: string | number | null;
+  category?: { id: string; name: string; section?: { id: string; name: string } | null } | null;
 };
 
 export const saveClinicalSections = (consultationId: string, payload: Record<string, unknown>) =>

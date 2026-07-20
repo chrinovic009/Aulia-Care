@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PatientWorkflowStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateHospitalizationDto } from './dto/create-hospitalization.dto';
@@ -68,7 +68,32 @@ export class HospitalizationsService {
 
   async create(createHospitalizationDto: CreateHospitalizationDto) {
     const created = await this.prisma.$transaction(async (tx) => {
-      const hospitalization = await tx.hospitalization.create({ data: createHospitalizationDto as any });
+      const bedId = createHospitalizationDto.bedId;
+      let assignedBed: any = null;
+
+      if (bedId) {
+        assignedBed = await tx.bed.findUnique({ where: { id: bedId } });
+        if (!assignedBed) {
+          throw new BadRequestException('Le lit selectionne est introuvable');
+        }
+        if (assignedBed.status !== 'FREE') {
+          throw new BadRequestException('Le lit selectionne n est plus disponible');
+        }
+      }
+
+      const { bedId: _bedId, ...hospitalizationData } = createHospitalizationDto as any;
+      const hospitalization = await tx.hospitalization.create({ data: hospitalizationData });
+
+      if (assignedBed) {
+        await tx.bed.update({
+          where: { id: bedId },
+          data: {
+            status: 'OCCUPIED',
+            hospitalizationId: hospitalization.id,
+          },
+        });
+      }
+
       await tx.patient.update({
         where: { id: createHospitalizationDto.patientId },
         data: { workflowStatus: PatientWorkflowStatus.HOSPITALISE },
@@ -275,7 +300,18 @@ export class HospitalizationsService {
   }
 
   async getRoomInventory() {
-    const rooms = await this.prisma.room.findMany({ include: { serviceUnit: true, beds: true } });
+    const rooms = await this.prisma.room.findMany({
+      include: {
+        serviceUnit: true,
+        beds: {
+          select: {
+            id: true,
+            code: true,
+            status: true,
+          },
+        },
+      },
+    });
     return rooms.map((room) => {
       const totalBeds = room.beds.length;
       const occupiedBeds = room.beds.filter((bed) => bed.status === 'OCCUPIED').length;
@@ -287,6 +323,7 @@ export class HospitalizationsService {
         occupiedBeds,
         availableBeds: totalBeds - occupiedBeds,
         status: room.status,
+        beds: room.beds,
       };
     });
   }

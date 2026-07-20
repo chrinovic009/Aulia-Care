@@ -21,6 +21,12 @@ export class SubscriptionsController {
     return this.subscriptionsService.createCompany(body);
   }
 
+  @Post('companies/import-extracted')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
+  importExtractedCompany(@Body() body: any, @Request() req: any) {
+    return this.subscriptionsService.importExtractedCompany(body, req.user?.userId || req.user?.id);
+  }
+
   @Get('companies/:id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER')
   getCompany(@Param('id') id: string) {

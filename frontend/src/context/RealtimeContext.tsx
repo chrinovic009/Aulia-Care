@@ -72,6 +72,8 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
       s.on('notification.created', (payload: any) => window.dispatchEvent(new CustomEvent('d7:notification.created', { detail: payload })));
       s.on('lab.request.created', (payload: any) => window.dispatchEvent(new CustomEvent('d7:lab.request.created', { detail: payload })));
       s.on('lab.result.created', (payload: any) => window.dispatchEvent(new CustomEvent('d7:lab.result.created', { detail: payload })));
+      s.on('wearable.measurement.received', (payload: any) => window.dispatchEvent(new CustomEvent('d7:wearable.measurement', { detail: payload })));
+      s.on('clinical.alert', (payload: any) => window.dispatchEvent(new CustomEvent('d7:clinical.alert', { detail: payload })));
       s.on('message.received', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.received', { detail: payload })));
       s.on('message.sent', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.sent', { detail: payload })));
       s.on('message.status', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.status', { detail: payload })));

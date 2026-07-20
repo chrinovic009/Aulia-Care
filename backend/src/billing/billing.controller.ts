@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -27,6 +27,10 @@ export class BillingController {
     return this.billingService.findPayment(id);
   }
 
+  @Get('forecast')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
+  financialForecast() { return this.billingService.financialForecast(); }
+
   @Get('patients/:patientId/summary')
   @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
   getPatientBillingSummary(@Param('patientId') patientId: string) {
@@ -40,6 +44,18 @@ export class BillingController {
     @Body() body: { amount: number; reason?: string },
   ) {
     return this.billingService.applyInvoiceDiscount(invoiceId, Number(body.amount), body.reason);
+  }
+
+  @Post('invoices/:invoiceId/discount-requests')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
+  requestInvoiceDiscount(@Param('invoiceId') invoiceId: string, @Body() body: { amount: number; reason: string }, @Request() req: any) {
+    return this.billingService.requestInvoiceDiscount(invoiceId, Number(body.amount), body.reason, req.user?.userId);
+  }
+
+  @Post('discount-requests/:requestId/review')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  reviewInvoiceDiscount(@Param('requestId') requestId: string, @Body() body: { approved: boolean; reviewNote?: string }, @Request() req: any) {
+    return this.billingService.reviewInvoiceDiscount(requestId, Boolean(body.approved), req.user?.userId, body.reviewNote);
   }
 
   @Post('patients/:patientId/authorize-discharge')

@@ -62,6 +62,67 @@ export class SubscriptionsService {
     return created;
   }
 
+  /**
+   * Receives the structured result of a document-AI provider. Parsing a PDF and
+   * committing clinical/billing identities are deliberately separate steps: the
+   * receptionist can review this payload before one atomic database transaction.
+   */
+  async importExtractedCompany(payload: any, actorId?: string) {
+    const company = payload?.company;
+    const employees = Array.isArray(payload?.employees) ? payload.employees : [];
+    const contractNumber = String(company?.contractNumber || '').trim();
+    if (!company?.name?.trim() || !contractNumber) {
+      throw new BadRequestException('Le nom de l entreprise et le numero de contrat sont obligatoires.');
+    }
+    if (!employees.length) throw new BadRequestException('Le document ne contient aucun employé exploitable.');
+
+    const normalizedEmployees = employees.map((employee: any, index: number) => {
+      const firstName = String(employee?.firstName || '').trim();
+      const lastName = String(employee?.lastName || '').trim();
+      const policyNumber = String(employee?.policyNumber || '').trim();
+      if (!firstName || !lastName || !policyNumber) {
+        throw new BadRequestException(`Employé ${index + 1}: nom, prénom et numéro de police sont requis.`);
+      }
+      return {
+        firstName,
+        lastName,
+        middleName: String(employee?.middleName || '').trim() || null,
+        gender: employee?.gender || null,
+        profession: String(employee?.profession || '').trim() || null,
+        dateOfBirth: employee?.dateOfBirth ? new Date(employee.dateOfBirth) : null,
+        age: Number.isFinite(Number(employee?.age)) ? Number(employee.age) : null,
+        phone: normalizePhone(employee?.phone) || null,
+        email: normalizeEmail(employee?.email) || null,
+        address: String(employee?.address || '').trim() || null,
+        nationality: String(employee?.nationality || '').trim() || null,
+        policyNumber,
+        employeeNumber: String(employee?.employeeNumber || '').trim() || null,
+      };
+    });
+    if (new Set(normalizedEmployees.map((employee: any) => employee.policyNumber)).size !== normalizedEmployees.length) {
+      throw new BadRequestException('Le document contient des numéros de police en double.');
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const existing = await (tx as any).subscriptionCompany.findUnique({ where: { contractNumber } });
+      if (existing && !payload?.allowExistingCompany) {
+        throw new BadRequestException('Cette entreprise existe déjà. Confirmez explicitement la mise à jour avant un nouvel import.');
+      }
+      const savedCompany = existing
+        ? await (tx as any).subscriptionCompany.update({ where: { id: existing.id }, data: { name: company.name.trim(), legalName: company.legalName?.trim() || company.name.trim(), registrationNumber: company.registrationNumber?.trim() || null, taxNumber: company.taxNumber?.trim() || null, address: company.address?.trim() || null, phone: normalizePhone(company.phone) || null, email: normalizeEmail(company.email) || null, contactName: company.contactName?.trim() || null, contactPhone: normalizePhone(company.contactPhone) || null, contactEmail: normalizeEmail(company.contactEmail) || null, billingDay: Number(company.billingDay || 30), creditLimit: company.creditLimit ? Number(company.creditLimit) : null, status: company.status || 'ACTIVE' } })
+        : await (tx as any).subscriptionCompany.create({ data: { name: company.name.trim(), legalName: company.legalName?.trim() || company.name.trim(), registrationNumber: company.registrationNumber?.trim() || null, taxNumber: company.taxNumber?.trim() || null, address: company.address?.trim() || null, phone: normalizePhone(company.phone) || null, email: normalizeEmail(company.email) || null, contactName: company.contactName?.trim() || null, contactPhone: normalizePhone(company.contactPhone) || null, contactEmail: normalizeEmail(company.contactEmail) || null, contractNumber, billingDay: Number(company.billingDay || 30), creditLimit: company.creditLimit ? Number(company.creditLimit) : null, status: company.status || 'ACTIVE' } });
+
+      const importResult = await (tx as any).subscriptionEmployee.createMany({
+        data: normalizedEmployees.map((employee: any) => ({ ...employee, companyId: savedCompany.id, status: 'ACTIVE' })),
+        skipDuplicates: true,
+      });
+      await tx.auditTrail.create({ data: { actorId: actorId || null, entity: 'SubscriptionCompany', entityId: savedCompany.id, action: 'CREATE', after: { source: 'DOCUMENT_AI_REVIEWED', employeeCount: importResult.count } } as any });
+      return { company: savedCompany, employeesCreated: importResult.count, employeesIgnored: normalizedEmployees.length - importResult.count };
+    });
+    this.notificationsGateway.notify('subscription.company.imported', result);
+    return result;
+  }
+
   async updateCompany(id: string, dto: any) {
     await this.getCompany(id);
     const updated = await (this.prisma as any).subscriptionCompany.update({
