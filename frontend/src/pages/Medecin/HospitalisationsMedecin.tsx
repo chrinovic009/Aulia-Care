@@ -5,6 +5,7 @@ import { DoctorPatient, fetchDoctorVisiblePatients, formatDoctorPatientName } fr
 import { apiFetch } from "../../config/api";
 import { useAuth } from "../../context/AuthContext";
 import { consultationLabel, formatDateTime, hasConsultations, patientSearchText, serviceLabel } from "./medecinShared";
+import { getBedSelectionState, type BedSelectionRoom } from "./hospitalizationBedSelection";
 
 const formatVitalLabel = (value?: string | null) => {
   const normalized = (value || "").trim().toUpperCase();
@@ -37,6 +38,9 @@ export default function HospitalisationsMedecin() {
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState({ admissionReason: "", bedNumber: "", nurseInChargeId: "" });
+  const [roomOptions, setRoomOptions] = useState<BedSelectionRoom[]>([]);
+  const [selectedRoomId, setSelectedRoomId] = useState("");
+  const [selectedBedId, setSelectedBedId] = useState("");
 
   const load = async () => {
     const data = await fetchDoctorVisiblePatients();
@@ -44,8 +48,23 @@ export default function HospitalisationsMedecin() {
     setSelectedPatientId((current) => current || data.find((patient) => patient.hospitalizations?.length)?.id || data.find(hasConsultations)?.id || "");
   };
 
+  const loadRooms = async () => {
+    try {
+      const data = await apiFetch<BedSelectionRoom[]>("/hospitalizations/rooms");
+      const roomsWithBeds = (data || []).filter((room) => (room.beds || []).length > 0);
+      setRoomOptions(roomsWithBeds);
+      if (!selectedRoomId && roomsWithBeds.length) {
+        const fallback = roomsWithBeds.find((room) => (room.beds || []).some((bed) => bed.status === "FREE")) || roomsWithBeds[0];
+        setSelectedRoomId(fallback.id);
+      }
+    } catch {
+      setRoomOptions([]);
+    }
+  };
+
   useEffect(() => {
     load();
+    void loadRooms();
     const handler = () => load();
     window.addEventListener("d7:hospitalization.updated", handler);
     window.addEventListener("d7:clinicalDataUpdated", handler);
@@ -67,6 +86,19 @@ export default function HospitalisationsMedecin() {
   const selectedConsultation = selectedPatient?.consultations?.find((consultation) => consultation.id === selectedConsultationId) || selectedPatient?.consultations?.[0] || null;
   const hospitalizedPatients = patients.filter((patient) => patient.hospitalizations?.some((item) => item.status !== "DISCHARGED"));
   const canWrite = Boolean(selectedPatient?.access?.canWrite);
+  const bedSelection = useMemo(() => getBedSelectionState(roomOptions, selectedRoomId), [roomOptions, selectedRoomId]);
+  const selectedRoom = roomOptions.find((room) => room.id === bedSelection.selectedRoomId) || null;
+  const selectedBed = (selectedRoom?.beds || []).find((bed) => bed.id === selectedBedId) || null;
+
+  useEffect(() => {
+    if (!bedSelection.availableBeds.length) {
+      setSelectedBedId("");
+      return;
+    }
+    if (!selectedBedId || !bedSelection.availableBeds.some((bed) => bed.id === selectedBedId)) {
+      setSelectedBedId(bedSelection.availableBeds[0].id);
+    }
+  }, [bedSelection.availableBeds, selectedBedId]);
 
   const declareHospitalization = async () => {
     if (!selectedPatient || !selectedConsultation || !form.admissionReason.trim()) {
@@ -77,6 +109,12 @@ export default function HospitalisationsMedecin() {
       setMessage("Dossier en lecture seule: seul le medecin autorise peut declarer l'hospitalisation.");
       return;
     }
+    if (!selectedBedId) {
+      setMessage("Aucun lit libre n'est disponible pour l'instant. Choisissez une chambre avec au moins un lit libre.");
+      return;
+    }
+
+    const bedLabel = selectedRoom && selectedBed ? `${selectedRoom.number} - Lit ${selectedBed.code}` : undefined;
 
     await apiFetch("/hospitalizations", {
       method: "POST",
@@ -84,11 +122,14 @@ export default function HospitalisationsMedecin() {
         patientId: selectedPatient.id,
         physicianId: currentUser?.id,
         admissionReason: form.admissionReason,
-        bedNumber: form.bedNumber || undefined,
+        bedId: selectedBedId,
+        bedNumber: bedLabel || form.bedNumber || undefined,
         nurseInChargeId: form.nurseInChargeId || undefined,
       }),
     });
     setForm({ admissionReason: "", bedNumber: "", nurseInChargeId: "" });
+    setSelectedBedId("");
+    setSelectedRoomId("");
     setMessage("Hospitalisation declaree et dossier patient mis a jour.");
     await load();
   };
@@ -111,9 +152,13 @@ export default function HospitalisationsMedecin() {
                 <Panel title="Declarer l'hospitalisation">
                   <Select label="Consultation source" value={selectedConsultation?.id || ""} onChange={setSelectedConsultationId} options={(selectedPatient.consultations || []).map((consultation) => [consultation.id, consultationLabel(consultation)] as [string, string])} />
                   <Textarea label="Motif d'hospitalisation" value={form.admissionReason} onChange={(value) => setForm((current) => ({ ...current, admissionReason: value }))} />
-                  <Input label="Chambre / lit" value={form.bedNumber} onChange={(value) => setForm((current) => ({ ...current, bedNumber: value }))} placeholder="Ex: Chambre 12 - Lit B" />
+                  <div className="space-y-3">
+                    <Select label="Chambre" value={bedSelection.selectedRoomId || ""} onChange={(value) => { setSelectedRoomId(value); const room = roomOptions.find((item) => item.id === value); const freeBeds = (room?.beds || []).filter((bed) => bed.status === "FREE"); setSelectedBedId(freeBeds[0]?.id || ""); }} options={roomOptions.map((room) => [room.id, room.number] as [string, string])} />
+                    <Select label="Lit" value={selectedBedId} onChange={setSelectedBedId} options={(selectedRoom?.beds || []).filter((bed) => bed.status === "FREE").map((bed) => [bed.id, bed.code] as [string, string])} />
+                    {bedSelection.message && <p className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm text-amber-700">{bedSelection.message}</p>}
+                  </div>
                   <Input label="Infirmier responsable (ID optionnel)" value={form.nurseInChargeId} onChange={(value) => setForm((current) => ({ ...current, nurseInChargeId: value }))} />
-                  <button disabled={!canWrite || !selectedConsultation} onClick={declareHospitalization} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:bg-slate-300 disabled:text-slate-600">Hospitaliser</button>
+                  <button disabled={!canWrite || !selectedConsultation || !selectedBedId} onClick={declareHospitalization} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:bg-slate-300 disabled:text-slate-600">Hospitaliser</button>
                 </Panel>
 
                 <Panel title="Hospitalisations du patient">

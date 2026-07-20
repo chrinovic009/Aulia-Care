@@ -10,6 +10,8 @@ export default function PrescriptionsMedecin() {
   const [selectedPatientId, setSelectedPatientId] = useState("");
   const [selectedConsultationId, setSelectedConsultationId] = useState("");
   const [query, setQuery] = useState("");
+  const [sectionId, setSectionId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState({ medicationId: "", quantity: "1", dosage: "", route: "ORAL", frequency: "DAILY", durationDays: "", notes: "", instruction: "" });
 
@@ -39,6 +41,9 @@ export default function PrescriptionsMedecin() {
   }, [patients, query]);
 
   const selectedPatient = patients.find((patient) => patient.id === selectedPatientId) || filteredPatients[0] || null;
+  const sections = useMemo(() => Array.from(new Map(medications.filter((item) => item.category?.section).map((item) => [item.category!.section!.id, item.category!.section!])).values()), [medications]);
+  const categories = useMemo(() => Array.from(new Map(medications.filter((item) => !sectionId || item.category?.section?.id === sectionId).filter((item) => item.category).map((item) => [item.category!.id, item.category!])).values()), [medications, sectionId]);
+  const selectableMedications = useMemo(() => medications.filter((item) => (!sectionId || item.category?.section?.id === sectionId) && (!categoryId || item.category?.id === categoryId)), [medications, sectionId, categoryId]);
   const selectedConsultation = selectedPatient?.consultations?.find((consultation) => consultation.id === selectedConsultationId) || selectedPatient?.consultations?.[0] || null;
   const canWrite = Boolean(selectedPatient?.access?.canWrite);
   const pendingExam = Boolean(selectedPatient?.labRequests?.some((request) => {
@@ -111,7 +116,9 @@ export default function PrescriptionsMedecin() {
                 <div className="mt-5 grid gap-4 xl:grid-cols-2">
                   <Panel title="Nouvelle prescription">
                     <Select label="Consultation" value={selectedConsultation.id} onChange={setSelectedConsultationId} options={(selectedPatient.consultations || []).map((consultation) => [consultation.id, consultationLabel(consultation)] as [string, string])} />
-                    <Select label="Medicament disponible" value={form.medicationId} onChange={(value) => setForm((current) => ({ ...current, medicationId: value }))} options={[["", "Choisir"], ...medications.map((medication) => [medication.id, `${medication.name}${medication.strength ? ` ${medication.strength}` : ""} - stock ${medication.availableQuantity}`] as [string, string])]} />
+                    <Select label="Section" value={sectionId} onChange={(value) => { setSectionId(value); setCategoryId(""); setForm((current) => ({ ...current, medicationId: "" })); }} options={[["", "Toutes les sections"], ...sections.map((section) => [section.id, section.name] as [string, string])]} />
+                    <Select label="Catégorie" value={categoryId} onChange={(value) => { setCategoryId(value); setForm((current) => ({ ...current, medicationId: "" })); }} options={[["", "Toutes les catégories"], ...categories.map((category) => [category.id, category.name] as [string, string])]} />
+                    <Select label="Médicament disponible" value={form.medicationId} onChange={(value) => setForm((current) => ({ ...current, medicationId: value }))} options={[["", "Choisir"], ...selectableMedications.map((medication) => [medication.id, `${medication.name}${medication.strength ? ` ${medication.strength}` : ""} - stock ${medication.availableQuantity}`] as [string, string])]} />
                     <div className="grid gap-3 md:grid-cols-2">
                       <Input label="Quantite" value={form.quantity} onChange={(value) => setForm((current) => ({ ...current, quantity: value }))} type="number" />
                       <Input label="Posologie" value={form.dosage} onChange={(value) => setForm((current) => ({ ...current, dosage: value }))} />

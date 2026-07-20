@@ -96,6 +96,8 @@ model User {
   imagingReportsInterpreted        ImagingReport[]            @relation("ImagingReportInterpreter")
   imagingRequestsRequested         ImagingRequest[]           @relation("ImagingRequestRequester")
   invoicesIssued                   Invoice[]                  @relation("InvoiceIssuer")
+  requestedInvoiceDiscounts        InvoiceDiscountRequest[]   @relation("InvoiceDiscountRequester")
+  reviewedInvoiceDiscounts         InvoiceDiscountRequest[]   @relation("InvoiceDiscountReviewer")
   labRequestsRequested             LabRequest[]               @relation("LabRequestRequester")
   labResultsReported               LabResult[]                @relation("LabResultReporter")
   labRequestItemsAssigned          LabRequestItem[]           @relation("LabRequestItemAssignedTo")
@@ -144,6 +146,8 @@ model User {
   Session                          Session[]
   PasswordResetToken               PasswordResetToken[]
   departmentResponsibilities       DepartmentResponsable[]
+  emergencyLocationRequests        EmergencyLocationRequest[] @relation("EmergencyLocationRequester")
+  parentChildLinks                 ParentChildLink[]          @relation("ParentUser")
 
   @@index([primaryRole])
   @@index([clinicId])
@@ -375,6 +379,11 @@ model Patient {
   InsuranceAuthorization InsuranceAuthorization[]
   subscriptionEmployees  SubscriptionEmployee[]
   subscriptionCharges    SubscriptionCharge[]
+  wearableDevices        WearableDevice[]
+  wearableMeasurements   WearableMeasurement[]
+  emergencyLocations     EmergencyLocation[]
+  locationRequests       EmergencyLocationRequest[]
+  childLinks             ParentChildLink[]       @relation("ChildPatient")
 
   @@index([lastName, firstName])
   @@index([dateOfBirth])
@@ -398,6 +407,121 @@ model PatientContact {
   patient      Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@index([patientId])
+}
+
+/// Wear OS and watchOS devices may transmit while their eSIM connection is active.
+/// Authentication secrets must be stored outside this table (in the secret manager).
+model WearableDevice {
+  id                 String             @id @default(uuid())
+  patientId          String
+  manufacturer       WearableManufacturer
+  platform           WearablePlatform
+  externalDeviceId   String             @unique
+  displayName        String?
+  esimPhoneNumber    String?
+  status             WearableStatus     @default(ACTIVE)
+  pairedAt           DateTime           @default(now())
+  lastSeenAt         DateTime?
+  lastLocationAt     DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  revokedAt          DateTime?
+  patient            Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  measurements       WearableMeasurement[]
+  emergencyLocations EmergencyLocation[]
+  locationRequests   EmergencyLocationRequest[]
+
+  @@index([patientId, status])
+  @@index([lastSeenAt])
+}
+
+/// This table can be converted to a TimescaleDB hypertable using TIMESCALEDB.md.
+/// One row represents one normalized vital-sign sample; no clinical interpretation is stored here.
+model WearableMeasurement {
+  id               String         @id @default(uuid())
+  wearableDeviceId String
+  patientId        String
+  metric           WearableMetric
+  value            Decimal        @db.Decimal(12, 4)
+  unit             String
+  measuredAt       DateTime
+  receivedAt       DateTime       @default(now())
+  sourceSequence   String         @default("")
+  quality          MeasurementQuality @default(UNKNOWN)
+  metadata         Json?
+  wearableDevice   WearableDevice @relation(fields: [wearableDeviceId], references: [id], onDelete: Cascade)
+  patient          Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@unique([wearableDeviceId, metric, measuredAt, sourceSequence])
+  @@index([patientId, metric, measuredAt])
+  @@index([wearableDeviceId, measuredAt])
+  @@index([measuredAt])
+}
+
+/// Auditable GPS fixes collected only after an explicit emergency request or a critical alert.
+model EmergencyLocation {
+  id               String         @id @default(uuid())
+  patientId        String
+  wearableDeviceId String?
+  requestId        String?
+  latitude         Decimal        @db.Decimal(9, 6)
+  longitude        Decimal        @db.Decimal(9, 6)
+  accuracyMeters   Decimal?       @db.Decimal(10, 2)
+  altitudeMeters   Decimal?       @db.Decimal(10, 2)
+  capturedAt       DateTime
+  receivedAt       DateTime       @default(now())
+  source           LocationSource
+  patient          Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  wearableDevice   WearableDevice? @relation(fields: [wearableDeviceId], references: [id], onDelete: SetNull)
+  request          EmergencyLocationRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+
+  @@index([patientId, capturedAt])
+  @@index([wearableDeviceId, capturedAt])
+  @@index([requestId])
+}
+
+/// A request causes the server to send a silent push command; the watch still enforces OS consent.
+model EmergencyLocationRequest {
+  id               String                    @id @default(uuid())
+  patientId        String
+  wearableDeviceId String?
+  requestedById    String?
+  reason           EmergencyLocationReason
+  status           EmergencyLocationRequestStatus @default(PENDING)
+  requestedAt      DateTime                  @default(now())
+  expiresAt        DateTime
+  fulfilledAt      DateTime?
+  cancelledAt      DateTime?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  patient          Patient                   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  requestedBy      User?                     @relation("EmergencyLocationRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  wearableDevice   WearableDevice?           @relation(fields: [wearableDeviceId], references: [id], onDelete: SetNull)
+  locations        EmergencyLocation[]
+
+  @@index([wearableDeviceId, status])
+  @@index([status, expiresAt])
+}
+
+/// A parent account can obtain a limited link to a child patient record.
+/// Only a hash of the QR/token is persisted; raw tokens must never be stored.
+model ParentChildLink {
+  id               String                @id @default(uuid())
+  parentUserId     String
+  childPatientId   String
+  tokenHash        String                @unique
+  status           ParentChildLinkStatus @default(PENDING)
+  expiresAt        DateTime
+  acceptedAt       DateTime?
+  revokedAt        DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  parent           User                  @relation("ParentUser", fields: [parentUserId], references: [id], onDelete: Cascade)
+  child            Patient               @relation("ChildPatient", fields: [childPatientId], references: [id], onDelete: Cascade)
+
+  @@unique([parentUserId, childPatientId])
+  @@index([childPatientId, status])
+  @@index([status, expiresAt])
 }
 
 model Room {
@@ -636,12 +760,49 @@ model Medication {
   syncedAt              DateTime?
   sourceNode            String?
   version               Int                    @default(1)
+  categoryId            String?
+  category              MedicationCategory?   @relation(fields: [categoryId], references: [id])
   pharmacyDispenseLines PharmacyDispenseLine[]
   prescriptionLines     PrescriptionLine[]
   PurchaseOrderLine     PurchaseOrderLine[]
   GoodsReceiptLine      GoodsReceiptLine[]
   StockLot              StockLot[]
   StockTransaction      StockTransaction[]
+
+  @@index([categoryId])
+}
+
+/// Pharmacy catalogue hierarchy used by the prescription search: Section -> Category -> Medication.
+model MedicationSection {
+  id          String               @id @default(uuid())
+  name        String
+  code        String               @unique
+  description String?
+  active      Boolean              @default(true)
+  sortOrder   Int                  @default(0)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  categories  MedicationCategory[]
+
+  @@index([active, sortOrder])
+}
+
+model MedicationCategory {
+  id          String              @id @default(uuid())
+  sectionId   String
+  name        String
+  code        String
+  description String?
+  active      Boolean             @default(true)
+  sortOrder   Int                 @default(0)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  section     MedicationSection   @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  medications Medication[]
+
+  @@unique([sectionId, code])
+  @@unique([sectionId, name])
+  @@index([sectionId, active, sortOrder])
 }
 
 model PharmacyDispense {
@@ -1242,6 +1403,7 @@ model Invoice {
   InsuranceClaim InsuranceClaim[]
   subscriptionCharges SubscriptionCharge[]
   monthlySubscriptionInvoices MonthlySubscriptionInvoice[]
+  discountRequests     InvoiceDiscountRequest[]
 
   @@index([status])
   @@index([clinicId])
@@ -1588,6 +1750,89 @@ enum VitalType {
   ARM_CIRCUMFERENCE
 }
 
+/// Negotiated discounts are never applied by a cashier without an auditable approval.
+model InvoiceDiscountRequest {
+  id           String                @id @default(uuid())
+  invoiceId    String
+  requestedById String
+  reviewedById String?
+  amount       Decimal               @db.Decimal(12, 2)
+  reason       String
+  status       DiscountRequestStatus @default(PENDING)
+  requestedAt  DateTime              @default(now())
+  reviewedAt   DateTime?
+  reviewNote   String?
+  invoice      Invoice                @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  requestedBy  User                   @relation("InvoiceDiscountRequester", fields: [requestedById], references: [id])
+  reviewedBy   User?                  @relation("InvoiceDiscountReviewer", fields: [reviewedById], references: [id])
+
+  @@index([invoiceId, status])
+  @@index([status, requestedAt])
+}
+
+enum WearableManufacturer {
+  APPLE
+  SAMSUNG
+  OTHER
+}
+
+enum WearablePlatform {
+  WATCHOS
+  WEAR_OS
+  OTHER
+}
+
+enum WearableStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
+enum WearableMetric {
+  HEART_RATE_BPM
+  BLOOD_PRESSURE_SYSTOLIC_MMHG
+  BLOOD_PRESSURE_DIASTOLIC_MMHG
+  BLOOD_GLUCOSE_MG_DL
+  SPO2_PERCENT
+  WEIGHT_KG
+  BODY_FAT_PERCENT
+}
+
+enum MeasurementQuality {
+  GOOD
+  SUSPECT
+  INVALID
+  UNKNOWN
+}
+
+enum LocationSource {
+  WATCH_GPS
+  MOBILE_GPS
+  MANUAL
+}
+
+enum EmergencyLocationReason {
+  CRITICAL_VITAL_ALERT
+  PARENT_IMMEDIATE_LOCATION
+  CLINICAL_EMERGENCY
+}
+
+enum EmergencyLocationRequestStatus {
+  PENDING
+  DISPATCHED
+  FULFILLED
+  EXPIRED
+  CANCELLED
+  FAILED
+}
+
+enum ParentChildLinkStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
 enum LabRequestStatus {
   REQUESTED
   COLLECTED
@@ -1713,6 +1958,13 @@ enum InvoiceStatus {
   ISSUED
   PAID
   PARTIALLY_PAID
+  CANCELLED
+}
+
+enum DiscountRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
   CANCELLED
 }
 

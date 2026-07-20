@@ -19,6 +19,9 @@ import { ServicesModule } from './services/services.module';
 import { MessagesModule } from './messages/messages.module';
 import { AdministrationModule } from './administration/administration.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { WearablesModule } from './wearables/wearables.module';
+import { ClinicalIntelligenceModule } from './clinical-intelligence/clinical-intelligence.module';
+import { IntelligenceModule } from './intelligence/intelligence.module';
 
 @Module({
   imports: [
@@ -42,6 +45,9 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
     MessagesModule,
     NotificationsModule,
     AuditModule,
+    WearablesModule,
+    ClinicalIntelligenceModule,
+    IntelligenceModule,
   ],
 })
 export class AppModule {}

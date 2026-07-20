@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards, Request, ParseIntPipe } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards, Request, Query } from '@nestjs/common';
 import { ParseUUIDPipe } from '@nestjs/common'; // Ajoutez cet import s'il n'est pas présent
 import { PharmacyService } from './pharmacy.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -15,6 +15,24 @@ export class PharmacyController {
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'PHARMACIST')
   findAll() {
     return this.pharmacyService.findAll();
+  }
+
+  @Get('catalogue')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN', 'PHARMACIST')
+  catalogue(@Query('sectionId') sectionId?: string, @Query('categoryId') categoryId?: string, @Query('q') q?: string) {
+    return this.pharmacyService.catalogue(sectionId, categoryId, q);
+  }
+
+  @Post('catalogue/sections')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+  createSection(@Body() body: any) {
+    return this.pharmacyService.createSection(body);
+  }
+
+  @Post('catalogue/categories')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+  createCategory(@Body() body: any) {
+    return this.pharmacyService.createCategory(body);
   }
 
   @Get('available')

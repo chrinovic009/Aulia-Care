@@ -1,5 +1,5 @@
-import PatientClinicalPage from "./PatientClinicalPage";
+import SuiviPreventif from "./SuiviPreventif";
 
 export default function SuiviQuotidien() {
-  return <PatientClinicalPage mode="suivi" />;
+  return <SuiviPreventif />;
 }

@@ -533,7 +533,7 @@ function renderHistoryDetails(kind: string, parsed: any, patient: DoctorPatient,
       <div className="grid gap-4 md:grid-cols-2">
         <Info label="Nom de l'examen" value={examName} />
         <Info label="Département" value={department} />
-        <Info label="Prix de l'examen" value={formatCurrencyValue(price)} CDF/>
+        <Info label="Prix de l'examen" value={formatCurrencyValue(price)} />
         <Info label="Résultat" value={resultValue} />
         <Info label="Valeur de référence" value={referenceValue} />
         <Info label="Délai" value={delayValue} />

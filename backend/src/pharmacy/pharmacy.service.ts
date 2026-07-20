@@ -7,13 +7,49 @@ export class PharmacyService {
   constructor(private readonly prisma: PrismaService) {}
 
   findAll() {
-    return this.prisma.medication.findMany();
+    return this.prisma.medication.findMany({ include: { category: { include: { section: true } } }, orderBy: { name: 'asc' } });
+  }
+
+  catalogue(sectionId?: string, categoryId?: string, query?: string) {
+    const normalizedQuery = String(query || '').trim();
+    return this.prisma.medicationSection.findMany({
+      where: sectionId ? { id: sectionId } : { active: true },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      include: {
+        categories: {
+          where: categoryId ? { id: categoryId } : { active: true },
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+          include: {
+            medications: {
+              where: { deletedAt: null, ...(normalizedQuery ? { OR: [{ name: { contains: normalizedQuery, mode: 'insensitive' } }, { code: { contains: normalizedQuery, mode: 'insensitive' } }] } : {}) },
+              orderBy: { name: 'asc' },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async createSection(data: any) {
+    const name = String(data?.name || '').trim();
+    const code = String(data?.code || '').trim().toUpperCase();
+    if (!name || !code) throw new BadRequestException('Le nom et le code de la section sont requis.');
+    return this.prisma.medicationSection.create({ data: { name, code, description: data?.description || null, sortOrder: Number(data?.sortOrder || 0) } });
+  }
+
+  async createCategory(data: any) {
+    const sectionId = String(data?.sectionId || '');
+    const name = String(data?.name || '').trim();
+    const code = String(data?.code || '').trim().toUpperCase();
+    if (!sectionId || !name || !code) throw new BadRequestException('sectionId, nom et code sont requis.');
+    return this.prisma.medicationCategory.create({ data: { sectionId, name, code, description: data?.description || null, sortOrder: Number(data?.sortOrder || 0) } });
   }
 
   async findAvailable() {
     const medications = await this.prisma.medication.findMany({
       where: { deletedAt: null },
       include: {
+        category: { include: { section: true } },
         StockLot: true,
         StockTransaction: { orderBy: { createdAt: 'desc' }, take: 20 },
       },
@@ -293,9 +329,14 @@ export class PharmacyService {
     const name = String(data.name || '').trim();
     const unit = String(data.unit || '').trim();
     const strength = String(data.strength || '').trim() || null;
+    const categoryId = data.categoryId ? String(data.categoryId) : null;
 
     if (!code || !name || !unit) {
       throw new BadRequestException('Le code, le nom et l unite du medicament sont requis.');
+    }
+    if (categoryId) {
+      const category = await this.prisma.medicationCategory.findUnique({ where: { id: categoryId } });
+      if (!category || !category.active) throw new BadRequestException('La catégorie de médicament est introuvable ou inactive.');
     }
 
     let existing = await this.prisma.medication.findUnique({ where: { code }, include: { StockLot: true } });
@@ -330,6 +371,7 @@ export class PharmacyService {
         unit,
         strength,
         manufacturer: data.manufacturer ?? null,
+        categoryId,
       },
     });
   }

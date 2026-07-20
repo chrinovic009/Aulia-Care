@@ -1,0 +1,2 @@
+-- RenameIndex
+ALTER INDEX "WearableMeasurement_wearableDeviceId_metric_measuredAt_sourceSe" RENAME TO "WearableMeasurement_wearableDeviceId_metric_measuredAt_sour_key";
