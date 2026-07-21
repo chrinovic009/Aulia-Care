@@ -315,8 +315,19 @@ export class PharmacyService {
 
   async stockCatalog() {
     const [medications, lots, transactions, dispenses] = await Promise.all([
-      this.prisma.medication.findMany({ where: { deletedAt: null }, orderBy: { name: 'asc' } }),
-      this.prisma.stockLot.findMany({ include: { medication: true }, orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'desc' }] }),
+      this.prisma.medication.findMany({
+        where: { deletedAt: null },
+        include: { category: { include: { section: true } } },
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.stockLot.findMany({
+        include: {
+          medication: {
+            include: { category: { include: { section: true } } },
+          },
+        },
+        orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'desc' }],
+      }),
       this.prisma.stockTransaction.findMany({ include: { medication: true, lot: true, performedBy: true }, orderBy: { createdAt: 'desc' }, take: 100 }),
       this.prisma.pharmacyDispense.findMany({ include: { prescription: { include: { patient: true } }, lines: { include: { medication: true } } }, orderBy: { dispensedAt: 'desc' }, take: 50 }),
     ]);
