@@ -418,12 +418,11 @@ function ClinicalConsultation({ consultation, displayId }: { consultation: NonNu
 
       {parsed ? (
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <Info label="Antecedents" value={joinValues(parsed.medicalHistory, ["knownDiseases", "surgeries", "allergies", "currentMedications", "familyHistory"])} />
-          <Info label="Anamnese" value={joinValues(parsed.currentSymptoms, ["onset", "painLocation", "intensity", "aggravatingFactors", "associatedSymptoms"])} />
-          <Info label="Examen clinique" value={joinValues(parsed.clinicalExam, ["generalState", "auscultation", "palpation", "focusedExam"])} />
-          <Info label="Diagnostic" value={[parsed.diagnosis?.principal, ...(parsed.diagnosis?.hypotheses || [])].filter(Boolean).join(" | ") || consultation.diagnosis || "-"} />
-          <Info label="Traitement" value={parsed.treatmentPlan?.notes || "-"} />
-          <Info label="Suivi" value={parsed.followUp?.notes || "-"} />
+          <Info label="Antecedents" value={parsed.medicalHistory?.description || joinValues(parsed.medicalHistory, ["knownDiseases", "surgeries", "allergies", "currentMedications", "familyHistory"]) } />
+          <Info label="Anamnese" value={parsed.currentSymptoms?.description || joinValues(parsed.currentSymptoms, ["onset", "painLocation", "intensity", "aggravatingFactors", "associatedSymptoms"]) } />
+          <Info label="Examen clinique" value={[parsed.clinicalExam?.description || joinValues(parsed.clinicalExam, ["generalState", "auscultation", "palpation", "focusedExam"]), parsed.consultationModule?.orderedExams?.length ? `Examens demandés: ${parsed.consultationModule.orderedExams.map((exam: any) => exam.testName).join(", ")}` : null].filter(Boolean).join(" | ")} />
+          <Info label="Diagnostic" value={parsed.diagnosis?.description || [parsed.diagnosis?.principal, ...(parsed.diagnosis?.hypotheses || [])].filter(Boolean).join(" | ") || consultation.diagnosis || "-"} />
+          <Info label="Consignes & Suivi" value={[parsed.treatmentPlan?.description || parsed.treatmentPlan?.notes, parsed.followUp?.description || parsed.followUp?.notes].filter(Boolean).join(" | ") || "-"} />
         </div>
       ) : (
         <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{consultation.clinicalSummary || consultation.diagnosis || "Aucune note clinique."}</p>
@@ -505,8 +504,7 @@ function renderHistoryDetails(kind: string, parsed: any, patient: DoctorPatient,
         <Info label="Anamnese" value={joinValues(parsed.currentSymptoms, ["onset", "painLocation", "intensity", "aggravatingFactors", "associatedSymptoms"])} />
         <Info label="Examen clinique" value={joinValues(parsed.clinicalExam, ["generalState", "auscultation", "palpation", "focusedExam"])} />
         <Info label="Diagnostic" value={[parsed.diagnosis?.principal, ...(parsed.diagnosis?.hypotheses || [])].filter(Boolean).join(" | ") || "-"} />
-        <Info label="Traitement" value={parsed.treatmentPlan?.notes || "-"} />
-        <Info label="Suivi" value={parsed.followUp?.notes || "-"} />
+        <Info label="Consignes & Suivi" value={[parsed.treatmentPlan?.notes, parsed.followUp?.notes].filter(Boolean).join(" | ") || "-"} />
       </div>
     );
   }
@@ -762,8 +760,9 @@ function printPatientRecord(patient: DoctorPatient, position?: number, labTests:
     if (kind === "MEDICAL_CONSULTATION") {
       const rows: string[] = [];
       if (parsed.diagnosis?.principal) rows.push(toLine("Diagnostic", parsed.diagnosis.principal));
-      if (parsed.treatmentPlan?.notes) rows.push(toLine("Traitement", parsed.treatmentPlan.notes));
-      if (parsed.followUp?.notes) rows.push(toLine("Suivi", parsed.followUp.notes));
+      if (parsed.consultationModule?.orderedExams?.length) rows.push(toLine("Examens demandés", parsed.consultationModule.orderedExams.map((exam: any) => exam.testName).join(", ")));
+      const consignesSuivi = [parsed.treatmentPlan?.notes, parsed.followUp?.notes].filter(Boolean).join(" | ");
+      if (consignesSuivi) rows.push(toLine("Consignes & Suivi", consignesSuivi));
       if (parsed.clinicalExam?.generalState) rows.push(toLine("État général", parsed.clinicalExam.generalState));
       if (parsed.currentSymptoms?.onset) rows.push(toLine("Début des symptômes", parsed.currentSymptoms.onset));
       return rows.length > 0 ? rows.join("") : details || "-";
@@ -1025,7 +1024,7 @@ function printPatientRecord(patient: DoctorPatient, position?: number, labTests:
             <div class="section-title">Laboratoire</div>
             <table>
               <thead>
-                <tr><th>Date</th><th>Examen</th><th>Délai</th><th>Prix & paiement</th><th>Résultat</th><th>Interprétation</th><th>Diagnostic</th></tr>
+                <tr><th>Date</th><th>Echantillon</th><th>Examen</th><th>Délai</th><th>Prix & paiement</th><th>Résultat</th><th>Interprétation</th><th>Diagnostic</th></tr>
               </thead>
               <tbody>
                 ${labRows}

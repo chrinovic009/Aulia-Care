@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { AlertTriangle, Mic, MicOff, PhoneCall, Sparkles } from "lucide-react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
@@ -133,8 +133,95 @@ const extractClinicalVoiceFields = (transcript: string) => {
   return extracted;
 };
 
+function summarizeHistory(form: any, module: ConsultationModuleState) {
+  const parts: string[] = [];
+  if (form.onset) parts.push(`Début: ${form.onset}`);
+  if (form.painLocation) parts.push(`Localisation: ${form.painLocation}`);
+  if (form.intensity) parts.push(`Intensité: ${form.intensity}`);
+  if (form.associatedSymptoms) parts.push(`Symptômes associés: ${form.associatedSymptoms}`);
+  if (form.aggravatingFactors) parts.push(`Facteurs aggravants: ${form.aggravatingFactors}`);
+  if (module.hpiDescription) parts.push(`Narratif: ${module.hpiDescription}`);
+  if (form.previousTreatments) parts.push(`Traitements antérieurs: ${form.previousTreatments}`);
+  if (form.functionalImpact) parts.push(`Impact fonctionnel: ${form.functionalImpact}`);
+  return parts.length ? parts.join(" \n") : "";
+}
+
+function summarizeAntecedents(form: any, module: ConsultationModuleState) {
+  const parts: string[] = [];
+  if (form.knownDiseases) parts.push(`Maladies connues: ${form.knownDiseases}`);
+  if (form.surgeries) parts.push(`Chirurgies: ${form.surgeries}`);
+  if (form.allergies) parts.push(`Allergies: ${form.allergies}`);
+  if (module.allergies?.length) parts.push(`Allergies détaillées: ${module.allergies.map((a) => `${a.allergen} (${a.reactionType})`).join(', ')}`);
+  if (module.currentMedications?.length) parts.push(`Médicaments en cours: ${module.currentMedications.map((m) => `${m.drugName} ${m.dosage}`).join(', ')}`);
+  return parts.length ? parts.join(" \n") : "";
+}
+
+function summarizeExam(form: any, module: ConsultationModuleState) {
+  const parts: string[] = [];
+  if (form.generalState) parts.push(`État général: ${form.generalState}`);
+  if (form.auscultation) parts.push(`Auscultation: ${form.auscultation}`);
+  if (form.palpation) parts.push(`Palpation: ${form.palpation}`);
+  if (form.focusedExam) parts.push(`Examen ciblé: ${form.focusedExam}`);
+  if (module.orderedExams?.length) parts.push(`Examens prescrits: ${module.orderedExams.map((e) => e.testName).join(', ')}`);
+  return parts.length ? parts.join(" \n") : "";
+}
+
+
+type ConsultationModuleState = {
+  consultationMode: string;
+  chiefComplaint: string;
+  arrivalMode: string;
+  triagePriority: string;
+  onsetDuration: string;
+  onsetMode: string;
+  triggeringFactors: string[];
+  evolution: string;
+  hpiDescription: string;
+  allergies: Array<{ allergen: string; reactionType: string }>;
+  chronicPathologies: Array<{ code: string; label: string }>;
+  currentMedications: Array<{ drugName: string; dosage: string; compliance: "GOOD" | "IRREGULAR" | "STOPPED" }>;
+  lifestyle: { smoking: string; alcohol: string; pregnancyStatus: boolean; gestationalAgeWeeks?: number };
+  differentialDiagnoses: string[];
+  selectedDiagnosis: { codeICD: string; label: string; certaintyLevel: "PRESUMPTION" | "CONFIRMED" | "CHRONIC" };
+  performedProcedures: Array<{ code: string; description: string; cost: number }>;
+  orderedExams: Array<{ category: "LABORATORY" | "IMAGING"; testName: string; urgency: "ROUTINE" | "URGENT"; clinicalIndication: string }>;
+  prescriptions: Array<{ drugId: string; innName: string; brandName?: string; form: string; dosage: string; route: string; durationDays: number; pharmacyStockStatus: "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK" }>;
+  safetyAlerts: Array<{ type: "ALLERGY_WARNING" | "DRUG_INTERACTION" | "CONTRAINDICATION"; message: string }>;
+  safetyConsignes: string;
+  sickLeave: { active: boolean; durationDays?: number; startDate?: string };
+  followUp: { recommendedInterval: string; specificDate?: string };
+};
+
+const createInitialConsultationModule = (): ConsultationModuleState => ({
+  consultationMode: "PRESENTIAL",
+  chiefComplaint: "",
+  arrivalMode: "SPONTANEOUS",
+  triagePriority: "GREEN",
+  onsetDuration: "",
+  onsetMode: "PROGRESSIVE",
+  triggeringFactors: [],
+  evolution: "STATIONARY",
+  hpiDescription: "",
+  allergies: [],
+  chronicPathologies: [],
+  currentMedications: [],
+  lifestyle: { smoking: "NON_FUMEUR", alcohol: "AUCUNE", pregnancyStatus: false, gestationalAgeWeeks: 0 },
+  differentialDiagnoses: [],
+  selectedDiagnosis: { codeICD: "", label: "", certaintyLevel: "PRESUMPTION" },
+  performedProcedures: [],
+  orderedExams: [],
+  prescriptions: [],
+  safetyAlerts: [],
+  safetyConsignes: "",
+  sickLeave: { active: false, durationDays: 0, startDate: "" },
+  followUp: { recommendedInterval: "", specificDate: "" },
+});
+
+const splitList = (value: string) => value.split(/\n|,/).map((item) => item.trim()).filter(Boolean);
+
 export default function DashboardMedecin() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const isConsultationPage = location.pathname.includes("/doctor/consultations");
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
@@ -143,6 +230,7 @@ export default function DashboardMedecin() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [isConsultationOpen, setIsConsultationOpen] = useState(false);
   const [conflictMedication, setConflictMedication] = useState<any | null>(null);
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
   const { isOpen: isConflictOpen, openModal: openConflictModal, closeModal: closeConflictModal } = useModal(false);
@@ -174,7 +262,30 @@ export default function DashboardMedecin() {
     hypotheses: "",
     treatmentPlan: "",
     followUp: "",
+    // Complementary anamnesis fields
+    systemReview: "",
+    functionalImpact: "",
+    previousTreatments: "",
   });
+  const [historyDescription, setHistoryDescription] = useState("");
+  const [antecedentsDescription, setAntecedentsDescription] = useState("");
+  const [complementDescription, setComplementDescription] = useState("");
+  const [examDescription, setExamDescription] = useState("");
+  const [diagnosisDescription, setDiagnosisDescription] = useState("");
+  const [consignesDescription, setConsignesDescription] = useState("");
+  const [consultationModule, setConsultationModule] = useState<ConsultationModuleState>(createInitialConsultationModule);
+
+  useEffect(() => {
+    setHistoryDescription(summarizeHistory(clinicalForm, consultationModule));
+    setAntecedentsDescription(summarizeAntecedents(clinicalForm, consultationModule));
+    setExamDescription(summarizeExam(clinicalForm, consultationModule));
+    setDiagnosisDescription((consultationModule.selectedDiagnosis && (consultationModule.selectedDiagnosis.label || consultationModule.selectedDiagnosis.codeICD)) || clinicalForm.principalDiagnosis || "");
+    setConsignesDescription(clinicalForm.treatmentPlan || "");
+    setComplementDescription([clinicalForm.systemReview, clinicalForm.functionalImpact].filter(Boolean).join(" \n") || "");
+  }, [clinicalForm, consultationModule]);
+
+  const [draftAllergy, setDraftAllergy] = useState({ allergen: "", reactionType: "" });
+  const [draftMedication, setDraftMedication] = useState({ drugName: "", dosage: "", compliance: "GOOD" as "GOOD" | "IRREGULAR" | "STOPPED" });
 
   type ClinicalSummaryPayload = {
     medicalHistory?: {
@@ -294,7 +405,87 @@ export default function DashboardMedecin() {
 
   const currentConsultationId = selectedPatient?.latestConsultation?.id || selectedPatient?.consultations?.[0]?.id || "";
 
-  const submitClinicalSections = async () => {
+  const applyVoiceToConsultationModule = (transcript: string) => {
+    const fields = extractClinicalVoiceFields(transcript);
+    setConsultationModule((current) => {
+      const next: ConsultationModuleState = { ...current };
+      if (fields.chiefComplaint) {
+        next.chiefComplaint = appendClinicalValue(current.chiefComplaint || next.chiefComplaint, fields.chiefComplaint);
+      }
+      if (fields.onset) {
+        next.onsetDuration = fields.onset;
+      }
+      if (fields.painLocation) {
+        next.hpiDescription = [next.hpiDescription, `Localisation: ${fields.painLocation}`].filter(Boolean).join(" | ");
+      }
+      if (fields.intensity) {
+        next.hpiDescription = [next.hpiDescription, `Intensité: ${fields.intensity}`].filter(Boolean).join(" | ");
+      }
+      if (fields.associatedSymptoms) {
+        next.hpiDescription = [next.hpiDescription, `Symptômes associés: ${fields.associatedSymptoms}`].filter(Boolean).join(" | ");
+      }
+      if (fields.aggravatingFactors) {
+        next.hpiDescription = [next.hpiDescription, `Facteurs aggravants: ${fields.aggravatingFactors}`].filter(Boolean).join(" | ");
+      }
+      if (next.chiefComplaint && !next.selectedDiagnosis.label) {
+        next.selectedDiagnosis = { codeICD: "R50.9", label: "Symptôme clinique non codé", certaintyLevel: "PRESUMPTION" };
+      }
+      setClinicalForm((currentForm) => ({
+        ...currentForm,
+        chiefComplaint: next.chiefComplaint || currentForm.chiefComplaint,
+        onset: next.onsetDuration || currentForm.onset,
+        associatedSymptoms: next.hpiDescription || currentForm.associatedSymptoms,
+      }));
+      return next;
+    });
+  };
+
+  const saveDraftConsultation = async () => {
+    if (!currentConsultationId) {
+      setActionMessage("Aucune consultation active pour ce patient.");
+      return;
+    }
+    setActionMessage(null);
+    const consignesNotes = [
+      consultationModule.safetyConsignes,
+      consultationModule.sickLeave.active ? `Arrêt de travail: ${consultationModule.sickLeave.durationDays || 0} jour(s)` : "",
+      consultationModule.followUp.recommendedInterval ? `Suivi: ${consultationModule.followUp.recommendedInterval}` : "",
+      consultationModule.followUp.specificDate ? `Date de suivi: ${consultationModule.followUp.specificDate}` : "",
+    ].filter(Boolean).join("\n");
+
+    await saveClinicalSections(currentConsultationId, {
+      chiefComplaint: clinicalForm.chiefComplaint,
+      medicalHistory: {
+        knownDiseases: clinicalForm.knownDiseases,
+        surgeries: clinicalForm.surgeries,
+        allergies: clinicalForm.allergies,
+        currentMedications: clinicalForm.currentMedications,
+        familyHistory: clinicalForm.familyHistory,
+        description: antecedentsDescription,
+      },
+      currentSymptoms: {
+        onset: clinicalForm.onset,
+        painLocation: clinicalForm.painLocation,
+        intensity: clinicalForm.intensity,
+        aggravatingFactors: clinicalForm.aggravatingFactors,
+        associatedSymptoms: clinicalForm.associatedSymptoms,
+        description: historyDescription,
+      },
+      treatmentPlan: {
+        notes: consignesNotes,
+        description: consignesDescription,
+      },
+      followUp: {
+        notes: consultationModule.followUp.recommendedInterval || consultationModule.followUp.specificDate ? `${consultationModule.followUp.recommendedInterval || ""}${consultationModule.followUp.recommendedInterval && consultationModule.followUp.specificDate ? " | " : ""}${consultationModule.followUp.specificDate || ""}` : "",
+      },
+      complementaryAnamnesis: complementDescription,
+      consultationModule,
+      consultationStatus: "DRAFT",
+    });
+    setActionMessage("Brouillon enregistré. Les informations sont prêtes pour la validation clinique.");
+  };
+
+  const validateConsultation = async () => {
     if (!currentConsultationId) {
       setActionMessage("Aucune consultation active pour ce patient.");
       return;
@@ -308,6 +499,7 @@ export default function DashboardMedecin() {
         allergies: clinicalForm.allergies,
         currentMedications: clinicalForm.currentMedications,
         familyHistory: clinicalForm.familyHistory,
+        description: antecedentsDescription,
       },
       currentSymptoms: {
         onset: clinicalForm.onset,
@@ -315,22 +507,98 @@ export default function DashboardMedecin() {
         intensity: clinicalForm.intensity,
         aggravatingFactors: clinicalForm.aggravatingFactors,
         associatedSymptoms: clinicalForm.associatedSymptoms,
+        description: historyDescription,
       },
       clinicalExam: {
         generalState: clinicalForm.generalState,
         auscultation: clinicalForm.auscultation,
         palpation: clinicalForm.palpation,
         focusedExam: clinicalForm.focusedExam,
+        description: examDescription,
       },
       diagnosis: {
         principal: clinicalForm.principalDiagnosis,
         hypotheses: clinicalForm.hypotheses.split("\n").map((item) => item.trim()).filter(Boolean),
+        description: diagnosisDescription,
       },
-      treatmentPlan: { notes: clinicalForm.treatmentPlan },
+      treatmentPlan: { notes: clinicalForm.treatmentPlan, description: consignesDescription },
       followUp: { notes: clinicalForm.followUp },
+      complementaryAnamnesis: complementDescription,
+      consultationModule,
+      consultationStatus: "VALIDATED",
+      validationSummary: {
+        diagnosis: consultationModule.selectedDiagnosis.label || clinicalForm.principalDiagnosis,
+        followUp: consultationModule.followUp.recommendedInterval || clinicalForm.followUp,
+      },
     });
-    setActionMessage("Dossier clinique sauvegarde.");
-    await loadPatients();
+    setActionMessage("Consultation validée. Mise à jour des données cliniques...");
+    // Refresh local list so other panels reflect the validated consultation
+    try {
+      await loadPatients();
+    } catch (e) {
+      // ignore - we still navigate but emit event to signal update
+    }
+    // Notify other parts of the app that clinical data changed
+    try {
+      window.dispatchEvent(new CustomEvent('d7:clinicalDataUpdated'));
+    } catch (e) {
+      // ignore
+    }
+    setActionMessage("Consultation validée. Vous pouvez maintenant finaliser l’ordonnance et les examens depuis les vues dédiées.");
+    navigate("/doctor/prescriptions");
+  };
+
+  const resetConsultationModule = () => {
+    setConsultationModule(createInitialConsultationModule());
+    setDraftAllergy({ allergen: "", reactionType: "" });
+    setDraftMedication({ drugName: "", dosage: "", compliance: "GOOD" });
+    setClinicalForm((current) => ({ ...current, chiefComplaint: "", onset: "", associatedSymptoms: "", principalDiagnosis: "", hypotheses: "", treatmentPlan: "", followUp: "" }));
+  };
+
+  const addAllergy = () => {
+    if (!draftAllergy.allergen.trim()) return;
+    setConsultationModule((current) => ({
+      ...current,
+      allergies: [...current.allergies, { allergen: draftAllergy.allergen.trim(), reactionType: draftAllergy.reactionType.trim() || "Inconnue" }],
+    }));
+    setDraftAllergy({ allergen: "", reactionType: "" });
+  };
+
+  const addMedication = () => {
+    if (!draftMedication.drugName.trim()) return;
+    setConsultationModule((current) => ({
+      ...current,
+      currentMedications: [...current.currentMedications, { drugName: draftMedication.drugName.trim(), dosage: draftMedication.dosage.trim() || "1 comprimé", compliance: draftMedication.compliance }],
+    }));
+    setDraftMedication({ drugName: "", dosage: "", compliance: "GOOD" });
+  };
+
+  const addExamSuggestion = (exam: { category: "LABORATORY" | "IMAGING"; testName: string; urgency: "ROUTINE" | "URGENT"; clinicalIndication: string }) => {
+    setConsultationModule((current) => ({
+      ...current,
+      orderedExams: [...current.orderedExams, exam],
+    }));
+  };
+
+  const addPrescriptionSuggestion = (prescription: ConsultationModuleState["prescriptions"][number]) => {
+    setConsultationModule((current) => ({
+      ...current,
+      prescriptions: [...current.prescriptions, prescription],
+    }));
+  };
+
+  const addSafetyAlert = (message: string) => {
+    setConsultationModule((current) => ({
+      ...current,
+      safetyAlerts: [...current.safetyAlerts, { type: "CONTRAINDICATION", message }],
+    }));
+  };
+
+  const removeEntry = (key: "allergies" | "currentMedications" | "orderedExams" | "prescriptions" | "safetyAlerts", index: number) => {
+    setConsultationModule((current) => ({
+      ...current,
+      [key]: current[key].filter((_, itemIndex) => itemIndex !== index),
+    } as ConsultationModuleState));
   };
 
   // 🟢 AJOUT DE LA MÉTHODE MANQUANTE : toggleVoiceAssistant
@@ -338,7 +606,15 @@ export default function DashboardMedecin() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setVoiceMessage("La reconnaissance vocale n'est pas supportée par votre navigateur.");
+      setVoiceMessage("Reconnaissance vocale non disponible; mode démonstration activé.");
+      setIsVoiceListening(true);
+      window.setTimeout(() => {
+        const demoTranscript = "Le patient signale une douleur abdominale depuis deux jours avec fièvre légère.";
+        setVoiceTranscript(demoTranscript);
+        applyVoiceToConsultationModule(demoTranscript);
+        setVoiceMessage("Exemple de dictée appliqué, vous pouvez corriger librement.");
+        setIsVoiceListening(false);
+      }, 1000);
       return;
     }
 
@@ -372,17 +648,7 @@ export default function DashboardMedecin() {
 
       const fullTranscript = (speechFinalTextRef.current + interimTranscript).trim();
       setVoiceTranscript(fullTranscript);
-
-      const fields = extractClinicalVoiceFields(fullTranscript);
-      setClinicalForm((current) => ({
-        ...current,
-        chiefComplaint: fields.chiefComplaint ? appendClinicalValue(current.chiefComplaint, fields.chiefComplaint) : current.chiefComplaint,
-        onset: fields.onset || current.onset,
-        painLocation: fields.painLocation ? appendClinicalValue(current.painLocation, fields.painLocation) : current.painLocation,
-        intensity: fields.intensity || current.intensity,
-        associatedSymptoms: fields.associatedSymptoms ? appendClinicalValue(current.associatedSymptoms, fields.associatedSymptoms) : current.associatedSymptoms,
-        aggravatingFactors: fields.aggravatingFactors ? appendClinicalValue(current.aggravatingFactors, fields.aggravatingFactors) : current.aggravatingFactors,
-      }));
+      applyVoiceToConsultationModule(fullTranscript);
 
       if (speechSilenceTimerRef.current) {
         clearTimeout(speechSilenceTimerRef.current);
@@ -407,6 +673,42 @@ export default function DashboardMedecin() {
     recognition.start();
     setIsVoiceListening(true);
   };
+
+  const aiSuggestions = useMemo(() => {
+    const complaintText = `${consultationModule.chiefComplaint} ${consultationModule.hpiDescription}`.toLowerCase();
+    const diagnoses = [] as Array<{ codeICD: string; label: string; certaintyLevel: "PRESUMPTION" | "CONFIRMED" | "CHRONIC" }>;
+    const exams = [] as Array<{ category: "LABORATORY" | "IMAGING"; testName: string; urgency: "ROUTINE" | "URGENT"; clinicalIndication: string }>;
+    const prescriptions = [] as ConsultationModuleState["prescriptions"];
+    const alerts = [] as ConsultationModuleState["safetyAlerts"];
+
+    if (complaintText.includes("fièvre") || complaintText.includes("fievre") || complaintText.includes("fever")) {
+      diagnoses.push({ codeICD: "R50.9", label: "Fièvre d’origine infectieuse", certaintyLevel: "PRESUMPTION" as const });
+      exams.push({ category: "LABORATORY", testName: "NFS complète", urgency: "ROUTINE" as const, clinicalIndication: "Évaluation de l’infection et de l’état inflammatoire" });
+      prescriptions.push({ drugId: "paracetamol", innName: "Paracétamol", form: "Comprimé", dosage: "500 mg", route: "Orale", durationDays: 3, pharmacyStockStatus: "IN_STOCK" as const });
+    }
+    if (complaintText.includes("toux") || complaintText.includes("difficulté respiratoire")) {
+      diagnoses.push({ codeICD: "J18.9", label: "Pneumonie", certaintyLevel: "PRESUMPTION" as const });
+      exams.push({ category: "LABORATORY", testName: "Radiographie thoracique", urgency: "URGENT" as const, clinicalIndication: "Évaluation d’un syndrome pulmonaire" });
+    }
+    if (complaintText.includes("douleur") && complaintText.includes("abdomen")) {
+      diagnoses.push({ codeICD: "R10.9", label: "Douleur abdominale", certaintyLevel: "PRESUMPTION" as const });
+      exams.push({ category: "LABORATORY", testName: "Hémogramme", urgency: "ROUTINE" as const, clinicalIndication: "Recherche d’une inflammation ou d’une infection" });
+    }
+    if (consultationModule.allergies.some((item) => item.allergen.toLowerCase().includes("pénic"))) {
+      alerts.push({ type: "ALLERGY_WARNING", message: "Allergie connue détectée, vérifier la prescription avant validation." });
+    }
+    if (consultationModule.currentMedications.length) {
+      alerts.push({ type: "DRUG_INTERACTION", message: "Contrôle des interactions médicamenteuses recommandé avant signature." });
+    }
+
+    return {
+      diagnoses: diagnoses.slice(0, 3),
+      exams: exams.slice(0, 3),
+      prescriptions: prescriptions.slice(0, 2),
+      alerts,
+      followUp: consultationModule.followUp.recommendedInterval || "Revoir en 48h si l’état ne s’améliore pas.",
+    };
+  }, [consultationModule]);
 
   const findFrenchVoice = (voices: SpeechSynthesisVoice[]) => {
     const normalized = (voice: SpeechSynthesisVoice) => `${voice.lang || ''} ${voice.name || ''}`.toLowerCase();
@@ -586,7 +888,20 @@ export default function DashboardMedecin() {
 
               {isConsultationPage ? (
               <div className="mt-6">
-                <Panel title="Consultation medicale">
+                <Panel
+                  title="Consultation medicale"
+                  actions={
+                    <button
+                      type="button"
+                      onClick={() => setIsConsultationOpen((current) => !current)}
+                      className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700"
+                    >
+                      {isConsultationOpen ? "Fermer la consultation" : "Ouvrir la consultation"}
+                    </button>
+                  }
+                >
+                  {isConsultationOpen ? (
+                    <>
                   <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 dark:border-blue-900/60 dark:bg-blue-950/30">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
@@ -618,53 +933,132 @@ export default function DashboardMedecin() {
                     )}
                   </div>
 
-                  <FormInput label="Motif de consultation" value={clinicalForm.chiefComplaint} onChange={(value) => setClinicalForm((current) => ({ ...current, chiefComplaint: value }))} />
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">Patient en consultation</p>
+                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{formatDoctorPatientName(selectedPatient)} • {serviceName(selectedPatient) || "Service non renseigné"}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => navigate("/doctor/prescriptions")} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">Ordonnance</button>
+                        <button type="button" onClick={() => navigate("/doctor/exams")} className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700">Examens</button>
+                      </div>
+                    </div>
+                  </div>
 
-                  <SectionBox title="Antecedents medicaux">
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <SuggestionInput label="Maladies connues" value={clinicalForm.knownDiseases} onChange={(value) => setClinicalForm((current) => ({ ...current, knownDiseases: value }))} suggestions={["Diabete", "Hypertension", "Asthme", "Drepanocytose", "VIH", "Tuberculose"]} />
-                      <FormTextArea label="Chirurgies anterieures" value={clinicalForm.surgeries} onChange={(value) => setClinicalForm((current) => ({ ...current, surgeries: value }))} />
-                      <SuggestionInput label="Allergies" value={clinicalForm.allergies} onChange={(value) => setClinicalForm((current) => ({ ...current, allergies: value }))} suggestions={["Penicilline", "AINS", "Latex", "Iode", "Aucune allergie connue"]} />
-                      <FormTextArea label="Medicaments pris actuellement" value={clinicalForm.currentMedications} onChange={(value) => setClinicalForm((current) => ({ ...current, currentMedications: value }))} />
-                      <FormTextArea label="Antecedents familiaux importants" value={clinicalForm.familyHistory} onChange={(value) => setClinicalForm((current) => ({ ...current, familyHistory: value }))} />
+                  <SectionBox title="Mode de consultation">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <FormSelect label="Mode" value={consultationModule.consultationMode} onChange={(value) => setConsultationModule((current) => ({ ...current, consultationMode: value }))} options={[['PRESENTIAL','Présentiel'], ['TELECONSULTATION','Télésanté'], ['HOME_VISIT','Visite à domicile'], ['EMERGENCY','Urgence']]} />
+                      <FormSelect label="Mode d'arrivée" value={consultationModule.arrivalMode} onChange={(value) => setConsultationModule((current) => ({ ...current, arrivalMode: value }))} options={[['SPONTANEOUS','Spontané'], ['AMBULATORY','Ambulatoire'], ['REFERRED','Orienté'], ['EMERGENCY_TRANSFER','Transfert urgence']]} />
+                      <FormSelect label="Priorité de triage" value={consultationModule.triagePriority} onChange={(value) => setConsultationModule((current) => ({ ...current, triagePriority: value }))} options={[['GREEN','Normal'], ['YELLOW','Prioritaire'], ['RED','Urgent']]} />
                     </div>
                   </SectionBox>
 
-                  <SectionBox title="Symptomes actuels">
+                  <SectionBox title="Motif, triage et plainte principale">
+                    <FormInput label="Motif de consultation" value={consultationModule.chiefComplaint} onChange={(value) => { setConsultationModule((current) => ({ ...current, chiefComplaint: value })); setClinicalForm((currentForm) => ({ ...currentForm, chiefComplaint: value })); }} />
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <FormInput label="Durée d'apparition" value={consultationModule.onsetDuration} onChange={(value) => setConsultationModule((current) => ({ ...current, onsetDuration: value }))} placeholder="Ex : 3 jours" />
+                      <FormSelect label="Mode d'apparition" value={consultationModule.onsetMode} onChange={(value) => setConsultationModule((current) => ({ ...current, onsetMode: value }))} options={[['SUDDEN','Brutal'], ['PROGRESSIVE','Progressif'], ['RECURRENT','Récurrent'], ['EPISODIC','Épisodique']]} />
+                      <FormInput label="Facteurs déclenchants" value={consultationModule.triggeringFactors.join(", ")} onChange={(value) => setConsultationModule((current) => ({ ...current, triggeringFactors: splitList(value) }))} placeholder="Ex : froid, effort" />
+                      <FormSelect label="Évolution" value={consultationModule.evolution} onChange={(value) => setConsultationModule((current) => ({ ...current, evolution: value }))} options={[['IMPROVING', "S'améliore"], ['STATIONARY', 'Stable'], ['WORSENING', "S'aggrave"]]} />
+                    </div>
+                    <FormTextArea label="Description HPI" value={consultationModule.hpiDescription} onChange={(value) => { setConsultationModule((current) => ({ ...current, hpiDescription: value })); setClinicalForm((currentForm) => ({ ...currentForm, associatedSymptoms: value })); }} placeholder="Narratif clinique détaillé" />
+                  </SectionBox>
+
+                    <SectionBox title="Histoire de la maladie">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <FormInput label="Depuis quand ?" value={clinicalForm.onset} onChange={(value) => setClinicalForm((current) => ({ ...current, onset: value }))} placeholder="Ex: 3 jours" />
+                        <FormSelect label="Intensité" value={clinicalForm.intensity} onChange={(value) => setClinicalForm((current) => ({ ...current, intensity: value }))} options={[["","Non precisee"],["1-3","Faible 1-3"],["4-6","Moderee 4-6"],["7-10","Severe 7-10"]]} />
+                        <FormInput label="Localisation de la douleur / zone" value={clinicalForm.painLocation} onChange={(value) => setClinicalForm((current) => ({ ...current, painLocation: value }))} />
+                        <SuggestionInput label="Symptômes associés" value={clinicalForm.associatedSymptoms} onChange={(value) => setClinicalForm((current) => ({ ...current, associatedSymptoms: value }))} suggestions={["Fievre","Nausees","Vomissements","Fatigue","Cephalees","Dyspnee","Toux"]} />
+                        <FormTextArea label="Facteurs aggravants / soulageants" value={clinicalForm.aggravatingFactors} onChange={(value) => setClinicalForm((current) => ({ ...current, aggravatingFactors: value }))} />
+                        <FormInput label="Traitements antérieurs (si existants)" value={clinicalForm.previousTreatments} onChange={(value) => setClinicalForm((current) => ({ ...current, previousTreatments: value }))} />
+                        <FormTextArea label="Impact fonctionnel / activités" value={clinicalForm.functionalImpact} onChange={(value) => setClinicalForm((current) => ({ ...current, functionalImpact: value }))} />
+                        <FormTextArea label="Description médicale (générée)" value={historyDescription} onChange={(value) => setHistoryDescription(value)} placeholder="Résumé médical automatique" />
+                      </div>
+                    </SectionBox>
+
+                  <SectionBox title="Antécédents et habitudes">
                     <div className="grid gap-3 md:grid-cols-2">
-                      <FormInput label="Depuis quand ?" value={clinicalForm.onset} onChange={(value) => setClinicalForm((current) => ({ ...current, onset: value }))} placeholder="Ex: 3 jours" />
-                      <FormInput label="Ou est la douleur ?" value={clinicalForm.painLocation} onChange={(value) => setClinicalForm((current) => ({ ...current, painLocation: value }))} />
-                      <FormSelect label="Intensite" value={clinicalForm.intensity} onChange={(value) => setClinicalForm((current) => ({ ...current, intensity: value }))} options={[["", "Non precisee"], ["1-3", "Faible 1-3"], ["4-6", "Moderee 4-6"], ["7-10", "Severe 7-10"]]} />
-                      <FormTextArea label="Facteurs aggravants ou soulageants" value={clinicalForm.aggravatingFactors} onChange={(value) => setClinicalForm((current) => ({ ...current, aggravatingFactors: value }))} />
-                      <SuggestionInput label="Symptomes associes" value={clinicalForm.associatedSymptoms} onChange={(value) => setClinicalForm((current) => ({ ...current, associatedSymptoms: value }))} suggestions={["Fievre", "Nausees", "Vomissements", "Fatigue", "Cephalees", "Dyspnee", "Toux"]} />
+                      <SuggestionInput label="Maladies connues" value={clinicalForm.knownDiseases} onChange={(value) => setClinicalForm((current) => ({ ...current, knownDiseases: value }))} suggestions={["Diabète", "Hypertension artérielle", "Asthme", "Epilepsie", "Insuffisance rénale", "VIH"]} />
+                      <FormTextArea label="Chirurgies antérieures" value={clinicalForm.surgeries} onChange={(value) => setClinicalForm((current) => ({ ...current, surgeries: value }))} placeholder="Liste des interventions et dates" />
+                      <FormTextArea label="Antécédents familiaux importants" value={clinicalForm.familyHistory} onChange={(value) => setClinicalForm((current) => ({ ...current, familyHistory: value }))} placeholder="Antécédents familiaux pertinents" />
+                      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Allergies</p>
+                        <div className="mt-2 flex gap-2">
+                          <input value={draftAllergy.allergen} onChange={(event) => setDraftAllergy((current) => ({ ...current, allergen: event.target.value }))} placeholder="Allergène" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" />
+                          <input value={draftAllergy.reactionType} onChange={(event) => setDraftAllergy((current) => ({ ...current, reactionType: event.target.value }))} placeholder="Réaction" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" />
+                        </div>
+                        <button type="button" onClick={addAllergy} className="mt-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Ajouter</button>
+                        <div className="mt-3 space-y-2">{consultationModule.allergies.map((item, index) => <div key={`${item.allergen}-${index}`} className="rounded-lg bg-white p-2 text-xs dark:bg-slate-900"><div className="flex items-center justify-between gap-2"><span className="font-semibold text-slate-700 dark:text-slate-200">{item.allergen}</span><button type="button" onClick={() => removeEntry("allergies", index)} className="text-red-600">Suppr.</button></div><p className="mt-1 text-slate-500">{item.reactionType}</p></div>)}</div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Médicaments en cours</p>
+                        <div className="mt-2 flex flex-col gap-2">
+                          <input value={draftMedication.drugName} onChange={(event) => setDraftMedication((current) => ({ ...current, drugName: event.target.value }))} placeholder="Nom du médicament" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" />
+                          <input value={draftMedication.dosage} onChange={(event) => setDraftMedication((current) => ({ ...current, dosage: event.target.value }))} placeholder="Dosage" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950" />
+                          <FormSelect label="Observance" value={draftMedication.compliance} onChange={(value) => setDraftMedication((current) => ({ ...current, compliance: value as "GOOD" | "IRREGULAR" | "STOPPED" }))} options={[['GOOD','Bonne'], ['IRREGULAR','Irrégulière'], ['STOPPED','Arrêtée']]} />
+                        </div>
+                        <button type="button" onClick={addMedication} className="mt-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Ajouter</button>
+                        <div className="mt-3 space-y-2">{consultationModule.currentMedications.map((item, index) => <div key={`${item.drugName}-${index}`} className="rounded-lg bg-white p-2 text-xs dark:bg-slate-900"><div className="flex items-center justify-between gap-2"><span className="font-semibold text-slate-700 dark:text-slate-200">{item.drugName}</span><button type="button" onClick={() => removeEntry("currentMedications", index)} className="text-red-600">Suppr.</button></div><p className="mt-1 text-slate-500">{item.dosage} • {item.compliance}</p></div>)}</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <FormTextArea label="Pathologies chroniques" value={consultationModule.chronicPathologies.map((item) => `${item.code} - ${item.label}`).join("\n")} onChange={(value) => setConsultationModule((current) => ({ ...current, chronicPathologies: splitList(value).map((item) => ({ code: item, label: item })) }))} placeholder="Code - libellé" />
+                      <div className="grid gap-3">
+                        <FormSelect label="Tabagisme" value={consultationModule.lifestyle.smoking} onChange={(value) => setConsultationModule((current) => ({ ...current, lifestyle: { ...current.lifestyle, smoking: value } }))} options={[['NON_FUMEUR','Non fumeur'], ['OCCASIONAL','Occasionnel'], ['REGULAR','Régulier']]} />
+                        <FormSelect label="Alcool" value={consultationModule.lifestyle.alcohol} onChange={(value) => setConsultationModule((current) => ({ ...current, lifestyle: { ...current.lifestyle, alcohol: value } }))} options={[['AUCUNE','Aucune'], ['OCCASIONAL','Occasionnel'], ['REGULAR','Régulier']]} />
+                        <FormSelect label="Grossesse" value={consultationModule.lifestyle.pregnancyStatus ? "true" : "false"} onChange={(value) => setConsultationModule((current) => ({ ...current, lifestyle: { ...current.lifestyle, pregnancyStatus: value === 'true' } }))} options={[['false','Non'], ['true','Oui']]} />
+                      </div>
                     </div>
                   </SectionBox>
 
-                  <SectionBox title="Examen clinique">
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <FormSelect label="Etat general" value={clinicalForm.generalState} onChange={(value) => setClinicalForm((current) => ({ ...current, generalState: value }))} options={[["", "Non precise"], ["Bon", "Bon"], ["Moyen", "Moyen"], ["Alteré", "Altere"], ["Critique", "Critique"]]} />
-                      <FormTextArea label="Resultats de l'auscultation" value={clinicalForm.auscultation} onChange={(value) => setClinicalForm((current) => ({ ...current, auscultation: value }))} />
-                      <FormTextArea label="Palpation" value={clinicalForm.palpation} onChange={(value) => setClinicalForm((current) => ({ ...current, palpation: value }))} />
-                      <FormTextArea label="Examen des parties concernees" value={clinicalForm.focusedExam} onChange={(value) => setClinicalForm((current) => ({ ...current, focusedExam: value }))} />
+                  <SectionBox title="Examens complémentaires et procédures">
+                    <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 dark:border-sky-900/40 dark:bg-sky-950/30">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Suggestions IA</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {aiSuggestions.exams.map((item) => (
+                          <button key={`${item.testName}-${item.category}`} type="button" onClick={() => addExamSuggestion(item)} className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-700">{item.testName}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2">{consultationModule.orderedExams.map((item, index) => <div key={`${item.testName}-${index}`} className="rounded-lg bg-white p-3 text-sm dark:bg-slate-900"><div className="flex items-center justify-between gap-2"><span className="font-semibold text-slate-700 dark:text-slate-200">{item.testName}</span><button type="button" onClick={() => removeEntry("orderedExams", index)} className="text-red-600">Suppr.</button></div><p className="mt-1 text-slate-500">{item.category} • {item.urgency} • {item.clinicalIndication}</p></div>)}</div>
+                  </SectionBox>
+
+                  <SectionBox title="Ordonnance, sécurité et pharmacie">
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/30">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Suggestions IA</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {aiSuggestions.prescriptions.map((item) => (
+                          <button key={`${item.drugId}-${item.innName}`} type="button" onClick={() => addPrescriptionSuggestion(item)} className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700">{item.innName} • {item.form}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2">{consultationModule.prescriptions.map((item, index) => <div key={`${item.drugId}-${index}`} className="rounded-lg bg-white p-3 text-sm dark:bg-slate-900"><div className="flex items-center justify-between gap-2"><span className="font-semibold text-slate-700 dark:text-slate-200">{item.innName}</span><button type="button" onClick={() => removeEntry("prescriptions", index)} className="text-red-600">Suppr.</button></div><p className="mt-1 text-slate-500">{item.dosage} • {item.route} • {item.durationDays} jours • Stock {item.pharmacyStockStatus}</p></div>)}</div>
+                    <div className="mt-3 space-y-2">{consultationModule.safetyAlerts.map((item, index) => <div key={`${item.type}-${index}`} className="rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{item.message}</div>)}</div>
+                  </SectionBox>
+
+                  <SectionBox title="Consignes, arrêt de travail et suivi">
+                    <FormTextArea label="Consignes de sécurité" value={consultationModule.safetyConsignes} onChange={(value) => setConsultationModule((current) => ({ ...current, safetyConsignes: value }))} placeholder="Signes d'alerte et conduite à tenir" />
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <FormSelect label="Arrêt de travail" value={consultationModule.sickLeave.active ? "true" : "false"} onChange={(value) => setConsultationModule((current) => ({ ...current, sickLeave: { ...current.sickLeave, active: value === 'true' } }))} options={[['false','Non'], ['true','Oui']]} />
+                      <FormInput label="Durée (jours)" value={consultationModule.sickLeave.durationDays?.toString() || ""} onChange={(value) => setConsultationModule((current) => ({ ...current, sickLeave: { ...current.sickLeave, durationDays: Number(value) || 0 } }))} />
+                      <FormInput label="Intervalle de suivi" value={consultationModule.followUp.recommendedInterval} onChange={(value) => setConsultationModule((current) => ({ ...current, followUp: { ...current.followUp, recommendedInterval: value } }))} />
+                      <FormInput label="Date de suivi" value={consultationModule.followUp.specificDate || ""} onChange={(value) => setConsultationModule((current) => ({ ...current, followUp: { ...current.followUp, specificDate: value } }))} placeholder="YYYY-MM-DD" />
                     </div>
                   </SectionBox>
 
-                  <SectionBox title="Diagnostic">
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <FormInput label="Diagnostic principal" value={clinicalForm.principalDiagnosis} onChange={(value) => setClinicalForm((current) => ({ ...current, principalDiagnosis: value }))} />
-                      <FormTextArea label="Diagnostics possibles" value={clinicalForm.hypotheses} onChange={(value) => setClinicalForm((current) => ({ ...current, hypotheses: value }))} placeholder="Une hypothese par ligne" />
+                  <div className="sticky bottom-3 mt-4 flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+                    <button type="button" onClick={resetConsultationModule} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">Effacer / réinitialiser</button>
+                    <button type="button" onClick={saveDraftConsultation} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Enregistrer brouillon</button>
+                    <button type="button" onClick={validateConsultation} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">Valider et signer</button>
+                  </div>
+                  </>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+                      La consultation est actuellement fermée. Ouvrez-la pour saisir le dossier clinique et les actes associés.
                     </div>
-                  </SectionBox>
-
-                  <SectionBox title="Traitement et suivi">
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <FormTextArea label="Conseils au patient / hygiene de vie" value={clinicalForm.treatmentPlan} onChange={(value) => setClinicalForm((current) => ({ ...current, treatmentPlan: value }))} />
-                      <FormTextArea label="Plan de suivi" value={clinicalForm.followUp} onChange={(value) => setClinicalForm((current) => ({ ...current, followUp: value }))} />
-                    </div>
-                  </SectionBox>
-                  <button onClick={submitClinicalSections} className="mt-4 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white">
-                    Sauvegarder le dossier clinique
-                  </button>
+                  )}
                 </Panel>
               </div>
               ) : (
@@ -762,10 +1156,13 @@ function Vital({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({ title, children, actions }: { title: string; children: React.ReactNode; actions?: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-      <h3 className="font-semibold text-slate-900 dark:text-white">{title}</h3>
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="font-semibold text-slate-900 dark:text-white">{title}</h3>
+        {actions ? <div className="shrink-0">{actions}</div> : null}
+      </div>
       <div className="mt-3 space-y-3">{children}</div>
     </div>
   );
