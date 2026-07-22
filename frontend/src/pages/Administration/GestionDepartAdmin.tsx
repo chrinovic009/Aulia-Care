@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Layers3, MapPin, Plus, UsersRound } from "lucide-react";
+import { Building2, Layers3, MapPin, Pencil, Plus, Trash2, UsersRound } from "lucide-react";
 import { apiFetch } from "../../config/api";
+import { Modal } from "../../components/ui/modal";
 import { AdminPageShell, DataTable, Panel, StatCard, StatusBadge } from "./adminUi";
 
 type Department = {
@@ -53,6 +54,9 @@ export default function GestionDepartAdmin() {
   const [isLoading, setIsLoading] = useState(true);
   const [departmentForm, setDepartmentForm] = useState({ name: "", code: "", type: "MEDICAL", description: "", isParamedical: false });
   const [unitForm, setUnitForm] = useState({ name: "", departmentId: "", location: "", price: "" });
+  const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Department | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", code: "", type: "MEDICAL", description: "", isParamedical: false });
 
   // 2. Définition de la fonction de chargement (load)
   const load = async () => {
@@ -112,6 +116,45 @@ export default function GestionDepartAdmin() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const openEditModal = (department: Department) => {
+    setEditingDepartment(department);
+    setEditForm({
+      name: department.name || "",
+      code: department.code || "",
+      type: department.type || "MEDICAL",
+      description: department.description || "",
+      isParamedical: Boolean(department.services?.length ? department.services.some((unit) => unit.name?.toLowerCase().includes("paramed")) : false),
+    });
+  };
+
+  const closeEditModal = () => {
+    setEditingDepartment(null);
+    setEditForm({ name: "", code: "", type: "MEDICAL", description: "", isParamedical: false });
+  };
+
+  const saveDepartment = async () => {
+    if (!editingDepartment) return;
+    await apiFetch(`/administration/departments/${editingDepartment.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: editForm.name.trim(),
+        code: editForm.code.trim(),
+        type: editForm.type,
+        description: editForm.description.trim(),
+        isParamedical: editForm.isParamedical,
+      }),
+    });
+    closeEditModal();
+    await reload();
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    await apiFetch(`/administration/departments/${deleteTarget.id}`, { method: "DELETE" });
+    setDeleteTarget(null);
+    await reload();
   };
 
   const createUnit = async () => {
@@ -215,6 +258,10 @@ export default function GestionDepartAdmin() {
               department.services?.map((unit) => unit.name).join(", ") || "-",
               `${department.Employee?.length || 0} employé(s)`,
               <StatusBadge key="status" label="Opérationnel" tone="green" />,
+              <div key="actions" className="flex gap-2">
+                <button onClick={() => openEditModal(department)} className="rounded-lg border border-slate-200 p-2 text-slate-700 hover:bg-slate-100" title="Modifier"><Pencil size={16} /></button>
+                <button onClick={() => setDeleteTarget(department)} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" title="Supprimer"><Trash2 size={16} /></button>
+              </div>,
             ];
           })}
         />
@@ -235,6 +282,7 @@ export default function GestionDepartAdmin() {
               <option value="Urgences & Soins Intensifs">Urgences & Soins Intensifs</option>
               <option value="Unité d'Hospitalisation">Unité d'Hospitalisation</option>
               <option value="Prevention & Vaccination">Prévention & Vaccination</option>
+              <option value="Radiologie">Radiologie</option>
               <option value="Administration & Gestion">Administration & Gestion</option>
             </select>
             <input value={departmentForm.code} onChange={(event) => setDepartmentForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
@@ -259,6 +307,57 @@ export default function GestionDepartAdmin() {
           </div>
         </Panel>
       </div>
+
+      <Modal isOpen={Boolean(editingDepartment)} onClose={closeEditModal} className="max-w-2xl p-0">
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-slate-900">Modifier le département</h3>
+          <p className="mt-1 text-sm text-slate-500">Modifiez les informations du département et enregistrez les changements.</p>
+          <div className="mt-5 space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Nom</label>
+                <input value={editForm.name} onChange={(event) => setEditForm((current) => ({ ...current, name: event.target.value }))} className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Code</label>
+                <input value={editForm.code} onChange={(event) => setEditForm((current) => ({ ...current, code: event.target.value }))} className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Type</label>
+              <select value={editForm.type} onChange={(event) => setEditForm((current) => ({ ...current, type: event.target.value }))} className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm">
+                <option value="MEDICAL">MEDICAL</option>
+                <option value="SURGERY">SURGERY</option>
+                <option value="RADIOLOGY">RADIOLOGY</option>
+                <option value="LABORATORY">LABORATORY</option>
+                <option value="PHARMACY">PHARMACY</option>
+                <option value="NURSING">NURSING</option>
+                <option value="ADMINISTRATION">ADMINISTRATION</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Description</label>
+              <textarea value={editForm.description} onChange={(event) => setEditForm((current) => ({ ...current, description: event.target.value }))} rows={4} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={editForm.isParamedical} onChange={(event) => setEditForm((current) => ({ ...current, isParamedical: event.target.checked }))} /> Département paramédical</label>
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <button onClick={closeEditModal} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Annuler</button>
+            <button onClick={saveDepartment} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Enregistrer</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} className="max-w-lg p-0">
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-slate-900">Confirmer la suppression</h3>
+          <p className="mt-2 text-sm text-slate-500">Voulez-vous vraiment supprimer le département <span className="font-semibold text-slate-800">{deleteTarget?.name}</span> ?</p>
+          <div className="mt-6 flex justify-end gap-2">
+            <button onClick={() => setDeleteTarget(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Non</button>
+            <button onClick={confirmDelete} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white">Oui, supprimer</button>
+          </div>
+        </div>
+      </Modal>
     </AdminPageShell>
   );
 }

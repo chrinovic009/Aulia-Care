@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards, Param } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -34,6 +34,18 @@ export class AdministrationController {
     return this.administrationService.createDepartment(body);
   }
 
+  @Patch('departments/:id')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  updateDepartment(@Param('id') id: string, @Body() body: any) {
+    return this.administrationService.updateDepartment(id, body);
+  }
+
+  @Delete('departments/:id')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  deleteDepartment(@Param('id') id: string) {
+    return this.administrationService.removeDepartment(id);
+  }
+
   @Post('service-units')
   @Roles('SUPER_ADMIN', 'ADMIN')
   createServiceUnit(@Body() body: any) {
@@ -52,6 +64,18 @@ export class AdministrationController {
     return this.administrationService.createRoom(body);
   }
 
+  @Patch('rooms/:id')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  updateRoom(@Param('id') id: string, @Body() body: any) {
+    return this.administrationService.updateRoom(id, body);
+  }
+
+  @Delete('rooms/:id')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  deleteRoom(@Param('id') id: string) {
+    return this.administrationService.removeRoom(id);
+  }
+
   @Post('beds')
   @Roles('SUPER_ADMIN', 'ADMIN')
   createBed(@Body() body: any) {
@@ -62,6 +86,18 @@ export class AdministrationController {
   @Roles('SUPER_ADMIN', 'ADMIN')
   createOperatingRoom(@Body() body: any) {
     return this.administrationService.createOperatingRoom(body);
+  }
+
+  @Patch('operating-rooms/:id')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  updateOperatingRoom(@Param('id') id: string, @Body() body: any) {
+    return this.administrationService.updateOperatingRoom(id, body);
+  }
+
+  @Delete('operating-rooms/:id')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  deleteOperatingRoom(@Param('id') id: string) {
+    return this.administrationService.removeOperatingRoom(id);
   }
 
   @Get('stock')

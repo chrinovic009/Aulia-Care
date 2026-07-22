@@ -133,20 +133,47 @@ const extractClinicalVoiceFields = (transcript: string) => {
   return extracted;
 };
 
-/** Maps the clinician's spoken question to the visible clinical field.
- * This remains an assistive feature: the clinician reviews every proposed entry.
- */
-const detectVoiceTargetLabel = (transcript: string) => {
+type VoiceRoute = "chiefComplaint" | "onsetDuration" | "hpiDescription" | "knownDiseases" | "lifestyle";
+
+const voiceRouteLabel: Record<VoiceRoute, string> = {
+  chiefComplaint: "motif de consultation",
+  onsetDuration: "durée d'apparition",
+  hpiDescription: "description hpi",
+  knownDiseases: "pathologies chroniques",
+  lifestyle: "description hpi",
+};
+
+/** Maps the last clinician question to a clinical field. The doctor remains in control. */
+const detectVoiceRoute = (transcript: string): VoiceRoute | null => {
   const text = normalizeVoiceText(transcript);
-  if (/ou.*(mal|douleur)|localisation.*douleur/.test(text)) return "description hpi";
-  if (/(depuis quand|duree|combien de temps|debut des symptomes)/.test(text)) return "duree d'apparition";
-  if (/(intensite|echelle.*douleur|combien.*sur.*10)/.test(text)) return "description hpi";
-  if (/(motif|qu est ce qui vous amene|pourquoi venez)/.test(text)) return "motif de consultation";
-  if (/(antecedent|maladie.*connue|operation.*passee)/.test(text)) return "pathologies chroniques";
-  if (/(allergie|allergique)/.test(text)) return "allergene";
-  if (/(medicament.*cours|traitement.*cours)/.test(text)) return "medicament";
-  if (/(tabac|fumez|alcool|habitude)/.test(text)) return "description hpi";
+  if (/(ou.*(mal|douleur)|localisation.*douleur|comment.*douleur|intensite|echelle.*douleur|combien.*sur.*10)/.test(text)) return "hpiDescription";
+  if (/(depuis quand|duree|combien de temps|debut des symptomes|quand.*commence)/.test(text)) return "onsetDuration";
+  if (/(motif|qu est ce qui vous amene|pourquoi venez|quel est le probleme)/.test(text)) return "chiefComplaint";
+  if (/(antecedent|maladie.*connue|operation.*passee|avez vous deja eu)/.test(text)) return "knownDiseases";
+  if (/(tabac|fumez|alcool|habitude.*vie)/.test(text)) return "lifestyle";
   return null;
+};
+
+const cleanClinicalDictation = (value: string) => {
+  const cleaned = value
+    .replace(/\b(euh+|hum+|hein|voila|donc|en fait)\b/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/([,.!?])\1+/g, "$1")
+    .trim();
+  if (!cleaned) return "";
+  return `${cleaned.charAt(0).toUpperCase()}${cleaned.slice(1)}`;
+};
+
+const extractAnswerAfterQuestion = (transcript: string, route: VoiceRoute) => {
+  const patterns: Record<VoiceRoute, RegExp> = {
+    chiefComplaint: /(motif|qu['’]?est[-\s]*ce qui vous amene|pourquoi venez|quel est le probleme)/i,
+    onsetDuration: /(depuis quand|duree|combien de temps|debut des symptomes|quand.*commence)/i,
+    hpiDescription: /(ou avez[-\s]*vous mal|ou as[-\s]*tu mal|localisation.*douleur|comment.*douleur|intensite|combien.*sur.*10)/i,
+    knownDiseases: /(antecedent|maladie.*connue|operation.*passee|avez[-\s]*vous deja eu)/i,
+    lifestyle: /(tabac|fumez|alcool|habitude.*vie)/i,
+  };
+  const match = patterns[route].exec(transcript);
+  return cleanClinicalDictation(match ? transcript.slice(match.index + match[0].length).replace(/^[\s:;,.!?-]+/, "") : transcript);
 };
 
 function summarizeHistory(form: any, module: ConsultationModuleState) {
@@ -254,6 +281,8 @@ export default function DashboardMedecin() {
   const speechRecognitionRef = useRef<any>(null);
   const speechFinalTextRef = useRef("");
   const speechSilenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceRouteRef = useRef<VoiceRoute | null>(null);
+  const voiceAnswerRef = useRef("");
   
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
@@ -424,8 +453,11 @@ export default function DashboardMedecin() {
 
   const applyVoiceToConsultationModule = (transcript: string) => {
     const fields = extractClinicalVoiceFields(transcript);
-    const targetLabel = detectVoiceTargetLabel(transcript);
-    if (targetLabel) {
+    const detectedRoute = detectVoiceRoute(transcript);
+    if (detectedRoute) {
+      if (voiceRouteRef.current !== detectedRoute) voiceAnswerRef.current = "";
+      voiceRouteRef.current = detectedRoute;
+      const targetLabel = voiceRouteLabel[detectedRoute];
       setVoiceTargetLabel(targetLabel);
       window.setTimeout(() => {
         const target = document.querySelector<HTMLElement>(`[data-clinical-label="${targetLabel}"]`);
@@ -433,8 +465,27 @@ export default function DashboardMedecin() {
         target?.focus();
       }, 0);
     }
+    const route = voiceRouteRef.current;
+    const answer = route ? extractAnswerAfterQuestion(transcript, route) : "";
     setConsultationModule((current) => {
       const next: ConsultationModuleState = { ...current };
+      const previousAnswer = voiceAnswerRef.current;
+      const hasNewAnswer = answer.length >= 2 && answer !== previousAnswer;
+      if (hasNewAnswer) voiceAnswerRef.current = answer;
+      if (hasNewAnswer && route === "chiefComplaint") {
+        next.chiefComplaint = answer;
+      }
+      if (hasNewAnswer && route === "onsetDuration") {
+        next.onsetDuration = answer;
+      }
+      if (hasNewAnswer && (route === "hpiDescription" || route === "lifestyle")) {
+        next.hpiDescription = previousAnswer && next.hpiDescription.includes(previousAnswer)
+          ? next.hpiDescription.replace(previousAnswer, answer)
+          : appendClinicalValue(next.hpiDescription, answer);
+      }
+      if (hasNewAnswer && route === "knownDiseases") {
+        next.chronicPathologies = [{ code: "DECLARED", label: answer }];
+      }
       if (fields.chiefComplaint) {
         next.chiefComplaint = appendClinicalValue(current.chiefComplaint || next.chiefComplaint, fields.chiefComplaint);
       }

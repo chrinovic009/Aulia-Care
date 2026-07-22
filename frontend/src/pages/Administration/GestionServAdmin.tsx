@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, Stethoscope, UsersRound } from "lucide-react";
+import { Activity, Pencil, Stethoscope, Trash2, UsersRound } from "lucide-react";
 import { apiFetch } from "../../config/api";
+import { Modal } from "../../components/ui/modal";
 import { AdminPageShell, DataTable, Panel, StatCard, StatusBadge, formatMoney } from "./adminUi";
 
 type ServiceRecord = {
@@ -33,6 +34,9 @@ export default function GestionServAdmin() {
   const [responsibleUserId, setResponsibleUserId] = useState("");
   const [memberUserId, setMemberUserId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [editingService, setEditingService] = useState<ServiceRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ServiceRecord | null>(null);
+  const [form, setForm] = useState({ name: "", description: "", active: true, isParamedical: false });
 
   const load = async () => {
     setIsLoading(true);
@@ -80,6 +84,43 @@ export default function GestionServAdmin() {
     await load();
   };
 
+  const openEditModal = (service: ServiceRecord) => {
+    setEditingService(service);
+    setForm({
+      name: service.name || "",
+      description: service.description || "",
+      active: service.active !== false,
+      isParamedical: Boolean(service.isParamedical),
+    });
+  };
+
+  const closeEditModal = () => {
+    setEditingService(null);
+    setForm({ name: "", description: "", active: true, isParamedical: false });
+  };
+
+  const saveService = async () => {
+    if (!editingService) return;
+    await apiFetch(`/services/${editingService.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: form.name.trim(),
+        description: form.description.trim(),
+        active: form.active,
+        isParamedical: form.isParamedical,
+      }),
+    });
+    closeEditModal();
+    await load();
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    await apiFetch(`/services/${deleteTarget.id}`, { method: "DELETE" });
+    setDeleteTarget(null);
+    await load();
+  };
+
   return (
     <AdminPageShell
       title="Services"
@@ -103,6 +144,10 @@ export default function GestionServAdmin() {
               service.staff?.map((item) => userName(item.user)).filter(Boolean).slice(0, 3).join(", ") || `${service.staff?.length || 0} membre(s)`,
               service.tarifs?.[0]?.prix ? formatMoney(service.tarifs[0].prix) : "-",
               service.active === false ? <StatusBadge key="status" label="Inactif" tone="amber" /> : <StatusBadge key="status" label="Actif" tone="green" />,
+              <div key="actions" className="flex gap-2">
+                <button onClick={() => openEditModal(service)} className="rounded-lg border border-slate-200 p-2 text-slate-700 hover:bg-slate-100" title="Modifier"><Pencil size={16} /></button>
+                <button onClick={() => setDeleteTarget(service)} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" title="Supprimer"><Trash2 size={16} /></button>
+              </div>,
             ])}
           />
         </Panel>
@@ -134,6 +179,42 @@ export default function GestionServAdmin() {
           </Panel>
         </div>
       </div>
+
+      <Modal isOpen={Boolean(editingService)} onClose={closeEditModal} className="max-w-2xl p-0">
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-slate-900">Modifier le service</h3>
+          <p className="mt-1 text-sm text-slate-500">Modifiez les informations de ce service et enregistrez les changements.</p>
+          <div className="mt-5 space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Nom</label>
+              <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Description</label>
+              <textarea value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} rows={4} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={form.isParamedical} onChange={(event) => setForm((current) => ({ ...current, isParamedical: event.target.checked }))} /> Paramédical</label>
+              <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} /> Actif</label>
+            </div>
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <button onClick={closeEditModal} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Annuler</button>
+            <button onClick={saveService} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Enregistrer</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)} className="max-w-lg p-0">
+        <div className="p-6">
+          <h3 className="text-lg font-semibold text-slate-900">Confirmer la suppression</h3>
+          <p className="mt-2 text-sm text-slate-500">Voulez-vous vraiment supprimer le service <span className="font-semibold text-slate-800">{deleteTarget?.name}</span> ?</p>
+          <div className="mt-6 flex justify-end gap-2">
+            <button onClick={() => setDeleteTarget(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Non</button>
+            <button onClick={confirmDelete} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white">Oui, supprimer</button>
+          </div>
+        </div>
+      </Modal>
     </AdminPageShell>
   );
 }

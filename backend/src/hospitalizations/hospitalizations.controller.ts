@@ -35,6 +35,12 @@ export class HospitalizationsController {
     return this.hospitalizationsService.getNurseHospitalizations(req.user?.userId);
   }
 
+  @Get('nurse/available')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
+  availableNurses(@Query('serviceUnitId') serviceUnitId?: string) {
+    return this.hospitalizationsService.getAvailableNurses(serviceUnitId);
+  }
+
   @Get('nurse/rounds')
   @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
   nurseRounds(@Request() req: any) {

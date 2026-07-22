@@ -402,6 +402,8 @@ export class UsersService {
       'shiftStartAt',
       'shiftEndAt',
       'shiftType',
+      'shiftPattern',
+      'rotationAnchorAt',
     ]) {
       delete data[key];
     }
@@ -412,6 +414,8 @@ export class UsersService {
     if (dto.employeeNumber !== undefined) employeeData.employeeNumber = dto.employeeNumber;
     if (dto.departmentId !== undefined) employeeData.departmentId = dto.departmentId || null;
     if (dto.serviceUnitId !== undefined) employeeData.serviceUnitId = dto.serviceUnitId || null;
+    if (dto.shiftPattern !== undefined) employeeData.shiftPattern = dto.shiftPattern;
+    if (dto.rotationAnchorAt !== undefined) employeeData.rotationAnchorAt = dto.rotationAnchorAt ? new Date(dto.rotationAnchorAt) : null;
     if (dto.salary !== undefined) contractData.salary = dto.salary;
     if (dto.salaryFrequency !== undefined) contractData.frequency = dto.salaryFrequency;
     if (dto.contractType !== undefined) contractData.type = dto.contractType as any;

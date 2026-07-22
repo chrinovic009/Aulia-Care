@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { ServicesService } from './services.service';
 
 @Controller('services')
@@ -23,6 +23,11 @@ export class ServicesController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() body: any) {
     return this.servicesService.update(id, body);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.servicesService.remove(id);
   }
 
   @Post(':id/prices')

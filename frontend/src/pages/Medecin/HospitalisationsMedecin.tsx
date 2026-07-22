@@ -7,6 +7,17 @@ import { useAuth } from "../../context/AuthContext";
 import { consultationLabel, formatDateTime, hasConsultations, patientSearchText, serviceLabel } from "./medecinShared";
 import { getBedSelectionState, type BedSelectionRoom } from "./hospitalizationBedSelection";
 
+type AvailableNurse = {
+  id: string;
+  displayName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  coverage: "DAY" | "NIGHT";
+  activePatients: number;
+  remainingCapacity: number;
+  available: boolean;
+};
+
 const formatVitalLabel = (value?: string | null) => {
   const normalized = (value || "").trim().toUpperCase();
   const labels: Record<string, string> = {
@@ -37,7 +48,8 @@ export default function HospitalisationsMedecin() {
   const [selectedConsultationId, setSelectedConsultationId] = useState("");
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState<string | null>(null);
-  const [form, setForm] = useState({ admissionReason: "", bedNumber: "", nurseInChargeId: "" });
+  const [form, setForm] = useState({ admissionReason: "", bedNumber: "", dayNurseId: "", nightNurseId: "" });
+  const [availableNurses, setAvailableNurses] = useState<AvailableNurse[]>([]);
   const [roomOptions, setRoomOptions] = useState<BedSelectionRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState("");
   const [selectedBedId, setSelectedBedId] = useState("");
@@ -62,9 +74,19 @@ export default function HospitalisationsMedecin() {
     }
   };
 
+  const loadAvailableNurses = async () => {
+    try {
+      const nurses = await apiFetch<AvailableNurse[]>("/hospitalizations/nurse/available");
+      setAvailableNurses((nurses || []).filter((nurse) => nurse.available));
+    } catch {
+      setAvailableNurses([]);
+    }
+  };
+
   useEffect(() => {
     load();
     void loadRooms();
+    void loadAvailableNurses();
     const handler = () => load();
     window.addEventListener("d7:hospitalization.updated", handler);
     window.addEventListener("d7:clinicalDataUpdated", handler);
@@ -72,6 +94,11 @@ export default function HospitalisationsMedecin() {
       window.removeEventListener("d7:hospitalization.updated", handler);
       window.removeEventListener("d7:clinicalDataUpdated", handler);
     };
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => void loadAvailableNurses(), 30_000);
+    return () => window.clearInterval(interval);
   }, []);
 
   const filteredPatients = useMemo(() => {
@@ -124,10 +151,12 @@ export default function HospitalisationsMedecin() {
         admissionReason: form.admissionReason,
         bedId: selectedBedId,
         bedNumber: bedLabel || form.bedNumber || undefined,
-        nurseInChargeId: form.nurseInChargeId || undefined,
+        nurseInChargeId: form.dayNurseId || undefined,
+        dayNurseId: form.dayNurseId || undefined,
+        nightNurseId: form.nightNurseId || undefined,
       }),
     });
-    setForm({ admissionReason: "", bedNumber: "", nurseInChargeId: "" });
+    setForm({ admissionReason: "", bedNumber: "", dayNurseId: "", nightNurseId: "" });
     setSelectedBedId("");
     setSelectedRoomId("");
     setMessage("Hospitalisation declaree et dossier patient mis a jour.");
@@ -157,7 +186,9 @@ export default function HospitalisationsMedecin() {
                     <Select label="Lit" value={selectedBedId} onChange={setSelectedBedId} options={(selectedRoom?.beds || []).filter((bed) => bed.status === "FREE").map((bed) => [bed.id, bed.code] as [string, string])} />
                     {bedSelection.message && <p className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm text-amber-700">{bedSelection.message}</p>}
                   </div>
-                  <Input label="Infirmier responsable (ID optionnel)" value={form.nurseInChargeId} onChange={(value) => setForm((current) => ({ ...current, nurseInChargeId: value }))} />
+                  <NurseSelect label="Infirmier de jour disponible" coverage="DAY" nurses={availableNurses} value={form.dayNurseId} onChange={(value) => setForm((current) => ({ ...current, dayNurseId: value }))} />
+                  <NurseSelect label="Infirmier de nuit disponible" coverage="NIGHT" nurses={availableNurses} value={form.nightNurseId} onChange={(value) => setForm((current) => ({ ...current, nightNurseId: value }))} />
+                  <p className="text-xs text-slate-500">La liste est actualisée selon les shifts actifs et masque les infirmiers ayant déjà cinq patients suivis.</p>
                   <button disabled={!canWrite || !selectedConsultation || !selectedBedId} onClick={declareHospitalization} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:bg-slate-300 disabled:text-slate-600">Hospitaliser</button>
                 </Panel>
 
@@ -221,6 +252,20 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
 
 function Badge({ children }: { children: ReactNode }) {
   return <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{children}</span>;
+}
+
+function NurseSelect({ label, coverage, nurses, value, onChange }: { label: string; coverage: "DAY" | "NIGHT"; nurses: AvailableNurse[]; value: string; onChange: (value: string) => void }) {
+  const choices = nurses.filter((nurse) => nurse.coverage === coverage);
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white">
+        <option value="">Sélectionner un infirmier</option>
+        {choices.map((nurse) => <option key={nurse.id} value={nurse.id}>{nurse.displayName || `${nurse.firstName || ""} ${nurse.lastName || ""}`.trim()} — {nurse.activePatients}/5 patients</option>)}
+      </select>
+      {choices.length === 0 && <span className="mt-1 block text-xs text-amber-700">Aucun infirmier de cette couverture n’est actuellement disponible.</span>}
+    </label>
+  );
 }
 
 function Input({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
