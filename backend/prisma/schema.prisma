@@ -2703,6 +2703,13 @@ enum ShiftType {
   ROTATING
 }
 
+/// Manual shifts remain supported. Rotations are evaluated in the hospital's local time.
+enum EmployeeShiftPattern {
+  MANUAL
+  THREE_DAY_THREE_NIGHT_THREE_REST
+  PERMANENT_DAY
+}
+
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -2738,6 +2745,8 @@ model Employee {
   position        String?
   departmentId    String?
   serviceUnitId   String?
+  shiftPattern    EmployeeShiftPattern @default(MANUAL)
+  rotationAnchorAt DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { useTheme } from "../../context/ThemeContext";
@@ -220,6 +220,7 @@ export default function Rounds() {
   };
 
   const [notifications, setNotifications] = useState<string[]>([]);
+  const lastAnnouncedReminder = useRef("");
   useEffect(() => {
     const id = setInterval(() => {
       const soon = tasks.find((t) => {
@@ -236,6 +237,17 @@ export default function Rounds() {
     }, 5000);
     return () => clearInterval(id);
   }, [tasks]);
+
+  useEffect(() => {
+    const reminder = notifications[0];
+    if (!reminder || reminder === lastAnnouncedReminder.current || !("speechSynthesis" in window)) return;
+    lastAnnouncedReminder.current = reminder;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(`Rappel de tournée infirmière. ${reminder}`);
+    utterance.lang = "fr-FR";
+    utterance.rate = 0.95;
+    window.speechSynthesis.speak(utterance);
+  }, [notifications]);
 
   useEffect(() => {
     const id = setTimeout(() => {

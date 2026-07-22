@@ -48,12 +48,9 @@ export class ServicesService {
     try {
       if (departmentId) {
         await this.ensureServiceUnitForDepartment(svc.name, departmentId);
-      } else {
-        await this.ensureDepartmentForService(svc.name);
       }
-    } catch (err) {
-      // don't block service creation on department creation errors
-      // log if necessary
+    } catch {
+      // Automatic department creation is disabled; only explicit manual linkage is allowed.
     }
 
     return svc;
@@ -114,6 +111,20 @@ export class ServicesService {
     return this.prisma.service.update({ where: { id }, data: updateData });
   }
 
+  async remove(id: string) {
+    const service = await this.prisma.service.findUnique({ where: { id } });
+    if (!service) {
+      throw new NotFoundException('Service introuvable');
+    }
+
+    await this.prisma.service.update({
+      where: { id },
+      data: { active: false },
+    });
+
+    return { success: true, id };
+  }
+
   async addTarif(dto: any) {
     const service = await this.prisma.service.findUnique({
       where: { id: dto.serviceId },
@@ -133,178 +144,10 @@ export class ServicesService {
     return this.prisma.serviceTarif.create({ data: dto });
   }
 
-  private async ensureDepartmentForService(serviceName: string) {
-    const normalize = (value: string) => value
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .trim();
-
-    const normalizedServiceName = normalize(serviceName);
-    // Do not auto-create departments for internal operational services
-    // such as reception or caisse — these should be associated manually
-    // with the ADMINISTRATION & GESTION department instead.
-    if (['reception', 'caisse', 'secretariat'].includes(normalizedServiceName)) {
-      return;
-    }
-
-    const institutionalCategories: { keywords: string[]; departmentName: string; departmentType: string }[] = [
-      { keywords: ['medecine generale', 'pediatrie', 'gynecologie', 'obstetrique', 'cardiologie', 'pneumologie', 'neurologie', 'gastro', 'nephrologie', 'endocrinologie', 'diabetologie', 'dermatologie', 'rhumatologie', 'infectiologie', 'oncologie', 'geriatrie', 'sport'], departmentName: 'MEDECINE GENERALE', departmentType: 'MEDICAL' },
-      { keywords: ['chirurgie', 'bloc operatoire', 'orthopedique', 'traumatologique', 'neurochirurgie', 'orl', 'maxillo'], departmentName: 'CHIRURGIE', departmentType: 'SURGERY' },
-      { keywords: ['examen specialise', 'dialyse', 'endoscopie', 'exploration'], departmentName: 'EXAMENS SPECIALISES', departmentType: 'MEDICAL' },
-      { keywords: ['imagerie', 'diagnostic', 'radiologie', 'echographie', 'mammographie', 'scanner', 'irm'], departmentName: 'IMAGERIE & DIAGNOSTICS', departmentType: 'RADIOLOGY' },
-      { keywords: ['laboratoire', 'hematologie', 'biochimie', 'microbiologie', 'immunologie', 'pathologie'], departmentName: 'LABORATOIRE', departmentType: 'LABORATORY' },
-      { keywords: ['pharmacie', 'pharmaceutique', 'medicament'], departmentName: 'PHARMACIE', departmentType: 'PHARMACY' },
-      { keywords: ['sante mentale', 'psychiatrie', 'psychologie', 'addictologie'], departmentName: 'SANTE MENTALE', departmentType: 'MEDICAL' },
-      { keywords: ['reeducation', 'kinesitherapie', 'ergotherapie', 'orthophonie', 'nutrition', 'dietetique'], departmentName: 'REEDUCATION', departmentType: 'NURSING' },
-      { keywords: ['urgence', 'reanimation', 'soins intensifs', 'dechocage'], departmentName: 'URGENCES', departmentType: 'MEDICAL' },
-      { keywords: ['hospitalisation', 'salle de reveil', 'ambulatoire'], departmentName: 'HOSPITALISATION', departmentType: 'NURSING' },
-      { keywords: ['prevention', 'vaccination', 'consultation', 'check-up', 'teleconsultation', 'medecine du travail'], departmentName: 'PREVENTION & CONSULTATION', departmentType: 'MEDICAL' },
-      { keywords: ['administration', 'reception', 'caisse', 'secretariat'], departmentName: 'ADMINISTRATION', departmentType: 'ADMINISTRATION' },
-    ];
-
-    const institutionalCategory = institutionalCategories.find((category) =>
-      category.keywords.some((keyword) => normalizedServiceName.includes(keyword)),
-    );
-
-    if (institutionalCategory) {
-      const departmentName = institutionalCategory.departmentName;
-      const code = departmentName
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-zA-Z0-9 ]/g, '')
-        .toLowerCase()
-        .replace(/\s+/g, '_')
-        .slice(0, 50);
-
-      const department = await this.prisma.department.upsert({
-        where: { name: departmentName },
-        update: {},
-        create: {
-          name: departmentName,
-          type: institutionalCategory.departmentType as any,
-          code,
-          description: `Departement institutionnel ${departmentName}`,
-        },
-      });
-
-      await this.ensureServiceUnitForDepartment(serviceName, department.id);
-      return;
-    }
-
-    const CATEGORY_MAP: { serviceNames: string[]; departmentName: string; departmentType: string }[] = [
-      {
-        serviceNames: [
-          'Pédiatrie', 'Gynécologie & obstétrique', 'Cardiologie', 'Pneumologie',
-          'Neurologie', 'Gastro-entérologie', 'Néphrologie', 'Endocrinologie & diabétologie',
-          'Dermatologie', 'Rhumatologie', 'Infectiologie', 'Oncologie', 'Gériatrie', 'Médecine du sport',
-        ],
-        departmentName: 'Medecine Général',
-        departmentType: 'MEDICAL',
-      },
-      {
-        serviceNames: [
-          'Chirurgie orthopédique & traumatologique', 'Chirurgie cardiovasculaire', 'Neurochirurgie',
-          'Chirurgie plastique & reconstructive', 'Chirurgie ORL', 'Chirurgie maxillo-faciale',
-          'Chirurgie pédiatrique', 'Chirurgie gynécologique',
-        ],
-        departmentName: 'Chirurgie générale',
-        departmentType: 'SURGERY',
-      },
-      {
-        serviceNames: [
-          'Échographie', 'Mammographie', 'Scanner', 'IRM', 'Endoscopie', 'Médecine nucléaire',
-          'Laboratoire d’analyses médicales (Département)', 'Hématologie (Laboratoire)',
-          'Biochimie (Laboratoire)', 'Microbiologie & Bactériologie (Laboratoire)',
-          'Immunologie (Laboratoire)', 'Pathologie & anatomie cytologique', 'Dialyse',
-        ],
-        departmentName: 'Radiologie (Imagerie)',
-        departmentType: 'RADIOLOGY',
-      },
-      {
-        serviceNames: [
-          'Pharmacie interne (PUI)', 'Pharmacie externe', 'Gestion des stocks & traçabilité des médicaments',
-          'Conseil pharmaceutique personnalisé',
-        ],
-        departmentName: 'Pharmacie',
-        departmentType: 'PHARMACY',
-      },
-      {
-        serviceNames: [
-          'Psychologie clinique', 'Thérapies cognitives et comportementales', 'Addictologie',
-          'Soutien psychologique & accompagnement familial',
-        ],
-        departmentName: 'Psychiatrie',
-        departmentType: 'MEDICAL',
-      },
-      {
-        serviceNames: [
-          'Rééducation fonctionnelle', 'Ergothérapie', 'Orthophonie', 'Nutrition & diététique',
-          'Soins palliatifs', 'Douleur & algologie',
-        ],
-        departmentName: 'Rééducation & Soins paramédicaux',
-        departmentType: 'NURSING',
-      },
-      {
-        serviceNames: [
-          'Accueil & Tri des urgences (IAO)', 'Zone de déchocage (UHA)', 'Unité d’hospitalisation de courte durée (UHCD)',
-          'Urgences pédiatriques', 'Réanimation & Soins intensifs (Département)',
-          'Réanimation polyvalente', 'Unité de Surveillance Continue (USC)', 'Soins Intensifs Cardiaques (USIC)',
-        ],
-        departmentName: 'Urgences',
-        departmentType: 'MEDICAL',
-      },
-      {
-        serviceNames: [
-          'Hospitalisation complète (Médecine/Chirurgie)', 'Hospitalisation de jour (Ambulatoire)',
-          'Bloc opératoire (Gestion)', 'Salle de réveil (SSPI)',
-        ],
-        departmentName: 'Unités d’hospitalisation',
-        departmentType: 'NURSING',
-      },
-      {
-        serviceNames: [
-          'Médecine du travail', 'Consultation voyage', 'Check-up complet', 'Téléconsultation & suivi à distance',
-        ],
-        departmentName: 'Médecine préventive & vaccination',
-        departmentType: 'MEDICAL',
-      },
-      {
-        serviceNames: ['Programmes éducatifs pour patients', 'Réception', 'Caisse'],
-        departmentName: 'Centre de recherche clinique',
-        departmentType: 'ADMINISTRATION',
-      },
-    ];
-
-    const matchingCategory = CATEGORY_MAP.find((category) =>
-      category.serviceNames.some((name) => normalize(name) === normalizedServiceName),
-    );
-
-    if (!matchingCategory) {
-      return;
-    }
-
-    const departmentName = matchingCategory.departmentName;
-    const code = departmentName
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-zA-Z0-9 ]/g, '')
-      .toLowerCase()
-      .replace(/\s+/g, '_')
-      .slice(0, 50);
-
-    const department = await this.prisma.department.upsert({
-      where: { name: departmentName },
-      update: {},
-      create: {
-        name: departmentName,
-        type: matchingCategory.departmentType as any,
-        code,
-        description: `Département créé automatiquement pour regrouper les services liés à ${departmentName}`,
-      },
-    });
-
-    await this.ensureServiceUnitForDepartment(serviceName, department.id);
+  private async ensureDepartmentForService(_serviceName: string) {
+    // Automatic department creation is disabled for services.
+    // Departments must be created and linked manually by administrators.
+    return;
   }
 
   private async ensureServiceUnitForDepartment(serviceName: string, departmentId: string) {

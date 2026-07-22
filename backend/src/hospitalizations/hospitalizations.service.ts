@@ -28,7 +28,7 @@ export class HospitalizationsService {
   private async activeShiftForUser(userId?: string | null, serviceUnitId?: string | null) {
     if (!userId) return null;
     const now = new Date();
-    return this.prisma.shift.findFirst({
+    const registeredShift = await this.prisma.shift.findFirst({
       where: {
         startAt: { lte: now },
         endAt: { gte: now },
@@ -41,6 +41,39 @@ export class HospitalizationsService {
       include: { employee: { include: { user: true, serviceUnit: true } } },
       orderBy: { startAt: 'desc' },
     });
+    if (registeredShift) return registeredShift;
+
+    // A rotation is used only when no explicit Shift overrides it.
+    const employee = await this.prisma.employee.findFirst({
+      where: { userId, status: 'ACTIVE', ...(serviceUnitId ? { serviceUnitId } : {}) },
+      include: { user: true, serviceUnit: true },
+    });
+    if (!employee || employee.shiftPattern === 'MANUAL') return null;
+
+    const at = (date: Date, hour: number, minute: number) => {
+      const result = new Date(date);
+      result.setHours(hour, minute, 0, 0);
+      return result;
+    };
+    const today = at(now, 0, 0);
+    const minuteOfDay = now.getHours() * 60 + now.getMinutes();
+    const isPermanentDay = employee.shiftPattern === 'PERMANENT_DAY';
+    if (!isPermanentDay && !employee.rotationAnchorAt) return null;
+    const anchor = at(employee.rotationAnchorAt || today, 0, 0);
+    const dayIndex = Math.floor((today.getTime() - anchor.getTime()) / 86_400_000);
+    const phase = ((dayIndex % 9) + 9) % 9;
+    const previousPhase = (((dayIndex - 1) % 9) + 9) % 9;
+
+    if ((isPermanentDay || phase <= 2) && minuteOfDay >= 7 * 60 + 30 && minuteOfDay < 17 * 60 + 30) {
+      return { startAt: at(today, 7, 30), endAt: at(today, 17, 30), employee };
+    }
+    const isNightDay = !isPermanentDay && phase >= 3 && phase <= 5;
+    const continuesPreviousNight = !isPermanentDay && previousPhase >= 3 && previousPhase <= 5;
+    if ((isNightDay && minuteOfDay >= 17 * 60 + 30) || (continuesPreviousNight && minuteOfDay < 7 * 60 + 30)) {
+      const startDate = minuteOfDay < 7 * 60 + 30 ? new Date(today.getTime() - 86_400_000) : today;
+      return { startAt: at(startDate, 17, 30), endAt: at(today, 7, 30), employee };
+    }
+    return null;
   }
 
   private async buildNurseAccess(hospitalization: any, userId?: string | null) {
@@ -69,6 +102,41 @@ export class HospitalizationsService {
     return { mode: 'READ_ONLY', canWrite: false, reason: 'Lecture clinique autorisee' };
   }
 
+  /** Nurses actually on duty now, with their live active workload.
+   * The roster is based on registered Employee/Shift records; it never infers availability from a name alone.
+   */
+  async getAvailableNurses(serviceUnitId?: string) {
+    const nurses = await this.prisma.user.findMany({
+      where: {
+        status: 'ACTIVE',
+        primaryRole: 'NURSE',
+        Employee: { some: { status: 'ACTIVE', ...(serviceUnitId ? { serviceUnitId } : {}) } },
+      },
+      select: { id: true, displayName: true, firstName: true, lastName: true, specialty: true },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+
+    const available = await Promise.all(nurses.map(async (nurse) => {
+      const shift = await this.activeShiftForUser(nurse.id, serviceUnitId);
+      if (!shift) return null;
+      const activePatients = await (this.prisma as any).hospitalizationNurseAssignment.count({
+        where: { nurseId: nurse.id, releasedAt: null, hospitalization: { status: { in: ['ADMITTED', 'TRANSFERRED'] } } },
+      });
+      const hour = shift.startAt.getHours();
+      return {
+        ...nurse,
+        coverage: hour >= 17 || hour < 7 ? 'NIGHT' : 'DAY',
+        shiftStartAt: shift.startAt,
+        shiftEndAt: shift.endAt,
+        activePatients,
+        remainingCapacity: Math.max(0, 5 - activePatients),
+        available: activePatients < 5,
+      };
+    }));
+
+    return available.filter(Boolean);
+  }
+
   async create(createHospitalizationDto: CreateHospitalizationDto) {
     const created = await this.prisma.$transaction(async (tx) => {
       const bedId = createHospitalizationDto.bedId;
@@ -92,6 +160,10 @@ export class HospitalizationsService {
       for (const assignment of requestedAssignments) {
         const nurse = await tx.user.findFirst({ where: { id: assignment.nurseId, status: 'ACTIVE', primaryRole: 'NURSE' } });
         if (!nurse) throw new BadRequestException(`Infirmier ${assignment.coverage === 'DAY' ? 'de jour' : 'de nuit'} indisponible.`);
+        const activeShift = await this.activeShiftForUser(assignment.nurseId, hospitalizationData.serviceUnitId);
+        if (!activeShift) throw new BadRequestException(`L'infirmier ${assignment.coverage === 'DAY' ? 'de jour' : 'de nuit'} n'est pas en shift actif.`);
+        const actualCoverage = activeShift.startAt.getHours() >= 17 || activeShift.startAt.getHours() < 7 ? 'NIGHT' : 'DAY';
+        if (actualCoverage !== assignment.coverage) throw new BadRequestException(`Cet infirmier n'est pas disponible pour la couverture ${assignment.coverage === 'DAY' ? 'de jour' : 'de nuit'}.`);
         const activeLoad = await (tx as any).hospitalizationNurseAssignment.count({ where: { nurseId: assignment.nurseId, releasedAt: null, hospitalization: { status: { in: ['ADMITTED', 'TRANSFERRED'] } } } });
         if (activeLoad >= 5) throw new BadRequestException('Cet infirmier a déjà atteint la limite de 5 patients hospitalisés.');
       }

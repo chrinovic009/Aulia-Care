@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -85,7 +85,6 @@ export class AdministrationService {
   }
 
   createDepartment(data: any) {
-    // Sécurité : On s'assure que le type est fourni
     if (!data.type) {
       throw new BadRequestException("Le champ 'type' (DepartmentType) est requis pour créer un département.");
     }
@@ -94,11 +93,43 @@ export class AdministrationService {
       data: {
         name: data.name,
         code: data.code,
-        type: data.type, // Reçu depuis ton DTO / Contrôleur
+        type: data.type,
         description: data.description ?? null,
         isParamedical: data.isParamedical ?? false,
       },
     });
+  }
+
+  async updateDepartment(id: string, data: any) {
+    const existing = await (this.prisma as any).department.findFirst({ where: { id, deletedAt: null } });
+    if (!existing) {
+      throw new NotFoundException('Département introuvable');
+    }
+
+    return (this.prisma as any).department.update({
+      where: { id },
+      data: {
+        name: data.name ?? existing.name,
+        code: data.code ?? existing.code,
+        type: data.type ?? existing.type,
+        description: data.description ?? existing.description,
+        isParamedical: data.isParamedical ?? existing.isParamedical,
+      },
+    });
+  }
+
+  async removeDepartment(id: string) {
+    const existing = await (this.prisma as any).department.findFirst({ where: { id, deletedAt: null } });
+    if (!existing) {
+      throw new NotFoundException('Département introuvable');
+    }
+
+    await (this.prisma as any).department.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+
+    return { success: true, id };
   }
 
   createServiceUnit(data: any) {
@@ -141,6 +172,29 @@ export class AdministrationService {
     });
   }
 
+  async updateRoom(id: string, data: any) {
+    const existing = await (this.prisma as any).room.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Salle introuvable');
+
+    return (this.prisma as any).room.update({
+      where: { id },
+      data: {
+        number: data.number ?? existing.number,
+        serviceUnitId: data.serviceUnitId ?? existing.serviceUnitId,
+        status: data.status ?? existing.status,
+      },
+      include: { beds: true, serviceUnit: true },
+    });
+  }
+
+  async removeRoom(id: string) {
+    const existing = await (this.prisma as any).room.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Salle introuvable');
+
+    await (this.prisma as any).room.delete({ where: { id } });
+    return { success: true, id };
+  }
+
   createBed(data: any) {
     return (this.prisma as any).bed.create({
       data: {
@@ -160,6 +214,29 @@ export class AdministrationService {
         active: data.active ?? true,
       },
     });
+  }
+
+  async updateOperatingRoom(id: string, data: any) {
+    const existing = await (this.prisma as any).operatingRoom.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Bloc opératoire introuvable');
+
+    return (this.prisma as any).operatingRoom.update({
+      where: { id },
+      data: {
+        name: data.name ?? existing.name,
+        location: data.location ?? existing.location,
+        capacity: data.capacity !== undefined ? Number(data.capacity) : existing.capacity,
+        active: data.active ?? existing.active,
+      },
+    });
+  }
+
+  async removeOperatingRoom(id: string) {
+    const existing = await (this.prisma as any).operatingRoom.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Bloc opératoire introuvable');
+
+    await (this.prisma as any).operatingRoom.delete({ where: { id } });
+    return { success: true, id };
   }
 
   stocks() {

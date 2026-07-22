@@ -3,7 +3,7 @@ import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
-import { fetchNurseHospitalizations } from "../../api/nurse";
+import { fetchNurseHospitalizations, recordNurseRound } from "../../api/nurse";
 
 type ClinicalState = "Stable" | "Surveillance" | "Critique" | "Isolement";
 
@@ -26,6 +26,7 @@ type Hospitalisation = {
   dischargePlanned?: boolean;
   dischargeStage?: "prêt" | "attente medecin" | "attente paiement" | "attente ordonnance" | null;
   dischargedAt?: string | null;
+  access?: { canWrite: boolean; reason: string };
 };
 
 const mapHospitalizationRecord = (record: any): Hospitalisation => {
@@ -57,13 +58,14 @@ const mapHospitalizationRecord = (record: any): Hospitalisation => {
     admittedAt,
     status,
     clinicalState,
-    currentTreatments: record.admissionReason ? [record.admissionReason] : [],
+    currentTreatments: (record.Consultation || []).flatMap((consultation: any) => (consultation.prescriptions || []).flatMap((prescription: any) => (prescription.lineItems || []).map((line: any) => line.medication?.name || line.dosage).filter(Boolean))).slice(0, 8),
     nurseInCharge: record.nurseInCharge?.displayName || "—",
     nurseInChargeId: record.nurseInCharge?.id,
     notes: record.admissionReason || "Aucune note disponible",
     dischargePlanned: record.status === "DISCHARGED",
     dischargeStage: record.status === "DISCHARGED" ? "prêt" : null,
     dischargedAt: record.dischargedAt || null,
+    access: record.access,
   };
 };
 
@@ -101,7 +103,14 @@ export default function HospitalisationsSuivi() {
   };
 
   useEffect(() => {
-    loadHospitalizations();
+    void loadHospitalizations();
+    const interval = window.setInterval(() => void loadHospitalizations(), 30_000);
+    const refresh = () => void loadHospitalizations();
+    window.addEventListener("d7:hospitalization.updated", refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("d7:hospitalization.updated", refresh);
+    };
   }, []);
 
   const stats = useMemo(() => {
@@ -146,15 +155,16 @@ export default function HospitalisationsSuivi() {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
-  const submitObservation = () => {
+  const submitObservation = async () => {
     if (!selected || !observationText) return;
-    setItems((prev) =>
-      prev.map((p) =>
-        p.id === selected.id ? { ...p, notes: (p.notes ? p.notes + "\n" : "") + observationText } : p,
-      ),
-    );
-    setObservationText("");
-    setPanelMode("dossier");
+    try {
+      await recordNurseRound(selected.id, { action: "observation", observation: observationText });
+      setObservationText("");
+      setPanelMode("dossier");
+      await loadHospitalizations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Impossible d'enregistrer l'observation.");
+    }
   };
 
   const submitTransfer = () => {
@@ -224,7 +234,7 @@ export default function HospitalisationsSuivi() {
     return `Sortie depuis ${days} j`;
   };
 
-  const canEditSelected = selected ? currentUser?.primaryRole === "ADMIN" || currentUser?.primaryRole === "SUPER_ADMIN" || selected.nurseInChargeId === currentUser?.id : false;
+  const canEditSelected = selected ? currentUser?.primaryRole === "ADMIN" || currentUser?.primaryRole === "SUPER_ADMIN" || Boolean(selected.access?.canWrite) : false;
 
   return (
     <div className="p-4 sm:p-6 bg-slate-50 dark:bg-slate-950 min-h-screen">
