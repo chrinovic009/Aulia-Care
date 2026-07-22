@@ -15,6 +15,7 @@ export class HospitalizationsService {
     bed: { include: { room: { include: { serviceUnit: true } } } },
     physician: true,
     nurseInCharge: true,
+    nurseAssignments: { include: { nurse: true } },
     Consultation: {
       include: {
         provider: true,
@@ -47,19 +48,21 @@ export class HospitalizationsService {
       return { mode: 'READ_ONLY', canWrite: false, reason: 'Utilisateur non identifie' };
     }
 
+    const assignments = hospitalization.nurseAssignments || [];
+    const assignedToCoverage = assignments.some((assignment: any) => assignment.nurseId === userId && !assignment.releasedAt);
     const [assignedShift, currentShift] = await Promise.all([
       this.activeShiftForUser(hospitalization.nurseInChargeId, hospitalization.serviceUnitId),
       this.activeShiftForUser(userId, hospitalization.serviceUnitId),
     ]);
 
-    if (hospitalization.nurseInChargeId === userId) {
+    if (hospitalization.nurseInChargeId === userId || assignedToCoverage) {
       if (!currentShift) {
         return { mode: 'READ_ONLY', canWrite: false, reason: 'Votre shift actif n est pas ouvert' };
       }
       return { mode: 'WRITE', canWrite: true, reason: 'Infirmier responsable en shift actif' };
     }
 
-    if (!assignedShift && currentShift) {
+    if (!assignedShift && assignments.length === 0 && currentShift) {
       return { mode: 'WRITE', canWrite: true, reason: 'Relai automatique: responsable hors shift' };
     }
 
@@ -81,8 +84,21 @@ export class HospitalizationsService {
         }
       }
 
-      const { bedId: _bedId, ...hospitalizationData } = createHospitalizationDto as any;
+      const { bedId: _bedId, dayNurseId, nightNurseId, ...hospitalizationData } = createHospitalizationDto as any;
+      const requestedAssignments = [
+        dayNurseId ? { nurseId: dayNurseId, coverage: 'DAY' as const } : null,
+        nightNurseId ? { nurseId: nightNurseId, coverage: 'NIGHT' as const } : null,
+      ].filter(Boolean) as Array<{ nurseId: string; coverage: 'DAY' | 'NIGHT' }>;
+      for (const assignment of requestedAssignments) {
+        const nurse = await tx.user.findFirst({ where: { id: assignment.nurseId, status: 'ACTIVE', primaryRole: 'NURSE' } });
+        if (!nurse) throw new BadRequestException(`Infirmier ${assignment.coverage === 'DAY' ? 'de jour' : 'de nuit'} indisponible.`);
+        const activeLoad = await (tx as any).hospitalizationNurseAssignment.count({ where: { nurseId: assignment.nurseId, releasedAt: null, hospitalization: { status: { in: ['ADMITTED', 'TRANSFERRED'] } } } });
+        if (activeLoad >= 5) throw new BadRequestException('Cet infirmier a déjà atteint la limite de 5 patients hospitalisés.');
+      }
       const hospitalization = await tx.hospitalization.create({ data: hospitalizationData });
+      if (requestedAssignments.length) {
+        await (tx as any).hospitalizationNurseAssignment.createMany({ data: requestedAssignments.map((assignment) => ({ ...assignment, hospitalizationId: hospitalization.id, assignedById: createHospitalizationDto.physicianId || null })) });
+      }
 
       if (assignedBed) {
         await tx.bed.update({

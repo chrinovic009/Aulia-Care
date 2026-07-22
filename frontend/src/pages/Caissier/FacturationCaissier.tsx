@@ -247,12 +247,14 @@ const FacturationCaissier: React.FC = () => {
         if (el && el.children && el.children.length > 0) {
           // small delay to ensure styles applied
           await new Promise((r) => setTimeout(r, 80));
-          window.print();
-          setPrintingInvoice(null);
-          setPrintingInvoicePosition(undefined);
-          try {
+          const cleanup = () => {
+            setPrintingInvoice(null);
+            setPrintingInvoicePosition(undefined);
             document.body.classList.remove("print-preview");
-          } catch {}
+          };
+          window.addEventListener("afterprint", cleanup, { once: true });
+          window.print();
+          window.setTimeout(cleanup, 1500);
           return;
         }
         // poll
@@ -260,12 +262,14 @@ const FacturationCaissier: React.FC = () => {
         await new Promise((r) => setTimeout(r, 50));
       }
       // fallback: still try to print
-      window.print();
-      setPrintingInvoice(null);
-      setPrintingInvoicePosition(undefined);
-      try {
+      const cleanup = () => {
+        setPrintingInvoice(null);
+        setPrintingInvoicePosition(undefined);
         document.body.classList.remove("print-preview");
-      } catch {}
+      };
+      window.addEventListener("afterprint", cleanup, { once: true });
+      window.print();
+      window.setTimeout(cleanup, 1500);
     };
     void waitAndPrint();
   };
@@ -284,20 +288,18 @@ const FacturationCaissier: React.FC = () => {
         const el = document.getElementById("invoice-print-area");
         if (el && el.children && el.children.length > 0) {
           await new Promise((r) => setTimeout(r, 80));
+          const cleanup = () => { setPrintingVisit(null); document.body.classList.remove("print-preview"); };
+          window.addEventListener("afterprint", cleanup, { once: true });
           window.print();
-          setPrintingVisit(null);
-          try {
-            document.body.classList.remove("print-preview");
-          } catch {}
+          window.setTimeout(cleanup, 1500);
           return;
         }
         await new Promise((r) => setTimeout(r, 50));
       }
+      const cleanup = () => { setPrintingVisit(null); document.body.classList.remove("print-preview"); };
+      window.addEventListener("afterprint", cleanup, { once: true });
       window.print();
-      setPrintingVisit(null);
-      try {
-        document.body.classList.remove("print-preview");
-      } catch {}
+      window.setTimeout(cleanup, 1500);
     };
     void waitAndPrintVisit();
   };

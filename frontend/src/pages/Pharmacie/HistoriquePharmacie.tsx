@@ -9,7 +9,7 @@ function formatDateTime(value?: string | null) {
 }
 
 function formatMoney(value: number) {
-  return `${Number(value || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} USD`;
+  return `${Number(value || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} CDF`;
 }
 
 export default function HistoriquePharmacie() {
@@ -91,8 +91,11 @@ export default function HistoriquePharmacie() {
   const handlePrintHistory = () => {
     setPrintingData(filtered);
     window.setTimeout(() => {
+      const cleanup = () => setPrintingData(null);
+      window.addEventListener("afterprint", cleanup, { once: true });
       window.print();
-      setPrintingData(null);
+      // Some mobile browsers never emit afterprint.
+      window.setTimeout(cleanup, 1500);
     }, 200);
   };
 

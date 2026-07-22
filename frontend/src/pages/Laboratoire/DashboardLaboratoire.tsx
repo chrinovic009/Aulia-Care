@@ -390,7 +390,7 @@ export default function DashboardLaboratoire() {
               <Panel title="Revenus">
                 {revenue ? (
                   <div className="text-sm">
-                    <div>Total de la base: {revenue.total ?? 0} USD</div>
+                    <div>Total de la base: {Number(revenue.total ?? 0).toLocaleString("fr-FR")} CDF</div>
                   </div>
                 ) : (
                   <p className="text-sm text-slate-500">Aucune donnée financière.</p>
