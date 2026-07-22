@@ -39,5 +39,13 @@ export class CreateHospitalizationDto {
 
   @IsString()
   @IsOptional()
+  dayNurseId?: string;
+
+  @IsString()
+  @IsOptional()
+  nightNurseId?: string;
+
+  @IsString()
+  @IsOptional()
   status?: string;
 }

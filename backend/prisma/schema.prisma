@@ -148,6 +148,7 @@ model User {
   departmentResponsibilities       DepartmentResponsable[]
   emergencyLocationRequests        EmergencyLocationRequest[] @relation("EmergencyLocationRequester")
   parentChildLinks                 ParentChildLink[]          @relation("ParentUser")
+  hospitalizationNurseAssignments  HospitalizationNurseAssignment[]
 
   @@index([primaryRole])
   @@index([clinicId])
@@ -613,6 +614,7 @@ model Hospitalization {
   version         Int                   @default(1)
   bed             Bed?                  @relation("HospitalizationBed")
   Consultation    Consultation[]
+  nurseAssignments HospitalizationNurseAssignment[]
   nurseInCharge   User?                 @relation("HospitalizationNurse", fields: [nurseInChargeId], references: [id])
   patient         Patient               @relation(fields: [patientId], references: [id], onDelete: Cascade)
   physician       User?                 @relation("HospitalizationPhysician", fields: [physicianId], references: [id])
@@ -770,6 +772,22 @@ model Medication {
   StockTransaction      StockTransaction[]
 
   @@index([categoryId])
+}
+
+/// Explicit day/night nursing ownership for a hospitalization. Access is still gated by the live employee shift.
+model HospitalizationNurseAssignment {
+  id                String             @id @default(uuid())
+  hospitalizationId String
+  nurseId           String
+  coverage          NursingCoverage
+  assignedAt        DateTime           @default(now())
+  releasedAt        DateTime?
+  assignedById      String?
+  hospitalization   Hospitalization    @relation(fields: [hospitalizationId], references: [id], onDelete: Cascade)
+  nurse             User               @relation(fields: [nurseId], references: [id], onDelete: Cascade)
+
+  @@unique([hospitalizationId, coverage])
+  @@index([nurseId, releasedAt])
 }
 
 /// Pharmacy catalogue hierarchy used by the prescription search: Section -> Category -> Medication.
@@ -1748,6 +1766,11 @@ enum VitalType {
   BLOOD_GLUCOSE
   CHEST_CIRCUMFERENCE
   ARM_CIRCUMFERENCE
+}
+
+enum NursingCoverage {
+  DAY
+  NIGHT
 }
 
 /// Negotiated discounts are never applied by a cashier without an auditable approval.

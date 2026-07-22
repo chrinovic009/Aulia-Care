@@ -144,7 +144,14 @@ const Admission: React.FC = () => {
   const PROFESSIONS = [
     'Infirmier', 'Médecin', 'Secrétaire', 'Enseignant', 'Ingénieur', 'Étudiant', 'Commerçant', 'Retraité', 'Artisan', 'Conducteur',
     'Agriculteur', 'Cadre', 'Technicien', 'Pharmacien', 'Laborantin', 'Infirmière', 'Sage-femme', 'Architecte', 'Banquier', 'Avocat',
-    'Informaticien', 'Elève', 'Etudiant', 'Babysitter'
+    'Informaticien', 'Elève', 'Etudiant', 'Babysitter', 'Fonctionnaire de l\'Etat', 'Chauffeur', 'Journaliste', 'Photographe', 'Artiste',
+    'Musicien', 'Danseur', 'Athlète', 'Coach sportif', 'Directeur', 'retraité', 'Chef d\'entreprise', 'Entrepreneur', 'Consultant',
+    'Conseiller', 'Psychologue', 'Sociologue', 'Chercheur', 'Professeur', 'boulanger', 'boucher', 'pâtissier', 'coiffeur', 
+    'esthéticienne', 'plombier', 'électricien', 'menuisier', 'peintre', 'chauffagiste', 'artiste', 'sculpteur', 'peintre en bâtiment',
+    'designer', 'graphiste', 'web designer', 'développeur web', 'développeur mobile', 'freelance', 'consultant en informatique', 
+    'consultant en marketing', 'consultant en communication', 'consultant en ressources humaines', 'consultant en finance', 
+    'consultant en stratégie', 'consultant en management', 'consultant en organisation', 'Soldier', 'Militaire', 'Policier',
+    'Gendarme', 'Pompier', 'Agent de sécurité', 'Agent de police', 'Officier de police',
   ];
 
   useEffect(() => {

@@ -157,7 +157,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ background: "#0f172a", color: "#fff", padding: "10px 14px", borderRadius: 6, minWidth: 200 }}>
-            <div style={{ fontSize: 12, opacity: 0.9 }}>NUMBER</div>
+            <div style={{ fontSize: 12, opacity: 0.9 }}>N° DOCUMENT</div>
             <div style={{ fontSize: 18, fontWeight: 800 }}>{displayInvoiceId}</div>
             <div style={{ marginTop: 6, fontSize: 11, opacity: 0.85 }}>DATE {new Date(issuedAt).toLocaleDateString("fr-FR")}</div>
           </div>
@@ -167,13 +167,13 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
       {/* Invoice Details (Invoice To / Invoice To layout) */}
       <div style={{ display: "flex", gap: "12px", marginBottom: "10mm" }}>
         <div style={{ flex: 1, border: "1px solid #eee", padding: "8px" }}>
-          <div style={{ fontSize: 10, fontWeight: 800, color: "#0f172a" }}>INVOICE</div>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#0f172a" }}>PATIENT</div>
           <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700 }}>{patientName}</div>
           <div style={{ fontSize: 11, color: "#6b7280" }}>{patientPhone || "-"}</div>
           <div style={{ fontSize: 11, color: "#6b7280" }}>{patientEmail || "-"}</div>
         </div>
         <div style={{ flex: 1, border: "1px solid #eee", padding: "8px" }}>
-          <div style={{ fontSize: 10, fontWeight: 800, color: "#0f172a" }}>BILL TO</div>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#0f172a" }}>ÉTABLISSEMENT ÉMETTEUR</div>
           <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700 }}>{clinicDisplayName}</div>
           <div style={{ fontSize: 11, color: "#6b7280" }}>{clinicDisplayAddress}</div>
           <div style={{ fontSize: 11, color: "#6b7280" }}>Tel: {clinicDisplayPhone}</div>
@@ -234,8 +234,8 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
           <tr style={{ backgroundColor: "#0f172a", color: "#fff" }}>
             <th style={{ padding: "10px", textAlign: "left" }}>DESCRIPTION</th>
             <th style={{ padding: "10px", textAlign: "center", width: 80 }}>QTY</th>
-            <th style={{ padding: "10px", textAlign: "right", width: 120 }}>PRICE</th>
-            <th style={{ padding: "10px", textAlign: "right", width: 120 }}>TOTAL</th>
+            <th style={{ padding: "10px", textAlign: "right", width: 120 }}>PRIX (CDF)</th>
+            <th style={{ padding: "10px", textAlign: "right", width: 120 }}>TOTAL (CDF)</th>
           </tr>
         </thead>
         <tbody>
@@ -244,8 +244,8 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
               <tr key={line.id} style={{ borderBottom: "1px solid #eee" }}>
                 <td style={{ padding: "8px" }}>{line.label}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>{line.quantity ?? 1}</td>
-                <td style={{ padding: "8px", textAlign: "right" }}>{Number(line.unitPrice || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}</td>
-                <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{Number(line.totalAmount || (line.unitPrice * (line.quantity || 1))).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}</td>
+                <td style={{ padding: "8px", textAlign: "right" }}>{Number(line.unitPrice || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} CDF</td>
+                <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{Number(line.totalAmount || (line.unitPrice * (line.quantity || 1))).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} CDF</td>
               </tr>
             ))
           ) : visitItems && visitItems.length > 0 ? (
@@ -253,16 +253,16 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
               <tr key={`${item.description}-${index}`} style={{ borderBottom: "1px solid #eee" }}>
                 <td style={{ padding: "8px" }}>{(item.description || defaultDescription.label).split("||")[0]}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>1</td>
-                <td style={{ padding: "8px", textAlign: "right" }}>{Number(item.amount || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}</td>
-                <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{Number(item.amount || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })}</td>
+                <td style={{ padding: "8px", textAlign: "right" }}>{Number(item.amount || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} CDF</td>
+                <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{Number(item.amount || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} CDF</td>
               </tr>
             ))
           ) : (
             <tr style={{ borderBottom: "1px solid #eee" }}>
               <td style={{ padding: "8px" }}>{defaultDescription.label}</td>
               <td style={{ padding: "8px", textAlign: "center" }}>1</td>
-              <td style={{ padding: "8px", textAlign: "right" }}>{totalAmount.toLocaleString("fr-FR", { minimumFractionDigits: 0 })}</td>
-              <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{totalAmount.toLocaleString("fr-FR", { minimumFractionDigits: 0 })}</td>
+              <td style={{ padding: "8px", textAlign: "right" }}>{totalAmount.toLocaleString("fr-FR", { minimumFractionDigits: 0 })} CDF</td>
+              <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{totalAmount.toLocaleString("fr-FR", { minimumFractionDigits: 0 })} CDF</td>
             </tr>
           )}
         </tbody>
@@ -295,7 +295,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
             <div style={{ fontWeight: 700 }}>0 CDF</div>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fbbf24", padding: "10px", borderRadius: 6 }}>
-            <div style={{ fontSize: 14, fontWeight: 800 }}>TOTAL</div>
+            <div style={{ fontSize: 14, fontWeight: 800 }}>TOTAL À PAYER</div>
             <div style={{ fontSize: 16, fontWeight: 900 }}>{(visitItems ? visitTotalAmount ?? totalAmount : totalAmount).toLocaleString("fr-FR")} CDF</div>
           </div>
         </div>

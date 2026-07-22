@@ -133,6 +133,22 @@ const extractClinicalVoiceFields = (transcript: string) => {
   return extracted;
 };
 
+/** Maps the clinician's spoken question to the visible clinical field.
+ * This remains an assistive feature: the clinician reviews every proposed entry.
+ */
+const detectVoiceTargetLabel = (transcript: string) => {
+  const text = normalizeVoiceText(transcript);
+  if (/ou.*(mal|douleur)|localisation.*douleur/.test(text)) return "description hpi";
+  if (/(depuis quand|duree|combien de temps|debut des symptomes)/.test(text)) return "duree d'apparition";
+  if (/(intensite|echelle.*douleur|combien.*sur.*10)/.test(text)) return "description hpi";
+  if (/(motif|qu est ce qui vous amene|pourquoi venez)/.test(text)) return "motif de consultation";
+  if (/(antecedent|maladie.*connue|operation.*passee)/.test(text)) return "pathologies chroniques";
+  if (/(allergie|allergique)/.test(text)) return "allergene";
+  if (/(medicament.*cours|traitement.*cours)/.test(text)) return "medicament";
+  if (/(tabac|fumez|alcool|habitude)/.test(text)) return "description hpi";
+  return null;
+};
+
 function summarizeHistory(form: any, module: ConsultationModuleState) {
   const parts: string[] = [];
   if (form.onset) parts.push(`Début: ${form.onset}`);
@@ -242,6 +258,7 @@ export default function DashboardMedecin() {
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceMessage, setVoiceMessage] = useState<string | null>(null);
+  const [voiceTargetLabel, setVoiceTargetLabel] = useState<string | null>(null);
   const [clinicalForm, setClinicalForm] = useState({
     chiefComplaint: "",
     knownDiseases: "",
@@ -407,6 +424,15 @@ export default function DashboardMedecin() {
 
   const applyVoiceToConsultationModule = (transcript: string) => {
     const fields = extractClinicalVoiceFields(transcript);
+    const targetLabel = detectVoiceTargetLabel(transcript);
+    if (targetLabel) {
+      setVoiceTargetLabel(targetLabel);
+      window.setTimeout(() => {
+        const target = document.querySelector<HTMLElement>(`[data-clinical-label="${targetLabel}"]`);
+        target?.scrollIntoView({ behavior: "smooth", block: "center" });
+        target?.focus();
+      }, 0);
+    }
     setConsultationModule((current) => {
       const next: ConsultationModuleState = { ...current };
       if (fields.chiefComplaint) {
@@ -541,6 +567,8 @@ export default function DashboardMedecin() {
     // Notify other parts of the app that clinical data changed
     try {
       window.dispatchEvent(new CustomEvent('d7:clinicalDataUpdated'));
+      window.dispatchEvent(new CustomEvent('d7:patient.updated'));
+      window.dispatchEvent(new CustomEvent('d7:consultation.created'));
     } catch (e) {
       // ignore
     }
@@ -926,6 +954,7 @@ export default function DashboardMedecin() {
                       </button>
                     </div>
                     {voiceMessage && <p className="mt-3 text-xs font-medium text-blue-800 dark:text-blue-100">{voiceMessage}</p>}
+                    {voiceTargetLabel && <p className="mt-1 text-xs text-blue-700 dark:text-blue-200">Champ ciblé : {voiceTargetLabel}.</p>}
                     {voiceTranscript && (
                       <div className="mt-3 max-h-28 overflow-y-auto rounded-lg border border-blue-100 bg-white p-3 text-xs leading-5 text-slate-700 dark:border-blue-900/60 dark:bg-slate-950 dark:text-slate-200">
                         {voiceTranscript}
@@ -1246,6 +1275,7 @@ function FormInput({
         type={type}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
+        data-clinical-label={normalizeVoiceText(label)}
         className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-blue-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
       />
     </label>
@@ -1271,6 +1301,7 @@ function FormTextArea({
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         rows={3}
+        data-clinical-label={normalizeVoiceText(label)}
         className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-blue-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
       />
     </label>
