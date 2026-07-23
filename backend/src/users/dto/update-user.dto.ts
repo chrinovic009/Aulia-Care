@@ -1,5 +1,5 @@
 import { IsBoolean, IsDateString, IsEmail, IsEnum, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
-import { RoleSlug, UserStatus } from '@prisma/client';
+import { EmployeeShiftPattern, RoleSlug, UserStatus } from '@prisma/client';
 
 export class UpdateUserDto {
   @IsString()
@@ -126,4 +126,12 @@ export class UpdateUserDto {
   @IsString()
   @IsOptional()
   shiftType?: string;
+
+  @IsEnum(EmployeeShiftPattern)
+  @IsOptional()
+  shiftPattern?: EmployeeShiftPattern;
+
+  @IsDateString()
+  @IsOptional()
+  rotationAnchorAt?: string;
 }

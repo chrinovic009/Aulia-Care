@@ -50,6 +50,8 @@ export class UsersService {
       employeeNumber: dto.employeeNumber ?? null,
       departmentId: dto.departmentId ?? null,
       serviceUnitId: dto.serviceUnitId ?? null,
+      shiftPattern: dto.shiftPattern ?? 'MANUAL',
+      rotationAnchorAt: dto.rotationAnchorAt ? new Date(dto.rotationAnchorAt) : null,
     };
 
     try {

@@ -210,3 +210,11 @@ export const createLabConsumableStock = (payload: {
   criticalLevel?: number;
   location?: string;
 }) => apiFetch('/laboratory/catalogue/stock', { method: 'POST', body: JSON.stringify(serializeLabPayload(payload)) });
+
+export type LabCatalogueKind = 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables';
+
+export const updateLabCatalogueItem = (kind: LabCatalogueKind, id: string, payload: Record<string, unknown>) =>
+  apiFetch(`/laboratory/catalogue/${kind}/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(serializeLabPayload(payload)) });
+
+export const deleteLabCatalogueItem = (kind: LabCatalogueKind, id: string) =>
+  apiFetch(`/laboratory/catalogue/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE' });

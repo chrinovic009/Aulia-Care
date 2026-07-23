@@ -38,14 +38,81 @@ const serviceLabel = (patient: DoctorPatient) =>
 const doctorLabel = (doctor?: DoctorPatient["assignedDoctor"] | null) =>
   doctor?.displayName || [doctor?.firstName, doctor?.lastName].filter(Boolean).join(" ") || "Aucun medecin";
 
-const parseClinicalSummary = (value?: string | null) => {
+const parseClinicalSummary = (value?: string | Record<string, unknown> | null) => {
   if (!value) return null;
-  try {
-    const parsed = JSON.parse(value);
-    return typeof parsed === "object" && parsed ? parsed : null;
-  } catch {
-    return null;
+  if (typeof value === "object") return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      return typeof parsed === "object" && parsed ? parsed : null;
+    } catch {
+      return null;
+    }
   }
+  return null;
+};
+
+const getPatientConsultations = (patient: DoctorPatient) => {
+  const consultations = patient.consultations?.length ? patient.consultations : [];
+  const historicalConsultations = (patient.medicalHistories || [])
+    .filter((item) => item.kind === "MEDICAL_CONSULTATION")
+    .map((item, index) => {
+      const parsed = parseClinicalSummary(item.details);
+      const parsedObject = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+      const diagnosis = parsedObject && typeof parsedObject.diagnosis === "object" && parsedObject.diagnosis
+        ? (parsedObject.diagnosis as Record<string, unknown>).description || (parsedObject.diagnosis as Record<string, unknown>).principal || null
+        : null;
+      const chiefComplaint = parsedObject && typeof parsedObject.currentSymptoms === "object" && parsedObject.currentSymptoms
+        ? ((parsedObject.currentSymptoms as Record<string, unknown>).onset as string | undefined) || ((parsedObject.currentSymptoms as Record<string, unknown>).painLocation as string | undefined) || "Consultation médicale"
+        : "Consultation médicale";
+
+      return {
+        id: typeof parsedObject?.consultationId === "string" ? parsedObject.consultationId : (item.id || `${patient.id}-history-${index}`),
+        status: "FINALIZED",
+        chiefComplaint,
+        clinicalSummary: item.details,
+        diagnosis: diagnosis || undefined,
+        createdAt: item.eventDate,
+        provider: item.createdBy
+          ? {
+              id: `${patient.id}-history-${index}`,
+              displayName: item.createdBy.displayName || "Médecin",
+              firstName: undefined,
+              lastName: undefined,
+              specialty: item.createdBy.primaryRole || undefined,
+            }
+          : null,
+      } as NonNullable<DoctorPatient["consultations"]>[number];
+    });
+  // A clinical save creates an auditable MedicalHistory entry as well as updating
+  // the Consultation record.  Do not render the same consultation twice simply
+  // because it was saved several times during the encounter.
+  const consultationIds = new Set(consultations.map((consultation) => consultation.id));
+  const merged = [
+    ...consultations,
+    ...historicalConsultations.filter((consultation) => !consultationIds.has(consultation.id)),
+  ];
+  if (merged.length > 0) return merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return patient.latestConsultation ? [patient.latestConsultation as NonNullable<DoctorPatient["consultations"]>[number]] : [];
+};
+
+const collectClinicalText = (value: unknown): string | null => {
+  if (!value) return null;
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    const pieces = value.map((entry) => collectClinicalText(entry)).filter(Boolean) as string[];
+    return pieces.length ? pieces.join(" | ") : null;
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .map(([, entryValue]) => collectClinicalText(entryValue))
+      .filter(Boolean) as string[];
+    return entries.length ? entries.join(" | ") : null;
+  }
+  return null;
 };
 
 const latestVital = (patient: DoctorPatient, type: string) =>
@@ -334,9 +401,9 @@ function PatientRecord({ patient, position, labTests, departments }: { patient: 
         </Section>
 
         <Section title="Consultations récentes">
-          {(patient.consultations || []).length === 0 ? <Empty /> : (
+          {getPatientConsultations(patient).length === 0 ? <Empty /> : (
             <div className="space-y-3">
-              {patient.consultations?.slice(0, 3).map((consultation, index) => (
+              {getPatientConsultations(patient).slice(0, 20).map((consultation, index) => (
                 <ClinicalConsultation key={consultation.id} consultation={consultation} displayId={formatConsultationId(index + 1, patient)} />
               ))}
             </div>
@@ -404,31 +471,223 @@ function PatientRecord({ patient, position, labTests, departments }: { patient: 
   );
 }
 
+function buildClinicalBulletList(lines: Array<{ label: string; value: string | null }>) {
+  const visibleLines = lines.filter((line) => line.value && line.value.trim());
+  if (!visibleLines.length) {
+    return <span className="text-slate-500 dark:text-slate-400">Non renseigné</span>;
+  }
+
+  return (
+    <div className="space-y-1 text-sm text-slate-700 dark:text-slate-300">
+      {visibleLines.map((line) => (
+        <div key={line.label}>
+          <span className="font-semibold text-slate-900 dark:text-white">{line.label} :</span>{" "}
+          <span>{line.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function buildAntecedentsLines(parsedObject: Record<string, any>) {
+  const source = parsedObject.medicalHistory as Record<string, unknown> | null;
+  const lines = [
+    { label: "Maladies connues", value: normalizeClinicalValue(source?.knownDiseases || source?.diseases) },
+    { label: "Chirurgies", value: normalizeClinicalValue(source?.surgeries) },
+    { label: "Allergies", value: normalizeClinicalValue(source?.allergies) },
+    { label: "Médicaments en cours", value: normalizeClinicalValue(source?.currentMedications) },
+    { label: "Antécédents familiaux", value: normalizeClinicalValue(source?.familyHistory) },
+    { label: "Résumé", value: normalizeClinicalValue(source?.description) },
+  ];
+  return lines;
+}
+
+function buildAnamnesisLines(parsedObject: Record<string, any>) {
+  const source = parsedObject.currentSymptoms as Record<string, unknown> | null;
+  const lines = [
+    { label: "Début", value: normalizeClinicalValue(source?.onset) },
+    { label: "Localisation", value: normalizeClinicalValue(source?.painLocation) },
+    { label: "Intensité", value: normalizeClinicalValue(source?.intensity) },
+    { label: "Facteurs aggravants", value: normalizeClinicalValue(source?.aggravatingFactors) },
+    { label: "Symptômes associés", value: normalizeClinicalValue(source?.associatedSymptoms) },
+    { label: "Description narrative", value: normalizeClinicalValue(source?.description) },
+    { label: "Impact fonctionnel", value: normalizeClinicalValue(source?.functionalImpact || source?.functionalImpactDescription) },
+  ];
+  return lines;
+}
+
+function buildClinicalExamLines(parsedObject: Record<string, any>) {
+  const examSource = parsedObject.clinicalExam as Record<string, unknown> | null;
+  const medicationSummary = formatMedicationSummary(parsedObject.medicalHistory?.currentMedications || parsedObject.consultationModule?.currentMedications);
+  const lines = [
+    { label: "État général", value: normalizeClinicalValue(examSource?.generalState) },
+    { label: "Auscultation", value: normalizeClinicalValue(examSource?.auscultation) },
+    { label: "Palpation", value: normalizeClinicalValue(examSource?.palpation) },
+    { label: "Examen ciblé", value: normalizeClinicalValue(examSource?.focusedExam) },
+    { label: "Médicaments en cours", value: medicationSummary },
+    { label: "Résumé", value: normalizeClinicalValue(examSource?.description) },
+  ];
+  return lines;
+}
+
+function buildDiagnosticLines(parsedObject: Record<string, any>, consultation: NonNullable<DoctorPatient["consultations"]>[number]) {
+  const diagnosisSource = parsedObject.diagnosis as Record<string, unknown> | null;
+  const complementaryExams = formatComplementaryExamSummary(parsedObject.complementaryExams || parsedObject.consultationModule?.orderedExams);
+  const diagnosisText = normalizeClinicalValue(diagnosisSource?.description || diagnosisSource?.principal || consultation.diagnosis);
+  const hypotheses = normalizeClinicalValue(Array.isArray(diagnosisSource?.hypotheses) ? diagnosisSource.hypotheses : null);
+  const lines = [
+    { label: "Diagnostic principal", value: diagnosisText },
+    { label: "Hypothèses", value: hypotheses },
+    { label: "Examens complémentaires", value: complementaryExams },
+  ];
+  return lines;
+}
+
+function buildFollowUpLines(parsedObject: Record<string, any>) {
+  const treatmentPlan = parsedObject.treatmentPlan as Record<string, unknown> | null;
+  const followUp = parsedObject.followUp as Record<string, unknown> | null;
+  const consultationModule = parsedObject.consultationModule as Record<string, any> | null;
+  const lines = [
+    { label: "Consignes", value: normalizeClinicalValue(treatmentPlan?.notes || treatmentPlan?.description || treatmentPlan?.safetyConsignes || consultationModule?.safetyConsignes) },
+    { label: "Arrêt de travail", value: consultationModule?.sickLeave && typeof consultationModule.sickLeave === "object"
+      ? `Oui${consultationModule.sickLeave.durationDays ? ` (${consultationModule.sickLeave.durationDays} jours)` : ""}`
+      : null },
+    { label: "Suivi", value: normalizeClinicalValue([consultationModule?.followUp?.recommendedInterval, consultationModule?.followUp?.specificDate, followUp?.notes || followUp?.description || followUp?.recommendedInterval || followUp?.specificDate].filter(Boolean).join(" | ")) },
+  ];
+  return lines;
+}
+
+function normalizeClinicalValue(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === "string") return value.trim() || null;
+  if (Array.isArray(value)) {
+    const parts = value.map((item) => normalizeClinicalValue(item)).filter(Boolean) as string[];
+    return parts.length ? parts.join(" | ") : null;
+  }
+  if (typeof value === "object") {
+    const text = collectClinicalText(value);
+    return text || null;
+  }
+  return String(value);
+}
+
 function ClinicalConsultation({ consultation, displayId }: { consultation: NonNullable<DoctorPatient["consultations"]>[number]; displayId: string }) {
-  const parsed = parseClinicalSummary(consultation.clinicalSummary);
+  const parsed = parseClinicalSummary(consultation.clinicalSummary as any);
+
+  const renderClinicalSection = () => {
+    const parsedText = collectClinicalText(parsed) || collectClinicalText((consultation as Record<string, unknown>).assessment) || collectClinicalText((consultation as Record<string, unknown>).plan);
+    const fallbackText = [
+      typeof consultation.clinicalSummary === "string" ? consultation.clinicalSummary : null,
+      parsedText,
+      consultation.diagnosis,
+      consultation.chiefComplaint,
+      collectClinicalText((consultation as Record<string, unknown>).assessment),
+      collectClinicalText((consultation as Record<string, unknown>).plan),
+    ].filter(Boolean).join(" | ");
+
+    if (!parsed || typeof parsed !== "object") {
+      return <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{fallbackText || "Aucune note clinique."}</p>;
+    }
+
+    const parsedObject = parsed as Record<string, any>;
+    const antecedents = buildClinicalBulletList(buildAntecedentsLines(parsedObject));
+    const anamnese = buildClinicalBulletList(buildAnamnesisLines(parsedObject));
+    const examClinical = buildClinicalBulletList(buildClinicalExamLines(parsedObject));
+    const diagnostic = buildClinicalBulletList(buildDiagnosticLines(parsedObject, consultation));
+    const followUp = buildClinicalBulletList(buildFollowUpLines(parsedObject));
+
+    return (
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <Info label="Antécédents" value={antecedents} />
+        <Info label="Anamnèse" value={anamnese} />
+        <Info label="Examen clinique" value={examClinical} />
+        <Info label="Diagnostic" value={diagnostic} />
+        <Info label="Consignes & Suivi" value={followUp} />
+      </div>
+    );
+  };
+
   return (
     <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="font-semibold text-slate-900 dark:text-white">{displayId} - {consultation.chiefComplaint || "Consultation medicale"}</p>
-          <p className="mt-1 text-xs text-slate-500">{formatDate(consultation.createdAt)} - {consultation.provider?.displayName || "Medecin"}</p>
+          <p className="font-semibold text-slate-900 dark:text-white">{displayId} - {consultation.chiefComplaint || "Consultation médicale"}</p>
+          <p className="mt-1 text-xs text-slate-500">{formatDate(consultation.createdAt)} - {consultation.provider?.displayName || "Médecin"}</p>
         </div>
         <StatusBadge label={consultation.status} />
       </div>
 
-      {parsed ? (
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <Info label="Antecedents" value={parsed.medicalHistory?.description || joinValues(parsed.medicalHistory, ["knownDiseases", "surgeries", "allergies", "currentMedications", "familyHistory"]) } />
-          <Info label="Anamnese" value={parsed.currentSymptoms?.description || joinValues(parsed.currentSymptoms, ["onset", "painLocation", "intensity", "aggravatingFactors", "associatedSymptoms"]) } />
-          <Info label="Examen clinique" value={[parsed.clinicalExam?.description || joinValues(parsed.clinicalExam, ["generalState", "auscultation", "palpation", "focusedExam"]), parsed.consultationModule?.orderedExams?.length ? `Examens demandés: ${parsed.consultationModule.orderedExams.map((exam: any) => exam.testName).join(", ")}` : null].filter(Boolean).join(" | ")} />
-          <Info label="Diagnostic" value={parsed.diagnosis?.description || [parsed.diagnosis?.principal, ...(parsed.diagnosis?.hypotheses || [])].filter(Boolean).join(" | ") || consultation.diagnosis || "-"} />
-          <Info label="Consignes & Suivi" value={[parsed.treatmentPlan?.description || parsed.treatmentPlan?.notes, parsed.followUp?.description || parsed.followUp?.notes].filter(Boolean).join(" | ") || "-"} />
-        </div>
-      ) : (
-        <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{consultation.clinicalSummary || consultation.diagnosis || "Aucune note clinique."}</p>
-      )}
+      {renderClinicalSection()}
     </div>
   );
+}
+
+function formatMedicationSummary(value: unknown) {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    const formatted = value.map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (item && typeof item === "object") {
+        const entry = item as Record<string, unknown>;
+        const name = [entry.drugName, entry.name, entry.medicationName].filter(Boolean).join(" ");
+        const dosage = [entry.dosage, entry.strength, entry.dose].filter(Boolean).join(" ");
+        const compliance = entry.compliance ? `• ${entry.compliance}` : "";
+        return [name, dosage, compliance].filter(Boolean).join(" ").trim();
+      }
+      return null;
+    }).filter(Boolean);
+    return formatted.length ? `Médicaments en cours: ${formatted.join(" | ")}` : null;
+  }
+  if (typeof value === "string") return value.trim() ? `Médicaments en cours: ${value.trim()}` : null;
+  return null;
+}
+
+function formatComplementaryExamSummary(value: unknown) {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    const formatted = value.map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (item && typeof item === "object") {
+        const entry = item as Record<string, unknown>;
+        return [entry.testName, entry.name, entry.category].filter(Boolean).join(" ");
+      }
+      return null;
+    }).filter(Boolean);
+    return formatted.length ? `Examens complémentaires: ${formatted.join(" | ")}` : null;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const ordered = Array.isArray(record.orderedExams) ? record.orderedExams : [];
+    if (ordered.length) {
+      const formatted = ordered.map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") {
+          const entry = item as Record<string, unknown>;
+          return [entry.testName, entry.name, entry.category].filter(Boolean).join(" ");
+        }
+        return null;
+      }).filter(Boolean);
+      return formatted.length ? `Examens complémentaires: ${formatted.join(" | ")}` : null;
+    }
+  }
+  if (typeof value === "string") return value.trim() ? `Examens complémentaires: ${value.trim()}` : null;
+  return null;
+}
+
+function formatFollowUpSummary(parsedObject: Record<string, any>) {
+  const treatmentPlan = parsedObject.treatmentPlan as Record<string, unknown> | null;
+  const followUp = parsedObject.followUp as Record<string, unknown> | null;
+  const consultationModule = parsedObject.consultationModule as Record<string, any> | null;
+  const parts = [
+    collectClinicalText(treatmentPlan?.notes || treatmentPlan?.description || treatmentPlan?.safetyConsignes),
+    collectClinicalText(consultationModule?.safetyConsignes),
+    consultationModule?.sickLeave && typeof consultationModule.sickLeave === "object"
+      ? `Arrêt de travail: ${consultationModule.sickLeave.active ? "oui" : "non"}${consultationModule.sickLeave.durationDays ? ` (${consultationModule.sickLeave.durationDays} jours)` : ""}`
+      : null,
+    [collectClinicalText(consultationModule?.followUp?.recommendedInterval), collectClinicalText(consultationModule?.followUp?.specificDate)].filter(Boolean).join(" | "),
+    collectClinicalText(followUp?.notes || followUp?.description || followUp?.recommendedInterval || followUp?.specificDate),
+  ].filter(Boolean);
+  return parts.length ? parts.join(" | ") : null;
 }
 
 function HistoryEventCard({ item, patient, labTests, departments }: { item: NonNullable<DoctorPatient["medicalHistories"]>[number]; patient: DoctorPatient; labTests: LabTestMetadata[]; departments: Department[] }) {
@@ -700,7 +959,8 @@ function printPatientRecord(patient: DoctorPatient, position?: number, labTests:
       </tr>
     `).join("");
 
-  const consultationRows = (patient.consultations || []).map((consultation) => `
+  const visibleConsultations = getPatientConsultations(patient);
+  const consultationRows = visibleConsultations.map((consultation) => `
       <tr>
         <td>${formatDateString(consultation.createdAt)}</td>
         <td>${consultation.chiefComplaint || "Consultation medicale"}</td>
@@ -913,9 +1173,11 @@ function printPatientRecord(patient: DoctorPatient, position?: number, labTests:
     })();
 
     const department =
-      typeof patient.service === 'object'
-        ? (patient.service as any)?.department || patient.service.name
-        : patient.service || '-';
+      typeof patient.service === 'object' && patient.service && 'department' in patient.service
+        ? (patient.service as { department?: string | null }).department || (patient.service as { name?: string | null }).name || '-'
+        : typeof patient.service === 'string'
+          ? patient.service
+          : '-';
 
     const html = `
     <html>
@@ -995,7 +1257,7 @@ function printPatientRecord(patient: DoctorPatient, position?: number, labTests:
           </div>
           ` : ''}
 
-          ${(patient.consultations || []).length > 0 ? `
+          ${(visibleConsultations || []).length > 0 ? `
           <div class="section">
             <div class="section-title">Consultations</div>
             <table>

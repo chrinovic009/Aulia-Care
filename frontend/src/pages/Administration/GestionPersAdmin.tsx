@@ -29,6 +29,7 @@ type RoleSlug =
   | "RADIOLOGIST"
   | "SURGEON"
   | "ANESTHESIOLOGIST"
+  | "FINANCE"
   | "SUPER_ADMIN"
   | "PATIENT";
 
@@ -64,6 +65,8 @@ type AdminUser = {
     serviceUnit?: { name: string } | null;
     contracts?: Array<{ salary?: string | number | null; frequency?: string | null; type?: string | null }>;
     shifts?: Array<{ startAt?: string; endAt?: string; type?: string }>;
+    shiftPattern?: "MANUAL" | "THREE_DAY_THREE_NIGHT_THREE_REST" | "PERMANENT_DAY";
+    rotationAnchorAt?: string | null;
   }>;
   staff?: Array<{ service?: ServiceRecord; roleInService?: string | null }>;
   serviceResponsabilites?: Array<{ service?: ServiceRecord; principal?: boolean }>;
@@ -104,6 +107,7 @@ const roleFilters: Array<{ key: string; label: string }> = [
   { key: "RADIOLOGIST", label: "Radiologues" },
   { key: "SURGEON", label: "Chirurgiens" },
   { key: "ANESTHESIOLOGIST", label: "Anesthesistes" },
+  { key: "FINANCE", label: "Finance" },
   { key: "ACTIVE", label: "Actifs" },
   { key: "INACTIVE", label: "Inactifs" },
   { key: "SUSPENDED", label: "Suspendus" },
@@ -139,6 +143,8 @@ const emptyForm = {
   shiftStartAt: "",
   shiftEndAt: "",
   shiftType: "DAY",
+  shiftPattern: "MANUAL" as "MANUAL" | "THREE_DAY_THREE_NIGHT_THREE_REST" | "PERMANENT_DAY",
+  rotationAnchorAt: "",
 };
 
 export default function GestionPersAdmin() {
@@ -260,6 +266,8 @@ export default function GestionPersAdmin() {
       shiftStartAt: employee?.shifts?.[0]?.startAt?.slice(0, 16) || "",
       shiftEndAt: employee?.shifts?.[0]?.endAt?.slice(0, 16) || "",
       shiftType: employee?.shifts?.[0]?.type || "DAY",
+      shiftPattern: employee?.shiftPattern || "MANUAL",
+      rotationAnchorAt: employee?.rotationAnchorAt?.slice(0, 10) || "",
     });
     setShowForm(true);
     setFormError(null);
@@ -325,6 +333,8 @@ export default function GestionPersAdmin() {
         shiftStartAt: form.shiftStartAt || undefined,
         shiftEndAt: form.shiftEndAt || undefined,
         shiftType: form.shiftType || undefined,
+        shiftPattern: form.shiftPattern,
+        rotationAnchorAt: form.rotationAnchorAt || undefined,
       };
 
       // If admin marked user as department responsible and the department is a lab,
@@ -681,6 +691,8 @@ function EmployeeForm({
             <FormInput label="Debut shift" type="datetime-local" value={form.shiftStartAt} onChange={(shiftStartAt) => onChange({ shiftStartAt })} />
             <FormInput label="Fin shift" type="datetime-local" value={form.shiftEndAt} onChange={(shiftEndAt) => onChange({ shiftEndAt })} />
             <FormSelect label="Type de shift" value={form.shiftType} onChange={(shiftType) => onChange({ shiftType })} options={[["DAY", "Jour"], ["NIGHT", "Nuit"], ["ROTATING", "Rotation"]]} />
+            <FormSelect label="Cycle de travail" value={form.shiftPattern} onChange={(shiftPattern) => onChange({ shiftPattern: shiftPattern as typeof form.shiftPattern })} options={[["MANUAL", "Planning manuel"], ["THREE_DAY_THREE_NIGHT_THREE_REST", "3 jours / 3 nuits / 3 repos"], ["PERMANENT_DAY", "Permanent de jour (07:30 - 17:30)"]]} />
+            {form.shiftPattern === "THREE_DAY_THREE_NIGHT_THREE_REST" ? <FormInput label="Premier jour du cycle" type="date" value={form.rotationAnchorAt} onChange={(rotationAnchorAt) => onChange({ rotationAnchorAt })} /> : null}
           </FormSection>
         </div>
 

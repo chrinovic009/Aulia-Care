@@ -56,6 +56,35 @@ type ReceptionRequest = {
   [key: string]: any;
 };
 
+function toReceptionRequest(appointment: any): ReceptionRequest {
+  const patient = appointment.patient || {};
+  const rawStatus = String(appointment.status || "SCHEDULED").toUpperCase();
+  const consultationStatus = String(appointment.consultation?.status || "").toUpperCase();
+  const status = rawStatus === "COMPLETED" || consultationStatus === "FINALIZED"
+    ? "Déjà effectué"
+    : rawStatus === "CHECKED_IN" || consultationStatus === "IN_PROGRESS"
+      ? "En consultation"
+      : rawStatus === "CONFIRMED" ? "Confirmé"
+        : rawStatus === "CANCELLED" ? "Refusé"
+          : "En attente";
+  return {
+    ...appointment,
+    patientName: [patient.lastName, patient.firstName].filter(Boolean).join(" ") || "Patient non renseigné",
+    service: appointment.serviceUnit?.name || "Service à confirmer",
+    doctorRequested: appointment.requestedBy?.displayName || "À affecter",
+    dateRequested: appointment.scheduledAt ? new Date(appointment.scheduledAt).toLocaleString("fr-CD") : "Non planifié",
+    requestedOn: appointment.scheduledAt,
+    status,
+    appointmentStatus: rawStatus,
+    priority: appointment.priority || "Normale",
+    phone: patient.phone || "—",
+    age: patient.dateOfBirth ? Math.max(0, new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()) : 0,
+    dossier: patient.externalId || patient.id || "—",
+    lastVisits: appointment.reason || "—",
+    motive: appointment.reason || "Nouvelle visite",
+  };
+}
+
 export default function RendezVousReception() {
   const [requests, setRequests] = useState<ReceptionRequest[]>([]);
   const [filter, setFilter] = useState<'day' | 'week' | 'month'>('week');
@@ -86,7 +115,7 @@ export default function RendezVousReception() {
         const pats = patsRes.ok ? await patsRes.json() : [];
         const docs = docsRes.ok ? await docsRes.json() : [];
 
-        setRequests(Array.isArray(apps) ? apps : []);
+        setRequests(Array.isArray(apps) ? apps.map(toReceptionRequest) : []);
         setPatients(Array.isArray(pats) ? pats : []);
         setPhysicians(Array.isArray(docs) ? docs : []);
       } catch (e) {
@@ -99,6 +128,15 @@ export default function RendezVousReception() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    const reload = async () => {
+      const response = await fetch(`${API_BASE_URL}/appointments`, { credentials: "include" });
+      if (response.ok) setRequests((await response.json()).map(toReceptionRequest));
+    };
+    const timer = window.setInterval(() => { void reload().catch(() => undefined); }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [API_BASE_URL]);
 
   const stats = useMemo(() => {
     // total = patients with PatientWorkflowStatus EN_ATTENTE_INFIRMERIE or EN_ATTENTE_MEDECIN
@@ -271,7 +309,7 @@ export default function RendezVousReception() {
       });
       if (response.ok) {
         const updated = await response.json();
-        setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, ...updated } : r)));
+        setRequests((prev) => prev.map((r) => (r.id === id ? toReceptionRequest({ ...r, ...updated }) : r)));
       }
     } catch (e) {
       console.error("Error updating request:", e);
@@ -280,22 +318,22 @@ export default function RendezVousReception() {
 
   const handleConfirm = () => {
     if (!selectedRequest) return;
-    updateRequest(selectedRequest.id, { status: "Confirmé" });
+    updateRequest(selectedRequest.id, { status: "CONFIRMED" });
     closeRequest();
   };
 
   const handleReprogram = () => {
     if (!selectedRequest) return;
     updateRequest(selectedRequest.id, {
-      status: "Reprogrammé",
-      dateRequested: `${reprogramDate} ${reprogramTime}`,
+      status: "SCHEDULED",
+      scheduledAt: new Date(`${reprogramDate}T${reprogramTime}`).toISOString(),
     });
     closeRequest();
   };
 
   const handleRefuse = () => {
     if (!selectedRequest) return;
-    updateRequest(selectedRequest.id, { status: "Refusé" });
+    updateRequest(selectedRequest.id, { status: "CANCELLED" });
     closeRequest();
   };
 

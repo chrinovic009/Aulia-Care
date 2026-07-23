@@ -83,6 +83,15 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     }
 
     const sender = await this.usersService.findOne(payload.senderId);
+    const recipient = await this.usersService.findOne(payload.recipientId);
+    const senderRole = String(sender.primaryRole || '').toUpperCase();
+    const recipientRole = String(recipient.primaryRole || '').toUpperCase();
+    const isAdminPatientConversation =
+      (['ADMIN', 'SUPER_ADMIN'].includes(senderRole) && recipientRole === 'PATIENT') ||
+      (['ADMIN', 'SUPER_ADMIN'].includes(recipientRole) && senderRole === 'PATIENT');
+    if (isAdminPatientConversation) {
+      throw new WsException('La messagerie directe entre administration et patient est interdite. Utilisez le canal clinique approprié.');
+    }
     const contacts = await this.usersService.findContactsForRole(sender.primaryRole, sender.id);
     const isAllowedRecipient = contacts.some(
       (contact) => contact.id === payload.recipientId && contact.type === (payload.recipientType || 'USER'),

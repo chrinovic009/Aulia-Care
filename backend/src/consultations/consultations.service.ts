@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PatientWorkflowStatus } from '@prisma/client';
+import { ConsultationStatus, PatientWorkflowStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreateConsultationDto } from './dto/create-consultation.dto';
@@ -55,8 +55,34 @@ export class ConsultationsService {
     return true;
   }
 
+  private normalizeConsultationStatus(status?: string | null): ConsultationStatus {
+    const normalized = String(status || '').trim().toUpperCase();
+
+    switch (normalized) {
+      case 'DRAFT':
+        return ConsultationStatus.DRAFT;
+      case 'IN_PROGRESS':
+      case 'INPROGRESS':
+        return ConsultationStatus.IN_PROGRESS;
+      case 'FINALIZED':
+      case 'VALIDATED':
+      case 'COMPLETED':
+        return ConsultationStatus.FINALIZED;
+      case 'CANCELLED':
+      case 'CANCELED':
+        return ConsultationStatus.CANCELLED;
+      default:
+        return ConsultationStatus.IN_PROGRESS;
+    }
+  }
+
   async create(createConsultationDto: CreateConsultationDto) {
     const consultation = await this.prisma.consultation.create({ data: createConsultationDto as any });
+
+    await this.prisma.appointment.update({
+      where: { id: createConsultationDto.appointmentId },
+      data: { status: 'CHECKED_IN' },
+    });
 
     await this.prisma.patient.update({
       where: { id: createConsultationDto.patientId },
@@ -125,40 +151,82 @@ export class ConsultationsService {
   async update(id: string, updateConsultationDto: UpdateConsultationDto, actorId?: string) {
     const consultation = await this.findOne(id);
     await this.ensureWriteAccess(consultation.providerId, actorId);
-    return this.prisma.consultation.update({ where: { id }, data: updateConsultationDto as any });
+    const updated = await this.prisma.consultation.update({ where: { id }, data: updateConsultationDto as any });
+    if (updated.status === ConsultationStatus.FINALIZED) {
+      await this.prisma.appointment.update({ where: { id: updated.appointmentId }, data: { status: 'COMPLETED' } });
+    }
+    return updated;
   }
 
   async saveClinicalSections(id: string, dto: any, actorId?: string) {
     const consultation = await this.findOne(id);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    const payload = dto.clinicalSummary && typeof dto.clinicalSummary === 'object' && !Array.isArray(dto.clinicalSummary)
+      ? dto.clinicalSummary
+      : null;
+    const consultationModule = dto.consultationModule || payload?.consultationModule || null;
+    const currentMedicationValue = dto.medicalHistory?.currentMedications
+      || payload?.medicalHistory?.currentMedications
+      || (Array.isArray(consultationModule?.currentMedications) ? consultationModule.currentMedications : null);
+    const followUpNotes = dto.followUp?.notes
+      || payload?.followUp?.notes
+      || (consultationModule?.followUp ? [consultationModule.followUp.recommendedInterval, consultationModule.followUp.specificDate].filter(Boolean).join(' | ') : null);
     const structured = {
-      medicalHistory: dto.medicalHistory || null,
-      currentSymptoms: dto.currentSymptoms || null,
-      clinicalExam: dto.clinicalExam || null,
-      diagnosis: dto.diagnosis || null,
-      complementaryExams: dto.complementaryExams || null,
-      treatmentPlan: dto.treatmentPlan || null,
-      followUp: dto.followUp || null,
+      medicalHistory: {
+        ...(dto.medicalHistory || payload?.medicalHistory || {}),
+        currentMedications: currentMedicationValue,
+      },
+      currentSymptoms: dto.currentSymptoms || payload?.currentSymptoms || null,
+      clinicalExam: dto.clinicalExam || payload?.clinicalExam || null,
+      diagnosis: dto.diagnosis || payload?.diagnosis || null,
+      complementaryExams: dto.complementaryExams || payload?.complementaryExams || (consultationModule?.orderedExams ? { orderedExams: consultationModule.orderedExams } : null),
+      treatmentPlan: dto.treatmentPlan || payload?.treatmentPlan || {
+        notes: dto.treatmentPlan?.notes || dto.treatmentPlan?.description || consultationModule?.safetyConsignes || null,
+        description: dto.treatmentPlan?.description || consultationModule?.safetyConsignes || null,
+        safetyConsignes: consultationModule?.safetyConsignes || null,
+        sickLeave: consultationModule?.sickLeave || null,
+        followUp: consultationModule?.followUp || null,
+      },
+      followUp: dto.followUp || payload?.followUp || {
+        notes: followUpNotes,
+        recommendedInterval: consultationModule?.followUp?.recommendedInterval || null,
+        specificDate: consultationModule?.followUp?.specificDate || null,
+      },
+      consultationModule,
+      complementaryAnamnesis: dto.complementaryAnamnesis || payload?.complementaryAnamnesis || null,
     };
+
+    const requestedStatus = dto.status || dto.consultationStatus || consultation.status;
+    const normalizedStatus = this.normalizeConsultationStatus(requestedStatus);
 
     const updated = await this.prisma.consultation.update({
       where: { id },
       data: {
         chiefComplaint: dto.chiefComplaint ?? consultation.chiefComplaint,
-        clinicalSummary: JSON.stringify(structured),
+        clinicalSummary: typeof dto.clinicalSummary === 'string' ? dto.clinicalSummary : JSON.stringify(structured),
         diagnosis: dto.diagnosis?.principal || dto.diagnosis?.main || dto.diagnosisText || consultation.diagnosis,
         assessment: dto.diagnosis?.hypotheses ? JSON.stringify(dto.diagnosis.hypotheses) : consultation.assessment,
         plan: dto.treatmentPlan ? JSON.stringify(dto.treatmentPlan) : consultation.plan,
-        status: dto.status || 'IN_PROGRESS',
+        status: normalizedStatus,
       } as any,
       include: { patient: true, provider: true },
     });
+
+    if (normalizedStatus === ConsultationStatus.FINALIZED) {
+      await this.prisma.appointment.update({ where: { id: updated.appointmentId }, data: { status: 'COMPLETED' } });
+    }
 
     await this.prisma.medicalHistory.create({
       data: {
         patientId: consultation.patientId,
         kind: 'MEDICAL_CONSULTATION',
-        details: JSON.stringify(structured),
+        details: JSON.stringify({
+          ...structured,
+          consultationId: id,
+          consultationStatus: normalizedStatus,
+          chiefComplaint: updated.chiefComplaint,
+          savedAt: new Date().toISOString(),
+        }),
         createdById: actorId,
       },
     });

@@ -21,6 +21,17 @@ type Department = {
       serviceResponsabilites?: unknown[];
     } | null;
   }>;
+  departmentResponsabilites?: Array<{
+    id: string;
+    principal?: boolean;
+    actif?: boolean;
+    user?: {
+      displayName?: string | null;
+      firstName?: string | null;
+      lastName?: string | null;
+      primaryRole?: string | null;
+    } | null;
+  }>;
 };
 
 // 1. Définition de la liste des départements officiels de la clinique
@@ -44,9 +55,10 @@ const normalize = (v: string) =>
 
 // Helper global pour formater proprement le nom complet d'un employé
 const userName = (emp: any) => {
-  if (!emp?.user) return "-";
-  const fullName = [emp.user.firstName, emp.user.lastName].filter(Boolean).join(" ");
-  return fullName || emp.user.displayName || "-";
+  const user = emp?.user ?? emp;
+  if (!user) return "-";
+  const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ");
+  return fullName || user.displayName || "-";
 };
 
 export default function GestionDepartAdmin() {
@@ -249,7 +261,10 @@ export default function GestionDepartAdmin() {
           headers={["Département", "Code", "Type", "Responsables", "Services créés", "Personnel", "Statut"]}
           empty={isLoading ? "Chargement des départements..." : "Aucun département configuré."}
           rows={departments.map((department) => {
-            const responsables = (department.Employee || []).filter((employee) => employee.user?.serviceResponsabilites?.length);
+            const responsables = (department.departmentResponsabilites || [])
+              .filter((responsable) => responsable.actif !== false)
+              .map((responsable) => responsable.user)
+              .filter(Boolean);
             return [
               <div key="name"><p className="font-semibold text-slate-900 dark:text-white">{department.name}</p><p className="text-xs text-slate-500">{department.description || "-"}</p></div>,
               department.code,

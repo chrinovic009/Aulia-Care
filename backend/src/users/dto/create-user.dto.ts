@@ -9,7 +9,7 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
-import { RoleSlug, UserStatus } from '@prisma/client';
+import { EmployeeShiftPattern, RoleSlug, UserStatus } from '@prisma/client';
 
 export class CreateUserDto {
   @IsEmail()
@@ -73,4 +73,6 @@ export class CreateUserDto {
   @IsOptional() @IsDateString() shiftStartAt?: string;
   @IsOptional() @IsDateString() shiftEndAt?: string;
   @IsOptional() @IsString() shiftType?: string;
+  @IsOptional() @IsEnum(EmployeeShiftPattern) shiftPattern?: EmployeeShiftPattern;
+  @IsOptional() @IsDateString() rotationAnchorAt?: string;
 }
