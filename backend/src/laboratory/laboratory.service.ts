@@ -1069,6 +1069,74 @@ export class LaboratoryService {
     });
   }
 
+  /** Catalogue changes are manager-only at controller level. Clinical history is never erased. */
+  async updateCatalogue(kind: 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables', id: string, dto: any) {
+    if (kind === 'sections') return this.prisma.labSection.update({ where: { id }, data: { name: dto.name?.trim(), description: dto.description?.trim() || null, order: dto.order === undefined ? undefined : Number(dto.order) || 0, active: dto.active } });
+    if (kind === 'categories') return this.prisma.labCategory.update({ where: { id }, data: { sectionId: dto.sectionId, name: dto.name?.trim(), code: dto.code?.trim() || null, description: dto.description?.trim() || null, order: dto.order === undefined ? undefined : Number(dto.order) || 0, active: dto.active } });
+    if (kind === 'sample-types') return this.prisma.labSampleType.update({ where: { id }, data: { name: dto.name?.trim(), description: dto.description?.trim() || null, active: dto.active } });
+    if (kind === 'consumables') return this.prisma.labConsumable.update({ where: { id }, data: { name: dto.name?.trim(), code: dto.code?.trim(), description: dto.description?.trim() || null, unit: dto.unit?.trim(), active: dto.active } });
+
+    const existing = await this.prisma.labTest.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Examen de laboratoire introuvable.');
+    const price = dto.price === undefined ? undefined : Number(dto.price);
+    if (price !== undefined && (!Number.isFinite(price) || price <= 0)) throw new BadRequestException('Le prix CDF doit être supérieur à zéro.');
+    return this.prisma.$transaction(async (tx) => {
+      const test = await tx.labTest.update({ where: { id }, data: { code: dto.code?.trim(), name: dto.name?.trim(), categoryId: dto.categoryId, sectionId: dto.sectionId, description: dto.description?.trim() || null, price, turnaroundTimeMinutes: dto.turnaroundTimeMinutes === undefined ? undefined : Number(dto.turnaroundTimeMinutes) || null, unit: dto.unit?.trim() || null, referenceRange: dto.referenceRange?.trim() || null, genderRestriction: dto.genderRestriction, minAge: dto.minAge === undefined ? undefined : Number(dto.minAge) || null, maxAge: dto.maxAge === undefined ? undefined : Number(dto.maxAge) || null, active: dto.active } });
+      if (price !== undefined) {
+        const service = await tx.service.findUnique({ where: { name: existing.name } });
+        if (service) {
+          await tx.serviceTarif.updateMany({ where: { serviceId: service.id, actif: true }, data: { actif: false, dateFin: new Date() } });
+          await tx.serviceTarif.create({ data: { serviceId: service.id, prix: price, actif: true } });
+        }
+      }
+      return test;
+    });
+  }
+
+  private async removeTestFromCatalogue(tx: any, id: string) {
+    const usages = await tx.labRequestItem.count({ where: { labTestId: id, deletedAt: null } });
+    if (usages > 0) throw new BadRequestException('Cet examen possède des demandes cliniques. Il peut être désactivé, mais pas supprimé afin de préserver le dossier médical.');
+    await tx.labTestSampleRequirement.deleteMany({ where: { labTestId: id } });
+    await tx.labTestConsumableRequirement.deleteMany({ where: { labTestId: id } });
+    await tx.labTestParameter.deleteMany({ where: { labTestId: id } });
+    await tx.labTest.delete({ where: { id } });
+  }
+
+  async deleteCatalogue(kind: 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables', id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      if (kind === 'tests') { await this.removeTestFromCatalogue(tx, id); return { deleted: true, kind, id }; }
+      if (kind === 'categories') {
+        const tests = await tx.labTest.findMany({ where: { categoryId: id }, select: { id: true } });
+        for (const test of tests) await this.removeTestFromCatalogue(tx, test.id);
+        await tx.labCategory.delete({ where: { id } });
+        return { deleted: true, kind, id };
+      }
+      if (kind === 'sections') {
+        const categories = await tx.labCategory.findMany({ where: { sectionId: id }, select: { id: true } });
+        for (const category of categories) {
+          const tests = await tx.labTest.findMany({ where: { categoryId: category.id }, select: { id: true } });
+          for (const test of tests) await this.removeTestFromCatalogue(tx, test.id);
+          await tx.labCategory.delete({ where: { id: category.id } });
+        }
+        await tx.labSection.delete({ where: { id } });
+        return { deleted: true, kind, id };
+      }
+      if (kind === 'sample-types') {
+        const samples = await tx.labSample.count({ where: { labSampleTypeId: id, deletedAt: null } });
+        if (samples > 0) throw new BadRequestException('Cet échantillon est déjà utilisé dans un dossier clinique. Désactivez-le plutôt que de le supprimer.');
+        await tx.labTestSampleRequirement.deleteMany({ where: { labSampleTypeId: id } });
+        await tx.labSampleType.delete({ where: { id } });
+        return { deleted: true, kind, id };
+      }
+      const transactions = await tx.labConsumableTransaction.count({ where: { labConsumableId: id } });
+      if (transactions > 0) throw new BadRequestException('Ce consommable a des mouvements de stock historiques. Désactivez-le plutôt que de le supprimer.');
+      await tx.labTestConsumableRequirement.deleteMany({ where: { labConsumableId: id } });
+      await tx.labConsumableStock.deleteMany({ where: { labConsumableId: id } });
+      await tx.labConsumable.delete({ where: { id } });
+      return { deleted: true, kind, id };
+    });
+  }
+
   async createCategory(dto: { sectionId?: string; name: string; code?: string; description?: string; order?: string; active?: boolean }) {
     return this.prisma.labCategory.create({
       data: {
@@ -1158,7 +1226,8 @@ export class LaboratoryService {
         },
       });
 
-      return tx.labTest.create({
+      const isNfsPanel = /(^|\s)(nfs|hemogramme|num[eé]ration formule sanguine)(\s|$)/i.test(`${dto.code} ${testName}`);
+      const createdTest = await tx.labTest.create({
         data: {
           code: dto.code.trim(),
           name: testName,
@@ -1176,6 +1245,19 @@ export class LaboratoryService {
           createdById: createdById || undefined,
         },
       });
+      // NFS is one billable examination. Its parameters are result components, never invoice lines.
+      if (isNfsPanel) {
+        await tx.labTestParameter.createMany({
+          data: [
+            ['HB', 'Hémoglobine', 'g/dL'], ['HCT', 'Hématocrite', '%'], ['RBC', 'Hématies', '10^6/µL'],
+            ['WBC', 'Leucocytes', '10^3/µL'], ['PLT', 'Plaquettes', '10^3/µL'], ['MCV', 'VGM', 'fL'],
+            ['MCH', 'TCMH', 'pg'], ['MCHC', 'CCMH', 'g/dL'], ['NEUT', 'Neutrophiles', '%'],
+            ['LYMPH', 'Lymphocytes', '%'], ['MONO', 'Monocytes', '%'], ['EOS', 'Éosinophiles', '%'], ['BASO', 'Basophiles', '%'],
+          ].map(([code, name, unit], order) => ({ labTestId: createdTest.id, code, name, unit, resultType: 'NUMERIC' as any, order })),
+          skipDuplicates: true,
+        });
+      }
+      return createdTest;
     });
   }
 

@@ -18,10 +18,53 @@ type RoomPayload = {
 };
 
 type ServiceUnit = { id: string; name: string; department?: { name?: string } };
+type ServiceCatalog = {
+  id: string;
+  name: string;
+  responsables?: Array<{ user?: { firstName?: string | null; lastName?: string | null; displayName?: string | null } | null }>;
+};
+
+const normalize = (value: string) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+const isCabinetRoom = (room: RoomRecord) => {
+  const haystack = normalize(`${room.number || ""} ${room.serviceUnit?.name || ""}`);
+  return haystack.includes("cabinet");
+};
+
+const isAdministrativeRoom = (room: RoomRecord) => {
+  const haystack = normalize(`${room.number || ""} ${room.serviceUnit?.name || ""}`);
+  return ["administratif", "admin", "secretariat", "secretaire", "caisse", "accueil", "reception", "receptionniste"].some((keyword) => haystack.includes(keyword));
+};
+
+const translateBedStatus = (status: string) => {
+  switch (status?.toUpperCase()) {
+    case "FREE": return "Libre";
+    case "OCCUPIED": return "Occupé";
+    case "RESERVED": return "Réservé";
+    case "MAINTENANCE": return "Maintenance";
+    default: return status || "Inconnu";
+  }
+};
+
+const translateRoomStatus = (status: string) => {
+  switch (status?.toUpperCase()) {
+    case "AVAILABLE": return "Disponible";
+    case "OCCUPIED": return "Occupée";
+    case "MAINTENANCE": return "Maintenance";
+    default: return status || "Inconnu";
+  }
+};
+
+const personName = (user?: { firstName?: string | null; lastName?: string | null; displayName?: string | null } | null) => {
+  if (!user) return "-";
+  const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ");
+  return fullName || user.displayName || "-";
+};
 
 export default function GestionSalleAdmin() {
   const [payload, setPayload] = useState<RoomPayload>({});
   const [units, setUnits] = useState<ServiceUnit[]>([]);
+  const [services, setServices] = useState<ServiceCatalog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [roomForm, setRoomForm] = useState({ number: "", serviceUnitId: "" });
   const [bedForm, setBedForm] = useState({ roomId: "", code: "" });
@@ -37,10 +80,12 @@ export default function GestionSalleAdmin() {
     const load = () => Promise.all([
       apiFetch<RoomPayload>("/administration/rooms").catch(() => ({})),
       apiFetch<ServiceUnit[]>("/administration/service-units").catch(() => []),
+      apiFetch<ServiceCatalog[]>("/services").catch(() => []),
     ])
-      .then(([roomsData, unitsData]) => {
+      .then(([roomsData, unitsData, servicesData]) => {
         setPayload(roomsData);
         setUnits(unitsData);
+        setServices(servicesData);
       })
       .finally(() => setIsLoading(false));
     load();
@@ -49,12 +94,14 @@ export default function GestionSalleAdmin() {
   }, []);
 
   const reload = async () => {
-    const [roomsData, unitsData] = await Promise.all([
+    const [roomsData, unitsData, servicesData] = await Promise.all([
       apiFetch<RoomPayload>("/administration/rooms").catch(() => ({})),
       apiFetch<ServiceUnit[]>("/administration/service-units").catch(() => []),
+      apiFetch<ServiceCatalog[]>("/services").catch(() => []),
     ]);
     setPayload(roomsData);
     setUnits(unitsData);
+    setServices(servicesData);
   };
 
   const createRoom = async () => {
@@ -126,6 +173,24 @@ export default function GestionSalleAdmin() {
     await reload();
   };
 
+  const serviceMap = useMemo(() => {
+    const map = new Map<string, ServiceCatalog>();
+    for (const service of services) {
+      map.set(normalize(service.name), service);
+    }
+    return map;
+  }, [services]);
+
+  const getResponsibleName = (room: RoomRecord) => {
+    const serviceName = room.serviceUnit?.name || "";
+    const service = serviceMap.get(normalize(serviceName));
+    return (service?.responsables || []).map((item) => personName(item.user)).filter(Boolean).join(", ") || "-";
+  };
+
+  const cabinetRooms = useMemo(() => (payload.rooms || []).filter((room) => isCabinetRoom(room)), [payload]);
+  const administrativeRooms = useMemo(() => (payload.rooms || []).filter((room) => isAdministrativeRoom(room)), [payload]);
+  const bedroomRooms = useMemo(() => (payload.rooms || []).filter((room) => !isCabinetRoom(room) && !isAdministrativeRoom(room)), [payload]);
+
   const metrics = useMemo(() => {
     const rooms = payload.rooms || [];
     const beds = rooms.flatMap((room) => room.beds || []);
@@ -148,28 +213,71 @@ export default function GestionSalleAdmin() {
         <StatCard icon={<Hospital size={20} />} label="Blocs operatoires" value={metrics.operatingRooms} tone="violet" />
       </div>
 
-      <Panel title="Occupation des salles" subtitle="Lecture directe des modeles Room et Bed.">
-        <DataTable
-          headers={["Salle", "Departement", "Unite", "Lits", "Patient assigne", "Disponibles", "Statut", "Actions"]}
-          empty={isLoading ? "Chargement des salles..." : "Aucune salle configuree."}
-          rows={(payload.rooms || []).map((room) => {
-            const beds = room.beds || [];
-            const free = beds.filter((bed) => bed.status === "FREE").length;
-            return [
-              <span key="room" className="font-semibold text-slate-900 dark:text-white">{room.number}</span>,
-              room.serviceUnit?.department?.name || "-",
-              room.serviceUnit?.name || "-",
-              beds.map((bed) => `${bed.code} (${bed.status})`).join(", ") || "-",
-              beds.map((bed) => [bed.hospitalization?.patient?.firstName, bed.hospitalization?.patient?.lastName].filter(Boolean).join(" ")).filter(Boolean).join(", ") || "-",
-              `${free}/${beds.length}`,
-              <StatusBadge key="status" label={room.status || "AVAILABLE"} tone={room.status === "AVAILABLE" ? "green" : "amber"} />,
-              <div key="actions" className="flex gap-2">
-                <button onClick={() => openRoomEditModal(room)} className="rounded-lg border border-slate-200 p-2 text-slate-700 hover:bg-slate-100" title="Modifier"><Pencil size={16} /></button>
-                <button onClick={() => setDeleteRoomTarget(room)} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" title="Supprimer"><Trash2 size={16} /></button>
-              </div>,
-            ];
-          })}
-        />
+      <Panel title="Occupation des salles" subtitle="Les cabinets et salles administratives sont affichés avec leur responsable et leur disponibilité, sans lits ni patient assigné.">
+        <div className="space-y-6">
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-slate-700">Cabinets</h3>
+            <DataTable
+              headers={["Cabinet", "Département", "Unité", "Responsable", "Disponibilité", "Actions"]}
+              empty={isLoading ? "Chargement des cabinets..." : "Aucun cabinet configuré."}
+              rows={cabinetRooms.map((room) => [
+                <span key="room" className="font-semibold text-slate-900 dark:text-white">{room.number}</span>,
+                room.serviceUnit?.department?.name || "-",
+                room.serviceUnit?.name || "-",
+                getResponsibleName(room),
+                <StatusBadge key="status" label={translateRoomStatus(room.status)} tone={room.status === "AVAILABLE" ? "green" : "amber"} />,
+                <div key="actions" className="flex gap-2">
+                  <button onClick={() => openRoomEditModal(room)} className="rounded-lg border border-slate-200 p-2 text-slate-700 hover:bg-slate-100" title="Modifier"><Pencil size={16} /></button>
+                  <button onClick={() => setDeleteRoomTarget(room)} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" title="Supprimer"><Trash2 size={16} /></button>
+                </div>,
+              ])}
+            />
+          </div>
+
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-slate-700">Chambres</h3>
+            <DataTable
+              headers={["Chambre", "Département", "Unité", "Lits", "Patient assigné", "Disponibles", "Statut", "Actions"]}
+              empty={isLoading ? "Chargement des chambres..." : "Aucune chambre configurée."}
+              rows={bedroomRooms.map((room) => {
+                const beds = room.beds || [];
+                const free = beds.filter((bed) => bed.status === "FREE").length;
+                return [
+                  <span key="room" className="font-semibold text-slate-900 dark:text-white">{room.number}</span>,
+                  room.serviceUnit?.department?.name || "-",
+                  room.serviceUnit?.name || "-",
+                  beds.map((bed) => `${bed.code} (${translateBedStatus(bed.status)})`).join(", ") || "-",
+                  beds.map((bed) => [bed.hospitalization?.patient?.firstName, bed.hospitalization?.patient?.lastName].filter(Boolean).join(" ")).filter(Boolean).join(", ") || "-",
+                  `${free}/${beds.length}`,
+                  <StatusBadge key="status" label={translateRoomStatus(room.status)} tone={room.status === "AVAILABLE" ? "green" : "amber"} />,
+                  <div key="actions" className="flex gap-2">
+                    <button onClick={() => openRoomEditModal(room)} className="rounded-lg border border-slate-200 p-2 text-slate-700 hover:bg-slate-100" title="Modifier"><Pencil size={16} /></button>
+                    <button onClick={() => setDeleteRoomTarget(room)} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" title="Supprimer"><Trash2 size={16} /></button>
+                  </div>,
+                ];
+              })}
+            />
+          </div>
+
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-slate-700">Salles administratives</h3>
+            <DataTable
+              headers={["Salle", "Département", "Unité", "Responsable", "Disponibilité", "Actions"]}
+              empty={isLoading ? "Chargement des salles administratives..." : "Aucune salle administrative configurée."}
+              rows={administrativeRooms.map((room) => [
+                <span key="room" className="font-semibold text-slate-900 dark:text-white">{room.number}</span>,
+                room.serviceUnit?.department?.name || "-",
+                room.serviceUnit?.name || "-",
+                getResponsibleName(room),
+                <StatusBadge key="status" label={translateRoomStatus(room.status)} tone={room.status === "AVAILABLE" ? "green" : "amber"} />,
+                <div key="actions" className="flex gap-2">
+                  <button onClick={() => openRoomEditModal(room)} className="rounded-lg border border-slate-200 p-2 text-slate-700 hover:bg-slate-100" title="Modifier"><Pencil size={16} /></button>
+                  <button onClick={() => setDeleteRoomTarget(room)} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" title="Supprimer"><Trash2 size={16} /></button>
+                </div>,
+              ])}
+            />
+          </div>
+        </div>
       </Panel>
 
       <Panel title="Blocs operatoires" subtitle="Gestion des salles de chirurgie et activite planifiee.">

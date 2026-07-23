@@ -1146,7 +1146,7 @@ export class PatientsService {
         },
         medicalHistories: {
           orderBy: { eventDate: 'desc' },
-          take: 30,
+          take: 100,
           include: { createdBy: { select: { id: true, displayName: true, firstName: true, lastName: true, primaryRole: true } } },
         },
         consultations: {

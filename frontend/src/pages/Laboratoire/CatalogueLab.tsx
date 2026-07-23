@@ -15,6 +15,9 @@ import {
   createLabTestSampleRequirement,
   fetchLaboratorySettings,
   updateLaboratorySettings,
+  deleteLabCatalogueItem,
+  updateLabCatalogueItem,
+  type LabCatalogueKind,
 } from "../../api/laboratory";
 import { ClipboardList, FlaskConical, Layers, Microscope, Package } from "lucide-react";
 
@@ -36,6 +39,7 @@ export default function CatalogueLab() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [technicianDirectRelease, setTechnicianDirectRelease] = useState(false);
+  const [catalogueMessage, setCatalogueMessage] = useState<string | null>(null);
 
   const [sectionForm, setSectionForm] = useState({ name: '', description: '', order: '0', active: true });
   const [categoryForm, setCategoryForm] = useState({ sectionId: '', name: '', code: '', description: '', order: '0', active: true });
@@ -83,6 +87,30 @@ export default function CatalogueLab() {
   const totalTests = catalogue?.tests.length ?? 0;
   const totalSampleTypes = catalogue?.sampleTypes.length ?? 0;
   const totalConsumables = catalogue?.consumables.length ?? 0;
+  const isLabManager = currentUser?.primaryRole === "LAB_MANAGER";
+
+  const removeCatalogueItem = async (kind: LabCatalogueKind, id: string, label: string) => {
+    if (!isLabManager || !window.confirm(`Supprimer ${label} ? Les dépendances de catalogue non utilisées seront supprimées. Les données cliniques historiques restent protégées.`)) return;
+    setCatalogueMessage(null);
+    try {
+      await deleteLabCatalogueItem(kind, id);
+      setCatalogueMessage(`${label} supprimé.`);
+      await loadCatalogue();
+    } catch (error) {
+      setCatalogueMessage(error instanceof Error ? error.message : `Impossible de supprimer ${label}.`);
+    }
+  };
+
+  const toggleCatalogueItem = async (kind: LabCatalogueKind, item: { id: string; active: boolean }, label: string) => {
+    if (!isLabManager) return;
+    try {
+      await updateLabCatalogueItem(kind, item.id, { active: !item.active });
+      setCatalogueMessage(`${label} ${item.active ? "désactivé" : "activé"}.`);
+      await loadCatalogue();
+    } catch (error) {
+      setCatalogueMessage(error instanceof Error ? error.message : `Impossible de modifier ${label}.`);
+    }
+  };
 
   const lowStockConsumables = useMemo(() => {
     if (!catalogue) return [];
@@ -574,6 +602,8 @@ export default function CatalogueLab() {
       }
     >
 
+      {catalogueMessage && <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">{catalogueMessage}</div>}
+
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard icon={<Layers size={20} />} label="Sections actives" value={totalSections} tone="blue" />
         <StatCard icon={<ClipboardList size={20} />} label="Catégories actives" value={totalCategories} tone="slate" />
@@ -641,13 +671,14 @@ export default function CatalogueLab() {
               {activeTab === "Sections" && (
                 <div className="space-y-6">
                   <DataTable
-                    headers={["Section", "Description", "Catégories", "Examens", "Statut"]}
+                    headers={["Section", "Description", "Catégories", "Examens", "Statut", "Actions"]}
                     rows={filteredSections.map((section) => [
                       section.name,
                       section.description || "-",
                       section.categories.length,
                       section.tests.length,
                       section.active ? "Active" : "Inactive",
+                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('sections', section, section.name)} className="text-xs text-blue-700">{section.active ? "Désactiver" : "Activer"}</button><button onClick={() => removeCatalogueItem('sections', section.id, section.name)} className="text-xs text-red-700">Supprimer</button></div> : "—",
                     ])}
                   />
 
@@ -710,13 +741,14 @@ export default function CatalogueLab() {
               {activeTab === "Catégories" && (
                 <div className="space-y-6">
                   <DataTable
-                    headers={["Catégorie", "Section", "Code", "Examens", "Statut"]}
+                    headers={["Catégorie", "Section", "Code", "Examens", "Statut", "Actions"]}
                     rows={filteredCategories.map((category) => [
                       category.name,
                       category.section?.name || "Hors section",
                       category.code || "-",
                       category.tests.length,
                       category.active ? "Active" : "Inactive",
+                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('categories', category, category.name)} className="text-xs text-blue-700">{category.active ? "Désactiver" : "Activer"}</button><button onClick={() => removeCatalogueItem('categories', category.id, category.name)} className="text-xs text-red-700">Supprimer</button></div> : "—",
                     ])}
                   />
 
@@ -804,7 +836,7 @@ export default function CatalogueLab() {
               {activeTab === "Examens" && (
                 <div className="space-y-6">
                   <DataTable
-                    headers={["Code", "Examen", "Section", "Catégorie", "Type résultat", "Prix", "TAT", "Actif"]}
+                    headers={["Code", "Examen", "Section", "Catégorie", "Type résultat", "Prix", "TAT", "Actif", "Actions"]}
                     rows={filteredTests.map((test) => [
                       test.code,
                       test.name,
@@ -814,6 +846,7 @@ export default function CatalogueLab() {
                       `${Number(test.price || "0").toLocaleString("fr-FR", { style: "currency", currency: "CDF" })}`,
                       test.turnaroundTimeMinutes ? `${test.turnaroundTimeMinutes} min` : "-",
                       test.active ? "Oui" : "Non",
+                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('tests', test, test.name)} className="text-xs text-blue-700">{test.active ? "Désactiver" : "Activer"}</button><button onClick={() => removeCatalogueItem('tests', test.id, test.name)} className="text-xs text-red-700">Supprimer</button></div> : "—",
                     ])}
                   />
 
@@ -1140,12 +1173,13 @@ export default function CatalogueLab() {
               {activeTab === "Échantillons" && (
                 <div className="space-y-6">
                   <DataTable
-                    headers={["Type d'échantillon", "Description", "Actif", "Exigences"]}
+                    headers={["Type d'échantillon", "Description", "Actif", "Exigences", "Actions"]}
                     rows={filteredSampleTypes.map((sampleType) => [
                       sampleType.name,
                       sampleType.description || "-",
                       sampleType.active ? "Oui" : "Non",
                       sampleType.sampleRequirements.length,
+                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('sample-types', sampleType, sampleType.name)} className="text-xs text-blue-700">{sampleType.active ? "Désactiver" : "Activer"}</button><button onClick={() => removeCatalogueItem('sample-types', sampleType.id, sampleType.name)} className="text-xs text-red-700">Supprimer</button></div> : "—",
                     ])}
                   />
 
@@ -1334,7 +1368,7 @@ export default function CatalogueLab() {
               {activeTab === "Consommables" && (
                 <div className="space-y-6">
                   <DataTable
-                    headers={["Consommable", "Code", "Unité", "Stock total", "Nb tests associés"]}
+                    headers={["Consommable", "Code", "Unité", "Stock total", "Nb tests associés", "Actions"]}
                     rows={filteredConsumables.map((consumable) => [
                       consumable.name,
                       consumable.code,
@@ -1343,6 +1377,7 @@ export default function CatalogueLab() {
                       catalogue.tests.filter((test) =>
                         test.consumableRequirements.some((requirement) => requirement.labConsumableId === consumable.id),
                       ).length,
+                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('consumables', consumable, consumable.name)} className="text-xs text-blue-700">{consumable.active ? "Désactiver" : "Activer"}</button><button onClick={() => removeCatalogueItem('consumables', consumable.id, consumable.name)} className="text-xs text-red-700">Supprimer</button></div> : "—",
                     ])}
                   />
 

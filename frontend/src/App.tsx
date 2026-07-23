@@ -68,6 +68,10 @@ import ProfileSupAdmin from "./pages/SuperAdmin/ProfileSupAdmin";
 import ProfilePharmacie from "./pages/Pharmacie/ProfilePharmacie";
 import Guide from "./pages/Guide";
 import MessagesAdmin from "./pages/Administration/MessagesAdmin";
+import DashboardFinance from "./pages/Finance/DashboardFinance";
+import MessagesFinance from "./pages/Finance/MessagesFinance";
+import ProfileFinance from "./pages/Finance/ProfileFinance";
+import DashboardRadio from "./pages/Radiologie/DashboardRadio";
 
 export default function App() {
   return (
@@ -135,6 +139,14 @@ export default function App() {
             <Route path="/caissier/facturation" element={<RoleGuard requiredRoles={["CASHIER"]}><FacturationCaissier /></RoleGuard>} />
             <Route path="/caissier/historique" element={<RoleGuard requiredRoles={["CASHIER"]}><HistoriqueCaissier /></RoleGuard>} />
             <Route path="/caissier/profile" element={<RoleGuard requiredRoles={["CASHIER"]}><ProfileCaissier /></RoleGuard>} />
+
+            {/* Finance */}
+            <Route path="/finance" element={<RoleGuard requiredRoles={["FINANCE"]}><DashboardFinance /></RoleGuard>} />
+            <Route path="/finance/messages" element={<RoleGuard requiredRoles={["FINANCE"]}><MessagesFinance /></RoleGuard>} />
+            <Route path="/finance/profile" element={<RoleGuard requiredRoles={["FINANCE"]}><ProfileFinance /></RoleGuard>} />
+
+            {/* Radiologie */}
+            <Route path="/radiologie" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><DashboardRadio /></RoleGuard>} />
 
             {/* Administration clinique */}
             <Route path="/administration" element={<RoleGuard requiredRoles={["ADMIN"]}><DashboardAdmin /></RoleGuard>} />

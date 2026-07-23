@@ -12,6 +12,7 @@ export type RoleSlug =
   | "SURGEON"
   | "ANESTHESIOLOGIST"
   | "PHARMACIST"
+  | "FINANCE"
   | "PATIENT"
   | "CASHIER";
 
@@ -84,6 +85,7 @@ export function getRedirectPath(role: RoleSlug) {
     NURSE: "/nurse",
     PHYSICIAN: "/doctor",
     CASHIER: "/caissier",
+    FINANCE: "/finance",
     LAB_TECHNICIAN: "/laboratoire",
     LAB_MANAGER: "/laboratoire",
     RADIOLOGIST: "/radiologie",
@@ -103,6 +105,7 @@ export function getGuidePath(role: RoleSlug) {
     NURSE: "/nurse/guide",
     PHYSICIAN: "/doctor/guide",
     CASHIER: "/caissier/guide",
+    FINANCE: "/finance/guide",
     LAB_TECHNICIAN: "/laboratoire/guide",
     LAB_MANAGER: "/laboratoire/guide",
     RADIOLOGIST: "/radiologie/guide",

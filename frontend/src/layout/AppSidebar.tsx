@@ -249,6 +249,17 @@ const cashierNavItems: NavItem[] = [
   },
 ];
 
+const financeNavItems: NavItem[] = [
+  { icon: <DollarLineIcon />, name: "Pilotage financier", path: "/finance" },
+  { icon: <ChatIcon />, name: "Messages", path: "/finance/messages" },
+  { icon: <LockIcon />, name: "Profil finance", path: "/finance/profile" },
+];
+
+const radiologyNavItems: NavItem[] = [
+  { icon: <GridIcon />, name: "Tableau de bord radiologie", path: "/radiologie" },
+  { icon: <FolderIcon />, name: "File d'imagerie et résultats", path: "/radiologie" },
+];
+
 const administrationNavItems: NavItem[] = [
   { icon: <GridIcon />, name: "Dashboard admin", path: "/administration" },
   { icon: <UserCircleIcon />, name: "Personnel", path: "/administration/personnel" },
@@ -308,6 +319,8 @@ const AppSidebar: React.FC = () => {
   const isNurseSection = location.pathname.startsWith("/nurse");
   const isDoctorSection = location.pathname.startsWith("/doctor");
   const isCashierSection = location.pathname.startsWith("/caissier");
+  const isFinanceSection = location.pathname.startsWith("/finance");
+  const isRadiologySection = location.pathname.startsWith("/radiologie");
   const isAdministrationSection = location.pathname.startsWith("/administration");
   const isPharmacySection = location.pathname.startsWith("/pharmacie");
   const isLaboratorySection = location.pathname.startsWith("/laboratoire");
@@ -320,6 +333,10 @@ const AppSidebar: React.FC = () => {
     ? receptionNavItems
     : isCashierSection
     ? cashierNavItems
+    : isFinanceSection
+    ? financeNavItems
+    : isRadiologySection
+    ? radiologyNavItems
     : isAdministrationSection
     ? administrationNavItems
     : isPharmacySection

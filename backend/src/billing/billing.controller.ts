@@ -10,29 +10,29 @@ export class BillingController {
   constructor(private readonly billingService: BillingService) {}
 
   @Get('invoices')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')
   findInvoices() {
     return this.billingService.findInvoices();
   }
 
   @Get('payments')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')
   findPayments() {
     return this.billingService.findPayments();
   }
 
   @Get('payments/:id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')
   findPayment(@Param('id') id: string) {
     return this.billingService.findPayment(id);
   }
 
   @Get('forecast')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')
   financialForecast() { return this.billingService.financialForecast(); }
 
   @Get('patients/:patientId/summary')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')
   getPatientBillingSummary(@Param('patientId') patientId: string) {
     return this.billingService.getPatientBillingSummary(patientId);
   }

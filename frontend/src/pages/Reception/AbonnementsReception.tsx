@@ -25,6 +25,20 @@ const statusTone = (status?: string) => {
 const currentMonth = new Date().getMonth() + 1;
 const currentYear = new Date().getFullYear();
 
+const calculateAgeFromBirthDate = (value?: string) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const today = new Date();
+  let age = today.getFullYear() - date.getFullYear();
+  const monthDiff = today.getMonth() - date.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) {
+    age -= 1;
+  }
+  return age > 0 ? String(age) : "";
+};
+
 export default function AbonnementsReception() {
   const [companies, setCompanies] = useState<SubscriptionCompany[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
@@ -78,6 +92,16 @@ export default function AbonnementsReception() {
     setEmployeeForm({ firstName: "", lastName: "", middleName: "", gender: "", profession: "", dateOfBirth: "", age: "", policyNumber: "", employeeNumber: "", phone: "", email: "" });
     setMessage("Employé abonné ajouté à l'entreprise.");
     await load(selectedCompanyId);
+  };
+
+  const handleEmployeeDobChange = (value: string) => {
+    const age = calculateAgeFromBirthDate(value);
+    setEmployeeForm((current) => ({ ...current, dateOfBirth: value, age }));
+  };
+
+  const handleEmployeeAgeChange = (value: string) => {
+    const digits = value.replace(/\D/g, "");
+    setEmployeeForm((current) => ({ ...current, age: digits }));
   };
 
   const prepareEmployeeAdmission = (employee: SubscriptionEmployee) => {
@@ -177,8 +201,8 @@ export default function AbonnementsReception() {
                 <Input label="Nom" value={employeeForm.lastName} onChange={(value) => setEmployeeForm((current) => ({ ...current, lastName: value }))} />
                 <Input label="Postnom" value={employeeForm.middleName} onChange={(value) => setEmployeeForm((current) => ({ ...current, middleName: value }))} />
                 <Select label="Sexe" value={employeeForm.gender} onChange={(value) => setEmployeeForm((current) => ({ ...current, gender: value }))} options={[["", "À compléter"], ["M", "Masculin"], ["F", "Féminin"]]} />
-                <Input label="Date de naissance" type="date" value={employeeForm.dateOfBirth} onChange={(value) => setEmployeeForm((current) => ({ ...current, dateOfBirth: value }))} />
-                <Input label="Âge" type="number" value={employeeForm.age} onChange={(value) => setEmployeeForm((current) => ({ ...current, age: value }))} />
+                <Input label="Date de naissance" type="date" value={employeeForm.dateOfBirth} onChange={handleEmployeeDobChange} />
+                <Input label="Âge" type="text" value={employeeForm.age ? `${employeeForm.age} ans` : ""} onChange={handleEmployeeAgeChange} />
                 <Input label="Profession" value={employeeForm.profession} onChange={(value) => setEmployeeForm((current) => ({ ...current, profession: value }))} />
                 <Input label="N° police" value={employeeForm.policyNumber} onChange={(value) => setEmployeeForm((current) => ({ ...current, policyNumber: value }))} />
                 <Input label="Matricule" value={employeeForm.employeeNumber} onChange={(value) => setEmployeeForm((current) => ({ ...current, employeeNumber: value }))} />

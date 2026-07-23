@@ -157,11 +157,17 @@ export class AppointmentsService {
   }
 
   findAll() {
-    return this.prisma.appointment.findMany({ include: { patient: true, serviceUnit: true } });
+    return this.prisma.appointment.findMany({
+      include: { patient: true, serviceUnit: true, consultation: { select: { id: true, status: true, createdAt: true } } },
+      orderBy: { scheduledAt: 'desc' },
+    });
   }
 
   async findOne(id: string) {
-    const appointment = await this.prisma.appointment.findUnique({ where: { id }, include: { patient: true, serviceUnit: true } });
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id },
+      include: { patient: true, serviceUnit: true, consultation: { select: { id: true, status: true, createdAt: true } } },
+    });
     if (!appointment) {
       throw new NotFoundException('Rendez-vous introuvable');
     }
@@ -170,9 +176,19 @@ export class AppointmentsService {
 
   async update(id: string, updateAppointmentDto: UpdateAppointmentDto) {
     await this.findOne(id);
+    const data: any = { ...updateAppointmentDto };
+    const normalizedStatus = this.normalizeText(String(data.status || ''));
+    if (normalizedStatus === 'confirme' || normalizedStatus === 'confirmed') data.status = 'CONFIRMED';
+    if (normalizedStatus === 'refuse' || normalizedStatus === 'cancelled' || normalizedStatus === 'canceled') data.status = 'CANCELLED';
+    if (normalizedStatus === 'reprogramme' || normalizedStatus === 'scheduled') data.status = 'SCHEDULED';
+    if (data.dateRequested && !data.scheduledAt) {
+      const scheduledAt = new Date(data.dateRequested);
+      if (!Number.isNaN(scheduledAt.getTime())) data.scheduledAt = scheduledAt;
+      delete data.dateRequested;
+    }
     return this.prisma.appointment.update({
       where: { id },
-      data: updateAppointmentDto as any,
+      data,
     });
   }
 

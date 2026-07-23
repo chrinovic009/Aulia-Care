@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { LaboratoryService } from './laboratory.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -148,6 +148,18 @@ export class LaboratoryController {
   @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
   createConsumableStock(@Body() body: CreateLabConsumableStockDto, @Request() req: any) {
     return this.laboratoryService.createConsumableStock(body, req.user?.userId);
+  }
+
+  @Patch('catalogue/:kind/:id')
+  @Roles('LAB_MANAGER')
+  updateCatalogue(@Param('kind') kind: 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables', @Param('id') id: string, @Body() body: any) {
+    return this.laboratoryService.updateCatalogue(kind, id, body);
+  }
+
+  @Delete('catalogue/:kind/:id')
+  @Roles('LAB_MANAGER')
+  deleteCatalogue(@Param('kind') kind: 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables', @Param('id') id: string) {
+    return this.laboratoryService.deleteCatalogue(kind, id);
   }
 
   @Get(':id')
