@@ -33,6 +33,7 @@ import PrescriptionsMedecin from "./pages/Medecin/PrescriptionsMedecin";
 import HospitalisationsMedecin from "./pages/Medecin/HospitalisationsMedecin";
 import BlocOperatoireMedecin from "./pages/Medecin/BlocOperatoireMedecin";
 import MessagesMedecin from "./pages/Medecin/MessagesMedecin";
+import ProfileMedecin from "./pages/Medecin/ProfileMedecin";
 import DashboardCaissier from "./pages/Caissier/DashboardCaissier";
 import MessagesCaissier from "./pages/Caissier/MessagesCaissier";
 import FacturationCaissier from "./pages/Caissier/FacturationCaissier";
@@ -131,6 +132,7 @@ export default function App() {
             <Route path="/doctor/hospitalizations" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><HospitalisationsMedecin /></RoleGuard>} />
             <Route path="/doctor/surgery" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><BlocOperatoireMedecin /></RoleGuard>} />
             <Route path="/doctor/messages" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><MessagesMedecin /></RoleGuard>} />
+            <Route path="/doctor/profile" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><ProfileMedecin /></RoleGuard>} />
 
             {/* Page Caissier */}
             <Route path="/caissier" element={<RoleGuard requiredRoles={["CASHIER"]}><DashboardCaissier /></RoleGuard>} />

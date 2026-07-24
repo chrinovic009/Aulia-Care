@@ -43,7 +43,7 @@ export default function HistoriquePharmacie() {
   }, []);
 
   const filtered = useMemo(() => {
-    let result = [...records];
+    let result = [...records].filter((item) => item.typeLabel !== "Sortie stock");
 
     if (filterType !== "ALL") {
       result = result.filter((item) => item.type === filterType);
@@ -232,7 +232,9 @@ export default function HistoriquePharmacie() {
 }
 
 function HistoryPrintTemplate({ records }: { records: PharmacyHistoryRecord[] }) {
-  const totals = records.reduce(
+  const printableRecords = records.filter((record) => record.typeLabel !== "Sortie stock");
+
+  const totals = printableRecords.reduce(
     (summary, record) => ({
       ...summary,
       totalAmount: summary.totalAmount + Number(record.amount || 0),
@@ -259,7 +261,7 @@ function HistoryPrintTemplate({ records }: { records: PharmacyHistoryRecord[] })
       <div style={{ marginTop: "16px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "10px" }}>
         <div style={{ border: "1px solid #e2e8f0", padding: "10px", background: "#f8fafc" }}>
           <div style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748b" }}>Total d’entrées</div>
-          <div style={{ fontSize: "18px", fontWeight: 700, marginTop: "4px" }}>{records.length}</div>
+          <div style={{ fontSize: "18px", fontWeight: 700, marginTop: "4px" }}>{printableRecords.length}</div>
         </div>
         <div style={{ border: "1px solid #e2e8f0", padding: "10px", background: "#f8fafc" }}>
           <div style={{ fontSize: "11px", textTransform: "uppercase", color: "#64748b" }}>Délivrances</div>
@@ -289,7 +291,7 @@ function HistoryPrintTemplate({ records }: { records: PharmacyHistoryRecord[] })
           </tr>
         </thead>
         <tbody>
-          {records.map((record) => (
+          {printableRecords.map((record) => (
             <tr key={record.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
               <td style={{ border: "1px solid #e2e8f0", padding: "8px" }}>{formatDateTime(record.createdAt)}</td>
               <td style={{ border: "1px solid #e2e8f0", padding: "8px" }}>{record.typeLabel}</td>

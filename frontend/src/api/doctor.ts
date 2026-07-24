@@ -71,6 +71,10 @@ export const createPrescription = (consultationId: string, payload: Record<strin
     method: "POST",
     body: JSON.stringify(payload),
   });
-
+export const updatePrescription = (consultationId: string, prescriptionId: string, payload: Record<string, unknown>) =>
+  apiFetch(`/consultations/${consultationId}/prescriptions/${prescriptionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
 export const fetchAvailableMedications = () =>
   apiFetch<AvailableMedication[]>("/pharmacy/available");

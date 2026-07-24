@@ -164,6 +164,39 @@ export default function GestionStockPharmacie() {
     await load();
   };
 
+  const createCategory = async () => {
+    setMessage(null);
+    if (!selectedSectionId && !sectionForm.name.trim()) {
+      setMessage('Choisis ou crée une section avant d’ajouter une catégorie.');
+      return;
+    }
+
+    if (!categoryForm.name.trim()) {
+      setMessage('Le nom de la catégorie est requis.');
+      return;
+    }
+
+    let sectionIdToUse = selectedSectionId;
+
+    if (!sectionIdToUse) {
+      const section = await apiFetch<{ id: string }>('/pharmacy/catalogue/sections', {
+        method: 'POST',
+        body: JSON.stringify({ name: sectionForm.name, code: sectionForm.code || sectionForm.name.toUpperCase().replace(/\s+/g, '_') }),
+      });
+      sectionIdToUse = section.id;
+    }
+
+    await apiFetch('/pharmacy/catalogue/categories', {
+      method: 'POST',
+      body: JSON.stringify({ sectionId: sectionIdToUse, name: categoryForm.name, code: categoryForm.code || categoryForm.name.toUpperCase().replace(/\s+/g, '_') }),
+    });
+
+    setCategoryForm({ name: '', code: '' });
+    setSelectedCategoryId('');
+    setMessage('Catégorie ajoutée à la section sélectionnée.');
+    await load();
+  };
+
   const createLot = async () => {
     setMessage(null);
     if (!lotForm.medicationId || !lotForm.batchNumber || !lotForm.quantity) {
@@ -228,6 +261,9 @@ export default function GestionStockPharmacie() {
                 <input disabled={!canCreateCategory} value={categoryForm.code} onChange={(event) => setCategoryForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code catégorie" className="h-10 rounded-lg border border-slate-200 px-3 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900" />
               </div>
             </div>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              <span>Pour créer uniquement une catégorie, choisissez une section puis cliquez sur “Ajouter la catégorie”.</span>
+            </div>
             <select value={selectedSectionId} onChange={(event) => { setSelectedSectionId(event.target.value); setSelectedCategoryId(''); setCategoryForm({ name: '', code: '' }); }} className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white">
               <option value="">Section existante</option>
               {sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
@@ -242,7 +278,10 @@ export default function GestionStockPharmacie() {
             <input value={medicationForm.strength} onChange={(event) => setMedicationForm((current) => ({ ...current, strength: event.target.value }))} placeholder="Dosage" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
             <input value={medicationForm.manufacturer} onChange={(event) => setMedicationForm((current) => ({ ...current, manufacturer: event.target.value }))} placeholder="Fabricant" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
             <p className="text-xs text-slate-500">Choisis d’abord une section puis une catégorie pour pouvoir ajouter un médicament.</p>
-            <button disabled={!canCreateMedication} onClick={createMedication} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">Ajouter</button>
+            <div className="flex flex-wrap gap-2">
+              <button disabled={!canCreateCategory || !categoryForm.name.trim()} onClick={createCategory} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:disabled:bg-slate-900">Ajouter la catégorie</button>
+              <button disabled={!canCreateMedication} onClick={createMedication} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">Ajouter le médicament</button>
+            </div>
           </div>
         </Panel>
 

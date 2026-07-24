@@ -6,10 +6,28 @@ import { AdminPageShell, DataTable, Panel, StatCard, formatDate, formatMoney } f
 type Prescription = {
   id: string;
   status: string;
+  createdAt?: string;
+  updatedAt?: string;
+  version?: number;
   prescribingDate: string;
   instruction?: string | null;
   patient?: { firstName?: string | null; lastName?: string | null; phone?: string | null; email?: string | null };
   prescriber?: { displayName?: string | null; firstName?: string | null; lastName?: string | null };
+  pharmacyDispenses?: Array<{
+    id: string;
+    status: string;
+    notes?: string | null;
+    location?: string | null;
+    dispensedAt?: string | null;
+    lines?: Array<{
+      id: string;
+      medicationId: string;
+      medication?: { name?: string | null; strength?: string | null } | null;
+      quantity: number;
+      unitPrice?: number | string | null;
+      totalPrice?: number | string | null;
+    }>;
+  }>;
   lineItems?: Array<{
     id: string;
     dosage?: string | null;
@@ -35,6 +53,7 @@ const prescriberName = (prescription: Prescription) =>
 export default function DelivrancePharmacie() {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [selected, setSelected] = useState<Prescription | null>(null);
+  const [detailPrescription, setDetailPrescription] = useState<Prescription | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -70,6 +89,24 @@ export default function DelivrancePharmacie() {
     setSelected(null);
     await load();
   };
+
+  const cancelDispense = async () => {
+    if (!detailPrescription) return;
+    setMessage(null);
+    await apiFetch(`/pharmacy/prescriptions/${detailPrescription.id}/cancel-dispense`, {
+      method: "POST",
+    });
+    setMessage("La délivrance a été annulée. Vous pouvez maintenant ajuster la prescription.");
+    setDetailPrescription(null);
+    await load();
+  };
+
+  const isDispensed = Boolean(selected?.pharmacyDispenses?.some((dispense) => dispense.status !== "CANCELLED"));
+  const canCancelDispense = Boolean(
+    selected?.version && selected.version > 1 &&
+      selected?.createdAt &&
+      Date.now() - new Date(selected.createdAt).getTime() <= 24 * 60 * 60 * 1000,
+  );
 
   return (
     <AdminPageShell
@@ -131,13 +168,68 @@ export default function DelivrancePharmacie() {
                 })}
               />
 
-              <button onClick={dispense} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white">
-                Confirmer la remise au patient
+              <button
+                onClick={() => {
+                  if (isDispensed) {
+                    setDetailPrescription(selected);
+                    return;
+                  }
+                  void dispense();
+                }}
+                className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white"
+              >
+                {isDispensed ? "Détail de la remise" : "Confirmer la remise au patient"}
               </button>
             </div>
           )}
         </Panel>
       </div>
+
+      {detailPrescription ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-900">Détail de la remise</h3>
+                <p className="mt-1 text-sm text-slate-500">Prescription et état de la pharmacie</p>
+              </div>
+              <button onClick={() => setDetailPrescription(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">Fermer</button>
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-900">Instructions du médecin</p>
+                <p className="mt-2 text-sm text-slate-700">{detailPrescription.instruction || "Aucune instruction particulière."}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-900">Etat pharmacie</p>
+                <p className="mt-2 text-sm text-slate-700">{detailPrescription.pharmacyDispenses?.some((dispense) => dispense.status !== "CANCELLED") ? "Déjà délivrée" : "En attente de délivrance"}</p>
+                <p className="mt-1 text-xs text-slate-500">{detailPrescription.pharmacyDispenses?.[0]?.dispensedAt ? formatDate(detailPrescription.pharmacyDispenses[0].dispensedAt) : "-"}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-slate-200 p-4">
+              <p className="text-sm font-semibold text-slate-900">Lignes de prescription</p>
+              <div className="mt-3 space-y-2">
+                {(detailPrescription.lineItems || []).map((line) => (
+                  <div key={line.id} className="rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+                    <p className="font-medium text-slate-900">{line.medication?.name || "Médicament"}</p>
+                    <p className="mt-1">Posologie: {line.dosage || "-"} • Quantité: {line.quantity} • Fréquence: {line.frequency || "-"}</p>
+                    <p className="mt-1">Notes: {line.notes || "-"}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button onClick={() => setDetailPrescription(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Fermer</button>
+              {detailPrescription.pharmacyDispenses?.some((dispense) => dispense.status !== "CANCELLED") && canCancelDispense ? (
+                <button onClick={() => void cancelDispense()} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white">Annuler la délivrance</button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </AdminPageShell>
   );
 }
