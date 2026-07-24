@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState, type ReactNode } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
-import { AvailableMedication, DoctorPatient, createPrescription, fetchAvailableMedications, fetchDoctorVisiblePatients, formatDoctorPatientName } from "../../api/doctor";
+import { AvailableMedication, DoctorPatient, createPrescription, fetchAvailableMedications, fetchDoctorVisiblePatients, formatDoctorPatientName, updatePrescription } from "../../api/doctor";
 import { consultationLabel, formatDateTime, hasConsultations, patientSearchText, serviceLabel } from "./medecinShared";
 
 export default function PrescriptionsMedecin() {
@@ -14,6 +14,17 @@ export default function PrescriptionsMedecin() {
   const [sectionId, setSectionId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [editingPrescriptionId, setEditingPrescriptionId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    medicationId: "",
+    quantity: "1",
+    dosage: "",
+    route: "ORAL",
+    frequency: "DAILY",
+    durationDays: "",
+    notes: "",
+    instruction: "",
+  });
   const [form, setForm] = useState({
     medicationId: "",
     quantity: "1",
@@ -140,6 +151,77 @@ export default function PrescriptionsMedecin() {
     await load();
   };
 
+  const prescriptionStatusLabel = (status?: string | null) => {
+    const s = String(status || "").trim().toUpperCase();
+    switch (s) {
+      case "PRESCRIBED":
+        return "En attente de délivrance";
+      case "DISPENSED":
+        return "Délivrée";
+      case "PARTIALLY_DISPENSED":
+        return "Partiellement délivrée";
+      case "CANCELLED":
+        return "Annulée";
+      case "COMPLETED":
+        return "Complétée";
+      default:
+        return status || "Statut inconnu";
+    }
+  };
+
+  const canModifyPrescription = (prescription: NonNullable<DoctorPatient['prescriptions']>[number]) => {
+    const status = String(prescription.status || "").toUpperCase();
+    if (["DISPENSED", "PARTIALLY_DISPENSED", "CANCELLED", "COMPLETED"].includes(status)) {
+      return false;
+    }
+
+    const prescriptionAge = Date.now() - new Date(prescription.prescribingDate).getTime();
+    return prescriptionAge <= 24 * 60 * 60 * 1000;
+  };
+
+  const openPrescriptionEdit = (prescription: NonNullable<DoctorPatient['prescriptions']>[number]) => {
+    const firstLine = prescription.lineItems?.[0];
+    const medicationId = medications.find((item) => item.name === firstLine?.medication?.name)?.id || "";
+    setEditingPrescriptionId(prescription.id);
+    setEditForm({
+      medicationId,
+      quantity: String(firstLine?.quantity || 1),
+      dosage: firstLine?.dosage || "",
+      route: "ORAL",
+      frequency: firstLine?.frequency || "DAILY",
+      durationDays: "",
+      notes: firstLine?.notes || "",
+      instruction: prescription.instruction || "",
+    });
+  };
+
+  const savePrescriptionEdit = async () => {
+    if (!selectedConsultation || !editingPrescriptionId) {
+      return;
+    }
+
+    const medication = medications.find((item) => item.id === editForm.medicationId);
+    await updatePrescription(selectedConsultation.id, editingPrescriptionId, {
+      instruction: editForm.instruction,
+      lines: [
+        {
+          medicationId: editForm.medicationId,
+          quantity: Number(editForm.quantity || 1),
+          dosage: editForm.dosage,
+          route: editForm.route,
+          frequency: editForm.frequency,
+          durationDays: editForm.durationDays ? Number(editForm.durationDays) : undefined,
+          notes: editForm.notes,
+          unitPrice: medication?.unitPrice ? Number(medication.unitPrice) : undefined,
+        },
+      ],
+    });
+
+    setMessage("Prescription modifiee avec succes.");
+    setEditingPrescriptionId(null);
+    await load();
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
       <PageMeta title="Prescriptions medecin | D7 Clinique" description="Prescriptions depuis le stock pharmaceutique." />
@@ -183,9 +265,34 @@ export default function PrescriptionsMedecin() {
                   <Panel title="Prescriptions du patient">
                     {(selectedPatient.prescriptions || []).length === 0 ? <SmallEmpty /> : selectedPatient.prescriptions?.map((prescription) => (
                       <div key={prescription.id} className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950">
-                        <p className="font-semibold text-slate-900 dark:text-white">{prescription.status} - {prescription.prescriber?.displayName || "Medecin"}</p>
-                        <p className="mt-1 text-xs text-slate-500">{formatDateTime(prescription.prescribingDate)}</p>
-                        <p className="mt-2 text-slate-600 dark:text-slate-300">{prescription.lineItems?.map((line) => `${line.medication?.name || "Medicament"} - ${line.dosage || ""} - ${line.frequency || ""}`).join(", ") || prescription.instruction || "-"}</p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-900 dark:text-white">{prescriptionStatusLabel(prescription.status)} - {prescription.prescriber?.displayName || "Medecin"}</p>
+                            <p className="mt-1 text-xs text-slate-500">{formatDateTime(prescription.prescribingDate)}</p>
+                            <p className="mt-2 text-slate-600 dark:text-slate-300">{prescription.lineItems?.map((line) => `${line.medication?.name || "Medicament"} - ${line.dosage || ""} - ${line.frequency || ""}`).join(", ") || prescription.instruction || "-"}</p>
+                          </div>
+                          {canModifyPrescription(prescription) ? (
+                            <button onClick={() => openPrescriptionEdit(prescription)} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">Modifier</button>
+                          ) : null}
+                        </div>
+
+                        {editingPrescriptionId === prescription.id ? (
+                          <div className="mt-3 rounded-lg border border-blue-200 bg-white p-3 dark:border-blue-800 dark:bg-slate-900">
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <Select label="Médicament" value={editForm.medicationId} onChange={(value) => setEditForm((current) => ({ ...current, medicationId: value }))} options={[['', 'Choisir'], ...medications.map((medication) => [medication.id, `${medication.name}${medication.strength ? ` ${medication.strength}` : ""} - stock ${medication.availableQuantity}`] as [string, string])]} />
+                              <Input label="Quantité" value={editForm.quantity} onChange={(value) => setEditForm((current) => ({ ...current, quantity: value }))} type="number" />
+                              <Input label="Posologie" value={editForm.dosage} onChange={(value) => setEditForm((current) => ({ ...current, dosage: value }))} />
+                              <Select label="Fréquence" value={editForm.frequency} onChange={(value) => setEditForm((current) => ({ ...current, frequency: value }))} options={[['ONCE', 'Une fois'], ['DAILY', 'Quotidien'], ['BID', '2x/jour'], ['TID', '3x/jour'], ['QID', '4x/jour'], ['PRN', 'Si besoin'], ['CONTINUOUS', 'Continu']]} />
+                              <Input label="Durée (jours)" value={editForm.durationDays} onChange={(value) => setEditForm((current) => ({ ...current, durationDays: value }))} type="number" />
+                              <Input label="Note" value={editForm.notes} onChange={(value) => setEditForm((current) => ({ ...current, notes: value }))} />
+                            </div>
+                            <Textarea label="Conseils / recommandations" value={editForm.instruction} onChange={(value) => setEditForm((current) => ({ ...current, instruction: value }))} />
+                            <div className="mt-3 flex gap-2">
+                              <button onClick={() => void savePrescriptionEdit()} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white">Enregistrer</button>
+                              <button onClick={() => setEditingPrescriptionId(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">Annuler</button>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     ))}
                   </Panel>

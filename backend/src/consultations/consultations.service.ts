@@ -503,6 +503,89 @@ export class ConsultationsService {
     });
   }
 
+  async updatePrescription(consultationId: string, prescriptionId: string, dto: any, actorId?: string) {
+    const consultation = await this.findOne(consultationId);
+    await this.ensureWriteAccess(consultation.providerId, actorId);
+
+    const prescription = await this.prisma.prescription.findUnique({
+      where: { id: prescriptionId },
+      include: {
+        consultation: true,
+        lineItems: true,
+        pharmacyDispenses: true,
+      },
+    });
+
+    if (!prescription || prescription.consultationId !== consultationId) {
+      throw new NotFoundException('Prescription introuvable pour cette consultation.');
+    }
+
+    const now = new Date();
+    const createdAt = new Date(prescription.createdAt);
+    const freshnessWindowMs = 24 * 60 * 60 * 1000;
+    if (now.getTime() - createdAt.getTime() > freshnessWindowMs) {
+      throw new BadRequestException('La prescription ne peut plus être modifiée après 24h.');
+    }
+
+    if (prescription.status === 'DISPENSED' || prescription.pharmacyDispenses.some((dispense) => dispense.status === 'DISPENSED')) {
+      throw new BadRequestException('Cette prescription a déjà été délivrée.');
+    }
+
+    const lines = Array.isArray(dto.lines) ? dto.lines : [];
+    if (!lines.length) {
+      throw new BadRequestException('Aucune ligne de prescription fournie.');
+    }
+
+    const medicationIds = lines.map((line: any) => line.medicationId).filter(Boolean);
+    const medications = await this.prisma.medication.findMany({
+      where: { id: { in: medicationIds }, deletedAt: null },
+      include: { StockLot: true },
+    });
+    const medicationById = new Map(medications.map((item) => [item.id, item]));
+
+    const enrichedLines = lines.map((line: any) => {
+      const medication = medicationById.get(line.medicationId);
+      if (!medication) throw new BadRequestException('Medicament introuvable.');
+      const quantity = Number(line.quantity || 1);
+      const available = medication.StockLot.reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
+      if (available < quantity) throw new BadRequestException(`Stock insuffisant pour ${medication.name}.`);
+      const latestLot = medication.StockLot.slice().sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())[0];
+      const explicitPrice = Number(line.unitPrice ?? 0);
+      const stockPrice = Number(latestLot?.purchasePrice ?? 0);
+      return {
+        ...line,
+        quantity,
+        unitPrice: explicitPrice > 0 ? explicitPrice : stockPrice,
+      };
+    });
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.prescriptionLine.deleteMany({ where: { prescriptionId } });
+      await tx.prescription.update({
+        where: { id: prescriptionId },
+        data: {
+          instruction: dto.instruction ?? prescription.instruction,
+          status: 'PRESCRIBED',
+          version: { increment: 1 },
+          lineItems: {
+            create: enrichedLines.map((line: any) => ({
+              medicationId: line.medicationId,
+              dosage: line.dosage || 'A preciser',
+              route: line.route || 'ORAL',
+              frequency: line.frequency || 'DAILY',
+              quantity: line.quantity,
+              durationDays: line.durationDays ? Number(line.durationDays) : null,
+              notes: line.notes || null,
+            })),
+          },
+        },
+        include: { lineItems: { include: { medication: true } }, patient: true, prescriber: true, consultation: true },
+      });
+
+      return { updated: true, prescriptionId };
+    });
+  }
+
   async remove(id: string) {
     await this.findOne(id);
     await this.prisma.consultation.delete({ where: { id } });

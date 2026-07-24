@@ -99,12 +99,17 @@ export class PharmacyController {
   @Post('prescriptions/:id/dispense')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
   dispensePrescription(
-    @Param('id', ParseUUIDPipe) id: string, // <-- Changé ici ! ParseUUIDPipe et type string
-    @Body() body: any, 
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: any,
     @Request() req: any
   ) {
-    // req.user?.userId correspond bien au type attendu par votre PharmacyService (actorId: string)
     return this.pharmacyService.dispensePrescription(id, body, req.user?.userId);
+  }
+
+  @Post('prescriptions/:id/cancel-dispense')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+  cancelDispense(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    return this.pharmacyService.cancelDispense(id, req.user?.userId);
   }
 
   // 6. OBTENIR UN ÉLÉMENT PAR SON ID (Toujours tout en bas !)

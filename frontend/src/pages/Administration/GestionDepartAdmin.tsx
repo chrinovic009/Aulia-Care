@@ -37,6 +37,9 @@ type Department = {
 // 1. Définition de la liste des départements officiels de la clinique
 const institutionalDepartments = [
   { name: "Medecine Générale", code: "MED-GEN", type: "MEDICAL" },
+  { name: "Medecine Interne", code: "MED-INT", type: "MEDICAL" },
+  { name: "Gynécologie Obtétrique", code: "GYN-OBS", type: "MEDICAL" },
+  { name: "Infirmérie", code: "Inf", type: "MEDICAL" },
   { name: "Chirurgie Générale", code: "CHI-GEN", type: "MEDICAL" },
   { name: "Imagerie & Diagnostics", code: "IMA-DIAG", type: "TECHNICAL" },
   { name: "Laboratoire Medical", code: "LAB-MED", type: "TECHNICAL" },
@@ -288,6 +291,9 @@ export default function GestionDepartAdmin() {
             <select value={departmentForm.name} onChange={(event) => setDepartmentForm((current) => ({ ...current, name: event.target.value }))} className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white">
               <option value="">-- Sélectionnez un département --</option>
               <option value="Medecine Générale">Médecine Générale</option>
+              <option value="Medecine Interne">Medecine Interne</option>
+              <option value="Gynécologie Obstétrique">Gynécologie Obstétrique</option>
+              <option value="Infirmérie">Infirmérie</option>
               <option value="Chirurgie Générale">Chirurgie Générale</option>
               <option value="Imagerie & Diagnostics">Imagerie & Diagnostics</option>
               <option value="Laboratoire Medical">Laboratoire Médical</option>
@@ -297,7 +303,6 @@ export default function GestionDepartAdmin() {
               <option value="Urgences & Soins Intensifs">Urgences & Soins Intensifs</option>
               <option value="Unité d'Hospitalisation">Unité d'Hospitalisation</option>
               <option value="Prevention & Vaccination">Prévention & Vaccination</option>
-              <option value="Radiologie">Radiologie</option>
               <option value="Administration & Gestion">Administration & Gestion</option>
             </select>
             <input value={departmentForm.code} onChange={(event) => setDepartmentForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />

@@ -53,6 +53,17 @@ export class ConsultationsController {
     return this.consultationsService.createPrescription(id, body, req.user?.userId);
   }
 
+  @Patch(':id/prescriptions/:prescriptionId')
+  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  updatePrescription(
+    @Param('id') id: string,
+    @Param('prescriptionId') prescriptionId: string,
+    @Body() body: any,
+    @Request() req: any,
+  ) {
+    return this.consultationsService.updatePrescription(id, prescriptionId, body, req.user?.userId);
+  }
+
   @Delete(':id')
   @Roles('SUPER_ADMIN', 'ADMIN')
   remove(@Param('id') id: string) {

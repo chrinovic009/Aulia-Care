@@ -115,7 +115,6 @@ export class PharmacyService {
   }
 
   async dispensePrescription(id: string, body: any, actorId?: string) {
-    // 1. Vérifier que l'ordonnance est bien payée d'abord
     const paidInvoice = await this.prisma.invoice.findFirst({
       where: {
         remarks: { contains: `Prescription:${id}` },
@@ -123,14 +122,21 @@ export class PharmacyService {
       },
     });
 
+    const paidInvoiceLines = paidInvoice ? await this.prisma.invoiceLine.findMany({
+      where: { invoiceId: paidInvoice.id },
+    }) : [];
+
     if (!paidInvoice) {
       throw new BadRequestException('La prescription doit être payée avant délivrance.');
     }
 
-    // 2. Récupérer l'ordonnance et ses lignes
     const prescription = await this.prisma.prescription.findUnique({
       where: { id },
-      include: { lineItems: true }
+      include: {
+        lineItems: { include: { medication: true } },
+        patient: true,
+        prescriber: true,
+      },
     });
 
     if (!prescription) {
@@ -141,18 +147,58 @@ export class PharmacyService {
       throw new BadRequestException('Cette ordonnance a déjà été délivrée.');
     }
 
-    // 3. Consommer le stock et enregistrer la transaction
     return await this.prisma.$transaction(async (tx) => {
-      // Votre logique de boucle de déstockage existante...
       for (const line of prescription.lineItems) {
         const quantity = Number(line.quantity);
-        await this.consumeMedication(tx, line.medicationId, quantity, actorId, 'Délivrance ordonnance');
+        await this.consumeMedication(tx, line.medicationId, quantity, actorId, `Prescription:${id}`);
       }
 
-      // Mettre à jour le statut de l'ordonnance
-      return tx.prescription.update({
+      const dispense = await tx.pharmacyDispense.create({
+        data: {
+          prescriptionId: prescription.id,
+          dispensedById: actorId || null,
+          status: 'DISPENSED',
+          notes: body?.notes || null,
+          location: body?.location || null,
+        },
+      });
+
+      await Promise.all(
+        prescription.lineItems.map(async (line) => {
+          const invoiceLine = paidInvoiceLines.find((item: any) => {
+            const label = String(item.label || '').toLowerCase();
+            const medicationName = String(line.medication?.name || '').toLowerCase();
+            return label.includes(medicationName) || label.includes(String(line.dosage || '').toLowerCase());
+          });
+
+          const unitPrice = Number(invoiceLine?.unitPrice ?? 0);
+          const quantity = Number(line.quantity || 0);
+          const totalPrice = Number(invoiceLine?.totalAmount ?? unitPrice * quantity);
+
+          await tx.pharmacyDispenseLine.create({
+            data: {
+              pharmacyDispenseId: dispense.id,
+              medicationId: line.medicationId,
+              quantity,
+              unitPrice,
+              totalPrice,
+            },
+          });
+        }),
+      );
+
+      await tx.prescription.update({
         where: { id },
-        data: { status: 'DISPENSED' }
+        data: { status: 'DISPENSED' },
+      });
+
+      return tx.pharmacyDispense.findUnique({
+        where: { id: dispense.id },
+        include: {
+          prescription: { include: { patient: true, prescriber: true } },
+          dispensedBy: true,
+          lines: { include: { medication: true } },
+        },
       });
     });
   }
@@ -205,7 +251,7 @@ export class PharmacyService {
         type: 'SALE',
         quantity: -used,
         unitPrice: Number(lot.purchasePrice || 0),
-        reference: `IndependentSale:${data?.source || 'PHARMACY'}`,
+        reference: 'Vente:client externe',
         performedById: actorId,
         clinicId: data?.clinicId || null,
       });
@@ -233,18 +279,29 @@ export class PharmacyService {
   }
 
   async getHistory() {
-    const [dispenses, sales] = await Promise.all([
+    const toNumber = (value: unknown) => {
+      if (value == null) return 0;
+      if (typeof value === 'number') return value;
+      if (typeof value === 'string') return Number(value || 0);
+      if (typeof value === 'object' && 'toString' in value) {
+        const text = String((value as { toString: () => string }).toString());
+        return Number(text || 0);
+      }
+      return Number(value || 0);
+    };
+
+    const [dispenses, sales, invoices] = await Promise.all([
       this.prisma.pharmacyDispense.findMany({
         where: { deletedAt: null },
         include: {
-          prescription: { include: { patient: true, prescriber: true } },
+          prescription: { include: { patient: true, prescriber: true, consultation: true } },
           dispensedBy: true,
           lines: { include: { medication: true } },
         },
         orderBy: { dispensedAt: 'desc' },
       }),
       this.prisma.stockTransaction.findMany({
-        where: { type: 'SALE' },
+        where: { type: { in: ['SALE', 'OUT'] } },
         include: {
           medication: true,
           performedBy: true,
@@ -252,16 +309,59 @@ export class PharmacyService {
         },
         orderBy: { createdAt: 'desc' },
       }),
+      this.prisma.invoice.findMany({
+        where: { deletedAt: null, remarks: { contains: 'Prescription:' } },
+      }),
     ]);
+
+    const invoiceLinesByInvoiceId = new Map<string, any[]>();
+    const invoiceByPrescriptionId = new Map<string, any>();
+
+    for (const invoice of invoices) {
+      const prescriptionMatch = invoice.remarks?.match(/Prescription:([a-zA-Z0-9-]+)/);
+      if (prescriptionMatch?.[1]) {
+        invoiceByPrescriptionId.set(prescriptionMatch[1], invoice);
+      }
+
+      const lines = await this.prisma.invoiceLine.findMany({
+        where: { invoiceId: invoice.id },
+      });
+      invoiceLinesByInvoiceId.set(invoice.id, lines);
+    }
 
     const dispenseRecords = dispenses.map((dispense) => {
       const patientName = [dispense.prescription?.patient?.firstName, dispense.prescription?.patient?.lastName]
         .filter(Boolean)
         .join(' ') || 'Patient inconnu';
-      const medicationNames = dispense.lines.map((line) => line.medication?.name || 'Médicament').slice(0, 3);
+
+      const consultationTitle = [
+        dispense.prescription?.consultation?.chiefComplaint,
+        dispense.prescription?.consultation?.diagnosis,
+        dispense.prescription?.consultation?.clinicalSummary,
+      ].find(Boolean) || 'Consultation';
+      const normalizedConsultationTitle = String(consultationTitle).trim().replace(/\s+/g, ' ');
+
+      const invoice = invoiceByPrescriptionId.get(dispense.prescriptionId);
+      const fallbackInvoiceLines = invoice ? invoiceLinesByInvoiceId.get(invoice.id) || [] : [];
+      const lines = dispense.lines.length > 0 ? dispense.lines : fallbackInvoiceLines;
+
+      const medicationNames = lines
+        .map((line: any) => line.medication?.name || line.label || 'Médicament')
+        .filter(Boolean)
+        .slice(0, 3);
       const medicinesLabel = medicationNames.length > 0 ? medicationNames.join(', ') : 'Médicament';
-      const quantity = dispense.lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0);
-      const amount = dispense.lines.reduce((sum, line) => sum + Number(line.totalPrice || 0), 0);
+      const quantity = lines.reduce((sum, line: any) => sum + toNumber(line.quantity || 0), 0);
+      const invoiceAmount = invoice ? toNumber(invoice.totalAmount || 0) : 0;
+      const amount = invoiceAmount > 0
+        ? invoiceAmount
+        : lines.reduce((sum, line: any) => {
+            const totalPrice = toNumber(line.totalPrice ?? line.amount ?? 0);
+            const unitPrice = toNumber(line.unitPrice ?? 0);
+            const qty = toNumber(line.quantity || 0);
+            if (totalPrice > 0) return sum + totalPrice;
+            if (unitPrice > 0 && qty > 0) return sum + unitPrice * qty;
+            return sum;
+          }, 0);
       const actorName = dispense.dispensedBy?.displayName || [dispense.dispensedBy?.firstName, dispense.dispensedBy?.lastName].filter(Boolean).join(' ') || 'Inconnu';
 
       return {
@@ -273,7 +373,7 @@ export class PharmacyService {
         medicationName: medicinesLabel,
         quantity,
         amount,
-        reference: `Prescription:${dispense.prescriptionId}`,
+        reference: `Prescription:${normalizedConsultationTitle}`,
         actorName,
         status: dispense.status || 'DISPENSED',
         notes: dispense.notes || null,
@@ -283,18 +383,20 @@ export class PharmacyService {
 
     const saleRecords = sales.map((sale) => {
       const actorName = sale.performedBy?.displayName || [sale.performedBy?.firstName, sale.performedBy?.lastName].filter(Boolean).join(' ') || 'Inconnu';
-      const quantity = Math.abs(Number(sale.quantity || 0));
-      const amount = Number(sale.unitPrice || 0) * quantity;
+      const quantity = Math.abs(toNumber(sale.quantity || 0));
+      const amount = toNumber(sale.unitPrice || 0) * quantity;
+      const isDirectSale = sale.type === 'SALE' || /vente/i.test(sale.reference || '') || /sale/i.test(sale.reference || '');
+
       return {
         id: sale.id,
-        type: 'SALE',
-        typeLabel: 'Vente directe',
+        type: isDirectSale ? 'SALE' : 'DISPENSE',
+        typeLabel: isDirectSale ? 'Vente directe' : 'Sortie stock',
         createdAt: sale.createdAt?.toISOString(),
-        patientName: 'Vente directe',
+        patientName: isDirectSale ? 'Vente directe' : 'Sortie stock',
         medicationName: sale.medication?.name || 'Médicament',
         quantity,
         amount,
-        reference: sale.reference || 'Vente indépendante',
+        reference: sale.reference || (isDirectSale ? 'Vente:client externe' : 'Sortie stock'),
         actorName,
         status: 'COMPLETED',
         notes: sale.reference || null,
@@ -303,6 +405,110 @@ export class PharmacyService {
     });
 
     return [...dispenseRecords, ...saleRecords].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async cancelDispense(id: string, actorId?: string) {
+    const prescription = await this.prisma.prescription.findUnique({
+      where: { id },
+      include: {
+        pharmacyDispenses: {
+          include: {
+            lines: true,
+          },
+        },
+      },
+    });
+
+    if (!prescription) {
+      throw new NotFoundException('Prescription introuvable.');
+    }
+
+    const activeDispense = prescription.pharmacyDispenses.find((dispense) => dispense.status !== 'CANCELLED');
+    if (!activeDispense) {
+      throw new BadRequestException('Aucune délivrance active à annuler pour cette prescription.');
+    }
+
+    const now = Date.now();
+    const createdAt = new Date(prescription.createdAt).getTime();
+    const hasDoctorModification = Number(prescription.version || 0) > 1;
+    const withinEditWindow = now - createdAt <= 24 * 60 * 60 * 1000;
+
+    if (!hasDoctorModification || !withinEditWindow) {
+      throw new BadRequestException('La délivrance ne peut être annulée que si le médecin a modifié la prescription avant la délivrance et dans les 24h.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const consumedTransactions = await tx.stockTransaction.findMany({
+        where: {
+          type: 'OUT',
+          reference: { contains: `Prescription:${id}` },
+          createdAt: {
+            gte: activeDispense.dispensedAt,
+            lt: new Date(activeDispense.dispensedAt.getTime() + 5 * 60 * 1000),
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      const fallbackTransactions = consumedTransactions.length === 0
+        ? await tx.stockTransaction.findMany({
+            where: {
+              type: 'OUT',
+              createdAt: {
+                gte: activeDispense.dispensedAt,
+                lt: new Date(activeDispense.dispensedAt.getTime() + 5 * 60 * 1000),
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          })
+        : [];
+
+      const transactionsToRestore = consumedTransactions.length > 0 ? consumedTransactions : fallbackTransactions;
+
+      if (transactionsToRestore.length === 0) {
+        throw new BadRequestException('Aucune transaction de stock à annuler pour cette délivrance.');
+      }
+
+      for (const transaction of transactionsToRestore) {
+        const lot = transaction.lotId
+          ? await tx.stockLot.findUnique({ where: { id: transaction.lotId } })
+          : null;
+
+        if (!lot) {
+          continue;
+        }
+
+        const restoredQuantity = Math.abs(Number(transaction.quantity || 0));
+        await tx.stockLot.update({
+          where: { id: lot.id },
+          data: { quantity: Number(lot.quantity || 0) + restoredQuantity },
+        });
+
+        await tx.stockTransaction.create({
+          data: {
+            medicationId: transaction.medicationId,
+            lotId: lot.id,
+            type: 'IN',
+            quantity: restoredQuantity,
+            unitPrice: transaction.unitPrice,
+            reference: `Annulation délivrance:${id}`,
+            performedById: actorId,
+          },
+        });
+      }
+
+      await tx.pharmacyDispense.update({
+        where: { id: activeDispense.id },
+        data: { status: 'CANCELLED', notes: `${activeDispense.notes || ''} | Annulé`.trim() || 'Annulé' },
+      });
+
+      await tx.prescription.update({
+        where: { id },
+        data: { status: 'PRESCRIBED' },
+      });
+
+      return { cancelled: true, prescriptionId: id };
+    });
   }
 
   async findOne(id: string) {
