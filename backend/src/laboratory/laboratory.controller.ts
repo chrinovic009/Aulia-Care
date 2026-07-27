@@ -152,14 +152,14 @@ export class LaboratoryController {
 
   @Patch('catalogue/:kind/:id')
   @Roles('LAB_MANAGER')
-  updateCatalogue(@Param('kind') kind: 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables', @Param('id') id: string, @Body() body: any) {
-    return this.laboratoryService.updateCatalogue(kind, id, body);
+  updateCatalogue(@Param('kind') kind: string, @Param('id') id: string, @Body() body: any) {
+    return this.laboratoryService.updateCatalogue(kind as any, id, body);
   }
 
   @Delete('catalogue/:kind/:id')
   @Roles('LAB_MANAGER')
-  deleteCatalogue(@Param('kind') kind: 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables', @Param('id') id: string) {
-    return this.laboratoryService.deleteCatalogue(kind, id);
+  deleteCatalogue(@Param('kind') kind: string, @Param('id') id: string) {
+    return this.laboratoryService.deleteCatalogue(kind as any, id);
   }
 
   @Get(':id')

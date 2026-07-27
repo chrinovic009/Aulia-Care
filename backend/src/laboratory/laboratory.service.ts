@@ -1070,11 +1070,45 @@ export class LaboratoryService {
   }
 
   /** Catalogue changes are manager-only at controller level. Clinical history is never erased. */
-  async updateCatalogue(kind: 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables', id: string, dto: any) {
+  async updateCatalogue(kind: 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables' | 'test-parameters' | 'sample-requirements' | 'consumable-requirements' | 'stock', id: string, dto: any) {
     if (kind === 'sections') return this.prisma.labSection.update({ where: { id }, data: { name: dto.name?.trim(), description: dto.description?.trim() || null, order: dto.order === undefined ? undefined : Number(dto.order) || 0, active: dto.active } });
     if (kind === 'categories') return this.prisma.labCategory.update({ where: { id }, data: { sectionId: dto.sectionId, name: dto.name?.trim(), code: dto.code?.trim() || null, description: dto.description?.trim() || null, order: dto.order === undefined ? undefined : Number(dto.order) || 0, active: dto.active } });
     if (kind === 'sample-types') return this.prisma.labSampleType.update({ where: { id }, data: { name: dto.name?.trim(), description: dto.description?.trim() || null, active: dto.active } });
     if (kind === 'consumables') return this.prisma.labConsumable.update({ where: { id }, data: { name: dto.name?.trim(), code: dto.code?.trim(), description: dto.description?.trim() || null, unit: dto.unit?.trim(), active: dto.active } });
+    if (kind === 'test-parameters') return this.prisma.labTestParameter.update({ where: { id }, data: {
+      labTestId: dto.labTestId || undefined,
+      code: dto.code?.trim(),
+      name: dto.name?.trim(),
+      unit: dto.unit?.trim() || undefined,
+      resultType: dto.resultType ? (dto.resultType as any) : undefined,
+      referenceRange: dto.referenceRange?.trim() || undefined,
+      minValue: dto.minValue === undefined || dto.minValue === '' ? undefined : Number(dto.minValue),
+      maxValue: dto.maxValue === undefined || dto.maxValue === '' ? undefined : Number(dto.maxValue),
+      order: dto.order === undefined ? undefined : Number(dto.order) || 0,
+      active: dto.active,
+    } });
+    if (kind === 'sample-requirements') return this.prisma.labTestSampleRequirement.update({ where: { id }, data: {
+      labTestId: dto.labTestId || undefined,
+      labSampleTypeId: dto.labSampleTypeId || undefined,
+      volumeRequired: dto.volumeRequired === undefined || dto.volumeRequired === '' ? undefined : Number(dto.volumeRequired),
+      volumeUnit: dto.volumeUnit?.trim() || undefined,
+      storageCondition: dto.storageCondition?.trim() || undefined,
+      maxAgeMinutes: dto.maxAgeMinutes === undefined || dto.maxAgeMinutes === '' ? undefined : Number(dto.maxAgeMinutes),
+      instructions: dto.instructions?.trim() || undefined,
+    } });
+    if (kind === 'consumable-requirements') return this.prisma.labTestConsumableRequirement.update({ where: { id }, data: {
+      labTestId: dto.labTestId || undefined,
+      labConsumableId: dto.labConsumableId || undefined,
+      quantity: dto.quantity === undefined || dto.quantity === '' ? undefined : Number(dto.quantity),
+      unit: dto.unit?.trim() || undefined,
+    } });
+    if (kind === 'stock') return this.prisma.labConsumableStock.update({ where: { id }, data: {
+      quantity: dto.quantity === undefined || dto.quantity === '' ? undefined : Number(dto.quantity),
+      minimumLevel: dto.minimumLevel === undefined || dto.minimumLevel === '' ? undefined : Number(dto.minimumLevel),
+      criticalLevel: dto.criticalLevel === undefined || dto.criticalLevel === '' ? undefined : Number(dto.criticalLevel),
+      location: dto.location?.trim() || undefined,
+      lastUpdatedAt: new Date(),
+    } });
 
     const existing = await this.prisma.labTest.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Examen de laboratoire introuvable.');
@@ -1102,9 +1136,13 @@ export class LaboratoryService {
     await tx.labTest.delete({ where: { id } });
   }
 
-  async deleteCatalogue(kind: 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables', id: string) {
+  async deleteCatalogue(kind: 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables' | 'test-parameters' | 'sample-requirements' | 'consumable-requirements' | 'stock', id: string) {
     return this.prisma.$transaction(async (tx) => {
       if (kind === 'tests') { await this.removeTestFromCatalogue(tx, id); return { deleted: true, kind, id }; }
+      if (kind === 'test-parameters') { await tx.labTestParameter.delete({ where: { id } }); return { deleted: true, kind, id }; }
+      if (kind === 'sample-requirements') { await tx.labTestSampleRequirement.delete({ where: { id } }); return { deleted: true, kind, id }; }
+      if (kind === 'consumable-requirements') { await tx.labTestConsumableRequirement.delete({ where: { id } }); return { deleted: true, kind, id }; }
+      if (kind === 'stock') { await tx.labConsumableStock.delete({ where: { id } }); return { deleted: true, kind, id }; }
       if (kind === 'categories') {
         const tests = await tx.labTest.findMany({ where: { categoryId: id }, select: { id: true } });
         for (const test of tests) await this.removeTestFromCatalogue(tx, test.id);
@@ -1249,11 +1287,22 @@ export class LaboratoryService {
       if (isNfsPanel) {
         await tx.labTestParameter.createMany({
           data: [
-            ['HB', 'Hémoglobine', 'g/dL'], ['HCT', 'Hématocrite', '%'], ['RBC', 'Hématies', '10^6/µL'],
-            ['WBC', 'Leucocytes', '10^3/µL'], ['PLT', 'Plaquettes', '10^3/µL'], ['MCV', 'VGM', 'fL'],
-            ['MCH', 'TCMH', 'pg'], ['MCHC', 'CCMH', 'g/dL'], ['NEUT', 'Neutrophiles', '%'],
-            ['LYMPH', 'Lymphocytes', '%'], ['MONO', 'Monocytes', '%'], ['EOS', 'Éosinophiles', '%'], ['BASO', 'Basophiles', '%'],
-          ].map(([code, name, unit], order) => ({ labTestId: createdTest.id, code, name, unit, resultType: 'NUMERIC' as any, order })),
+            ['GB', 'Globules Blancs', '10^3/µL', '4000-12000'],
+            ['NEUT', 'Neutrophiles', '%', '50-70'],
+            ['LYMPH', 'Lymphocytes', '%', '20-60'],
+            ['MONO', 'Monocytes', '%', '3-12'],
+            ['EOS', 'Éosinophiles', '%', '0.5-5'],
+            ['BASO', 'Basophiles', '%', '0.0-1.0'],
+            ['RDW', 'Globules Rouges', '%', '4.5-5.5 (H) / 4.0-5.0 (F)'],
+            ['HB', 'Hémoglobine', 'g/dL', '12-16'],
+            ['HCT', 'Hématocrite', '%', '35-49'],
+            ['MCV', 'VGM', 'fL', '80-100'],
+            ['CCM', 'CCM', 'pg', '27-34'],
+            ['MCHC', 'CCMH', 'g/dL', '31-37'],
+            ['PS', 'Plaquettes Sanguines', '10^3/µL', '100-300'],
+            ['VPM', 'VPM', 'fL', '6.5-12'],
+            ['PTC', 'PTC', '%', '0.108-0.282'],
+          ].map(([code, name, unit, reference], order) => ({ labTestId: createdTest.id, code, name, unit, referenceRange: reference, resultType: 'NUMERIC' as any, order })),
           skipDuplicates: true,
         });
       }
@@ -1289,25 +1338,14 @@ export class LaboratoryService {
     });
   }
 
-  async createSampleType(dto: { name: string; labTestId?: string; description?: string; active?: boolean }) {
-    const createdSampleType = await this.prisma.labSampleType.create({
+  async createSampleType(dto: { name: string; description?: string; active?: boolean }) {
+    return this.prisma.labSampleType.create({
       data: {
         name: dto.name.trim(),
         description: dto.description?.trim() || undefined,
         active: dto.active ?? true,
       },
     });
-
-    if (dto.labTestId) {
-      await this.prisma.labTestSampleRequirement.create({
-        data: {
-          labTestId: dto.labTestId,
-          labSampleTypeId: createdSampleType.id,
-        },
-      });
-    }
-
-    return createdSampleType;
   }
 
   async createSampleRequirement(dto: {
@@ -1788,7 +1826,7 @@ export class LaboratoryService {
       }
     }
 
-    const directRelease = await this.technicianDirectReleaseEnabled();
+    const technicianDirectRelease = await this.technicianDirectReleaseEnabled();
     const recipientId = request.requestedById || request.consultation?.providerId;
     const itemForResult = dto.labRequestItemId
       ? await this.prisma.labRequestItem.findUnique({ where: { id: dto.labRequestItemId }, include: { assignedTo: true } })
@@ -1797,6 +1835,7 @@ export class LaboratoryService {
       ? await this.prisma.user.findUnique({ where: { id: reportedById }, select: { primaryRole: true } })
       : null;
     const isManager = reporter?.primaryRole === 'LAB_MANAGER';
+    const canDirectSend = technicianDirectRelease || isManager;
     if (itemForResult?.assignedToId && itemForResult.assignedToId !== reportedById && !isManager) {
       throw new BadRequestException('Cette analyse a ete attribuee a un autre technicien. Vous pouvez la consulter mais pas enregistrer de resultat.');
     }
@@ -1809,7 +1848,7 @@ export class LaboratoryService {
           resultCode: dto.resultCode || dto.resultName || 'RESULT',
           resultName: dto.resultName,
           resultType: dto.resultType || 'MULTI_PARAMETER',
-          resultStatus: directRelease ? 'BIOLOGICALLY_VALIDATED' : 'PENDING',
+          resultStatus: canDirectSend ? 'BIOLOGICALLY_VALIDATED' : 'PENDING',
           resultValue: dto.resultValue,
           numericValue: dto.numericValue || undefined,
           textValue: dto.textValue || undefined,
@@ -1819,8 +1858,8 @@ export class LaboratoryService {
           reportedById,
           technicalValidatedById: reportedById,
           technicalValidationAt: new Date(),
-          biologicalValidatedById: directRelease ? reportedById : undefined,
-          biologicalValidationAt: directRelease ? new Date() : undefined,
+          biologicalValidatedById: canDirectSend ? reportedById : undefined,
+          biologicalValidationAt: canDirectSend ? new Date() : undefined,
           comments: dto.comments || null,
         },
       });
@@ -1839,14 +1878,11 @@ export class LaboratoryService {
         });
       }
 
-      // Determine whether we can directly send the result/notification
-      const canDirectSend = directRelease;
-
       await tx.labRequest.update({
         where: { id },
         data: {
-          status: directRelease ? 'AVAILABLE' : 'TECHNICAL_VALIDATION',
-          completedAt: directRelease ? new Date() : undefined,
+          status: canDirectSend ? 'AVAILABLE' : 'TECHNICAL_VALIDATION',
+          completedAt: canDirectSend ? new Date() : undefined,
           performedAt: new Date(),
           sentAt: canDirectSend ? new Date() : null,
         },
@@ -1901,7 +1937,7 @@ export class LaboratoryService {
         }
       }
 
-      const managerUsers = directRelease
+      const managerUsers = canDirectSend
         ? []
         : await tx.user.findMany({
             where: {

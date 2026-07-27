@@ -32,6 +32,18 @@ const formatDate = (value?: string | null) => {
   return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 };
 
+const isNfsExam = (name?: string | null) =>
+  Boolean(/(^|\s)(nfs|h[eé]mogramme|num[eé]ration formule sanguine)(\s|$)/i.test(name || ""));
+
+const formatLabResultParameter = (parameter: any) => {
+  const name = parameter.labTestParameter?.name || "Paramètre";
+  const value = parameter.valueNumeric?.toString() || parameter.valueText || "-";
+  const unit = parameter.labTestParameter?.unit ? ` ${parameter.labTestParameter.unit}` : "";
+  const reference = parameter.labTestParameter?.referenceRange ? ` | Référence : ${parameter.labTestParameter.referenceRange}` : "";
+  const interpretation = parameter.interpretation ? ` | Interprétation : ${parameter.interpretation}` : "";
+  return `${name}: ${value}${unit}${reference}${interpretation}`;
+};
+
 const serviceLabel = (patient: DoctorPatient) =>
   typeof patient.service === "string" ? patient.service : patient.service?.name || "Service non renseigne";
 
@@ -719,7 +731,7 @@ function getHistoryBadgeLabel(kind: string, parsed: any, patient: DoctorPatient)
     const hasResults = Boolean(labRequest.results?.some((result) => result.resultValue?.trim()));
     const status = labRequest.status?.toString().toUpperCase();
 
-    if (hasResults || ["AVAILABLE", "SENT", "VERIFIED", "COMPLETED", "TECHNICAL_VALIDATED", "BIOLOGICALLY_VALIDATED"].includes(status || "")) {
+    if (hasResults || ["AVAILABLE", "SENT", "VERIFIED", "COMPLETED"].includes(status || "")) {
       return "Résultat disponible";
     }
     if (status === "REQUESTED" || status === "PENDING" || status === "AWAITING_PAYMENT") {
@@ -781,10 +793,44 @@ function renderHistoryDetails(kind: string, parsed: any, patient: DoctorPatient,
       || "-";
     const price = labRequest?.price ?? labRequest?.charge ?? labRequest?.chargeAmount ?? labTest?.price ?? null;
     const results = labRequest?.results || [];
+    const firstResult = results[0];
+    const delayValue = labRequest ? getLabDelay({ requestedAt: labRequest.requestedAt, receivedAt: firstResult?.reportedAt || firstResult?.createdAt || labRequest.completedAt }) : "-";
+    const isNfsRequest = isNfsExam(examName);
+    const nfsParameters = Array.isArray(firstResult?.parameters) ? firstResult.parameters : [];
+
+    if (isNfsRequest) {
+      return (
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Info label="Nom de l'examen" value={examName} />
+            <Info label="Département" value={department} />
+            <Info label="Prix de l'examen" value={formatCurrencyValue(price)} />
+            <Info label="Délai" value={delayValue} />
+          </div>
+          {nfsParameters.length > 0 ? (
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+              <p className="font-semibold text-slate-900 dark:text-white">Resultats</p>
+              <div className="mt-4 space-y-3">
+                {nfsParameters.map((parameter: any, index: number) => (
+                  <div key={`nfs-param-${index}`} className="rounded-2xl border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
+                    <p className="font-medium text-slate-800 dark:text-slate-100">{parameter.labTestParameter?.name || "Paramètre"}</p>
+                    <p className="mt-1 text-slate-600 dark:text-slate-300">
+                      Valeur: {parameter.valueNumeric?.toString() || parameter.valueText || "-"}{parameter.labTestParameter?.unit ? ` ${parameter.labTestParameter.unit}` : ""}
+                    </p>
+                    {parameter.labTestParameter?.referenceRange ? <p className="mt-1 text-slate-600 dark:text-slate-300">Référence: {parameter.labTestParameter.referenceRange}</p> : null}
+                    {parameter.interpretation ? <p className="mt-1 text-slate-600 dark:text-slate-300">Interprétation: {parameter.interpretation}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      );
+    }
+
     const resultValue = results.length > 0 ? results.map((result: any) => `${result.resultName || "Résultat"}: ${result.resultValue || "-"}${result.units ? ` ${result.units}` : ""}`).join(" | ") : "-";
-    const referenceValue = results[0]?.referenceRange || results[0]?.reference || results[0]?.reference_range || labTest?.referenceRange || labTest?.referenceRangeText || "-";
-    const interpretation = results[0]?.interpretation || results[0]?.notes || labRequest?.interpretation || "-";
-    const delayValue = labRequest ? getLabDelay({ requestedAt: labRequest.requestedAt, receivedAt: results[0]?.reportedAt || results[0]?.createdAt || labRequest.completedAt }) : "-";
+    const referenceValue = firstResult?.referenceRange || firstResult?.reference || firstResult?.reference_range || labTest?.referenceRange || labTest?.referenceRangeText || "-";
+    const interpretation = firstResult?.interpretation || firstResult?.notes || labRequest?.interpretation || "-";
 
     return (
       <div className="grid gap-4 md:grid-cols-2">
@@ -1097,7 +1143,10 @@ function printPatientRecord(patient: DoctorPatient, position?: number, labTests:
     `).join("");
 
     // Lab requests detailed rows (includes date, price fallbacks, readable delay)
-    const labRows = (patient.labRequests || []).map((request: any) => {
+    const normalLabRows: string[] = [];
+    const nfsLabRows: string[] = [];
+
+    (patient.labRequests || []).forEach((request: any) => {
       const requestedAt = request.requestedAt ? new Date(request.requestedAt) : null;
       const firstResult = (request.results || [])[0];
       const resultReceivedAt = firstResult?.reportedAt || firstResult?.createdAt || request.completedAt || null;
@@ -1123,20 +1172,76 @@ function printPatientRecord(patient: DoctorPatient, position?: number, labTests:
 
       const interpretation = request.interpretation || firstResult?.interpretation || "-";
       const diagnostic = request.diagnostic || request.consultation?.diagnosis || "-";
+      const isNfsRequest = isNfsExam(examName);
+      const parameterRows = Array.isArray(firstResult?.parameters) ? firstResult.parameters.map((parameter: any, index: number) => {
+        const paramName = parameter.labTestParameter?.name || 'Paramètre';
+        const paramValue = parameter.valueNumeric?.toString() || parameter.valueText || '-';
+        const paramUnit = parameter.labTestParameter?.unit ? ` ${parameter.labTestParameter.unit}` : '';
+        const paramReference = parameter.labTestParameter?.referenceRange ? `Référence: ${parameter.labTestParameter.referenceRange}` : '';
+        const paramInterpretation = parameter.interpretation ? `Interprétation: ${parameter.interpretation}` : '';
+        return `
+          <div style="margin-bottom: 8px;">
+            <strong>${paramName}</strong><br/>
+            Valeur: ${paramValue}${paramUnit}${paramReference ? `<br/>${paramReference}` : ''}${paramInterpretation ? `<br/>${paramInterpretation}` : ''}
+          </div>
+        `;
+      }).join('') : [];
 
-      return `
-        <tr>
-          <td>${dateCell}</td>
-          <td>${examName}</td>
-          <td>${departmentName}</td>
-          <td>${delayText}</td>
-          <td>${priceDisplay}</td>
-          <td>${resultDisplay}${rReference ? `<br/><small>valeur de référence: ${rReference}</small>` : ''}</td>
-          <td>${interpretation}</td>
-          <td>${diagnostic}</td>
-        </tr>
-      `;
-    }).join("");
+      if (isNfsRequest) {
+        nfsLabRows.push(`
+          <tr>
+            <td>${dateCell}</td>
+            <td>${request.specimenType || 'NFS'}</td>
+            <td>${examName}</td>
+            <td>${delayText}</td>
+            <td>${priceDisplay}</td>
+            <td>${parameterRows.length > 0 ? parameterRows : 'Aucun sous-examen disponible'}</td>
+          </tr>
+        `);
+      } else {
+        normalLabRows.push(`
+          <tr>
+            <td>${dateCell}</td>
+            <td>${examName}</td>
+            <td>${departmentName}</td>
+            <td>${delayText}</td>
+            <td>${priceDisplay}</td>
+            <td>${resultDisplay}${rReference ? `<br/><small>valeur de référence: ${rReference}</small>` : ''}</td>
+            <td>${interpretation}</td>
+            <td>${diagnostic}</td>
+          </tr>
+        `);
+      }
+    });
+
+    const labSectionHtml = [`
+      ${normalLabRows.length > 0 ? `
+        <div class="section">
+          <div class="section-title">Laboratoire</div>
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Echantillon</th><th>Examen</th><th>Délai</th><th>Prix & paiement</th><th>Résultat</th><th>Interprétation</th><th>Diagnostic</th></tr>
+            </thead>
+            <tbody>
+              ${normalLabRows.join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
+      ${nfsLabRows.length > 0 ? `
+        <div class="section">
+          <div class="section-title">Laboratoire</div>
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Echantillon</th><th>Examen</th><th>Délai</th><th>Prix & paiement</th><th>Resultats</th></tr>
+            </thead>
+            <tbody>
+              ${nfsLabRows.join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
+    `].join('');
 
     function translatePrescriptionStatus(status?: string | null) {
       if (!status) return "Statut inconnu";
@@ -1289,7 +1394,7 @@ function printPatientRecord(patient: DoctorPatient, position?: number, labTests:
                 <tr><th>Date</th><th>Echantillon</th><th>Examen</th><th>Délai</th><th>Prix & paiement</th><th>Résultat</th><th>Interprétation</th><th>Diagnostic</th></tr>
               </thead>
               <tbody>
-                ${labRows}
+                ${labSectionHtml}
               </tbody>
             </table>
           </div>
