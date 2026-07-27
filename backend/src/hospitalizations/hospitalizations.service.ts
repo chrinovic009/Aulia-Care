@@ -61,6 +61,8 @@ export class HospitalizationsService {
     if (!isPermanentDay && !employee.rotationAnchorAt) return null;
     const anchor = at(employee.rotationAnchorAt || today, 0, 0);
     const dayIndex = Math.floor((today.getTime() - anchor.getTime()) / 86_400_000);
+    // The configured anchor is day 1. A rota must never grant access before it.
+    if (!isPermanentDay && dayIndex < 0) return null;
     const phase = ((dayIndex % 9) + 9) % 9;
     const previousPhase = (((dayIndex - 1) % 9) + 9) % 9;
 
@@ -71,7 +73,8 @@ export class HospitalizationsService {
     const continuesPreviousNight = !isPermanentDay && previousPhase >= 3 && previousPhase <= 5;
     if ((isNightDay && minuteOfDay >= 17 * 60 + 30) || (continuesPreviousNight && minuteOfDay < 7 * 60 + 30)) {
       const startDate = minuteOfDay < 7 * 60 + 30 ? new Date(today.getTime() - 86_400_000) : today;
-      return { startAt: at(startDate, 17, 30), endAt: at(today, 7, 30), employee };
+      const endDate = minuteOfDay < 7 * 60 + 30 ? today : new Date(today.getTime() + 86_400_000);
+      return { startAt: at(startDate, 17, 30), endAt: at(endDate, 7, 30), employee };
     }
     return null;
   }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { ImagingService } from './imaging.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -13,6 +13,12 @@ export class ImagingController {
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')
   findAll() {
     return this.imagingService.findAll();
+  }
+
+  @Get('dashboard/overview')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')
+  getDashboardOverview(@Query('period') period?: string, @Query('modality') modality?: string, @Query('service') service?: string) {
+    return this.imagingService.getDashboardOverview(period, modality, service);
   }
 
   @Get(':id')

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, PropsWithChildren } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { getAuthToken } from '../config/api';
 
 type RealtimeContextType = {
   socket: Socket | null;
@@ -44,17 +45,21 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
         return;
       }
 
+      const token = getAuthToken();
+      if (!token) {
+        setSocket(null);
+        return;
+      }
       const s = io(socketUrl, {
         autoConnect: false,
         withCredentials: true,
         transports: ['websocket', 'polling'],
         upgrade: true,
-        auth: { userId: currentUser.id },
-        query: { userId: currentUser.id },
+        auth: { token },
       });
 
       s.on('connect', () => {
-        s.emit('user.join', { userId: currentUser.id });
+        s.emit('user.join');
         window.dispatchEvent(new CustomEvent('d7:realtime:connect'));
       });
 
