@@ -35,6 +35,15 @@ export class PatientsService {
       .trim();
   }
 
+  private getVisibleLabRequestsWhere(): Prisma.LabRequestWhereInput {
+    return {
+      deletedAt: null,
+      status: {
+        not: 'CANCELLED',
+      },
+    };
+  }
+
   private async resolveBillableServiceForAdmission(createAdmissionDto: any, resolvedService: any, isParamedicalVoucher: boolean) {
     if (isParamedicalVoucher) {
       if (!resolvedService?.id) {
@@ -265,7 +274,7 @@ export class PatientsService {
         vitalSigns: { orderBy: { recordedAt: 'desc' }, take: 20 },
         consultations: { orderBy: { createdAt: 'desc' }, take: 20, include: { provider: true } },
         prescriptions: { orderBy: { prescribingDate: 'desc' }, take: 20, include: { prescriber: true, lineItems: true } },
-        labRequests: { orderBy: { requestedAt: 'desc' }, take: 20, include: { results: true } },
+        labRequests: { where: this.getVisibleLabRequestsWhere(), orderBy: { requestedAt: 'desc' }, take: 20, include: { results: true } },
         imagingRequests: { orderBy: { createdAt: 'desc' }, take: 20, include: { report: true } },
         appointments: { orderBy: { scheduledAt: 'desc' }, take: 20, include: { serviceUnit: true } },
         hospitalizations: { orderBy: { admittedAt: 'desc' }, take: 10 },
@@ -1062,6 +1071,7 @@ export class PatientsService {
   async getPatientsAssignedToDoctor(doctorId?: string) {
     if (!doctorId) return [];
 
+    const visibleLabRequestsWhere = this.getVisibleLabRequestsWhere();
     const patients = await this.prisma.patient.findMany({
       where: {
         deletedAt: null,
@@ -1081,7 +1091,7 @@ export class PatientsService {
           take: 5,
           include: { appointment: true, prescriptions: { include: { lineItems: true } } },
         },
-        labRequests: { orderBy: { requestedAt: 'desc' }, take: 5, include: { results: true } },
+        labRequests: { where: visibleLabRequestsWhere, orderBy: { requestedAt: 'desc' }, take: 5, include: { results: true } },
         imagingRequests: { orderBy: { createdAt: 'desc' }, take: 5, include: { report: true } },
         prescriptions: { orderBy: { prescribingDate: 'desc' }, take: 5, include: { lineItems: true } },
         appointments: { where: { deletedAt: null }, orderBy: { scheduledAt: 'desc' }, take: 10 },
@@ -1155,11 +1165,11 @@ export class PatientsService {
           include: {
             provider: { select: { id: true, displayName: true, firstName: true, lastName: true, specialty: true } },
             prescriptions: { include: { lineItems: { include: { medication: true } } } },
-            labRequests: { include: { results: true, requestedBy: true } },
+            labRequests: { where: this.getVisibleLabRequestsWhere(), include: { results: true, requestedBy: true } },
             imagingRequests: { include: { report: true } },
           },
         },
-        labRequests: { orderBy: { requestedAt: 'desc' }, take: 10, include: { results: true, requestedBy: true } },
+        labRequests: { where: this.getVisibleLabRequestsWhere(), orderBy: { requestedAt: 'desc' }, take: 10, include: { results: { include: { parameters: { include: { labTestParameter: true } } } }, requestedBy: true } },
         imagingRequests: { orderBy: { createdAt: 'desc' }, take: 10, include: { report: true, requestedBy: true } },
         prescriptions: { orderBy: { prescribingDate: 'desc' }, take: 10, include: { lineItems: { include: { medication: true } }, prescriber: true } },
         hospitalizations: { orderBy: { admittedAt: 'desc' }, take: 5, include: { physician: true, nurseInCharge: true } },

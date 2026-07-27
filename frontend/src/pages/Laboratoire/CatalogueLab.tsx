@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { Modal } from "../../components/ui/modal";
 import { AdminPageShell, DataTable, Panel, StatCard } from "../Administration/adminUi";
 import {
   fetchLaboratoryCatalogue,
@@ -19,7 +20,25 @@ import {
   updateLabCatalogueItem,
   type LabCatalogueKind,
 } from "../../api/laboratory";
-import { ClipboardList, FlaskConical, Layers, Microscope, Package } from "lucide-react";
+import { AlertTriangle, ClipboardList, FlaskConical, Layers, Microscope, Package, Pencil, Trash2 } from "lucide-react";
+
+const NFS_PARAMETERS: Array<{ code: string; name: string; unit: string; reference: string }> = [
+  { code: 'GB', name: 'Globules Blancs', reference: '4000-12000', unit: '10^3/µL' },
+  { code: 'NEUT', name: 'Neutrophiles', reference: '50-70', unit: '%' },
+  { code: 'LYMPH', name: 'Lymphocytes', reference: '20-60', unit: '%' },
+  { code: 'MONO', name: 'Monocytes', reference: '3-12', unit: '%' },
+  { code: 'EOS', name: 'Éosinophiles', reference: '0.5-5', unit: '%' },
+  { code: 'BASO', name: 'Basophiles', reference: '0.0-1.0', unit: '%' },
+  { code: 'RDW', name: 'Globules Rouges', reference: '4.5-5.5 (H) / 4.0-5.0 (F)', unit: '%' },
+  { code: 'HB', name: 'Hémoglobine', reference: '12-16', unit: 'g/dL' },
+  { code: 'HCT', name: 'Hématocrite', reference: '35-49', unit: '%' },
+  { code: 'MCV', name: 'VGM', reference: '80-100', unit: 'fL' },
+  { code: 'CCM', name: 'CCM', reference: '27-34', unit: 'pg' },
+  { code: 'MCHC', name: 'CCMH', reference: '31-37', unit: 'g/dL' },
+  { code: 'PS', name: 'Plaquettes Sanguines', reference: '100-300', unit: '10^3/µL' },
+  { code: 'VPM', name: 'VPM', reference: '6.5-12', unit: 'fL' },
+  { code: 'PTC', name: 'PTC', reference: '0.108-0.282', unit: '%' },
+];
 
 const tabs = [
   "Sections",
@@ -32,6 +51,492 @@ const tabs = [
   "Stock",
 ];
 
+type ErrorModalState = { title: string; message: string };
+
+type DeleteTarget = {
+  kind: LabCatalogueKind;
+  id: string;
+  label: string;
+};
+
+function ActionButtons({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+  return (
+    <div className="flex gap-2">
+      <button type="button" onClick={onEdit} className="rounded-lg border border-slate-200 p-2 text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700" title="Modifier">
+        <Pencil size={16} />
+      </button>
+      <button type="button" onClick={onDelete} className="rounded-lg border border-slate-200 p-2 text-slate-700 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700" title="Supprimer">
+        <Trash2 size={16} />
+      </button>
+    </div>
+  );
+}
+
+function ConfirmDeleteModal({ open, title, description, onClose, onConfirm, isDeleting }: { open: boolean; title: string; description: string; onClose: () => void; onConfirm: () => void; isDeleting: boolean }) {
+  if (!open) return null;
+  return (
+    <Modal isOpen={open} onClose={onClose} className="max-w-lg border border-rose-200 p-0 shadow-2xl">
+      <div className="rounded-3xl bg-white p-6 dark:bg-slate-900">
+        <div className="flex items-start gap-3">
+          <div className="rounded-2xl bg-rose-100 p-3 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+            <AlertTriangle size={20} />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h3>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{description}</p>
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200">Annuler</button>
+          <button type="button" disabled={isDeleting} onClick={onConfirm} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{isDeleting ? "Suppression..." : "Oui, supprimer"}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ErrorModal({ open, error, onClose }: { open: boolean; error: ErrorModalState | null; onClose: () => void }) {
+  if (!open || !error) return null;
+  return (
+    <Modal isOpen={open} onClose={onClose} className="max-w-lg border border-amber-200 p-0 shadow-2xl">
+      <div className="rounded-3xl bg-white p-6 dark:bg-slate-900">
+        <div className="flex items-start gap-3">
+          <div className="rounded-2xl bg-amber-100 p-3 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+            <AlertTriangle size={20} />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{error.title}</h3>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{error.message}</p>
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end">
+          <button type="button" onClick={onClose} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Fermer</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditSectionModal({ open, value, onChange, onCancel, onSave, isSaving }: { open: boolean; value: { id: string; name: string; description: string; order: string; active: boolean } | null; onChange: (value: { id: string; name: string; description: string; order: string; active: boolean }) => void; onCancel: () => void; onSave: () => void; isSaving: boolean }) {
+  if (!open || !value) return null;
+  return (
+    <Modal isOpen={open} onClose={onCancel} className="max-w-2xl border border-slate-200 p-0 shadow-2xl">
+      <div className="rounded-3xl bg-white p-6 dark:bg-slate-900">
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Modifier la section</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="block text-sm md:col-span-2">
+            <span className="block text-slate-700">Nom</span>
+            <input value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm md:col-span-2">
+            <span className="block text-slate-700">Description</span>
+            <input value={value.description} onChange={(event) => onChange({ ...value, description: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Ordre</span>
+            <input type="number" min="0" value={value.order} onChange={(event) => onChange({ ...value, order: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
+            <input type="checkbox" checked={value.active} onChange={(event) => onChange({ ...value, active: event.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+            Active
+          </label>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Annuler</button>
+          <button type="button" disabled={isSaving} onClick={onSave} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditCategoryModal({ open, value, onChange, onCancel, onSave, isSaving, sections }: { open: boolean; value: { id: string; sectionId: string; name: string; code: string; description: string; order: string; active: boolean } | null; onChange: (value: { id: string; sectionId: string; name: string; code: string; description: string; order: string; active: boolean }) => void; onCancel: () => void; onSave: () => void; isSaving: boolean; sections: Array<{ id: string; name: string }> }) {
+  if (!open || !value) return null;
+  return (
+    <Modal isOpen={open} onClose={onCancel} className="max-w-2xl border border-slate-200 p-0 shadow-2xl">
+      <div className="rounded-3xl bg-white p-6 dark:bg-slate-900">
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Modifier la catégorie</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="block text-sm">
+            <span className="block text-slate-700">Section</span>
+            <select value={value.sectionId} onChange={(event) => onChange({ ...value, sectionId: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+              <option value="">Sélectionner</option>
+              {sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Nom</span>
+            <input value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Code</span>
+            <input value={value.code} onChange={(event) => onChange({ ...value, code: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Description</span>
+            <input value={value.description} onChange={(event) => onChange({ ...value, description: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Ordre</span>
+            <input type="number" min="0" value={value.order} onChange={(event) => onChange({ ...value, order: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
+            <input type="checkbox" checked={value.active} onChange={(event) => onChange({ ...value, active: event.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+            Active
+          </label>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Annuler</button>
+          <button type="button" disabled={isSaving} onClick={onSave} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditTestModal({ open, value, onChange, onCancel, onSave, isSaving, categories, sections }: { open: boolean; value: { id: string; code: string; name: string; categoryId: string; sectionId: string; description: string; price: string; turnaroundTimeMinutes: string; resultType: string; unit: string; referenceRange: string; genderRestriction: string; minAge: string; maxAge: string; active: boolean } | null; onChange: (value: { id: string; code: string; name: string; categoryId: string; sectionId: string; description: string; price: string; turnaroundTimeMinutes: string; resultType: string; unit: string; referenceRange: string; genderRestriction: string; minAge: string; maxAge: string; active: boolean }) => void; onCancel: () => void; onSave: () => void; isSaving: boolean; categories: Array<{ id: string; name: string }>; sections: Array<{ id: string; name: string }> }) {
+  if (!open || !value) return null;
+  return (
+    <Modal isOpen={open} onClose={onCancel} className="max-w-4xl border border-slate-200 p-0 shadow-2xl">
+      <div className="rounded-3xl bg-white p-6 dark:bg-slate-900">
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Modifier l’examen</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="block text-sm">
+            <span className="block text-slate-700">Section</span>
+            <select value={value.sectionId} onChange={(event) => onChange({ ...value, sectionId: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+              <option value="">Sélectionner</option>
+              {sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Catégorie</span>
+            <select value={value.categoryId} onChange={(event) => onChange({ ...value, categoryId: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+              <option value="">Sélectionner</option>
+              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Code</span>
+            <input value={value.code} onChange={(event) => onChange({ ...value, code: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Nom</span>
+            <input value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Prix</span>
+            <input type="number" min="0" step="0.01" value={value.price} onChange={(event) => onChange({ ...value, price: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Délai (min)</span>
+            <input type="number" min="0" value={value.turnaroundTimeMinutes} onChange={(event) => onChange({ ...value, turnaroundTimeMinutes: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Type résultat</span>
+            <select value={value.resultType} onChange={(event) => onChange({ ...value, resultType: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+              <option value="NUMERIC">NUMERIC</option>
+              <option value="TEXT">TEXT</option>
+              <option value="SIMPLE">SIMPLE</option>
+              <option value="MULTI_PARAMETER">MULTI_PARAMETER</option>
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Genre</span>
+            <select value={value.genderRestriction} onChange={(event) => onChange({ ...value, genderRestriction: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+              <option value="ALL">ALL</option>
+              <option value="MALE">MALE</option>
+              <option value="FEMALE">FEMALE</option>
+              <option value="UNSPECIFIED">UNSPECIFIED</option>
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Unité</span>
+            <input value={value.unit} onChange={(event) => onChange({ ...value, unit: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Référence</span>
+            <input value={value.referenceRange} onChange={(event) => onChange({ ...value, referenceRange: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Âge min</span>
+            <input type="number" min="0" value={value.minAge} onChange={(event) => onChange({ ...value, minAge: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Âge max</span>
+            <input type="number" min="0" value={value.maxAge} onChange={(event) => onChange({ ...value, maxAge: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm md:col-span-2">
+            <span className="block text-slate-700">Description</span>
+            <input value={value.description} onChange={(event) => onChange({ ...value, description: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
+            <input type="checkbox" checked={value.active} onChange={(event) => onChange({ ...value, active: event.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+            Active
+          </label>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Annuler</button>
+          <button type="button" disabled={isSaving} onClick={onSave} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditParameterModal({ open, value, onChange, onCancel, onSave, isSaving, tests }: { open: boolean; value: { id: string; labTestId: string; code: string; name: string; unit: string; resultType: string; referenceRange: string; minValue: string; maxValue: string; order: string; active: boolean } | null; onChange: (value: { id: string; labTestId: string; code: string; name: string; unit: string; resultType: string; referenceRange: string; minValue: string; maxValue: string; order: string; active: boolean }) => void; onCancel: () => void; onSave: () => void; isSaving: boolean; tests: Array<{ id: string; name: string }> }) {
+  if (!open || !value) return null;
+  return (
+    <Modal isOpen={open} onClose={onCancel} className="max-w-2xl border border-slate-200 p-0 shadow-2xl">
+      <div className="rounded-3xl bg-white p-6 dark:bg-slate-900">
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Modifier le paramètre</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="block text-sm">
+            <span className="block text-slate-700">Examen</span>
+            <select value={value.labTestId} onChange={(event) => onChange({ ...value, labTestId: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+              <option value="">Sélectionner</option>
+              {tests.map((test) => <option key={test.id} value={test.id}>{test.name}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Code</span>
+            <input value={value.code} onChange={(event) => onChange({ ...value, code: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Nom</span>
+            <input value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Type résultat</span>
+            <select value={value.resultType} onChange={(event) => onChange({ ...value, resultType: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+              <option value="NUMERIC">NUMERIC</option>
+              <option value="TEXT">TEXT</option>
+              <option value="SIMPLE">SIMPLE</option>
+              <option value="MULTI_PARAMETER">MULTI_PARAMETER</option>
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Unité</span>
+            <input value={value.unit} onChange={(event) => onChange({ ...value, unit: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Référence</span>
+            <input value={value.referenceRange} onChange={(event) => onChange({ ...value, referenceRange: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Min</span>
+            <input type="number" step="0.01" value={value.minValue} onChange={(event) => onChange({ ...value, minValue: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Max</span>
+            <input type="number" step="0.01" value={value.maxValue} onChange={(event) => onChange({ ...value, maxValue: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Ordre</span>
+            <input type="number" min="0" value={value.order} onChange={(event) => onChange({ ...value, order: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
+            <input type="checkbox" checked={value.active} onChange={(event) => onChange({ ...value, active: event.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+            Active
+          </label>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Annuler</button>
+          <button type="button" disabled={isSaving} onClick={onSave} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditSampleTypeModal({ open, value, onChange, onCancel, onSave, isSaving }: { open: boolean; value: { id: string; name: string; description: string; active: boolean } | null; onChange: (value: { id: string; name: string; description: string; active: boolean }) => void; onCancel: () => void; onSave: () => void; isSaving: boolean }) {
+  if (!open || !value) return null;
+  return (
+    <Modal isOpen={open} onClose={onCancel} className="max-w-2xl border border-slate-200 p-0 shadow-2xl">
+      <div className="rounded-3xl bg-white p-6 dark:bg-slate-900">
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Modifier le type d’échantillon</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="block text-sm md:col-span-2">
+            <span className="block text-slate-700">Nom</span>
+            <input value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm md:col-span-2">
+            <span className="block text-slate-700">Description</span>
+            <input value={value.description} onChange={(event) => onChange({ ...value, description: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
+            <input type="checkbox" checked={value.active} onChange={(event) => onChange({ ...value, active: event.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+            Active
+          </label>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Annuler</button>
+          <button type="button" disabled={isSaving} onClick={onSave} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditSampleRequirementModal({ open, value, onChange, onCancel, onSave, isSaving, tests, sampleTypes }: { open: boolean; value: { id: string; labTestId: string; labSampleTypeId: string; volumeRequired: string; volumeUnit: string; storageCondition: string; maxAgeMinutes: string; instructions: string } | null; onChange: (value: { id: string; labTestId: string; labSampleTypeId: string; volumeRequired: string; volumeUnit: string; storageCondition: string; maxAgeMinutes: string; instructions: string }) => void; onCancel: () => void; onSave: () => void; isSaving: boolean; tests: Array<{ id: string; name: string }>; sampleTypes: Array<{ id: string; name: string }> }) {
+  if (!open || !value) return null;
+  return (
+    <Modal isOpen={open} onClose={onCancel} className="max-w-3xl border border-slate-200 p-0 shadow-2xl">
+      <div className="rounded-3xl bg-white p-6 dark:bg-slate-900">
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Modifier l’exigence d’échantillon</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="block text-sm">
+            <span className="block text-slate-700">Examen</span>
+            <select value={value.labTestId} onChange={(event) => onChange({ ...value, labTestId: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+              <option value="">Sélectionner</option>
+              {tests.map((test) => <option key={test.id} value={test.id}>{test.name}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Type d’échantillon</span>
+            <select value={value.labSampleTypeId} onChange={(event) => onChange({ ...value, labSampleTypeId: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+              <option value="">Sélectionner</option>
+              {sampleTypes.map((sampleType) => <option key={sampleType.id} value={sampleType.id}>{sampleType.name}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Volume requis</span>
+            <input type="number" min="0" step="0.1" value={value.volumeRequired} onChange={(event) => onChange({ ...value, volumeRequired: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Unité</span>
+            <input value={value.volumeUnit} onChange={(event) => onChange({ ...value, volumeUnit: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Condition stockage</span>
+            <input value={value.storageCondition} onChange={(event) => onChange({ ...value, storageCondition: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Temps maximum (min)</span>
+            <input type="number" min="0" value={value.maxAgeMinutes} onChange={(event) => onChange({ ...value, maxAgeMinutes: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm md:col-span-2">
+            <span className="block text-slate-700">Instructions</span>
+            <input value={value.instructions} onChange={(event) => onChange({ ...value, instructions: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Annuler</button>
+          <button type="button" disabled={isSaving} onClick={onSave} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditConsumableModal({ open, value, onChange, onCancel, onSave, isSaving }: { open: boolean; value: { id: string; name: string; code: string; description: string; unit: string; active: boolean } | null; onChange: (value: { id: string; name: string; code: string; description: string; unit: string; active: boolean }) => void; onCancel: () => void; onSave: () => void; isSaving: boolean }) {
+  if (!open || !value) return null;
+  return (
+    <Modal isOpen={open} onClose={onCancel} className="max-w-2xl border border-slate-200 p-0 shadow-2xl">
+      <div className="rounded-3xl bg-white p-6 dark:bg-slate-900">
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Modifier le consommable</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="block text-sm">
+            <span className="block text-slate-700">Nom</span>
+            <input value={value.name} onChange={(event) => onChange({ ...value, name: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Code</span>
+            <input value={value.code} onChange={(event) => onChange({ ...value, code: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Unité</span>
+            <input value={value.unit} onChange={(event) => onChange({ ...value, unit: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Description</span>
+            <input value={value.description} onChange={(event) => onChange({ ...value, description: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
+            <input type="checkbox" checked={value.active} onChange={(event) => onChange({ ...value, active: event.target.checked })} className="h-4 w-4 rounded border-slate-300" />
+            Active
+          </label>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Annuler</button>
+          <button type="button" disabled={isSaving} onClick={onSave} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditConsumableRequirementModal({ open, value, onChange, onCancel, onSave, isSaving, tests, consumables }: { open: boolean; value: { id: string; labTestId: string; labConsumableId: string; quantity: string; unit: string } | null; onChange: (value: { id: string; labTestId: string; labConsumableId: string; quantity: string; unit: string }) => void; onCancel: () => void; onSave: () => void; isSaving: boolean; tests: Array<{ id: string; name: string }>; consumables: Array<{ id: string; name: string }> }) {
+  if (!open || !value) return null;
+  return (
+    <Modal isOpen={open} onClose={onCancel} className="max-w-2xl border border-slate-200 p-0 shadow-2xl">
+      <div className="rounded-3xl bg-white p-6 dark:bg-slate-900">
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Modifier l’association consommable</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="block text-sm">
+            <span className="block text-slate-700">Examen</span>
+            <select value={value.labTestId} onChange={(event) => onChange({ ...value, labTestId: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+              <option value="">Sélectionner</option>
+              {tests.map((test) => <option key={test.id} value={test.id}>{test.name}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Consommable</span>
+            <select value={value.labConsumableId} onChange={(event) => onChange({ ...value, labConsumableId: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm">
+              <option value="">Sélectionner</option>
+              {consumables.map((consumable) => <option key={consumable.id} value={consumable.id}>{consumable.name}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Quantité</span>
+            <input type="number" min="0" step="0.01" value={value.quantity} onChange={(event) => onChange({ ...value, quantity: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Unité</span>
+            <input value={value.unit} onChange={(event) => onChange({ ...value, unit: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Annuler</button>
+          <button type="button" disabled={isSaving} onClick={onSave} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function EditStockModal({ open, value, onChange, onCancel, onSave, isSaving }: { open: boolean; value: { id: string; quantity: string; minimumLevel: string; criticalLevel: string; location: string } | null; onChange: (value: { id: string; quantity: string; minimumLevel: string; criticalLevel: string; location: string }) => void; onCancel: () => void; onSave: () => void; isSaving: boolean }) {
+  if (!open || !value) return null;
+  return (
+    <Modal isOpen={open} onClose={onCancel} className="max-w-2xl border border-slate-200 p-0 shadow-2xl">
+      <div className="rounded-3xl bg-white p-6 dark:bg-slate-900">
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Modifier le stock</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="block text-sm">
+            <span className="block text-slate-700">Quantité</span>
+            <input type="number" min="0" step="0.01" value={value.quantity} onChange={(event) => onChange({ ...value, quantity: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Seuil minimum</span>
+            <input type="number" min="0" step="0.01" value={value.minimumLevel} onChange={(event) => onChange({ ...value, minimumLevel: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Seuil critique</span>
+            <input type="number" min="0" step="0.01" value={value.criticalLevel} onChange={(event) => onChange({ ...value, criticalLevel: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+          <label className="block text-sm">
+            <span className="block text-slate-700">Localisation</span>
+            <input value={value.location} onChange={(event) => onChange({ ...value, location: event.target.value })} className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm" />
+          </label>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Annuler</button>
+          <button type="button" disabled={isSaving} onClick={onSave} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export default function CatalogueLab() {
   const { currentUser } = useAuth();
   const [catalogue, setCatalogue] = useState<LabCataloguePayload | null>(null);
@@ -40,10 +545,22 @@ export default function CatalogueLab() {
   const [isSaving, setIsSaving] = useState(false);
   const [technicianDirectRelease, setTechnicianDirectRelease] = useState(false);
   const [catalogueMessage, setCatalogueMessage] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [errorModal, setErrorModal] = useState<ErrorModalState | null>(null);
+  const [editingSection, setEditingSection] = useState<{ id: string; name: string; description: string; order: string; active: boolean } | null>(null);
+  const [editingCategory, setEditingCategory] = useState<{ id: string; sectionId: string; name: string; code: string; description: string; order: string; active: boolean } | null>(null);
+  const [editingTest, setEditingTest] = useState<{ id: string; code: string; name: string; categoryId: string; sectionId: string; description: string; price: string; turnaroundTimeMinutes: string; resultType: string; unit: string; referenceRange: string; genderRestriction: string; minAge: string; maxAge: string; active: boolean } | null>(null);
+  const [editingParameter, setEditingParameter] = useState<{ id: string; labTestId: string; code: string; name: string; unit: string; resultType: string; referenceRange: string; minValue: string; maxValue: string; order: string; active: boolean } | null>(null);
+  const [editingSampleType, setEditingSampleType] = useState<{ id: string; name: string; description: string; active: boolean } | null>(null);
+  const [editingSampleRequirement, setEditingSampleRequirement] = useState<{ id: string; labTestId: string; labSampleTypeId: string; volumeRequired: string; volumeUnit: string; storageCondition: string; maxAgeMinutes: string; instructions: string } | null>(null);
+  const [editingConsumable, setEditingConsumable] = useState<{ id: string; name: string; code: string; description: string; unit: string; active: boolean } | null>(null);
+  const [editingConsumableRequirement, setEditingConsumableRequirement] = useState<{ id: string; labTestId: string; labConsumableId: string; quantity: string; unit: string } | null>(null);
+  const [editingStock, setEditingStock] = useState<{ id: string; quantity: string; minimumLevel: string; criticalLevel: string; location: string } | null>(null);
 
   const [sectionForm, setSectionForm] = useState({ name: '', description: '', order: '0', active: true });
   const [categoryForm, setCategoryForm] = useState({ sectionId: '', name: '', code: '', description: '', order: '0', active: true });
   const [testForm, setTestForm] = useState({ code: '', name: '', categoryId: '', sectionId: '', description: '', price: '0', turnaroundTimeMinutes: '30', resultType: 'MULTI_PARAMETER', unit: '', referenceRange: '', genderRestriction: 'ALL', minAge: '', maxAge: '', active: true });
+  const [parameterSuggestions, setParameterSuggestions] = useState<Array<{ code: string; name: string; unit: string; reference: string }>>([]);
   const [parameterForm, setParameterForm] = useState({ labTestId: '', code: '', name: '', unit: '', resultType: 'NUMERIC', referenceRange: '', minValue: '', maxValue: '', order: '0', active: true });
   const [sampleTypeForm, setSampleTypeForm] = useState({ labTestId: '', name: '', description: '', active: true });
   const [showSectionForm, setShowSectionForm] = useState(false);
@@ -88,18 +605,7 @@ export default function CatalogueLab() {
   const totalSampleTypes = catalogue?.sampleTypes.length ?? 0;
   const totalConsumables = catalogue?.consumables.length ?? 0;
   const isLabManager = currentUser?.primaryRole === "LAB_MANAGER";
-
-  const removeCatalogueItem = async (kind: LabCatalogueKind, id: string, label: string) => {
-    if (!isLabManager || !window.confirm(`Supprimer ${label} ? Les dépendances de catalogue non utilisées seront supprimées. Les données cliniques historiques restent protégées.`)) return;
-    setCatalogueMessage(null);
-    try {
-      await deleteLabCatalogueItem(kind, id);
-      setCatalogueMessage(`${label} supprimé.`);
-      await loadCatalogue();
-    } catch (error) {
-      setCatalogueMessage(error instanceof Error ? error.message : `Impossible de supprimer ${label}.`);
-    }
-  };
+  const isNfsTest = /(^|\s)(nfs|h[eé]mogramme|num[eé]ration formule sanguine)(\s|$)/i.test(testForm.name);
 
   const toggleCatalogueItem = async (kind: LabCatalogueKind, item: { id: string; active: boolean }, label: string) => {
     if (!isLabManager) return;
@@ -109,6 +615,7 @@ export default function CatalogueLab() {
       await loadCatalogue();
     } catch (error) {
       setCatalogueMessage(error instanceof Error ? error.message : `Impossible de modifier ${label}.`);
+      setErrorModal({ title: 'Modification impossible', message: error instanceof Error ? error.message : `Impossible de modifier ${label}.` });
     }
   };
 
@@ -190,6 +697,22 @@ export default function CatalogueLab() {
     ),
     [stockRows, matchesSearch],
   );
+
+  const filteredCategoriesBySection = useMemo(
+    () => catalogue?.categories.filter((category) => category.sectionId === testForm.sectionId) ?? [],
+    [catalogue, testForm.sectionId],
+  );
+
+  const filteredSampleTypesBySelectedTest = useMemo(() => {
+    if (!sampleRequirementForm.labTestId) return [];
+    const selectedTest = catalogue?.tests.find((test) => test.id === sampleRequirementForm.labTestId);
+    const sampleTypes = selectedTest?.sampleRequirements?.map((requirement) => requirement.labSampleType ?? null).filter((type): type is { id: string; name: string } => Boolean(type)) ?? [];
+    const uniqueSampleTypes = sampleTypes.reduce<Array<{ id: string; name: string }>>((acc, sampleType) => {
+      if (!acc.some((item) => item.id === sampleType.id)) acc.push(sampleType);
+      return acc;
+    }, []);
+    return uniqueSampleTypes;
+  }, [catalogue, sampleRequirementForm.labTestId]);
 
   const formatStockStatus = (quantity: string, minimumLevel?: string | null, criticalLevel?: string | null) => {
     const qty = Number(quantity || '0');
@@ -295,7 +818,295 @@ export default function CatalogueLab() {
   };
 
   const showSuccess = (message: string) => {
-    window.alert(message);
+    setCatalogueMessage(message);
+  };
+
+  const showError = (title: string, message: string) => {
+    setErrorModal({ title, message });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget || !isLabManager) return;
+    setIsSaving(true);
+    try {
+      await deleteLabCatalogueItem(deleteTarget.kind, deleteTarget.id);
+      setCatalogueMessage(`${deleteTarget.label} supprimé.`);
+      await loadCatalogue();
+    } catch (error) {
+      setErrorModal({ title: 'Suppression impossible', message: error instanceof Error ? error.message : `Impossible de supprimer ${deleteTarget.label}.` });
+    } finally {
+      setIsSaving(false);
+      setDeleteTarget(null);
+    }
+  };
+
+  const handleEditSection = (section: { id: string; name: string; description?: string | null; order: number; active: boolean }) => {
+    setEditingSection({ id: section.id, name: section.name, description: section.description || '', order: String(section.order ?? 0), active: section.active });
+  };
+
+  const handleSaveSection = async () => {
+    if (!editingSection) return;
+    if (!editingSection.name.trim()) {
+      showError('Validation', 'Le nom de la section est requis.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await updateLabCatalogueItem('sections', editingSection.id, {
+        name: editingSection.name,
+        description: editingSection.description,
+        order: editingSection.order,
+        active: editingSection.active,
+      });
+      setEditingSection(null);
+      await loadCatalogue();
+      showSuccess('Section mise à jour.');
+    } catch (error) {
+      showError('Modification impossible', error instanceof Error ? error.message : 'Impossible de mettre à jour la section.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEditCategory = (category: { id: string; sectionId?: string | null; name: string; code?: string | null; description?: string | null; order: number; active: boolean }) => {
+    setEditingCategory({ id: category.id, sectionId: category.sectionId || '', name: category.name, code: category.code || '', description: category.description || '', order: String(category.order ?? 0), active: category.active });
+  };
+
+  const handleSaveCategory = async () => {
+    if (!editingCategory) return;
+    if (!editingCategory.name.trim()) {
+      showError('Validation', 'Le nom de la catégorie est requis.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await updateLabCatalogueItem('categories', editingCategory.id, {
+        sectionId: editingCategory.sectionId || undefined,
+        name: editingCategory.name,
+        code: editingCategory.code,
+        description: editingCategory.description,
+        order: editingCategory.order,
+        active: editingCategory.active,
+      });
+      setEditingCategory(null);
+      await loadCatalogue();
+      showSuccess('Catégorie mise à jour.');
+    } catch (error) {
+      showError('Modification impossible', error instanceof Error ? error.message : 'Impossible de mettre à jour la catégorie.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEditTest = (test: { id: string; code: string; name: string; categoryId: string; sectionId?: string | null; description?: string | null; price: string; turnaroundTimeMinutes?: number | null; resultType: string; unit?: string | null; referenceRange?: string | null; genderRestriction?: string | null; minAge?: number | null; maxAge?: number | null; active: boolean }) => {
+    setEditingTest({ id: test.id, code: test.code, name: test.name, categoryId: test.categoryId, sectionId: test.sectionId || '', description: test.description || '', price: String(test.price ?? 0), turnaroundTimeMinutes: String(test.turnaroundTimeMinutes ?? ''), resultType: test.resultType, unit: test.unit || '', referenceRange: test.referenceRange || '', genderRestriction: test.genderRestriction || 'ALL', minAge: test.minAge != null ? String(test.minAge) : '', maxAge: test.maxAge != null ? String(test.maxAge) : '', active: test.active });
+  };
+
+  const handleSaveTest = async () => {
+    if (!editingTest) return;
+    if (!editingTest.code.trim() || !editingTest.name.trim() || !editingTest.categoryId) {
+      showError('Validation', 'Code, nom et catégorie sont requis.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await updateLabCatalogueItem('tests', editingTest.id, {
+        code: editingTest.code,
+        name: editingTest.name,
+        categoryId: editingTest.categoryId,
+        sectionId: editingTest.sectionId || undefined,
+        description: editingTest.description,
+        price: editingTest.price,
+        turnaroundTimeMinutes: editingTest.turnaroundTimeMinutes,
+        resultType: editingTest.resultType,
+        unit: editingTest.unit,
+        referenceRange: editingTest.referenceRange,
+        genderRestriction: editingTest.genderRestriction,
+        minAge: editingTest.minAge,
+        maxAge: editingTest.maxAge,
+        active: editingTest.active,
+      });
+      setEditingTest(null);
+      await loadCatalogue();
+      showSuccess('Examen mis à jour.');
+    } catch (error) {
+      showError('Modification impossible', error instanceof Error ? error.message : 'Impossible de mettre à jour l\'examen.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEditParameter = (parameter: { id: string; labTestId?: string | null; labTest?: { id: string; name: string } | null; code: string; name: string; unit?: string | null; resultType: string; referenceRange?: string | null; minValue?: string | null; maxValue?: string | null; order: number; active: boolean }) => {
+    setEditingParameter({ id: parameter.id, labTestId: parameter.labTestId || parameter.labTest?.id || '', code: parameter.code, name: parameter.name, unit: parameter.unit || '', resultType: parameter.resultType, referenceRange: parameter.referenceRange || '', minValue: parameter.minValue || '', maxValue: parameter.maxValue || '', order: String(parameter.order ?? 0), active: parameter.active });
+  };
+
+  const handleSaveParameter = async () => {
+    if (!editingParameter) return;
+    if (!editingParameter.labTestId || !editingParameter.code.trim() || !editingParameter.name.trim()) {
+      showError('Validation', 'Examen, code et nom sont requis.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await updateLabCatalogueItem('test-parameters', editingParameter.id, {
+        labTestId: editingParameter.labTestId,
+        code: editingParameter.code,
+        name: editingParameter.name,
+        unit: editingParameter.unit,
+        resultType: editingParameter.resultType,
+        referenceRange: editingParameter.referenceRange,
+        minValue: editingParameter.minValue,
+        maxValue: editingParameter.maxValue,
+        order: editingParameter.order,
+        active: editingParameter.active,
+      });
+      setEditingParameter(null);
+      await loadCatalogue();
+      showSuccess('Paramètre mis à jour.');
+    } catch (error) {
+      showError('Modification impossible', error instanceof Error ? error.message : 'Impossible de mettre à jour le paramètre.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEditSampleType = (sampleType: { id: string; name: string; description?: string | null; active: boolean }) => {
+    setEditingSampleType({ id: sampleType.id, name: sampleType.name, description: sampleType.description || '', active: sampleType.active });
+  };
+
+  const handleSaveSampleType = async () => {
+    if (!editingSampleType) return;
+    if (!editingSampleType.name.trim()) {
+      showError('Validation', 'Le nom du type d\'échantillon est requis.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await updateLabCatalogueItem('sample-types', editingSampleType.id, {
+        name: editingSampleType.name,
+        description: editingSampleType.description,
+        active: editingSampleType.active,
+      });
+      setEditingSampleType(null);
+      await loadCatalogue();
+      showSuccess('Type d\'échantillon mis à jour.');
+    } catch (error) {
+      showError('Modification impossible', error instanceof Error ? error.message : 'Impossible de mettre à jour l\'échantillon.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEditSampleRequirement = (requirement: { id: string; labTestId?: string | null; labTest?: { id: string; name: string } | null; labSampleTypeId: string; volumeRequired?: string | null; volumeUnit?: string | null; storageCondition?: string | null; maxAgeMinutes?: number | null; instructions?: string | null }) => {
+    setEditingSampleRequirement({ id: requirement.id, labTestId: requirement.labTestId || requirement.labTest?.id || '', labSampleTypeId: requirement.labSampleTypeId, volumeRequired: requirement.volumeRequired || '', volumeUnit: requirement.volumeUnit || '', storageCondition: requirement.storageCondition || '', maxAgeMinutes: requirement.maxAgeMinutes != null ? String(requirement.maxAgeMinutes) : '', instructions: requirement.instructions || '' });
+  };
+
+  const handleEditConsumable = (consumable: { id: string; name: string; code?: string | null; description?: string | null; unit?: string | null; active: boolean }) => {
+    setEditingConsumable({ id: consumable.id, name: consumable.name, code: consumable.code || '', description: consumable.description || '', unit: consumable.unit || '', active: consumable.active });
+  };
+
+  const handleSaveConsumable = async () => {
+    if (!editingConsumable) return;
+    if (!editingConsumable.name.trim() || !editingConsumable.code.trim() || !editingConsumable.unit.trim()) {
+      showError('Validation', 'Nom, code et unité sont requis.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await updateLabCatalogueItem('consumables', editingConsumable.id, {
+        name: editingConsumable.name,
+        code: editingConsumable.code,
+        description: editingConsumable.description,
+        unit: editingConsumable.unit,
+        active: editingConsumable.active,
+      });
+      setEditingConsumable(null);
+      await loadCatalogue();
+      showSuccess('Consommable mis à jour.');
+    } catch (error) {
+      showError('Modification impossible', error instanceof Error ? error.message : 'Impossible de mettre à jour le consommable.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveSampleRequirement = async () => {
+    if (!editingSampleRequirement) return;
+    if (!editingSampleRequirement.labTestId || !editingSampleRequirement.labSampleTypeId) {
+      showError('Validation', 'Examen et type d\'échantillon sont requis.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await updateLabCatalogueItem('sample-requirements', editingSampleRequirement.id, {
+        labTestId: editingSampleRequirement.labTestId,
+        labSampleTypeId: editingSampleRequirement.labSampleTypeId,
+        volumeRequired: editingSampleRequirement.volumeRequired,
+        volumeUnit: editingSampleRequirement.volumeUnit,
+        storageCondition: editingSampleRequirement.storageCondition,
+        maxAgeMinutes: editingSampleRequirement.maxAgeMinutes,
+        instructions: editingSampleRequirement.instructions,
+      });
+      setEditingSampleRequirement(null);
+      await loadCatalogue();
+      showSuccess('Exigence d\'échantillon mise à jour.');
+    } catch (error) {
+      showError('Modification impossible', error instanceof Error ? error.message : 'Impossible de mettre à jour l\'exigence.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEditConsumableRequirement = (requirement: { id: string; labTestId: string; labConsumableId: string; quantity: string; unit?: string | null }) => {
+    setEditingConsumableRequirement({ id: requirement.id, labTestId: requirement.labTestId, labConsumableId: requirement.labConsumableId, quantity: String(requirement.quantity ?? ''), unit: requirement.unit || '' });
+  };
+
+  const handleSaveConsumableRequirement = async () => {
+    if (!editingConsumableRequirement) return;
+    if (!editingConsumableRequirement.labTestId || !editingConsumableRequirement.labConsumableId || !editingConsumableRequirement.quantity) {
+      showError('Validation', 'Examen, consommable et quantité sont requis.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await updateLabCatalogueItem('consumable-requirements', editingConsumableRequirement.id, {
+        labTestId: editingConsumableRequirement.labTestId,
+        labConsumableId: editingConsumableRequirement.labConsumableId,
+        quantity: editingConsumableRequirement.quantity,
+        unit: editingConsumableRequirement.unit,
+      });
+      setEditingConsumableRequirement(null);
+      await loadCatalogue();
+      showSuccess('Association consommable mise à jour.');
+    } catch (error) {
+      showError('Modification impossible', error instanceof Error ? error.message : 'Impossible de mettre à jour l\'association.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEditStock = (stock: { id: string; quantity: string; minimumLevel?: string | null; criticalLevel?: string | null; location?: string | null }) => {
+    setEditingStock({ id: stock.id, quantity: String(stock.quantity ?? ''), minimumLevel: stock.minimumLevel || '', criticalLevel: stock.criticalLevel || '', location: stock.location || '' });
+  };
+
+  const handleSaveStock = async () => {
+    if (!editingStock) return;
+    setIsSaving(true);
+    try {
+      await updateLabCatalogueItem('stock', editingStock.id, {
+        quantity: editingStock.quantity,
+        minimumLevel: editingStock.minimumLevel,
+        criticalLevel: editingStock.criticalLevel,
+        location: editingStock.location,
+      });
+      setEditingStock(null);
+      await loadCatalogue();
+      showSuccess('Stock mis à jour.');
+    } catch (error) {
+      showError('Modification impossible', error instanceof Error ? error.message : 'Impossible de mettre à jour le stock.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleToggleTechnicianDirectRelease = async (enabled: boolean) => {
@@ -311,13 +1122,13 @@ export default function CatalogueLab() {
     } catch (error) {
       console.error(error);
       setTechnicianDirectRelease(!enabled);
-      window.alert("Impossible de modifier la politique d'envoi des resultats.");
+      showError('Modification impossible', 'Impossible de modifier la politique d\'envoi des résultats.');
     }
   };
 
   const handleCreateSection = async () => {
     if (!sectionForm.name.trim()) {
-      window.alert('Le nom de la section est requis.');
+      showError('Validation', 'Le nom de la section est requis.');
       return;
     }
 
@@ -335,7 +1146,7 @@ export default function CatalogueLab() {
       showSuccess('Section créée avec succès.');
     } catch (error) {
       console.error(error);
-      window.alert('Impossible de créer la section.');
+      showError('Création impossible', 'Impossible de créer la section.');
     } finally {
       setIsSaving(false);
     }
@@ -343,7 +1154,7 @@ export default function CatalogueLab() {
 
   const handleCreateCategory = async () => {
     if (!categoryForm.name.trim()) {
-      window.alert('Le nom de la catégorie est requis.');
+      showError('Validation', 'Le nom de la catégorie est requis.');
       return;
     }
 
@@ -363,7 +1174,7 @@ export default function CatalogueLab() {
       showSuccess('Catégorie créée avec succès.');
     } catch (error) {
       console.error(error);
-      window.alert('Impossible de créer la catégorie.');
+      showError('Création impossible', 'Impossible de créer la catégorie.');
     } finally {
       setIsSaving(false);
     }
@@ -371,7 +1182,7 @@ export default function CatalogueLab() {
 
   const handleCreateTest = async () => {
     if (!testForm.code.trim() || !testForm.name.trim() || !testForm.categoryId) {
-      window.alert('Code, nom et catégorie sont requis pour l examen.');
+      showError('Validation', 'Code, nom et catégorie sont requis pour l\'examen.');
       return;
     }
 
@@ -385,12 +1196,12 @@ export default function CatalogueLab() {
         description: testForm.description || undefined,
         price: Number(testForm.price),
         turnaroundTimeMinutes: testForm.turnaroundTimeMinutes !== '' ? Number(testForm.turnaroundTimeMinutes) : undefined,
-        resultType: testForm.resultType,
-        unit: testForm.unit || undefined,
-        referenceRange: testForm.referenceRange || undefined,
-        genderRestriction: testForm.genderRestriction,
-        minAge: testForm.minAge !== '' ? Number(testForm.minAge) : undefined,
-        maxAge: testForm.maxAge !== '' ? Number(testForm.maxAge) : undefined,
+        resultType: isNfsTest ? 'MULTI_PARAMETER' : testForm.resultType,
+        unit: isNfsTest ? undefined : testForm.unit || undefined,
+        referenceRange: isNfsTest ? undefined : testForm.referenceRange || undefined,
+        genderRestriction: isNfsTest ? 'ALL' : testForm.genderRestriction,
+        minAge: isNfsTest ? undefined : testForm.minAge !== '' ? Number(testForm.minAge) : undefined,
+        maxAge: isNfsTest ? undefined : testForm.maxAge !== '' ? Number(testForm.maxAge) : undefined,
         active: testForm.active,
       });
       setTestForm({ code: '', name: '', categoryId: '', sectionId: '', description: '', price: '0', turnaroundTimeMinutes: '30', resultType: 'MULTI_PARAMETER', unit: '', referenceRange: '', genderRestriction: 'ALL', minAge: '', maxAge: '', active: true });
@@ -399,7 +1210,7 @@ export default function CatalogueLab() {
       showSuccess('Examen créé avec succès.');
     } catch (error) {
       console.error(error);
-      window.alert('Impossible de créer l examen.');
+      showError('Création impossible', 'Impossible de créer l\'examen.');
     } finally {
       setIsSaving(false);
     }
@@ -407,7 +1218,7 @@ export default function CatalogueLab() {
 
   const handleCreateParameter = async () => {
     if (!parameterForm.labTestId || !parameterForm.code.trim() || !parameterForm.name.trim()) {
-      window.alert('Test, code et nom sont requis pour le paramètre.');
+      showError('Validation', 'Test, code et nom sont requis pour le paramètre.');
       return;
     }
 
@@ -422,7 +1233,7 @@ export default function CatalogueLab() {
         referenceRange: parameterForm.referenceRange || undefined,
         minValue: parameterForm.minValue || undefined,
         maxValue: parameterForm.maxValue || undefined,
-        order: parameterForm.order !== '' ? String(parameterForm.order) : undefined,
+        order: parameterForm.order !== '' ? Number(parameterForm.order) : undefined,
         active: parameterForm.active,
       });
       setParameterForm({ labTestId: '', code: '', name: '', unit: '', resultType: 'NUMERIC', referenceRange: '', minValue: '', maxValue: '', order: '0', active: true });
@@ -431,7 +1242,7 @@ export default function CatalogueLab() {
       showSuccess('Paramètre créé avec succès.');
     } catch (error) {
       console.error(error);
-      window.alert('Impossible de créer le paramètre.');
+      showError('Création impossible', 'Impossible de créer le paramètre.');
     } finally {
       setIsSaving(false);
     }
@@ -439,30 +1250,38 @@ export default function CatalogueLab() {
 
   const handleCreateSampleType = async () => {
     if (!sampleTypeForm.labTestId) {
-      window.alert('Vous devez sélectionner un examen pour l échantillon.');
+      showError('Validation', 'L\'examen lié est requis.');
       return;
     }
     if (!sampleTypeForm.name.trim()) {
-      window.alert('Le nom du type d échantillon est requis.');
+      showError('Validation', 'Le nom du type d\'échantillon est requis.');
       return;
     }
 
     setIsSaving(true);
     try {
-      await createLabSampleType({
+      const createdSampleType = await createLabSampleType({
         name: sampleTypeForm.name,
-        labTestId: sampleTypeForm.labTestId || undefined,
         description: sampleTypeForm.description || undefined,
         active: sampleTypeForm.active,
+      }) as { id?: string };
+
+      if (!createdSampleType?.id) {
+        throw new Error('Identifiant du type d\'échantillon manquant après création.');
+      }
+
+      await createLabTestSampleRequirement({
+        labTestId: sampleTypeForm.labTestId,
+        labSampleTypeId: createdSampleType.id,
       });
 
       setSampleTypeForm({ labTestId: '', name: '', description: '', active: true });
       setShowSampleTypeForm(false);
       await loadCatalogue();
-      showSuccess('Type d échantillon créé avec succès. Utilisez "Ajouter une exigence d\'échantillon" pour le lier à un examen.');
+      showSuccess('Type d\'échantillon créé et lié à l\'examen avec succès.');
     } catch (error) {
       console.error(error);
-      window.alert('Impossible de créer le type d échantillon.');
+      showError('Création impossible', 'Impossible de créer le type d\'échantillon lié à l\'examen.');
     } finally {
       setIsSaving(false);
     }
@@ -470,7 +1289,7 @@ export default function CatalogueLab() {
 
   const handleCreateSampleRequirement = async () => {
     if (!sampleRequirementForm.labTestId || !sampleRequirementForm.labSampleTypeId) {
-      window.alert('Test et type d échantillon sont requis.');
+      showError('Validation', 'Test et type d\'échantillon sont requis.');
       return;
     }
 
@@ -491,7 +1310,7 @@ export default function CatalogueLab() {
       showSuccess('Exigence d échantillon créée avec succès.');
     } catch (error) {
       console.error(error);
-      window.alert('Impossible de créer l exigence d échantillon.');
+      showError('Création impossible', 'Impossible de créer l\'exigence d\'échantillon.');
     } finally {
       setIsSaving(false);
     }
@@ -499,7 +1318,7 @@ export default function CatalogueLab() {
 
   const handleCreateConsumable = async () => {
     if (!consumableForm.name.trim() || !consumableForm.code.trim() || !consumableForm.unit.trim()) {
-      window.alert('Nom, code et unité sont requis.');
+      showError('Validation', 'Nom, code et unité sont requis.');
       return;
     }
 
@@ -518,7 +1337,7 @@ export default function CatalogueLab() {
       showSuccess('Consommable créé avec succès.');
     } catch (error) {
       console.error(error);
-      window.alert('Impossible de créer le consommable.');
+      showError('Création impossible', 'Impossible de créer le consommable.');
     } finally {
       setIsSaving(false);
     }
@@ -526,7 +1345,7 @@ export default function CatalogueLab() {
 
   const handleCreateConsumableRequirement = async () => {
     if (!consumableRequirementForm.labTestId || !consumableRequirementForm.labConsumableId || !consumableRequirementForm.quantity) {
-      window.alert('Test, consommable et quantité sont requis.');
+      showError('Validation', 'Test, consommable et quantité sont requis.');
       return;
     }
 
@@ -544,7 +1363,7 @@ export default function CatalogueLab() {
       showSuccess('Consommable associé à l examen créé avec succès.');
     } catch (error) {
       console.error(error);
-      window.alert('Impossible de créer l exigence de consommable.');
+      showError('Création impossible', 'Impossible de créer l\'exigence de consommable.');
     } finally {
       setIsSaving(false);
     }
@@ -552,7 +1371,7 @@ export default function CatalogueLab() {
 
   const handleCreateStock = async () => {
     if (!stockForm.labConsumableId || !stockForm.quantity) {
-      window.alert('Consommable et quantité sont requis.');
+      showError('Validation', 'Consommable et quantité sont requis.');
       return;
     }
 
@@ -571,7 +1390,7 @@ export default function CatalogueLab() {
       showSuccess('Stock enregistré avec succès.');
     } catch (error) {
       console.error(error);
-      window.alert('Impossible d enregistrer le stock.');
+      showError('Création impossible', 'Impossible d\'enregistrer le stock.');
     } finally {
       setIsSaving(false);
     }
@@ -678,7 +1497,7 @@ export default function CatalogueLab() {
                       section.categories.length,
                       section.tests.length,
                       section.active ? "Active" : "Inactive",
-                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('sections', section, section.name)} className="text-xs text-blue-700">{section.active ? "Désactiver" : "Activer"}</button><button onClick={() => removeCatalogueItem('sections', section.id, section.name)} className="text-xs text-red-700">Supprimer</button></div> : "—",
+                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('sections', section, section.name)} className="text-xs text-blue-700">{section.active ? "Désactiver" : "Activer"}</button><ActionButtons onEdit={() => handleEditSection(section)} onDelete={() => setDeleteTarget({ kind: 'sections', id: section.id, label: section.name })} /></div> : "—",
                     ])}
                   />
 
@@ -748,7 +1567,7 @@ export default function CatalogueLab() {
                       category.code || "-",
                       category.tests.length,
                       category.active ? "Active" : "Inactive",
-                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('categories', category, category.name)} className="text-xs text-blue-700">{category.active ? "Désactiver" : "Activer"}</button><button onClick={() => removeCatalogueItem('categories', category.id, category.name)} className="text-xs text-red-700">Supprimer</button></div> : "—",
+                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('categories', category, category.name)} className="text-xs text-blue-700">{category.active ? "Désactiver" : "Activer"}</button><ActionButtons onEdit={() => handleEditCategory(category)} onDelete={() => setDeleteTarget({ kind: 'categories', id: category.id, label: category.name })} /></div> : "—",
                     ])}
                   />
 
@@ -846,7 +1665,7 @@ export default function CatalogueLab() {
                       `${Number(test.price || "0").toLocaleString("fr-FR", { style: "currency", currency: "CDF" })}`,
                       test.turnaroundTimeMinutes ? `${test.turnaroundTimeMinutes} min` : "-",
                       test.active ? "Oui" : "Non",
-                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('tests', test, test.name)} className="text-xs text-blue-700">{test.active ? "Désactiver" : "Activer"}</button><button onClick={() => removeCatalogueItem('tests', test.id, test.name)} className="text-xs text-red-700">Supprimer</button></div> : "—",
+                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('tests', test, test.name)} className="text-xs text-blue-700">{test.active ? "Désactiver" : "Activer"}</button><ActionButtons onEdit={() => handleEditTest(test)} onDelete={() => setDeleteTarget({ kind: 'tests', id: test.id, label: test.name })} /></div> : "—",
                     ])}
                   />
 
@@ -860,7 +1679,39 @@ export default function CatalogueLab() {
 
                   {showTestForm && (
                     <Panel title="Ajouter un examen">
+
                       <div className="grid gap-4 md:grid-cols-2">
+                        <label className="block text-sm">
+                          <span className="block text-slate-700">Section</span>
+                          <select
+                            required
+                            value={testForm.sectionId}
+                            onChange={(event) => setTestForm((current) => ({ ...current, sectionId: event.target.value, categoryId: '' }))}
+                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                          >
+                            <option value="">Selectionner</option>
+                            {catalogue.sections.map((section) => (
+                              <option key={section.id} value={section.id}>{section.name}</option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="block text-sm">
+                          <span className="block text-slate-700">Catégorie</span>
+                          <select
+                            required
+                            value={testForm.categoryId}
+                            onChange={(event) => setTestForm((current) => ({ ...current, categoryId: event.target.value }))}
+                            disabled={!testForm.sectionId}
+                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                          >
+                            <option value="">Selectionner</option>
+                            {filteredCategoriesBySection.map((category) => (
+                              <option key={category.id} value={category.id}>{category.name}</option>
+                            ))}
+                          </select>
+                        </label>
+
                         <label className="block text-sm">
                           <span className="block text-slate-700">Code</span>
                           <input
@@ -871,44 +1722,41 @@ export default function CatalogueLab() {
                             className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           />
                         </label>
+
                         <label className="block text-sm">
                           <span className="block text-slate-700">Nom</span>
                           <input
                             required
                             value={testForm.name}
-                            onChange={(event) => setTestForm((current) => ({ ...current, name: event.target.value }))}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setTestForm((current) => ({ ...current, name: value }));
+                              const isNfs = /(^|\s)(nfs|h[eé]mogramme|num[eé]ration formule sanguine)(\s|$)/i.test(value);
+                              setParameterSuggestions(isNfs ? NFS_PARAMETERS : []);
+                            }}
                             placeholder="Ex: Dosage de glucose"
                             className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           />
                         </label>
-                        <label className="block text-sm">
-                          <span className="block text-slate-700">Section</span>
-                          <select
-                            required
-                            value={testForm.sectionId}
-                            onChange={(event) => setTestForm((current) => ({ ...current, sectionId: event.target.value }))}
-                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          >
-                            <option value="">Selectionner</option>
-                            {catalogue.sections.map((section) => (
-                              <option key={section.id} value={section.id}>{section.name}</option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="block text-sm">
-                          <span className="block text-slate-700">Catégorie</span>
-                          <select
-                            required
-                            value={testForm.categoryId}
-                            onChange={(event) => setTestForm((current) => ({ ...current, categoryId: event.target.value }))}
-                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          >
-                            <option value="">Selectionner</option>
-                            {catalogue.categories.map((category) => (
-                              <option key={category.id} value={category.id}>{category.name}</option>
-                            ))}
-                          </select>
-                        </label>
+                        {parameterSuggestions.length > 0 ? (
+                          <div className="md:col-span-2 mt-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
+                            <p className="font-medium text-slate-800">NFS détectée — paramètres pré-remplis :</p>
+                            <ul className="mt-2 grid grid-cols-1 gap-2 text-xs text-slate-700 sm:grid-cols-2">
+                              {parameterSuggestions.map((p) => (
+                                <li key={p.code} className="rounded-md bg-white p-2 shadow-sm">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold">{p.code}</span>
+                                    <span className="text-slate-500">{p.unit}</span>
+                                  </div>
+                                  <div className="mt-1 text-slate-800">{p.name}</div>
+                                  <div className="mt-1 text-xs text-slate-500">Réf: {p.reference}</div>
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="mt-2 text-xs text-slate-500">Remarque: l examen NFS est facturé comme un examen unique; les paramètres seront créés automatiquement côté serveur.</p>
+                          </div>
+                        ) : null}
+
                         <label className="block text-sm">
                           <span className="block text-slate-700">Prix</span>
                           <input
@@ -921,6 +1769,7 @@ export default function CatalogueLab() {
                             className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           />
                         </label>
+
                         <label className="block text-sm">
                           <span className="block text-slate-700">Délai (min)</span>
                           <input
@@ -932,76 +1781,82 @@ export default function CatalogueLab() {
                             className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           />
                         </label>
-                        <label className="block text-sm">
-                          <span className="block text-slate-700">Type résultat</span>
-                          <select
-                            required
-                            value={testForm.resultType}
-                            onChange={(event) => setTestForm((current) => ({ ...current, resultType: event.target.value }))}
-                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          >
-                            <option value="NUMERIC">NUMERIC</option>
-                            <option value="TEXT">TEXT</option>
-                            <option value="SIMPLE">SIMPLE</option>
-                            <option value="MULTI_PARAMETER">MULTI_PARAMETER</option>
-                          </select>
-                        </label>
-                        <label className="block text-sm">
-                          <span className="block text-slate-700">Genre</span>
-                          <select
-                            required
-                            value={testForm.genderRestriction}
-                            onChange={(event) => setTestForm((current) => ({ ...current, genderRestriction: event.target.value }))}
-                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          >
-                            <option value="ALL">ALL</option>
-                            <option value="MALE">MALE</option>
-                            <option value="FEMALE">FEMALE</option>
-                            <option value="UNSPECIFIED">UNSPECIFIED</option>
-                          </select>
-                        </label>
-                        <label className="block text-sm">
-                          <span className="block text-slate-700">Unité</span>
-                          <input
-                            required
-                            value={testForm.unit}
-                            onChange={(event) => setTestForm((current) => ({ ...current, unit: event.target.value }))}
-                            placeholder="mg/dL"
-                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          />
-                        </label>
-                        <label className="block text-sm">
-                          <span className="block text-slate-700">Référence</span>
-                          <input
-                            required
-                            value={testForm.referenceRange}
-                            onChange={(event) => setTestForm((current) => ({ ...current, referenceRange: event.target.value }))}
-                            placeholder="Ex: 70-100"
-                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          />
-                        </label>
-                        <label className="block text-sm">
-                          <span className="block text-slate-700">Âge minimum</span>
-                          <input
-                            required
-                            value={testForm.minAge}
-                            onChange={(event) => setTestForm((current) => ({ ...current, minAge: event.target.value }))}
-                            type="number"
-                            min="0"
-                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          />
-                        </label>
-                        <label className="block text-sm">
-                          <span className="block text-slate-700">Âge maximum</span>
-                          <input
-                            required
-                            value={testForm.maxAge}
-                            onChange={(event) => setTestForm((current) => ({ ...current, maxAge: event.target.value }))}
-                            type="number"
-                            min="0"
-                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          />
-                        </label>
+
+                        {!isNfsTest ? (
+                          <>
+                            <label className="block text-sm">
+                              <span className="block text-slate-700">Type résultat</span>
+                              <select
+                                required
+                                value={testForm.resultType}
+                                onChange={(event) => setTestForm((current) => ({ ...current, resultType: event.target.value }))}
+                                className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                              >
+                                <option value="NUMERIC">NUMERIC</option>
+                                <option value="TEXT">TEXT</option>
+                                <option value="SIMPLE">SIMPLE</option>
+                                <option value="MULTI_PARAMETER">MULTI_PARAMETER</option>
+                              </select>
+                            </label>
+                            <label className="block text-sm">
+                              <span className="block text-slate-700">Genre</span>
+                              <select
+                                required
+                                value={testForm.genderRestriction}
+                                onChange={(event) => setTestForm((current) => ({ ...current, genderRestriction: event.target.value }))}
+                                className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                              >
+                                <option value="ALL">ALL</option>
+                                <option value="MALE">MALE</option>
+                                <option value="FEMALE">FEMALE</option>
+                                <option value="UNSPECIFIED">UNSPECIFIED</option>
+                              </select>
+                            </label>
+                            <label className="block text-sm">
+                              <span className="block text-slate-700">Unité</span>
+                              <input
+                                required
+                                value={testForm.unit}
+                                onChange={(event) => setTestForm((current) => ({ ...current, unit: event.target.value }))}
+                                placeholder="mg/dL"
+                                className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                              />
+                            </label>
+                            <label className="block text-sm">
+                              <span className="block text-slate-700">Référence</span>
+                              <input
+                                required
+                                value={testForm.referenceRange}
+                                onChange={(event) => setTestForm((current) => ({ ...current, referenceRange: event.target.value }))}
+                                placeholder="Ex: 70-100"
+                                className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                              />
+                            </label>
+                            <label className="block text-sm">
+                              <span className="block text-slate-700">Âge minimum</span>
+                              <input
+                                required
+                                value={testForm.minAge}
+                                onChange={(event) => setTestForm((current) => ({ ...current, minAge: event.target.value }))}
+                                type="number"
+                                min="0"
+                                className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                              />
+                            </label>
+                            <label className="block text-sm">
+                              <span className="block text-slate-700">Âge maximum</span>
+                              <input
+                                required
+                                value={testForm.maxAge}
+                                onChange={(event) => setTestForm((current) => ({ ...current, maxAge: event.target.value }))}
+                                type="number"
+                                min="0"
+                                className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                              />
+                            </label>
+                          </>
+                        ) : null}
+
                         <label className="block text-sm md:col-span-2">
                           <span className="block text-slate-700">Description</span>
                           <input
@@ -1011,6 +1866,7 @@ export default function CatalogueLab() {
                             className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           />
                         </label>
+
                         <div className="flex items-end md:col-span-2">
                           <button
                             type="button"
@@ -1021,6 +1877,7 @@ export default function CatalogueLab() {
                             Enregistrer
                           </button>
                         </div>
+                        
                       </div>
                     </Panel>
                   )}
@@ -1030,7 +1887,7 @@ export default function CatalogueLab() {
               {activeTab === "Paramètres" && (
                 <div className="space-y-6">
                   <DataTable
-                    headers={["Examen", "Paramètre", "Code", "Type résultat", "Unité", "Référence", "Statut"]}
+                    headers={["Examen", "Paramètre", "Code", "Type résultat", "Unité", "Référence", "Statut", "Actions"]}
                     rows={filteredParameters.map((parameter) => [
                       parameter.labTest?.name || "-",
                       parameter.name,
@@ -1039,6 +1896,7 @@ export default function CatalogueLab() {
                       parameter.unit || "-",
                       parameter.referenceRange || "-",
                       parameter.active ? "Active" : "Inactive",
+                      isLabManager ? <ActionButtons onEdit={() => handleEditParameter(parameter)} onDelete={() => setDeleteTarget({ kind: 'test-parameters', id: parameter.id, label: parameter.name })} /> : "—",
                     ])}
                   />
 
@@ -1179,7 +2037,7 @@ export default function CatalogueLab() {
                       sampleType.description || "-",
                       sampleType.active ? "Oui" : "Non",
                       sampleType.sampleRequirements.length,
-                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('sample-types', sampleType, sampleType.name)} className="text-xs text-blue-700">{sampleType.active ? "Désactiver" : "Activer"}</button><button onClick={() => removeCatalogueItem('sample-types', sampleType.id, sampleType.name)} className="text-xs text-red-700">Supprimer</button></div> : "—",
+                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('sample-types', sampleType, sampleType.name)} className="text-xs text-blue-700">{sampleType.active ? "Désactiver" : "Activer"}</button><ActionButtons onEdit={() => handleEditSampleType(sampleType)} onDelete={() => setDeleteTarget({ kind: 'sample-types', id: sampleType.id, label: sampleType.name })} /></div> : "—",
                     ])}
                   />
 
@@ -1202,7 +2060,7 @@ export default function CatalogueLab() {
                             onChange={(event) => setSampleTypeForm((current) => ({ ...current, labTestId: event.target.value }))}
                             className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           >
-                            <option value="">Sélectionner un examen</option>
+                            <option value="">Sélectionner</option>
                             {catalogue.tests.map((test) => (
                               <option key={test.id} value={test.id}>{test.name}</option>
                             ))}
@@ -1246,7 +2104,7 @@ export default function CatalogueLab() {
               {activeTab === "Exigences" && (
                 <div className="space-y-6">
                   <DataTable
-                    headers={["Examen", "Échantillon", "Volume", "Condition stockage", "Âge max", "Instructions"]}
+                    headers={["Examen", "Échantillon", "Volume", "Condition stockage", "Temps max", "Instructions", "Actions"]}
                     rows={filteredSampleRequirements.map((requirement) => [
                       requirement.labTest?.name || "-",
                       requirement.labSampleType?.name || "-",
@@ -1254,6 +2112,7 @@ export default function CatalogueLab() {
                       requirement.storageCondition || "-",
                       requirement.maxAgeMinutes ? `${requirement.maxAgeMinutes} min` : "-",
                       requirement.instructions || "-",
+                      isLabManager ? <ActionButtons onEdit={() => handleEditSampleRequirement(requirement)} onDelete={() => setDeleteTarget({ kind: 'sample-requirements', id: requirement.id, label: `${requirement.labTest?.name || 'Exigence'}` })} /> : "—",
                     ])}
                   />
 
@@ -1273,7 +2132,7 @@ export default function CatalogueLab() {
                           <select
                             required
                             value={sampleRequirementForm.labTestId}
-                            onChange={(event) => setSampleRequirementForm((current) => ({ ...current, labTestId: event.target.value }))}
+                            onChange={(event) => setSampleRequirementForm((current) => ({ ...current, labTestId: event.target.value, labSampleTypeId: '' }))}
                             className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           >
                             <option value="">Selectionner</option>
@@ -1288,10 +2147,11 @@ export default function CatalogueLab() {
                             required
                             value={sampleRequirementForm.labSampleTypeId}
                             onChange={(event) => setSampleRequirementForm((current) => ({ ...current, labSampleTypeId: event.target.value }))}
-                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                            disabled={!sampleRequirementForm.labTestId}
+                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           >
                             <option value="">Selectionner</option>
-                            {catalogue.sampleTypes.map((sampleType) => (
+                            {filteredSampleTypesBySelectedTest.map((sampleType) => (
                               <option key={sampleType.id} value={sampleType.id}>{sampleType.name}</option>
                             ))}
                           </select>
@@ -1329,7 +2189,7 @@ export default function CatalogueLab() {
                           />
                         </label>
                         <label className="block text-sm">
-                          <span className="block text-slate-700">Âge maximum (min)</span>
+                          <span className="block text-slate-700">Temps maximum (min)</span>
                           <input
                             required
                             value={sampleRequirementForm.maxAgeMinutes}
@@ -1377,7 +2237,7 @@ export default function CatalogueLab() {
                       catalogue.tests.filter((test) =>
                         test.consumableRequirements.some((requirement) => requirement.labConsumableId === consumable.id),
                       ).length,
-                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('consumables', consumable, consumable.name)} className="text-xs text-blue-700">{consumable.active ? "Désactiver" : "Activer"}</button><button onClick={() => removeCatalogueItem('consumables', consumable.id, consumable.name)} className="text-xs text-red-700">Supprimer</button></div> : "—",
+                      isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('consumables', consumable, consumable.name)} className="text-xs text-blue-700">{consumable.active ? "Désactiver" : "Activer"}</button><ActionButtons onEdit={() => handleEditConsumable(consumable)} onDelete={() => setDeleteTarget({ kind: 'consumables', id: consumable.id, label: consumable.name })} /></div> : "—",
                     ])}
                   />
 
@@ -1444,6 +2304,19 @@ export default function CatalogueLab() {
                       </div>
                     </Panel>
                   )}
+
+                  <DataTable
+                    headers={["Examen", "Consommable", "Quantité", "Unité", "Actions"]}
+                    rows={catalogue.tests.flatMap((test) =>
+                      (test.consumableRequirements || []).map((requirement) => [
+                        test.name,
+                        requirement.labConsumable?.name || '-',
+                        requirement.quantity,
+                        requirement.unit || '-',
+                        isLabManager ? <ActionButtons onEdit={() => handleEditConsumableRequirement({ id: requirement.id, labTestId: test.id, labConsumableId: requirement.labConsumableId, quantity: requirement.quantity, unit: requirement.unit || '' })} onDelete={() => setDeleteTarget({ kind: 'consumable-requirements', id: requirement.id, label: `${test.name} / ${requirement.labConsumable?.name || 'consommable'}` })} /> : '—',
+                      ])
+                    )}
+                  />
 
                   <button
                     type="button"
@@ -1541,6 +2414,18 @@ export default function CatalogueLab() {
                     )}
                   </Panel>
 
+                  <DataTable
+                    headers={["Consommable", "Quantité", "Minimum", "Critique", "Localisation", "Actions"]}
+                    rows={stockRows.map(({ consumable, stockLine }) => [
+                      consumable.name,
+                      stockLine.quantity,
+                      stockLine.minimumLevel ?? '-',
+                      stockLine.criticalLevel ?? '-',
+                      stockLine.location ?? '-',
+                      isLabManager ? <ActionButtons onEdit={() => handleEditStock({ id: stockLine.id, quantity: String(stockLine.quantity ?? ''), minimumLevel: stockLine.minimumLevel ?? '', criticalLevel: stockLine.criticalLevel ?? '', location: stockLine.location ?? '' })} onDelete={() => setDeleteTarget({ kind: 'stock', id: stockLine.id, label: `${consumable.name} (${stockLine.location || 'stock'})` })} /> : '—',
+                    ])}
+                  />
+
                   <button
                     type="button"
                     onClick={() => setShowStockForm((current) => !current)}
@@ -1631,6 +2516,27 @@ export default function CatalogueLab() {
           )}
         </div>
       </Panel>
+
+      <EditSectionModal open={Boolean(editingSection)} value={editingSection} onChange={(next) => setEditingSection(next)} onCancel={() => setEditingSection(null)} onSave={handleSaveSection} isSaving={isSaving} />
+      <EditCategoryModal open={Boolean(editingCategory)} value={editingCategory} onChange={(next) => setEditingCategory(next)} onCancel={() => setEditingCategory(null)} onSave={handleSaveCategory} isSaving={isSaving} sections={(catalogue?.sections ?? []).map((section) => ({ id: section.id, name: section.name }))} />
+      <EditTestModal open={Boolean(editingTest)} value={editingTest} onChange={(next) => setEditingTest(next)} onCancel={() => setEditingTest(null)} onSave={handleSaveTest} isSaving={isSaving} categories={(catalogue?.categories ?? []).map((category) => ({ id: category.id, name: category.name }))} sections={(catalogue?.sections ?? []).map((section) => ({ id: section.id, name: section.name }))} />
+      <EditParameterModal open={Boolean(editingParameter)} value={editingParameter} onChange={(next) => setEditingParameter(next)} onCancel={() => setEditingParameter(null)} onSave={handleSaveParameter} isSaving={isSaving} tests={(catalogue?.tests ?? []).map((test) => ({ id: test.id, name: test.name }))} />
+      <EditSampleTypeModal open={Boolean(editingSampleType)} value={editingSampleType} onChange={(next) => setEditingSampleType(next)} onCancel={() => setEditingSampleType(null)} onSave={handleSaveSampleType} isSaving={isSaving} />
+      <EditSampleRequirementModal open={Boolean(editingSampleRequirement)} value={editingSampleRequirement} onChange={(next) => setEditingSampleRequirement(next)} onCancel={() => setEditingSampleRequirement(null)} onSave={handleSaveSampleRequirement} isSaving={isSaving} tests={(catalogue?.tests ?? []).map((test) => ({ id: test.id, name: test.name }))} sampleTypes={(catalogue?.sampleTypes ?? []).map((sampleType) => ({ id: sampleType.id, name: sampleType.name }))} />
+      <EditConsumableModal open={Boolean(editingConsumable)} value={editingConsumable} onChange={(next) => setEditingConsumable(next)} onCancel={() => setEditingConsumable(null)} onSave={handleSaveConsumable} isSaving={isSaving} />
+      <EditConsumableRequirementModal open={Boolean(editingConsumableRequirement)} value={editingConsumableRequirement} onChange={(next) => setEditingConsumableRequirement(next)} onCancel={() => setEditingConsumableRequirement(null)} onSave={handleSaveConsumableRequirement} isSaving={isSaving} tests={(catalogue?.tests ?? []).map((test) => ({ id: test.id, name: test.name }))} consumables={(catalogue?.consumables ?? []).map((consumable) => ({ id: consumable.id, name: consumable.name }))} />
+      <EditStockModal open={Boolean(editingStock)} value={editingStock} onChange={(next) => setEditingStock(next)} onCancel={() => setEditingStock(null)} onSave={handleSaveStock} isSaving={isSaving} />
+
+      <ConfirmDeleteModal
+        open={Boolean(deleteTarget)}
+        title="Supprimer cet élément ?"
+        description={`Cette action supprimera définitivement ${deleteTarget?.label || 'l’élément sélectionné'} du catalogue.`}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+        isDeleting={isSaving}
+      />
+
+      <ErrorModal open={Boolean(errorModal)} error={errorModal} onClose={() => setErrorModal(null)} />
     </AdminPageShell>
   );
 }

@@ -6,6 +6,23 @@ import { apiFetch } from "../../config/api";
 import { fetchLaboratoryCatalogue } from "../../api/laboratory";
 import { consultationLabel, formatDateTime, hasConsultations, patientSearchText, serviceLabel } from "./medecinShared";
 
+type LabResultParameter = {
+  labTestParameter?: { name?: string | null; unit?: string | null; referenceRange?: string | null } | null;
+  valueNumeric?: number | string | null;
+  valueText?: string | null;
+  interpretation?: string | null;
+};
+
+type DoctorLabResult = {
+  resultName: string;
+  resultValue: string;
+  units?: string | null;
+  referenceRange?: string | null;
+  verified?: boolean;
+  interpretation?: string | null;
+  parameters?: LabResultParameter[];
+};
+
 const formatLabStatus = (status?: string | null) => {
   const normalized = (status || "").toUpperCase();
   const labels: Record<string, string> = {
@@ -34,18 +51,9 @@ const getLabRequestViewState = (request: { status?: string | null; results?: Arr
   const hasResults = Boolean(request.results?.some((result) => (result.resultValue || "").trim()));
   const normalizedWorkflow = (patientWorkflowStatus || "").toUpperCase();
   const normalizedRequestStatus = (request.status || "").toUpperCase();
-  const alreadyTreatedStatuses = new Set([
-    "TECHNICAL_VALIDATED",
-    "BIOLOGICALLY_VALIDATED",
-    "AVAILABLE",
-    "SENT",
-    "VERIFIED",
-    "COMPLETED",
-    "TECHNICAL_VALIDATION",
-    "BIOLOGICAL_VALIDATION",
-  ]);
+  const availableStatuses = new Set(["AVAILABLE", "SENT", "VERIFIED", "COMPLETED"]);
 
-  if (hasResults || alreadyTreatedStatuses.has(normalizedRequestStatus)) {
+  if (availableStatuses.has(normalizedRequestStatus)) {
     return {
       badgeLabel: "Traité",
       badgeClassName: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
@@ -71,7 +79,21 @@ const getLabRequestViewState = (request: { status?: string | null; results?: Arr
   };
 };
 
-const formatLabResultTextWithReference = (result: { resultName?: string | null; resultValue?: string | null; units?: string | null; referenceRange?: string | null }) => {
+const formatLabResultTextWithReference = (result: DoctorLabResult) => {
+  if (Array.isArray(result.parameters) && result.parameters.length > 0) {
+    return result.parameters
+      .map((parameter) => {
+        const name = parameter.labTestParameter?.name || "Paramètre";
+        const value = parameter.valueNumeric?.toString() || parameter.valueText || "Non renseigné";
+        const unit = parameter.labTestParameter?.unit?.trim() || "";
+        const reference = parameter.labTestParameter?.referenceRange?.trim() || "";
+        const interpretation = parameter.interpretation ? ` • ${parameter.interpretation}` : "";
+        const referenceText = reference ? ` | Réf: ${reference}${unit && !reference.toLowerCase().includes(unit.toLowerCase()) ? ` ${unit}` : ""}` : unit ? ` ${unit}` : "";
+        return `${name}: ${value}${referenceText}${interpretation}`;
+      })
+      .join("\n");
+  }
+
   const resultValue = result.resultValue?.trim() || "Non renseigné";
   const units = result.units?.trim();
   const valueLine = `${result.resultName || "Résultat"}: ${resultValue}${units ? ` ${units}` : ""}`;
@@ -82,6 +104,9 @@ const formatLabResultTextWithReference = (result: { resultName?: string | null; 
   const hasUnitAlready = Boolean(units && reference.toLowerCase().includes(units.toLowerCase()));
   return `${valueLine}\nRéférence: ${reference}${!hasUnitAlready && units ? ` ${units}` : ""}`;
 };
+
+const isNfsExam = (name?: string | null) =>
+  Boolean(/(^|\s)(nfs|h[eé]mogramme|num[eé]ration formule sanguine)(\s|$)/i.test(name || ""));
 
 export default function ExamensMedecin() {
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
@@ -162,6 +187,12 @@ export default function ExamensMedecin() {
     await load();
   };
 
+  const recentLabRequests = useMemo(() => {
+    const requests = (selectedPatient?.labRequests || []).slice();
+    requests.sort((a, b) => new Date(b.requestedAt || (b as any).createdAt || 0).getTime() - new Date(a.requestedAt || (a as any).createdAt || 0).getTime());
+    return requests.slice(0, 5);
+  }, [selectedPatient?.labRequests]);
+
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
       <PageMeta title="Examens medecin | D7 Clinique" description="Demandes et resultats d'examens." />
@@ -207,7 +238,7 @@ export default function ExamensMedecin() {
                     <button disabled={!canWrite} onClick={submit} className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:bg-slate-300 disabled:text-slate-600">Envoyer la demande</button>
                   </Panel>
                   <Panel title="Demandes et resultats">
-                    {(selectedPatient.labRequests || []).length === 0 ? <SmallEmpty /> : selectedPatient.labRequests?.map((request) => {
+                    {(selectedPatient.labRequests || []).length === 0 ? <SmallEmpty /> : recentLabRequests?.map((request) => {
                       const viewState = getLabRequestViewState(request, selectedPatient.workflowStatus);
                       return (
                         <div key={request.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950">
@@ -226,17 +257,28 @@ export default function ExamensMedecin() {
                           <p className="mt-3 text-slate-600 dark:text-slate-300">{viewState.message}</p>
                           {viewState.showResults ? (
                             <div className="mt-3 space-y-2">
-                              {request.results?.map((result, index) => (
-                                <div key={`${request.id}-${index}`} className="rounded-lg border border-slate-200 bg-white/80 p-2.5 dark:border-slate-800 dark:bg-slate-900/70">
-                                  <p className="font-medium text-slate-700 dark:text-slate-200 whitespace-pre-line">
-                                    {formatLabResultTextWithReference(result)}
-                                    {result.verified ? " • Validé" : ""}
-                                  </p>
-                                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                                    Interprétation : {result.interpretation || "Aucune interprétation fournie."}
-                                  </p>
-                                </div>
-                              ))}
+                              {(() => {
+                                const examName = (request as any).examName || request.specimenType || "";
+                                const isNfsRequest = isNfsExam(examName) || Boolean(request.results?.some((r: any) => Array.isArray(r.parameters) && r.parameters.length > 0));
+                                if (isNfsRequest) {
+                                  const params = (request.results || []).flatMap((r: any) => r.parameters || []);
+                                  if (params.length === 0) return <p className="text-sm text-slate-500">Aucun sous-examen NFS disponible.</p>;
+                                  return params.map((p: any, idx: number) => (
+                                    <div key={`${request.id}-param-${idx}`} className="rounded-lg border border-slate-200 bg-white/80 p-2.5 dark:border-slate-800 dark:bg-slate-900/70">
+                                      <p className="font-medium text-slate-700 dark:text-slate-200 whitespace-pre-line">{formatLabResultParameter(p)}</p>
+                                    </div>
+                                  ));
+                                }
+                                return request.results?.map((result, index) => (
+                                  <div key={`${request.id}-${index}`} className="rounded-lg border border-slate-200 bg-white/80 p-2.5 dark:border-slate-800 dark:bg-slate-900/70">
+                                    <p className="font-medium text-slate-700 dark:text-slate-200 whitespace-pre-line">
+                                      {formatLabResultTextWithReference(result)}
+                                      {result.verified ? " • Validé" : ""}
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Interprétation : {result.interpretation || "Aucune interprétation fournie."}</p>
+                                  </div>
+                                ));
+                              })()}
                             </div>
                           ) : null}
                         </div>

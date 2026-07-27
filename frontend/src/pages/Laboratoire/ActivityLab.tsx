@@ -11,6 +11,13 @@ import {
 import { type PatientRecord } from "../../api/reception";
 import { useAuth } from "../../context/AuthContext";
 
+type LabRequestResultParameter = {
+  valueNumeric?: number | null;
+  valueText?: string | null;
+  interpretation?: string | null;
+  labTestParameter?: { name?: string | null; unit?: string | null; referenceRange?: string | null } | null;
+};
+
 type LabRequestResult = {
   resultStatus?: string | null;
   resultName?: string | null;
@@ -18,7 +25,9 @@ type LabRequestResult = {
   interpretation?: string | null;
   units?: string | null;
   referenceRange?: string | null;
+  comments?: string | null;
   reportedAt?: string | null;
+  parameters?: LabRequestResultParameter[];
 };
 
 type LabRequestDetailItem = {
@@ -45,7 +54,7 @@ type LabRequestDetail = {
   status?: string | null;
   items?: LabRequestDetailItem[];
   results?: LabRequestResult[];
-  patient?: { id?: string; firstName?: string | null; lastName?: string | null; phone?: string | null; email?: string | null; address?: string | null } | null;
+  patient?: { id?: string; firstName?: string | null; lastName?: string | null; phone?: string | null; email?: string | null; address?: string | null; gender?: string | null } | null;
   consultation?: { provider?: { firstName?: string | null; lastName?: string | null; displayName?: string | null; phone?: string | null } | null } | null;
   requestedBy?: { phone?: string | null } | null;
 };
@@ -64,7 +73,16 @@ export default function ActivityLab() {
     resultValue: "",
     referenceRange: "",
     interpretation: "",
+    notes: "",
   });
+  const [resultParameters, setResultParameters] = useState<Array<{
+    labTestParameterId?: string | null;
+    name: string;
+    unit?: string | null;
+    referenceRange?: string | null;
+    resultValue: string;
+    interpretation: string;
+  }>>([]);
   const [recentRequestsSearch, setRecentRequestsSearch] = useState("");
   const [isSubmittingResult, setIsSubmittingResult] = useState(false);
   const [showSendChoice, setShowSendChoice] = useState(false);
@@ -133,6 +151,18 @@ export default function ActivityLab() {
   };
 
   const currentExamName = currentItem?.labTest?.name || requestDetail?.items?.[0]?.labTest?.name || "Examen";
+  const isNfsRequest = Boolean(
+    currentItem?.labTest?.name &&
+      /(^|\s)(nfs|h[eé]mogramme|num[eé]ration formule sanguine)(\s|$)/i.test(currentItem.labTest.name) &&
+      (currentItem.labTest.parameterTemplates?.length ?? 0) > 0,
+  );
+
+  const normalizedSectionName = String(currentItem?.labTest?.section?.name || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+  const isBacteriologyRequest = /\bbacteriologie\b/.test(normalizedSectionName);
+
   const currentExamRequestCount = getExamRepeatCount(currentExamName);
   const displayRequestId = buildLabRequestDisplayId(patientPosition, requestDetail?.patient, currentExamRequestCount);
   const translatedRequestStatus = getLabStatusLabel(requestDetail?.status, latestResult?.resultStatus);
@@ -196,6 +226,56 @@ export default function ActivityLab() {
     return baseRange;
   };
 
+  const normalizePatientGender = (gender?: string | null) => {
+    if (!gender) return undefined;
+    const normalized = gender.trim().toUpperCase();
+    if (normalized === "F" || normalized === "FEMININ" || normalized === "FÉMININ") return "F";
+    if (normalized === "M" || normalized === "MASCULIN") return "M";
+    return undefined;
+  };
+
+  const formatNfsParameterReference = (
+    parameter: { referenceRange?: string | null; unit?: string | null; name: string },
+    patientGender?: string | null,
+  ) => {
+    const referenceValue = String(parameter.referenceRange || "").trim();
+    const unit = String(parameter.unit || "").trim();
+    const gender = normalizePatientGender(patientGender);
+
+    if (!referenceValue) {
+      return unit ? `— ${unit}` : "—";
+    }
+
+    const normalizedName = parameter.name.trim().toLowerCase();
+    let formattedReference = referenceValue;
+
+    if (referenceValue.includes("(H)") || referenceValue.includes("(F)")) {
+      const parts = referenceValue.split("/").map((part) => part.trim());
+      if (gender === "F") {
+        formattedReference = parts.find((part) => /\(F\)/i.test(part)) || parts[1] || parts[0];
+      } else {
+        formattedReference = parts.find((part) => /\(H\)/i.test(part)) || parts[0] || parts[1] || parts[0];
+      }
+      formattedReference = formattedReference.replace(/\s*\([^)]*\)/g, "").trim();
+    }
+
+    if (normalizedName.includes("globules rouges") && /\(h\)|\(f\)/i.test(referenceValue)) {
+      const parts = referenceValue.split("/").map((part) => part.trim());
+      if (gender === "F") {
+        formattedReference = parts.find((part) => /\(F\)/i.test(part)) || parts[1] || parts[0];
+      } else if (gender === "M") {
+        formattedReference = parts.find((part) => /\(H\)/i.test(part)) || parts[0] || parts[1] || parts[0];
+      }
+      formattedReference = formattedReference.replace(/\s*\([^)]*\)/g, "").trim();
+    }
+
+    if (unit && !formattedReference.toLowerCase().includes(unit.toLowerCase())) {
+      return `${formattedReference} ${unit}`;
+    }
+
+    return formattedReference;
+  };
+
   const openRequestDetail = async (requestId: string) => {
     setIsDetailLoading(true);
     setSelectedRequest(requestId);
@@ -210,7 +290,34 @@ export default function ActivityLab() {
         resultValue: firstItem?.results?.[0]?.resultValue || "",
         referenceRange,
         interpretation: firstItem?.results?.[0]?.interpretation || "",
+        notes: firstItem?.results?.[0]?.comments || "",
       });
+
+      const requestParameterTemplates = firstItem?.labTest?.parameterTemplates || [];
+      const existingParameters = Array.isArray(firstItem?.results?.[0]?.parameters)
+        ? firstItem?.results?.[0]?.parameters
+        : [];
+      if (requestParameterTemplates.length > 0 && /(^|\s)(nfs|h[eé]mogramme|num[eé]ration formule sanguine)(\s|$)/i.test(firstItem?.labTest?.name || "")) {
+        setResultParameters(
+          requestParameterTemplates.map((parameter) => {
+            const existing = existingParameters.find((item) => item.labTestParameterId === parameter.id);
+            return {
+              labTestParameterId: parameter.id,
+              name: parameter.name || "Paramètre",
+              unit: parameter.unit || null,
+              referenceRange: formatNfsParameterReference(parameter, detail?.patient?.gender),
+              resultValue:
+                existing?.valueNumeric != null
+                  ? String(existing.valueNumeric)
+                  : existing?.valueText || "",
+              interpretation: existing?.interpretation || "",
+            };
+          }),
+        );
+      } else {
+        setResultParameters([]);
+      }
+
       setShowSendChoice(false);
       setDeliveryMode("validation");
 
@@ -251,11 +358,25 @@ export default function ActivityLab() {
         method: "POST",
         body: JSON.stringify({
           resultName: resultForm.resultName || currentItem?.labTest?.name || "Résultat laboratoire",
-          resultValue: resultForm.resultValue,
-          referenceRange: resultForm.referenceRange || currentItem?.labTest?.referenceRange || null,
-          interpretation: resultForm.interpretation || null,
-          units: currentItem?.labTest?.unit || null,
+          resultValue: isNfsRequest ? null : resultForm.resultValue,
+          referenceRange: isNfsRequest ? null : resultForm.referenceRange || currentItem?.labTest?.referenceRange || null,
+          interpretation: isNfsRequest ? null : resultForm.interpretation || null,
+          units: isNfsRequest ? null : currentItem?.labTest?.unit || null,
           labRequestItemId: currentItem?.id || null,
+          resultType: isNfsRequest ? "MULTI_PARAMETER" : undefined,
+          parameters: isNfsRequest
+            ? resultParameters.map((parameter) => ({
+                labTestParameterId: parameter.labTestParameterId,
+                valueNumeric:
+                  parameter.resultValue.trim() !== "" && !Number.isNaN(Number(parameter.resultValue.trim()))
+                    ? Number(parameter.resultValue.trim())
+                    : undefined,
+                valueText: parameter.resultValue.trim() !== "" && Number.isNaN(Number(parameter.resultValue.trim()))
+                    ? parameter.resultValue.trim()
+                    : undefined,
+                interpretation: parameter.interpretation.trim() || undefined,
+              }))
+            : undefined,
           deliveryMode: isItemAssigned ? deliveryMode : undefined,
         })
       });
@@ -349,6 +470,35 @@ export default function ActivityLab() {
       return normalizedRange;
     })();
     const logoSrc = `${window.location.origin}/images/favicon.png`;
+
+    const selectedResult = (latestResult as LabRequestResult) || currentItem?.results?.[0];
+    const isNfsPrint = Boolean(/(^|\s)(nfs|h[eé]mogramme|num[eé]ration formule sanguine)(\s|$)/i.test(examName));
+    const nfsParameters = Array.isArray(selectedResult?.parameters) ? selectedResult.parameters : [];
+    const hasNfsSubResults = isNfsPrint && nfsParameters.length > 0;
+    const nfsResultRows = hasNfsSubResults
+      ? nfsParameters
+          .map((parameter) => {
+            const parameterName = parameter.labTestParameter?.name || "Paramètre";
+            const parameterValue = parameter.valueNumeric != null ? String(parameter.valueNumeric) : parameter.valueText || "—";
+            const parameterReference = formatNfsParameterReference(
+              {
+                name: parameter.labTestParameter?.name || parameterName,
+                referenceRange: parameter.labTestParameter?.referenceRange || null,
+                unit: parameter.labTestParameter?.unit || null,
+              },
+              requestDetail?.patient?.gender,
+            );
+            const parameterInterpretation = parameter.interpretation || "";
+            return `
+                  <tr>
+                    <td>${parameterName}</td>
+                    <td>${parameterValue}${parameter.labTestParameter?.unit ? ` ${parameter.labTestParameter.unit}` : ""}</td>
+                    <td>${parameterReference}</td>
+                    <td>${parameterInterpretation || "—"}</td>
+                  </tr>`;
+          })
+          .join("")
+      : "";
 
     const resultSentAt = (latestResult as LabRequestResult)?.reportedAt || currentItem?.results?.[0]?.reportedAt || requestDetail?.results?.[0]?.reportedAt || null;
 
@@ -458,12 +608,14 @@ export default function ActivityLab() {
                     <th class="label">Valeur de référence</th>
                     <th class="label">Interprétation</th>
                   </tr>
+                  ${hasNfsSubResults ? nfsResultRows : `
                   <tr>
                     <td>${resultName}</td>
                     <td>${resultValueWithUnit}</td>
                     <td>${formattedReferenceRange}</td>
                     <td>${interpretation}</td>
                   </tr>
+                  `}
                 </tbody>
               </table>
             </div>
@@ -731,39 +883,122 @@ export default function ActivityLab() {
                 <div>
                   <Panel title="Saisie du résultat" subtitle="Trois champs principaux pour enregistrer le résultat.">
                     <form onSubmit={handleSubmitResult} className="space-y-4">
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Nom de l'examen</label>
-                        <input
-                          value={resultForm.resultName}
-                          readOnly
-                          className="w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600 focus:border-emerald-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Résultat</label>
-                        <input
-                          value={resultForm.resultValue}
-                          onChange={(event) => setResultForm((current) => ({ ...current, resultValue: event.target.value }))}
-                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Valeur de référence</label>
-                        <input
-                          value={resultForm.referenceRange}
-                          readOnly
-                          className="w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600 focus:border-emerald-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Interprétation</label>
-                        <textarea
-                          value={resultForm.interpretation}
-                          onChange={(event) => setResultForm((current) => ({ ...current, interpretation: event.target.value }))}
-                          rows={4}
-                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
-                        />
-                      </div>
+                      {isNfsRequest && resultParameters.length > 0 ? (
+                        <div className="space-y-4">
+                          <div>
+                            <p className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Examen demandé</p>
+                            <div className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+                              {currentItem?.labTest?.name || "NFS"}
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                            <table className="min-w-full table-fixed divide-y divide-slate-200 text-sm">
+                              <thead className="bg-slate-50 dark:bg-slate-950">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-300">Nom de l'examen</th>
+                                  <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-300">Résultat</th>
+                                  <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-300">Valeur de référence</th>
+                                  <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-300">Interprétation</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                                {resultParameters.map((parameter, index) => (
+                                  <tr key={parameter.labTestParameterId || index} className="bg-white dark:bg-slate-900">
+                                    <td className="px-3 py-2 align-top text-slate-900 dark:text-slate-100">{parameter.name}</td>
+                                    <td className="px-3 py-2 align-top">
+                                      <input
+                                        value={parameter.resultValue}
+                                        onChange={(event) => setResultParameters((current) =>
+                                          current.map((item, itemIndex) =>
+                                            itemIndex === index ? { ...item, resultValue: event.target.value } : item,
+                                          ),
+                                        )}
+                                        className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                                      />
+                                    </td>
+                                    <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-400">
+                                      {parameter.referenceRange || formatNfsParameterReference(parameter, requestDetail?.patient?.gender) || "—"}
+                                    </td>
+                                    <td className="px-3 py-2 align-top">
+                                      <input
+                                        value={parameter.interpretation}
+                                        onChange={(event) => setResultParameters((current) =>
+                                          current.map((item, itemIndex) =>
+                                            itemIndex === index ? { ...item, interpretation: event.target.value } : item,
+                                          ),
+                                        )}
+                                        className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                                      />
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {isBacteriologyRequest && (
+                            <div>
+                              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Notes</label>
+                              <textarea
+                                value={resultForm.notes}
+                                onChange={(event) => setResultForm((current) => ({ ...current, notes: event.target.value }))}
+                                rows={6}
+                                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm leading-6 text-slate-900 shadow-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:bg-slate-950 dark:text-slate-100 dark:border-slate-700"
+                                style={{ resize: 'none' }}
+                                placeholder="Notes détaillées pour l'examen Bactériologie..."
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Nom de l'examen</label>
+                            <input
+                              value={resultForm.resultName}
+                              readOnly
+                              className="w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600 focus:border-emerald-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Résultat</label>
+                            <input
+                              value={resultForm.resultValue}
+                              onChange={(event) => setResultForm((current) => ({ ...current, resultValue: event.target.value }))}
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Valeur de référence</label>
+                            <input
+                              value={resultForm.referenceRange}
+                              readOnly
+                              className="w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600 focus:border-emerald-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Interprétation</label>
+                            <textarea
+                              value={resultForm.interpretation}
+                              onChange={(event) => setResultForm((current) => ({ ...current, interpretation: event.target.value }))}
+                              rows={4}
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                            />
+                          </div>
+                          {isBacteriologyRequest && (
+                            <div>
+                              <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200">Notes</label>
+                              <textarea
+                                value={resultForm.notes}
+                                onChange={(event) => setResultForm((current) => ({ ...current, notes: event.target.value }))}
+                                rows={6}
+                                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm leading-6 text-slate-900 shadow-sm focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 dark:bg-slate-950 dark:text-slate-100 dark:border-slate-700"
+                                style={{ resize: 'none' }}
+                                placeholder="Notes détaillées pour l'examen Bactériologie..."
+                              />
+                            </div>
+                          )}
+                        </>
+                      )}
                       {isResultLocked ? (
                         <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
                           Cet examen a déjà été validé et transmis au médecin. Il ne peut plus être modifié par le laboratoire.
@@ -775,7 +1010,7 @@ export default function ActivityLab() {
                       ) : null}
                       <button
                         type="submit"
-                        disabled={isSubmittingResult || !canSubmitResult || isResultLocked}
+                        disabled={isSubmittingResult || !canSubmitResult || isResultLocked || (isNfsRequest && resultParameters.every((parameter) => !parameter.resultValue.trim()))}
                         className="w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {isSubmittingResult ? "Enregistrement..." : resultButtonLabel}

@@ -180,7 +180,7 @@ export const createLabTestParameter = (payload: {
   active?: boolean;
 }) => apiFetch('/laboratory/catalogue/test-parameters', { method: 'POST', body: JSON.stringify(serializeLabPayload(payload)) });
 
-export const createLabSampleType = (payload: { name: string; labTestId?: string; description?: string; active?: boolean }) =>
+export const createLabSampleType = (payload: { name: string; description?: string; active?: boolean }) =>
   apiFetch('/laboratory/catalogue/sample-types', { method: 'POST', body: JSON.stringify(payload) });
 
 export const createLabTestSampleRequirement = (payload: {
@@ -211,7 +211,7 @@ export const createLabConsumableStock = (payload: {
   location?: string;
 }) => apiFetch('/laboratory/catalogue/stock', { method: 'POST', body: JSON.stringify(serializeLabPayload(payload)) });
 
-export type LabCatalogueKind = 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables';
+export type LabCatalogueKind = 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables' | 'test-parameters' | 'sample-requirements' | 'consumable-requirements' | 'stock';
 
 export const updateLabCatalogueItem = (kind: LabCatalogueKind, id: string, payload: Record<string, unknown>) =>
   apiFetch(`/laboratory/catalogue/${kind}/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(serializeLabPayload(payload)) });
