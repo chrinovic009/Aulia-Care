@@ -22,3 +22,37 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment and secret files
+.env
+.env.*
+.env.local
+backend/.env
+backend/.env.local
+frontend/.env
+frontend/.env.*
+
+# Secrets and keys
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.crt
+*.cert
+credentials.json
+client_secret.json
+service-account*.json
+
+# Build output and distribution
+dist-frontend/
+backend/dist/
+
+# Temporary and sensitive local folders
+temp/
+tmp/
+coverage/
+
+# Misc
+.secrets/

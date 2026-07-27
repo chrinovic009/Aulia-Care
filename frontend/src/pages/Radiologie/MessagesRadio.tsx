@@ -1,10 +1,10 @@
 import RoleMessages from "../../components/messages/RoleMessages";
 
-export default function MessagesLaboratoire() {
+export default function MessagesRadio() {
   return (
     <RoleMessages
-      title="Messages laboratoire | D7 Clinique"
-      description="Messagerie laboratoire avec medecins et services para-medicaux autorises."
+      title="Messages radiologie | D7 Clinique"
+      description="Messagerie radiologie avec médecins, manipulateurs et services demandeurs."
     />
   );
 }

@@ -10,6 +10,8 @@ import {
   WsException,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -23,6 +25,8 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   constructor(
     private readonly usersService: UsersService,
     private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
   ) {}
 
   afterInit() {
@@ -31,10 +35,24 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     });
   }
 
-  handleConnection(client: Socket) {
-    const userId = client.handshake.auth?.userId || client.handshake.query?.userId;
-    if (typeof userId === 'string' && userId) {
-      this.registerClient(client, userId);
+  async handleConnection(client: Socket) {
+    const rawToken = client.handshake.auth?.token || client.handshake.headers.authorization;
+    const token = typeof rawToken === 'string' ? rawToken.replace(/^Bearer\s+/i, '').trim() : '';
+    if (!token) return client.disconnect(true);
+
+    try {
+      const payload = await this.jwtService.verifyAsync<{ sub?: string; type?: string }>(token, {
+        secret: this.configService.getOrThrow<string>('JWT_SECRET'),
+      });
+      if (!payload.sub || payload.type === 'refresh') return client.disconnect(true);
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { id: true, status: true, deletedAt: true },
+      });
+      if (!user || user.deletedAt || user.status !== 'ACTIVE') return client.disconnect(true);
+      this.registerClient(client, user.id);
+    } catch {
+      client.disconnect(true);
     }
   }
 
@@ -53,10 +71,8 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   }
 
   @SubscribeMessage('user.join')
-  handleUserJoin(@MessageBody() payload: { userId?: string }, @ConnectedSocket() client: Socket) {
-    if (payload?.userId) {
-      this.registerClient(client, payload.userId);
-    }
+  handleUserJoin(@ConnectedSocket() client: Socket) {
+    if (!client.data.userId) throw new WsException('Connexion WebSocket non authentifiée');
   }
 
   @SubscribeMessage('message.send')
@@ -74,13 +90,13 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     },
     @ConnectedSocket() client: Socket,
   ) {
-    if (!payload?.senderId || !payload?.recipientId || !payload?.text?.trim()) {
+    const authenticatedSenderId = client.data.userId as string | undefined;
+    if (!authenticatedSenderId || !payload?.recipientId || !payload?.text?.trim()) {
       throw new WsException('Message invalide');
     }
 
-    if (client.data.userId && client.data.userId !== payload.senderId) {
-      throw new WsException('Expediteur non autorise');
-    }
+    // The sender identity always comes from the verified socket, never from the browser payload.
+    payload.senderId = authenticatedSenderId;
 
     const sender = await this.usersService.findOne(payload.senderId);
     const recipient = await this.usersService.findOne(payload.recipientId);
@@ -141,7 +157,7 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     @MessageBody() payload: { readerId?: string; senderId?: string; messageIds?: string[] },
     @ConnectedSocket() client: Socket,
   ) {
-    const readerId = payload?.readerId || client.data.userId;
+    const readerId = client.data.userId as string | undefined;
     if (!readerId || !payload?.senderId) return;
 
     if (payload.messageIds?.length) {
@@ -172,9 +188,8 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     @MessageBody() payload: { senderId?: string; recipientId?: string; isTyping?: boolean },
     @ConnectedSocket() client: Socket,
   ) {
-    const senderId = payload?.senderId || client.data.userId;
+    const senderId = client.data.userId as string | undefined;
     if (!senderId || !payload?.recipientId) return;
-    if (client.data.userId && client.data.userId !== senderId) return;
 
     this.server.to(this.userRoom(payload.recipientId)).emit('message.typing', {
       senderId,

@@ -73,6 +73,14 @@ import DashboardFinance from "./pages/Finance/DashboardFinance";
 import MessagesFinance from "./pages/Finance/MessagesFinance";
 import ProfileFinance from "./pages/Finance/ProfileFinance";
 import DashboardRadio from "./pages/Radiologie/DashboardRadio";
+import WaitingQueueRadio from "./pages/Radiologie/WaitingQueueRadio";
+import WorkflowRadio from "./pages/Radiologie/WorkflowRadio";
+import EquipmentRadio from "./pages/Radiologie/EquipmentRadio";
+import SchedulingRadio from "./pages/Radiologie/SchedulingRadio";
+import HistoryRadio from "./pages/Radiologie/HistoryRadio";
+import ReportsRadio from "./pages/Radiologie/ReportsRadio";
+import MessagesRadio from "./pages/Radiologie/MessagesRadio";
+import ProfileRadio from "./pages/Radiologie/ProfileRadio";
 
 export default function App() {
   return (
@@ -149,6 +157,14 @@ export default function App() {
 
             {/* Radiologie */}
             <Route path="/radiologie" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><DashboardRadio /></RoleGuard>} />
+            <Route path="/radiologie/file-attente" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><WaitingQueueRadio /></RoleGuard>} />
+            <Route path="/radiologie/workflow" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><WorkflowRadio /></RoleGuard>} />
+            <Route path="/radiologie/equipements" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><EquipmentRadio /></RoleGuard>} />
+            <Route path="/radiologie/planning" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><SchedulingRadio /></RoleGuard>} />
+            <Route path="/radiologie/historique" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><HistoryRadio /></RoleGuard>} />
+            <Route path="/radiologie/rapports" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><ReportsRadio /></RoleGuard>} />
+            <Route path="/radiologie/messages" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><MessagesRadio /></RoleGuard>} />
+            <Route path="/radiologie/profile" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><ProfileRadio /></RoleGuard>} />
 
             {/* Administration clinique */}
             <Route path="/administration" element={<RoleGuard requiredRoles={["ADMIN"]}><DashboardAdmin /></RoleGuard>} />

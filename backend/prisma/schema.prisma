@@ -94,7 +94,9 @@ model User {
   hospitalizationsAsNurse          Hospitalization[]          @relation("HospitalizationNurse")
   hospitalizationsAsPhysician      Hospitalization[]          @relation("HospitalizationPhysician")
   imagingReportsInterpreted        ImagingReport[]            @relation("ImagingReportInterpreter")
+  imagingReportsRadiologist        ImagingReport[]            @relation("ImagingReportRadiologist")
   imagingRequestsRequested         ImagingRequest[]           @relation("ImagingRequestRequester")
+  imagingRequestsTechnician        ImagingRequest[]           @relation("ImagingRequestTechnician")
   invoicesIssued                   Invoice[]                  @relation("InvoiceIssuer")
   requestedInvoiceDiscounts        InvoiceDiscountRequest[]   @relation("InvoiceDiscountRequester")
   reviewedInvoiceDiscounts         InvoiceDiscountRequest[]   @relation("InvoiceDiscountReviewer")
@@ -1301,51 +1303,112 @@ model LabDailyStatistics {
   updatedAt             DateTime @default(now())
 }
 
+/// Imaging catalog and equipment.
+model ImagingCatalogue {
+  id                     String            @id @default(uuid())
+  code                   String            @unique
+  name                   String
+  modality               String
+  description            String?
+  preparationInstructions String?
+  price                  Decimal           @db.Decimal(12, 2)
+  turnaroundTimeMinutes  Int?
+  active                 Boolean           @default(true)
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  deletedAt              DateTime?
+  syncedAt               DateTime?
+  sourceNode             String?
+  version                Int               @default(1)
+  imagingRequests        ImagingRequest[]
+
+  @@index([active])
+  @@index([modality])
+}
+
+model ImagingMachine {
+  id              String            @id @default(uuid())
+  name            String
+  roomNumber      String?
+  isOperational   Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?
+  syncedAt        DateTime?
+  sourceNode      String?
+  version         Int               @default(1)
+  imagingRequests ImagingRequest[]
+
+  @@index([isOperational])
+}
+
 /// Imaging workflow.
 model ImagingRequest {
-  id             String               @id @default(uuid())
-  consultationId String
-  patientId      String
-  requestedById  String?
-  status         ImagingRequestStatus @default(REQUESTED)
-  modality       String
-  bodyPart       String
-  urgency        String?              @default("ROUTINE")
-  scheduledAt    DateTime?
-  completedAt    DateTime?
-  notes          String?
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-  deletedAt      DateTime?
-  syncedAt       DateTime?
-  sourceNode     String?
-  version        Int                  @default(1)
-  report         ImagingReport?
-  consultation   Consultation         @relation(fields: [consultationId], references: [id], onDelete: Cascade)
-  patient        Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  requestedBy    User?                @relation("ImagingRequestRequester", fields: [requestedById], references: [id])
+  id                   String               @id @default(uuid())
+  consultationId       String
+  patientId            String
+  requestedById        String?
+  imagingCatalogueId   String?
+  machineId            String?
+  technicianId         String?
+  status               ImagingRequestStatus @default(REQUESTED)
+  modality             String
+  bodyPart             String
+  urgency              String?              @default("ROUTINE")
+  contrastAgentUsed    Boolean              @default(false)
+  contrastDetails      String?
+  scheduledAt          DateTime?
+  completedAt          DateTime?
+  notes                String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  deletedAt            DateTime?
+  syncedAt             DateTime?
+  sourceNode           String?
+  version              Int                  @default(1)
+  report               ImagingReport?
+  consultation         Consultation         @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  patient              Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  requestedBy          User?                @relation("ImagingRequestRequester", fields: [requestedById], references: [id])
+  imagingCatalogue     ImagingCatalogue?    @relation(fields: [imagingCatalogueId], references: [id])
+  machine              ImagingMachine?      @relation(fields: [machineId], references: [id])
+  technician           User?                @relation("ImagingRequestTechnician", fields: [technicianId], references: [id])
 
   @@index([status])
+  @@index([consultationId])
+  @@index([patientId])
+  @@index([requestedById])
+  @@index([imagingCatalogueId])
+  @@index([machineId])
+  @@index([technicianId])
 }
 
 model ImagingReport {
-  id               String         @id @default(uuid())
-  imagingRequestId String         @unique
-  interpretedById  String?
-  findings         String
-  impression       String
-  recommendations  String?
-  reportedAt       DateTime       @default(now())
-  verified         Boolean        @default(false)
-  verifiedAt       DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  deletedAt        DateTime?
-  syncedAt         DateTime?
-  sourceNode       String?
-  version          Int            @default(1)
-  imagingRequest   ImagingRequest @relation(fields: [imagingRequestId], references: [id], onDelete: Cascade)
-  interpretedBy    User?          @relation("ImagingReportInterpreter", fields: [interpretedById], references: [id])
+  id                    String         @id @default(uuid())
+  imagingRequestId      String         @unique
+  interpretedById       String?
+  radiologistId         String?
+  technicianNotes       String?
+  findings              String
+  impression            String
+  recommendations       String?
+  dicomStudyInstanceUid String?        @unique
+  imagePaths            String[]       @default([])
+  reportedAt            DateTime       @default(now())
+  verified              Boolean        @default(false)
+  verifiedAt            DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  deletedAt             DateTime?
+  syncedAt              DateTime?
+  sourceNode            String?
+  version               Int            @default(1)
+  imagingRequest        ImagingRequest @relation(fields: [imagingRequestId], references: [id], onDelete: Cascade)
+  interpretedBy         User?          @relation("ImagingReportInterpreter", fields: [interpretedById], references: [id])
+  radiologist           User?          @relation("ImagingReportRadiologist", fields: [radiologistId], references: [id])
+
+  @@index([imagingRequestId])
+  @@index([radiologistId])
 }
 
 /// Surgery and bloc op�ratoire.

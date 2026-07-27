@@ -256,8 +256,15 @@ const financeNavItems: NavItem[] = [
 ];
 
 const radiologyNavItems: NavItem[] = [
-  { icon: <GridIcon />, name: "Tableau de bord radiologie", path: "/radiologie" },
-  { icon: <FolderIcon />, name: "File d'imagerie et résultats", path: "/radiologie" },
+  { icon: <GridIcon />, name: "Dashboard Radiologie", path: "/radiologie" },
+  { icon: <FolderIcon />, name: "File d'attente", path: "/radiologie/file-attente" },
+  { icon: <DocsIcon />, name: "Workflow PACS / RIS", path: "/radiologie/workflow" },
+  { icon: <BoxCubeIcon />, name: "Équipements & maintenance", path: "/radiologie/equipements" },
+  { icon: <CalenderIcon />, name: "Planning & agenda", path: "/radiologie/planning" },
+  { icon: <TaskIcon />, name: "Dossiers & historique", path: "/radiologie/historique" },
+  { icon: <DocsIcon />, name: "Rapports & analyses", path: "/radiologie/rapports" },
+  { icon: <ChatIcon />, name: "Messages & communication", path: "/radiologie/messages" },
+  { icon: <LockIcon />, name: "Profil & paramètres", path: "/radiologie/profile" },
 ];
 
 const administrationNavItems: NavItem[] = [
