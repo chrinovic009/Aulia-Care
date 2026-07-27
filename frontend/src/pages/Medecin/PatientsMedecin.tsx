@@ -415,7 +415,7 @@ function PatientRecord({ patient, position, labTests, departments }: { patient: 
         <Section title="Consultations récentes">
           {getPatientConsultations(patient).length === 0 ? <Empty /> : (
             <div className="space-y-3">
-              {getPatientConsultations(patient).slice(0, 20).map((consultation, index) => (
+              {getPatientConsultations(patient).slice(0, 2).map((consultation, index) => (
                 <ClinicalConsultation key={consultation.id} consultation={consultation} displayId={formatConsultationId(index + 1, patient)} />
               ))}
             </div>
@@ -425,7 +425,7 @@ function PatientRecord({ patient, position, labTests, departments }: { patient: 
         <Section title="Historique médical">
           {(patient.medicalHistories || []).length === 0 ? <Empty /> : (
             <div className="space-y-3">
-              {patient.medicalHistories?.slice(0, 4).map((item) => (
+              {patient.medicalHistories?.slice(0, 3).map((item) => (
                 <HistoryEventCard key={item.id} item={item} patient={patient} labTests={labTests} departments={departments} />
               ))}
             </div>

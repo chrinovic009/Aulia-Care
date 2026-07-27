@@ -30,6 +30,52 @@ const normalizeEmailLocalPart = (value: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "");
 
+const normalizeServiceName = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+const getActiveServicePrice = (service: any) => {
+  if (!service?.tarifs || !Array.isArray(service.tarifs)) return 0;
+  const activeTarif = service.tarifs.find((tarif: any) => tarif?.actif !== false) || service.tarifs[0];
+  return Number(activeTarif?.prix || 0);
+};
+
+const isAdministrativeService = (service: any) => {
+  const normalizedName = normalizeServiceName(service.name || "");
+  const normalizedDepartment = normalizeServiceName(service.department?.name || "");
+  return [
+    "reception",
+    "réception",
+    "caisse",
+    "cashier",
+    "administration",
+    "secretariat",
+    "secrétariat",
+    "comptabilité",
+    "gestion",
+  ].some((keyword) => normalizedName.includes(keyword) || normalizedDepartment.includes(keyword));
+};
+
+const LABORATORY_KEYWORD_REGEX = /laboratoire|laboratory|labo|biologie|radiologie|imagerie|echographie|scanner|irm|mammographie|analyse|analyse de laboratoire|examen de laboratoire|examens de laboratoire|biochimie/;
+
+const isLaboratoryService = (service: any) => {
+  const normalizedName = normalizeServiceName(service.name || "");
+  const normalizedDepartment = normalizeServiceName(service.department?.name || "");
+  return LABORATORY_KEYWORD_REGEX.test(normalizedName) || LABORATORY_KEYWORD_REGEX.test(normalizedDepartment);
+};
+
+const findLaboratoryResponsibleService = (services: any[]) => {
+  const normalized = (value: string) => normalizeServiceName(value || "");
+  const candidateByName = services.find((service: any) => service.responsables?.length && /laboratoire/.test(normalized(service.name)));
+  if (candidateByName) return candidateByName;
+  const candidateByDepartment = services.find((service: any) => service.responsables?.length && /laboratoire/.test(normalized(service.department?.name)));
+  if (candidateByDepartment) return candidateByDepartment;
+  return services.find((service: any) => service.responsables?.length && isLaboratoryService(service));
+};
+
 const Admission: React.FC = () => {
   const navigate = useNavigate();
   const [emailDomain, setEmailDomain] = useState("@gmail.com");
@@ -86,6 +132,33 @@ const Admission: React.FC = () => {
   }, [consultationType, consultationTypes]);
 
   const selectedService = useMemo(() => servicesList.find((s) => s.id === form.serviceId), [servicesList, form.serviceId]);
+  const selectedServicePrice = useMemo(() => getActiveServicePrice(selectedService), [selectedService]);
+  const effectiveAmountDue = useMemo(() => {
+    if (form.admissionMode === "PARAMEDICAL_VOUCHER") {
+      return selectedServicePrice > 0 ? selectedServicePrice : Number(form.amountDue || 0);
+    }
+    const selectedConsultation = consultationTypes.find((c) => c.id === consultationType);
+    if (selectedConsultation && Number(selectedConsultation.price || 0) > 0) {
+      return Number(selectedConsultation.price || 0);
+    }
+    if (selectedServicePrice > 0) {
+      return selectedServicePrice;
+    }
+    return Number(form.amountDue || 0);
+  }, [form.admissionMode, consultationType, consultationTypes, selectedServicePrice, form.amountDue]);
+  const admissionServices = useMemo(() => servicesList.filter((service) => !isAdministrativeService(service)), [servicesList]);
+  const labServiceResponsables = useMemo(() => {
+    const labService = findLaboratoryResponsibleService(servicesList);
+    return labService?.responsables || [];
+  }, [servicesList]);
+  const orientationResponsables = useMemo(() => {
+    const svc = servicesList.find((s) => s.id === form.serviceId);
+    if (!svc) return [];
+    if (isLaboratoryService(svc)) {
+      return labServiceResponsables.length ? labServiceResponsables : svc?.responsables || [];
+    }
+    return svc?.responsables || [];
+  }, [form.serviceId, servicesList, labServiceResponsables]);
 
   const age = useMemo(() => {
     if (!form.dob) return "";
@@ -176,7 +249,7 @@ const Admission: React.FC = () => {
     (async () => {
       try {
         const svcs = await fetchServices();
-        const patientServices = (svcs || []).filter((service: any) => !["reception", "réception", "caisse"].includes(String(service.name || "").trim().toLowerCase()));
+        const patientServices = (svcs || []).filter((service: any) => !isAdministrativeService(service));
         setServicesList(patientServices);
         if (patientServices.length > 0 && !form.serviceId) {
           setForm((f: any) => ({ ...f, serviceId: patientServices[0].id }));
@@ -186,11 +259,16 @@ const Admission: React.FC = () => {
         try {
           const consultations = (patientServices || [])
             .filter((s: any) => /consultation/i.test(String(s.name || '')))
-            .map((s: any) => ({ id: s.id, label: s.name, price: Number((s.tarifs && s.tarifs[0] && s.tarifs[0].prix) || 0) }));
+            .map((s: any) => ({ id: s.id, label: s.name, price: getActiveServicePrice(s) }));
           setConsultationTypes(consultations);
           if (consultations.length > 0 && !consultationType) {
             setConsultationType(consultations[0].id);
             setForm((f: any) => ({ ...f, amountDue: Number(consultations[0].price || 0) }));
+          } else if (!consultationType && patientServices.length > 0) {
+            const defaultServicePrice = getActiveServicePrice(patientServices[0]);
+            if (defaultServicePrice > 0) {
+              setForm((f: any) => ({ ...f, amountDue: defaultServicePrice }));
+            }
           }
         } catch (e) {
           // ignore
@@ -202,20 +280,35 @@ const Admission: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const svc = servicesList.find((s) => s.id === form.serviceId) || servicesList[0];
-    const responsables = svc?.responsables?.map((r: any) => r.user?.displayName || r.user?.username).filter(Boolean) || [];
-    setForm((f: any) => ({
-      ...f,
-      doctor: responsables.length > 0 ? responsables[0] : "",
-    }));
-  }, [form.serviceId, servicesList]);
+    if (form.admissionMode === "PARAMEDICAL_VOUCHER") return;
+    const selectedConsultation = consultationTypes.find((c) => c.id === consultationType);
+    const targetPrice = selectedConsultation ? Number(selectedConsultation.price || 0) : selectedServicePrice;
 
-  const addContact = () => {
-    setForm((f: any) => ({ ...f, contacts: [...f.contacts, { name: "", relation: "", phone: "", address: "" }] }));
-  };
+    if (targetPrice > 0 && targetPrice !== form.amountDue) {
+      setForm((f: any) => ({ ...f, amountDue: targetPrice }));
+    }
+  }, [form.admissionMode, consultationType, consultationTypes, selectedServicePrice, form.amountDue]);
+
+  useEffect(() => {
+    if (form.admissionMode !== "PARAMEDICAL_VOUCHER") return;
+    if (!form.serviceId) return;
+    if (selectedServicePrice > 0 && selectedServicePrice !== form.amountDue) {
+      setForm((f: any) => ({ ...f, amountDue: selectedServicePrice }));
+    }
+  }, [form.admissionMode, form.serviceId, selectedServicePrice, form.amountDue]);
 
   const updateContact = (i: number, key: string, value: any) => {
-    setForm((f: any) => ({ ...f, contacts: f.contacts.map((c: any, idx: number) => (idx === i ? { ...c, [key]: value } : c)) }));
+    setForm((f: any) => ({ ...f, contacts: (f.contacts || []).map((c: any, idx: number) => (idx === i ? { ...c, [key]: value } : c)) }));
+  };
+
+  const addContact = () => {
+    setForm((f: any) => ({
+      ...f,
+      contacts: [
+        ...(f.contacts || []),
+        { name: "", relation: "", phone: "", address: "" },
+      ],
+    }));
   };
 
   const resetForm = () => {
@@ -239,8 +332,8 @@ const Admission: React.FC = () => {
       admissionType: "Consultation",
       arrival: new Date().toISOString().slice(0, 16),
       receptionist: currentUser?.firstName ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() : currentUser?.displayName || currentUser?.username || "Réceptionniste",
-      serviceId: servicesList[0]?.id || '',
-      doctor: servicesList[0]?.responsables?.[0]?.user?.displayName || '',
+      serviceId: admissionServices[0]?.id || servicesList[0]?.id || '',
+      doctor: '',
       priority: "Normal",
       insurance: { company: "", policy: "", coverageType: "", coveragePct: 0, photo: null, pdf: null },
       contacts: [],
@@ -322,7 +415,7 @@ const Admission: React.FC = () => {
         receptionistId: currentUser?.id,
         receptionist: form.receptionist,
         arrivalAt: form.arrival,
-        amountDue: isVoucherAdmission ? 0 : form.amountDue, // Transmission de la valeur sélectionnée en CDF
+        amountDue: effectiveAmountDue, // Transmission de la valeur sélectionnée en CDF
         voucherNumber: form.voucherNumber,
         voucherIssuer: form.voucherIssuer,
         voucherNotes: form.voucherNotes,
@@ -536,10 +629,10 @@ const Admission: React.FC = () => {
                   <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">4. Orientation médicale</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
                     <select value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })} className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      {servicesList.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+                      {admissionServices.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
                     </select>
                     <select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      {(servicesList.find((s) => s.id === form.serviceId)?.responsables || []).map((r: any) => (<option key={r.id} value={r.user?.displayName || r.user?.username}>{r.user?.displayName || r.user?.username}</option>))}
+                      {orientationResponsables.map((r: any) => (<option key={r.id} value={r.user?.displayName || r.user?.username}>{r.user?.displayName || r.user?.username}</option>))}
                     </select>
                   </div>
                 </div>
@@ -583,7 +676,7 @@ const Admission: React.FC = () => {
               
               {/* Affichage mis à jour en CDF */}
               <div className="text-gray-700 dark:text-gray-300">
-                <span className="font-medium">Frais de fiche:</span> {form.admissionMode === "PARAMEDICAL_VOUCHER" ? 0 : form.amountDue.toLocaleString()} CDF
+                <span className="font-medium">Frais de fiche:</span> {effectiveAmountDue.toLocaleString()} CDF
               </div>
               
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Médecin:</span> {existingPatient ? existingPatient.doctor : form.doctor}</div>
