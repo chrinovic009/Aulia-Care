@@ -263,7 +263,7 @@ export default function PrescriptionsMedecin() {
                     <button disabled={!canWrite || pendingExam || !sectionId || !categoryId || !form.medicationId} onClick={submit} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:bg-slate-300 disabled:text-slate-600">Prescrire</button>
                   </Panel>
                   <Panel title="Prescriptions du patient">
-                    {(selectedPatient.prescriptions || []).length === 0 ? <SmallEmpty /> : selectedPatient.prescriptions?.map((prescription) => (
+                    {(selectedPatient.prescriptions || []).length === 0 ? <SmallEmpty /> : selectedPatient.prescriptions?.slice(0, 5).map((prescription) => (
                       <div key={prescription.id} className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950">
                         <div className="flex items-start justify-between gap-3">
                           <div>

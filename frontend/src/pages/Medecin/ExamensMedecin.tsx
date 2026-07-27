@@ -112,7 +112,7 @@ export default function ExamensMedecin() {
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
   const [services, setServices] = useState<Array<{ id: string; name: string; type?: string | null; category?: string | null }>>([]);
   const [labTests, setLabTests] = useState<Array<{ id: string; name: string; code: string; price: string; turnaroundTimeMinutes?: number | null; section?: { name: string } | null; category?: { name: string } | null }>>([]);
-  const [departments, setDepartments] = useState<Array<{ id: string; name: string; isParamedical?: boolean }>>([]);
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string; isParamedical?: boolean; type?: string | null }>>([]);
   const [serviceUnits, setServiceUnits] = useState<Array<{ id: string; name: string; departmentId?: string }>>([]);
   const [selectedPatientId, setSelectedPatientId] = useState("");
   const [selectedConsultationId, setSelectedConsultationId] = useState("");
@@ -162,6 +162,10 @@ export default function ExamensMedecin() {
   const selectedService = serviceUnits.find((s) => s.id === form.serviceId) || services.find((service) => service.id === form.serviceId);
   const isDepartmentLaboratory = Boolean(departments.find((d) => d.id === form.departmentId && d.name === "Laboratoire Medical"));
   const selectedLabTest = labTests.find((test) => test.id === form.labTestId);
+  const paramedicalDepartments = useMemo(
+    () => departments.filter((d) => d.isParamedical && !/pharmacie|pharmacy/i.test(d.name || "")),
+    [departments],
+  );
 
   const submit = async () => {
     if (!selectedConsultation || (!form.examName.trim() && !form.labTestId)) {
@@ -209,7 +213,7 @@ export default function ExamensMedecin() {
                 <div className="mt-5 grid gap-4 xl:grid-cols-2">
                   <Panel title="Nouvelle demande">
                     <Select label="Consultation" value={selectedConsultation.id} onChange={setSelectedConsultationId} options={(selectedPatient.consultations || []).map((consultation) => [consultation.id, consultationLabel(consultation)] as [string, string])} />
-                    <Select label="Departement paramedical" value={form.departmentId} onChange={(value) => setForm((current) => ({ ...current, departmentId: value, serviceId: "", labTestId: "" }))} options={[["", "Choisir"], ...departments.filter((d) => d.isParamedical).map((d) => [d.id, d.name] as [string, string])]} />
+                    <Select label="Departement paramedical" value={form.departmentId} onChange={(value) => setForm((current) => ({ ...current, departmentId: value, serviceId: "", labTestId: "" }))} options={[ ["", "Choisir"], ...paramedicalDepartments.map((d) => [d.id, d.name] as [string, string]) ]} />
                     {isDepartmentLaboratory ? (
                       <Select
                         label="Examen du catalogue laboratoire"

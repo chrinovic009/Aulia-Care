@@ -867,6 +867,8 @@ export default function DashboardMedecin() {
     );
   }, [patients, query]);
 
+  const recentSectionLimit = isConsultationPage ? 3 : 5;
+
   const metrics = useMemo(() => {
     const openConsultations = patients.filter((patient) =>
       patient.consultations?.some((consultation) => consultation.status !== "COMPLETED"),
@@ -1169,7 +1171,7 @@ export default function DashboardMedecin() {
                   {(selectedPatient.consultations || []).length === 0 ? (
                     <Empty />
                   ) : (
-                    selectedPatient.consultations?.map((consultation) => (
+                    selectedPatient.consultations?.slice(0, recentSectionLimit).map((consultation) => (
                       <Item
                         key={consultation.id}
                         title={consultation.chiefComplaint || consultation.status}
@@ -1184,7 +1186,7 @@ export default function DashboardMedecin() {
                   {(selectedPatient.prescriptions || []).length === 0 ? (
                     <Empty />
                   ) : (
-                    selectedPatient.prescriptions?.map((prescription) => (
+                    selectedPatient.prescriptions?.slice(0, recentSectionLimit).map((prescription) => (
                       <Item key={prescription.id} title={translatePrescriptionStatus(prescription.status)} subtitle={formatDateTime(prescription.prescribingDate)} text={prescription.instruction || prescription.lineItems?.map((line: any) => [line.dosage, line.frequency, line.notes].filter(Boolean).join(" - ")).join(", ") || "Prescription sans detail."} />
                     ))
                   )}
@@ -1194,7 +1196,7 @@ export default function DashboardMedecin() {
                   {(selectedPatient.labRequests || []).length === 0 ? (
                     <Empty />
                   ) : (
-                    selectedPatient.labRequests?.map((request) => (
+                    selectedPatient.labRequests?.slice(0, recentSectionLimit).map((request) => (
                       <Item
                         key={request.id}
                         title={request.specimenType || request.status}
@@ -1215,7 +1217,7 @@ export default function DashboardMedecin() {
                   {(selectedPatient.imagingRequests || []).length === 0 ? (
                     <Empty />
                   ) : (
-                    selectedPatient.imagingRequests?.map((request) => (
+                    selectedPatient.imagingRequests?.slice(0, recentSectionLimit).map((request) => (
                       <Item key={request.id} title={`${request.modality} - ${request.bodyPart}`} subtitle={formatDateTime(request.createdAt)} text={request.report?.impression || request.status} />
                     ))
                   )}
