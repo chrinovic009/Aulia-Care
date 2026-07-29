@@ -119,6 +119,7 @@ export default function ExamensMedecin() {
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState({ examName: "", departmentId: "", serviceId: "", labTestId: "", specimenType: "", priority: "NORMAL", notes: "" });
+  const [selectedLabTestIds, setSelectedLabTestIds] = useState<string[]>([]);
 
   const load = async () => {
     const [patientData, serviceData, catalogueData, departmentsData, serviceUnitsData] = await Promise.all([
@@ -161,32 +162,38 @@ export default function ExamensMedecin() {
   const canWrite = Boolean(selectedPatient?.access?.canWrite);
   const selectedService = serviceUnits.find((s) => s.id === form.serviceId) || services.find((service) => service.id === form.serviceId);
   const isDepartmentLaboratory = Boolean(departments.find((d) => d.id === form.departmentId && d.name === "Laboratoire Medical"));
-  const selectedLabTest = labTests.find((test) => test.id === form.labTestId);
+  const selectedLabTests = useMemo(() => labTests.filter((test) => selectedLabTestIds.includes(test.id)), [labTests, selectedLabTestIds]);
   const paramedicalDepartments = useMemo(
     () => departments.filter((d) => d.isParamedical && !/pharmacie|pharmacy/i.test(d.name || "")),
     [departments],
   );
 
   const submit = async () => {
-    if (!selectedConsultation || (!form.examName.trim() && !form.labTestId)) {
-      setMessage("Choisissez une consultation et renseignez l'examen.");
+    const hasSelectedLabTests = isDepartmentLaboratory ? selectedLabTestIds.length > 0 : Boolean(form.labTestId || form.examName.trim());
+    if (!selectedConsultation || !hasSelectedLabTests) {
+      setMessage("Choisissez une consultation et renseignez au moins un examen.");
       return;
     }
     if (!canWrite) {
       setMessage("Dossier en lecture seule: seul le medecin autorise peut demander un examen.");
       return;
     }
+
+    const labTestIds = isDepartmentLaboratory ? selectedLabTestIds : (form.labTestId ? [form.labTestId] : []);
+
     await createLabRequest(selectedConsultation.id, {
       ...form,
-      examName: selectedLabTest?.name || form.examName,
-      specimenType: selectedLabTest?.name || form.specimenType || selectedService?.name || form.examName,
+      labTestIds,
+      examName: selectedLabTests[0]?.name || form.examName,
+      specimenType: selectedLabTests[0]?.name || form.specimenType || selectedService?.name || form.examName,
       notes: [
         form.notes,
         selectedService ? `Service paramedical: ${selectedService.name}` : "",
-        selectedLabTest ? `Examen catalogue: ${selectedLabTest.name} | Prix: ${selectedLabTest.price} | Delai: ${selectedLabTest.turnaroundTimeMinutes || "-"} min` : "",
+        selectedLabTests.length > 0 ? `Examens catalogue: ${selectedLabTests.map((test) => test.name).join(", ")}` : "",
       ].filter(Boolean).join("\n"),
     });
     setForm({ examName: "", departmentId: "", serviceId: "", labTestId: "", specimenType: "", priority: "NORMAL", notes: "" });
+    setSelectedLabTestIds([]);
     setMessage("Demande d'examen envoyee.");
     await load();
   };
@@ -215,12 +222,38 @@ export default function ExamensMedecin() {
                     <Select label="Consultation" value={selectedConsultation.id} onChange={setSelectedConsultationId} options={(selectedPatient.consultations || []).map((consultation) => [consultation.id, consultationLabel(consultation)] as [string, string])} />
                     <Select label="Departement paramedical" value={form.departmentId} onChange={(value) => setForm((current) => ({ ...current, departmentId: value, serviceId: "", labTestId: "" }))} options={[ ["", "Choisir"], ...paramedicalDepartments.map((d) => [d.id, d.name] as [string, string]) ]} />
                     {isDepartmentLaboratory ? (
-                      <Select
-                        label="Examen du catalogue laboratoire"
-                        value={form.labTestId}
-                        onChange={(value) => setForm((current) => ({ ...current, labTestId: value, examName: labTests.find((test) => test.id === value)?.name || current.examName }))}
-                        options={[["", "Choisir un examen"], ...labTests.map((test) => [test.id, `${test.name} - ${Number(test.price || 0).toLocaleString("fr-FR")} CDF - ${test.turnaroundTimeMinutes || "-"} min`] as [string, string])]}
-                      />
+                      <div className="space-y-2">
+                        <label className="block text-sm">
+                          <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Examen du catalogue laboratoire</span>
+                          <select
+                            value=""
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              if (!value) return;
+                              setSelectedLabTestIds((current) => current.includes(value) ? current : [...current, value]);
+                            }}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                          >
+                            <option value="">Choisir un examen</option>
+                            {labTests.map((test) => (
+                              <option key={test.id} value={test.id}>{`${test.name} - ${Number(test.price || 0).toLocaleString('fr-FR')} CDF - ${test.turnaroundTimeMinutes || '-'} min`}</option>
+                            ))}
+                          </select>
+                        </label>
+                        {selectedLabTests.length > 0 ? (
+                          <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950">
+                            {selectedLabTests.map((test) => (
+                              <div key={test.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 dark:bg-slate-900">
+                                <div>
+                                  <p className="font-medium text-slate-800 dark:text-slate-100">{test.name}</p>
+                                  <p className="text-xs text-slate-500">{test.section?.name || '-'} • {test.category?.name || '-'}</p>
+                                </div>
+                                <button type="button" onClick={() => setSelectedLabTestIds((current) => current.filter((id) => id !== test.id))} className="text-xs font-semibold text-rose-600">Retirer</button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                     ) : (
                       <Select
                         label="Service demande"
@@ -229,11 +262,13 @@ export default function ExamensMedecin() {
                         options={[["", "Choisir un service"], ...serviceUnits.filter((s) => s.departmentId === form.departmentId).map((s) => [s.id, s.name] as [string, string])]} 
                       />
                     )}
-                    {selectedLabTest ? (
+                    {isDepartmentLaboratory && selectedLabTests.length > 0 ? (
                       <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-800">
-                        Section: {selectedLabTest.section?.name || "-"} | Categorie: {selectedLabTest.category?.name || "-"} | Prix: {Number(selectedLabTest.price || 0).toLocaleString("fr-FR")} CDF | Delai: {selectedLabTest.turnaroundTimeMinutes || "-"} min
-                        {selectedLabTest.unit ? ` | Unité: ${selectedLabTest.unit}` : ""}
-                        {selectedLabTest.referenceRange ? ` | Référence: ${selectedLabTest.referenceRange}` : ""}
+                        {selectedLabTests.map((test) => (
+                          <div key={test.id} className="mb-2 last:mb-0">
+                            <span className="font-semibold">{test.name}</span> — Section: {test.section?.name || "-"} | Catégorie: {test.category?.name || "-"} | Prix: {Number(test.price || 0).toLocaleString("fr-FR")} CDF | Délai: {test.turnaroundTimeMinutes || "-"} min
+                          </div>
+                        ))}
                       </div>
                     ) : null}
                     <Input label="Specimen / precision" value={form.specimenType} onChange={(value) => setForm((current) => ({ ...current, specimenType: value }))} />

@@ -575,7 +575,7 @@ export default function CatalogueLab() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sampleRequirementForm, setSampleRequirementForm] = useState({ labTestId: '', labSampleTypeId: '', volumeRequired: '', volumeUnit: 'mL', storageCondition: '', maxAgeMinutes: '', instructions: '' });
   const [consumableForm, setConsumableForm] = useState({ name: '', code: '', description: '', unit: '', active: true });
-  const [consumableRequirementForm, setConsumableRequirementForm] = useState({ labTestId: '', labConsumableId: '', quantity: '1', unit: '' });
+  const [consumableRequirementForm, setConsumableRequirementForm] = useState({ labTestId: '', sectionId: '', labConsumableId: '', quantity: '1', unit: '' });
   const [stockForm, setStockForm] = useState({ labConsumableId: '', quantity: '0', minimumLevel: '', criticalLevel: '', location: '' });
 
   useEffect(() => {
@@ -1344,23 +1344,28 @@ export default function CatalogueLab() {
   };
 
   const handleCreateConsumableRequirement = async () => {
-    if (!consumableRequirementForm.labTestId || !consumableRequirementForm.labConsumableId || !consumableRequirementForm.quantity) {
-      showError('Validation', 'Test, consommable et quantité sont requis.');
+    if (!consumableRequirementForm.labConsumableId || !consumableRequirementForm.quantity) {
+      showError('Validation', 'Consommable et quantité sont requis.');
+      return;
+    }
+    if (!consumableRequirementForm.labTestId && !consumableRequirementForm.sectionId) {
+      showError('Validation', 'Sélectionnez un examen ou une section.');
       return;
     }
 
     setIsSaving(true);
     try {
       await createLabTestConsumableRequirement({
-        labTestId: consumableRequirementForm.labTestId,
+        labTestId: consumableRequirementForm.labTestId || undefined,
+        sectionId: consumableRequirementForm.sectionId || undefined,
         labConsumableId: consumableRequirementForm.labConsumableId,
         quantity: Number(consumableRequirementForm.quantity),
         unit: consumableRequirementForm.unit || undefined,
       });
-      setConsumableRequirementForm({ labTestId: '', labConsumableId: '', quantity: '1', unit: '' });
+      setConsumableRequirementForm({ labTestId: '', sectionId: '', labConsumableId: '', quantity: '1', unit: '' });
       setShowConsumableRequirementForm(false);
       await loadCatalogue();
-      showSuccess('Consommable associé à l examen créé avec succès.');
+      showSuccess('Consommable associé avec succès.');
     } catch (error) {
       console.error(error);
       showError('Création impossible', 'Impossible de créer l\'exigence de consommable.');
@@ -2323,21 +2328,33 @@ export default function CatalogueLab() {
                     onClick={() => setShowConsumableRequirementForm((current) => !current)}
                     className="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
                   >
-                    {showConsumableRequirementForm ? 'Masquer le formulaire d association de consommable' : 'Associer consommable à un examen'}
+                    {showConsumableRequirementForm ? 'Masquer le formulaire d association de consommable' : 'Associer consommable à une section'}
                   </button>
 
                   {showConsumableRequirementForm && (
-                    <Panel title="Associer consommable à un examen">
+                    <Panel title="Associer consommable à une section">
                       <div className="grid gap-4 md:grid-cols-2">
                         <label className="block text-sm">
-                          <span className="block text-slate-700">Examen</span>
+                          <span className="block text-slate-700">Section</span>
                           <select
-                            required
-                            value={consumableRequirementForm.labTestId}
-                            onChange={(event) => setConsumableRequirementForm((current) => ({ ...current, labTestId: event.target.value }))}
+                            value={consumableRequirementForm.sectionId}
+                            onChange={(event) => setConsumableRequirementForm((current) => ({ ...current, sectionId: event.target.value, labTestId: '' }))}
                             className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           >
-                            <option value="">Selectionner</option>
+                            <option value="">Sélectionner une section</option>
+                            {catalogue.sections.map((section) => (
+                              <option key={section.id} value={section.id}>{section.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block text-sm">
+                          <span className="block text-slate-700">Examen (optionnel)</span>
+                          <select
+                            value={consumableRequirementForm.labTestId}
+                            onChange={(event) => setConsumableRequirementForm((current) => ({ ...current, labTestId: event.target.value, sectionId: '' }))}
+                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                          >
+                            <option value="">Sélectionner un examen</option>
                             {catalogue.tests.map((test) => (
                               <option key={test.id} value={test.id}>{test.name}</option>
                             ))}

@@ -239,14 +239,31 @@ export class ConsultationsService {
     await this.ensureWriteAccess(consultation.providerId, actorId);
     const request = await this.prisma.$transaction(async (tx) => {
       const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
-      let labTest = null;
+      const requestedLabTestIds = Array.isArray(dto.labTestIds)
+        ? dto.labTestIds.filter((value: unknown): value is string => typeof value === 'string' && Boolean(value))
+        : dto.labTestId
+          ? [dto.labTestId]
+          : [];
 
-      if (dto.labTestId) {
-        labTest = await tx.labTest.findUnique({ where: { id: dto.labTestId } });
+      let selectedLabTests: Array<any> = [];
+
+      if (requestedLabTestIds.length > 0) {
+        for (const labTestId of requestedLabTestIds) {
+          const labTest = await tx.labTest.findUnique({
+            where: { id: labTestId },
+            include: { section: true, category: true },
+          });
+
+          if (!labTest) {
+            throw new BadRequestException('Un examen du catalogue laboratoire est introuvable.');
+          }
+
+          selectedLabTests.push(labTest);
+        }
       }
 
-      if (!labTest && trimmedExamName) {
-        labTest = await tx.labTest.findFirst({
+      if (!selectedLabTests.length && trimmedExamName) {
+        const exactMatch = await tx.labTest.findFirst({
           where: {
             active: true,
             OR: [
@@ -254,35 +271,51 @@ export class ConsultationsService {
               { code: { equals: trimmedExamName, mode: 'insensitive' } },
             ],
           },
+          include: { section: true, category: true },
           orderBy: { name: 'asc' },
         });
+
+        if (exactMatch) {
+          selectedLabTests.push(exactMatch);
+        }
       }
 
-      if (!labTest && trimmedExamName) {
-        labTest = await tx.labTest.findFirst({
+      if (!selectedLabTests.length && trimmedExamName) {
+        const containsMatch = await tx.labTest.findFirst({
           where: {
             active: true,
             name: { contains: trimmedExamName, mode: 'insensitive' },
           },
+          include: { section: true, category: true },
           orderBy: { name: 'asc' },
         });
+
+        if (containsMatch) {
+          selectedLabTests.push(containsMatch);
+        }
       }
 
-      if (!labTest) {
+      selectedLabTests = selectedLabTests.filter((labTest, index, collection) => collection.findIndex((item) => item.id === labTest.id) === index);
+
+      if (!selectedLabTests.length) {
         throw new BadRequestException('Veuillez choisir un examen du catalogue laboratoire avec un tarif valide.');
       }
 
-      const examPrice = Number(labTest.price || 0);
-      if (examPrice <= 0) {
-        throw new BadRequestException('Cet examen laboratoire n a pas encore de prix valide.');
+      const invalidLabTests = selectedLabTests.filter((labTest) => Number(labTest.price || 0) <= 0);
+      if (invalidLabTests.length > 0) {
+        throw new BadRequestException('Un ou plusieurs examens laboratoire n ont pas encore de prix valide.');
       }
+
+      const examPriceTotal = selectedLabTests.reduce((total, labTest) => total + Number(labTest.price || 0), 0);
+      const requestLabel = selectedLabTests.map((labTest) => labTest.name).join(', ');
+      const specimenTypeLabel = dto.specimenType || (selectedLabTests.length > 1 ? requestLabel : selectedLabTests[0]?.name || trimmedExamName || 'Examen');
 
       const created = await tx.labRequest.create({
         data: {
           consultationId: id,
           patientId: consultation.patientId,
           requestedById: actorId,
-          specimenType: dto.specimenType || labTest.name || dto.examName || 'Examen',
+          specimenType: specimenTypeLabel,
           priority: dto.priority || 'NORMAL',
           notes: dto.notes || null,
           status: 'REQUESTED',
@@ -296,28 +329,31 @@ export class ConsultationsService {
           issuedById: actorId,
           type: 'LABORATORY',
           status: 'PENDING',
-          totalAmount: examPrice,
-          balanceDue: examPrice,
-          remarks: `LabRequest:${created.id} - Demande laboratoire ${created.id} - ${labTest.name}`,
+          totalAmount: examPriceTotal,
+          balanceDue: examPriceTotal,
+          remarks: `LabRequest:${created.id} - Demande laboratoire ${created.id} - ${requestLabel}`,
         },
       });
 
-      await tx.invoiceLine.create({
-        data: {
-          invoiceId: invoice.id,
-          label: `Examen laboratoire - ${labTest.name}`,
-          quantity: 1,
-          unitPrice: examPrice,
-          totalAmount: examPrice,
-        },
-      });
+      for (const labTest of selectedLabTests) {
+        const examPrice = Number(labTest.price || 0);
+        await tx.invoiceLine.create({
+          data: {
+            invoiceId: invoice.id,
+            label: `Examen laboratoire - ${labTest.name}`,
+            quantity: 1,
+            unitPrice: examPrice,
+            totalAmount: examPrice,
+          },
+        });
+      }
 
       const handledBySubscription = await this.recordSubscriptionChargeForInvoice(
         tx,
         consultation.patientId,
         invoice.id,
-        `Examen laboratoire - ${labTest.name}`,
-        examPrice,
+        selectedLabTests.length > 1 ? `Examens laboratoire - ${requestLabel}` : `Examen laboratoire - ${requestLabel}`,
+        examPriceTotal,
         null,
       );
 
@@ -335,23 +371,33 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           kind: 'LAB_REQUEST',
-          details: JSON.stringify({ labRequestId: created.id, invoiceId: invoice.id, labTestId: labTest.id, examName: labTest.name, price: examPrice, currency: 'CDF', ...dto }),
+          details: JSON.stringify({
+            labRequestId: created.id,
+            invoiceId: invoice.id,
+            labTestIds: selectedLabTests.map((labTest) => labTest.id),
+            examNames: selectedLabTests.map((labTest) => labTest.name),
+            price: examPriceTotal,
+            currency: 'CDF',
+            ...dto,
+          }),
           createdById: actorId,
         },
       });
 
-      await tx.labRequestItem.create({
-        data: {
-          labRequestId: created.id,
-          labTestId: labTest.id,
-          status: 'REQUESTED',
-          requestedAt: created.requestedAt,
-          specimenLabel: created.specimenType || labTest.name,
-          notes: dto.notes || null,
-        },
-      });
+      for (const labTest of selectedLabTests) {
+        await tx.labRequestItem.create({
+          data: {
+            labRequestId: created.id,
+            labTestId: labTest.id,
+            status: 'REQUESTED',
+            requestedAt: created.requestedAt,
+            specimenLabel: created.specimenType || labTest.name,
+            notes: dto.notes || null,
+          },
+        });
+      }
 
-      return { ...created, invoice, labTest };
+      return { ...created, invoice, labTests: selectedLabTests, labTest: selectedLabTests[0] };
     });
 
     const cashiers = await this.prisma.user.findMany({
@@ -363,6 +409,10 @@ export class ConsultationsService {
       },
     });
 
+    const requestLabel = request.labTests?.length
+      ? request.labTests.map((labTest: any) => labTest.name).join(', ')
+      : request.labTest?.name || 'examen laboratoire';
+
     const notifications = await Promise.all(
       cashiers.map((user) =>
         this.prisma.notification.create({
@@ -373,7 +423,7 @@ export class ConsultationsService {
             status: 'UNREAD',
             priority: request.priority === 'CRITICAL' ? 'CRITICAL' : request.priority === 'URGENT' ? 'HIGH' : 'MEDIUM',
             title: 'Paiement examen laboratoire',
-            message: `Valider ${request.labTest.name} pour ${consultation.patient.firstName} ${consultation.patient.lastName}: ${Number(request.invoice.totalAmount).toLocaleString('fr-FR')} CDF.`,
+            message: `Valider ${requestLabel} pour ${consultation.patient.firstName} ${consultation.patient.lastName}: ${Number(request.invoice.totalAmount).toLocaleString('fr-FR')} CDF.`,
             relatedEntity: 'Invoice',
             relatedId: request.invoice.id,
             sendAt: new Date(),

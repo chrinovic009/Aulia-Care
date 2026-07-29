@@ -1,9 +1,13 @@
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateLabTestConsumableRequirementDto {
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  labTestId: string;
+  labTestId?: string;
+
+  @IsOptional()
+  @IsString()
+  sectionId?: string;
 
   @IsNotEmpty()
   @IsString()
