@@ -197,7 +197,8 @@ export const createLabConsumable = (payload: { name: string; code: string; descr
   apiFetch('/laboratory/catalogue/consumables', { method: 'POST', body: JSON.stringify(payload) });
 
 export const createLabTestConsumableRequirement = (payload: {
-  labTestId: string;
+  labTestId?: string;
+  sectionId?: string;
   labConsumableId: string;
   quantity: number;
   unit?: string;

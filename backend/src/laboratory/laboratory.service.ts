@@ -1382,7 +1382,57 @@ export class LaboratoryService {
     });
   }
 
-  async createConsumableRequirement(dto: { labTestId: string; labConsumableId: string; quantity: string; unit?: string }) {
+  async createConsumableRequirement(dto: { labTestId?: string; sectionId?: string; labConsumableId: string; quantity: string; unit?: string }) {
+    if (dto.sectionId) {
+      const tests = await this.prisma.labTest.findMany({
+        where: { active: true, sectionId: dto.sectionId },
+        select: { id: true },
+      });
+
+      if (!tests.length) {
+        throw new BadRequestException('Aucun examen actif trouvé pour cette section.');
+      }
+
+      const createdRequirements = [] as Array<{ id: string }>;
+      for (const test of tests) {
+        const existing = await this.prisma.labTestConsumableRequirement.findFirst({
+          where: {
+            labTestId: test.id,
+            labConsumableId: dto.labConsumableId,
+          },
+          select: { id: true },
+        });
+
+        if (existing) {
+          const updated = await this.prisma.labTestConsumableRequirement.update({
+            where: { id: existing.id },
+            data: {
+              quantity: dto.quantity,
+              unit: dto.unit?.trim() || undefined,
+            },
+          });
+          createdRequirements.push(updated);
+          continue;
+        }
+
+        const created = await this.prisma.labTestConsumableRequirement.create({
+          data: {
+            labTestId: test.id,
+            labConsumableId: dto.labConsumableId,
+            quantity: dto.quantity,
+            unit: dto.unit?.trim() || undefined,
+          },
+        });
+        createdRequirements.push(created);
+      }
+
+      return createdRequirements;
+    }
+
+    if (!dto.labTestId) {
+      throw new BadRequestException('Un examen ou une section est requis.');
+    }
+
     return this.prisma.labTestConsumableRequirement.create({
       data: {
         labTestId: dto.labTestId,
