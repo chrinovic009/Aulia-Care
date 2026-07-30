@@ -1303,27 +1303,51 @@ model LabDailyStatistics {
   updatedAt             DateTime @default(now())
 }
 
-/// Imaging catalog and equipment.
+// Catalogue central des examens avec options et groupes
 model ImagingCatalogue {
-  id                     String            @id @default(uuid())
-  code                   String            @unique
-  name                   String
-  modality               String
-  description            String?
+  id                      String            @id @default(uuid())
+  code                    String            @unique
+  name                    String            // Ex: "Radiographie du Thorax", "Scanner Cérébral"
+  modality                ImagingModality   // Enum (CT, MRI, XRAY, ULTRASOUND, etc.)
+  description             String?
   preparationInstructions String?
-  price                  Decimal           @db.Decimal(12, 2)
-  turnaroundTimeMinutes  Int?
-  active                 Boolean           @default(true)
-  createdAt              DateTime          @default(now())
-  updatedAt              DateTime          @updatedAt
-  deletedAt              DateTime?
-  syncedAt               DateTime?
-  sourceNode             String?
-  version                Int               @default(1)
-  imagingRequests        ImagingRequest[]
+  price                   Decimal           @db.Decimal(12, 2)
+  turnaroundTimeMinutes   Int?
+  active                  Boolean           @default(true)
+  
+  // NOUVEAUX CHAMPS //
+  category                String?           // Ex: "Ostéo-articulaire", "Neuro", "Abdominal"
+  
+  // Liste des incidences possibles (Ex pour Radio: ["Face", "Profil", "Oblique"])
+  availableIncidences     String[]          @default([]) 
+  
+  // Indique si la modalité nécessite/supporte l'injection
+  supportsContrast        Boolean           @default(false)
+  
+  // Config dynamique supplémentaire (ex: protocoles, séries)
+  config                  Json?             
+
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+  deletedAt               DateTime?
+  syncedAt                DateTime?
+  sourceNode              String?
+  version                 Int               @default(1)
+  
+  imagingRequests         ImagingRequest[]
 
   @@index([active])
   @@index([modality])
+}
+
+enum ImagingModality {
+  XRAY           // Radio conventionnelle
+  CT             // Scanner / CitiScan
+  MRI            // IRM
+  ULTRASOUND     // Échographie
+  INTERVENTIONAL // Radio Interventionnelle
+  MAMMOGRAPHY
+  OTHER
 }
 
 model ImagingMachine {
@@ -1352,11 +1376,19 @@ model ImagingRequest {
   machineId            String?
   technicianId         String?
   status               ImagingRequestStatus @default(REQUESTED)
-  modality             String
+  
+  modality             ImagingModality      // Utiliser l'enum plutôt qu'un String libre
   bodyPart             String
   urgency              String?              @default("ROUTINE")
+  
+  // GESTION INJECTION & CONTRASTE //
   contrastAgentUsed    Boolean              @default(false)
-  contrastDetails      String?
+  contrastDetails      String?              // Ex: "Ioméprol 300 - Phase artérielle et veineuse"
+  
+  // GESTION DES INCIDENCES ET VARIATION //
+  selectedIncidences   String[]             @default([]) // Ex: ["Face", "Profil gauche"]
+  protocolNotes        String?              // Consignes particulières de réalisation
+
   scheduledAt          DateTime?
   completedAt          DateTime?
   notes                String?
@@ -1366,6 +1398,7 @@ model ImagingRequest {
   syncedAt             DateTime?
   sourceNode           String?
   version              Int                  @default(1)
+  
   report               ImagingReport?
   consultation         Consultation         @relation(fields: [consultationId], references: [id], onDelete: Cascade)
   patient              Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
@@ -1377,10 +1410,6 @@ model ImagingRequest {
   @@index([status])
   @@index([consultationId])
   @@index([patientId])
-  @@index([requestedById])
-  @@index([imagingCatalogueId])
-  @@index([machineId])
-  @@index([technicianId])
 }
 
 model ImagingReport {
@@ -1411,7 +1440,7 @@ model ImagingReport {
   @@index([radiologistId])
 }
 
-/// Surgery and bloc op�ratoire.
+/// Surgery and bloc operatoire.
 model OperatingRoom {
   id         String    @id @default(uuid())
   name       String    @unique
