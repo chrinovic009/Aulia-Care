@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { apiFetch } from "../../config/api";
 import {
@@ -225,13 +224,12 @@ export default function PatientsMedecin() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
       <PageMeta title="Patients medecin | D7 Clinique" description="Dossiers patients visibles par les medecins." />
-      <PageBreadcrumb pageTitle="Patients" />
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase text-slate-500">Dossiers partages</p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Patients orientes vers les medecins</h1>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Visibilité patient</h1>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
               Tous les medecins voient les dossiers. L'ecriture est reservee au medecin assigne ou au remplacant autorise par le shift.
             </p>

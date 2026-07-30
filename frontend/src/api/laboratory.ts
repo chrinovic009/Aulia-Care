@@ -115,7 +115,7 @@ export type LabActivityPayload = {
   technicianWorkloads: Array<{ technician: string; assignedItems: number; openItems: number }>;
   lowStockAlerts: Array<{ consumableName: string; location: string; quantity: string; minimumLevel: string | null; criticalLevel: string | null }>;
   criticalAlerts: Array<{ title: string; message: string; priority: string; createdAt: string; displayId?: string }>;
-  recentRequests: Array<{ id: string; displayId: string; patientName: string; status: string; priority: string; requestedAt: string; assignedTo?: string | null; specimenType: string }>;
+  recentRequests: Array<{ id: string; displayId: string; patientName: string; status: string; priority: string; requestedAt: string; resultSentAt?: string | null; assignedTo?: string | null; specimenType: string }>;
   directResultAuthorizationEnabled: boolean;
 };
 

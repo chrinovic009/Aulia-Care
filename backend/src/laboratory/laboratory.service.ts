@@ -417,6 +417,7 @@ export class LaboratoryService {
       status?: string | null;
       priority: string;
       requestedAt?: string | null;
+      resultSentAt?: string | null;
       assignedTo?: string | null;
       specimenType: string;
     }>;
@@ -426,6 +427,14 @@ export class LaboratoryService {
         ? assignedItem.assignedTo.displayName ||
           [assignedItem.assignedTo.firstName, assignedItem.assignedTo.lastName].filter(Boolean).join(' ')
         : null;
+      const latestResult = [...(request.results ?? [])].reduce<any | null>((latest, result) => {
+        const resultTime = result.reportedAt ? new Date(result.reportedAt).getTime() : 0;
+        if (!latest || resultTime > new Date(latest.reportedAt).getTime()) {
+          return result;
+        }
+        return latest;
+      }, null);
+      const resultSentAt = request.sentAt || request.completedAt || latestResult?.reportedAt;
       const displayId = await this.buildLabReferenceCode(request.patient, request.status, request.results?.[0]?.resultStatus);
       recentRequestSummaries.push({
         id: request.id,
@@ -434,6 +443,7 @@ export class LaboratoryService {
         status: request.status,
         priority: request.priority || 'NORMAL',
         requestedAt: request.requestedAt.toISOString(),
+        resultSentAt: resultSentAt ? new Date(resultSentAt).toISOString() : null,
         assignedTo,
         specimenType: request.specimenType || 'N/A',
       });
