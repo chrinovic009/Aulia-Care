@@ -68,6 +68,7 @@ export default function ActivityLab() {
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
   const [requestDetail, setRequestDetail] = useState<LabRequestDetail | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [selectedExamItemId, setSelectedExamItemId] = useState<string | null>(null);
   const [resultForm, setResultForm] = useState({
     resultName: "",
     resultValue: "",
@@ -90,12 +91,21 @@ export default function ActivityLab() {
   const [patientList, setPatientList] = useState<PatientRecord[] | null>(null);
 
   const isLabManager = currentUser?.primaryRole === "LAB_MANAGER" || currentUser?.primaryRole === "ADMIN" || currentUser?.primaryRole === "SUPER_ADMIN";
-  const currentItem = requestDetail?.items?.[0];
+  const currentItem = useMemo(() => {
+    if (!requestDetail?.items?.length) return undefined;
+    if (selectedExamItemId) {
+      return requestDetail.items.find((item) => item.id === selectedExamItemId) || requestDetail.items[0];
+    }
+    return requestDetail.items[0];
+  }, [requestDetail?.items, selectedExamItemId]);
   const latestResult = currentItem?.results?.[0] || requestDetail?.results?.[0];
   const lockedResultStatuses = new Set(["TECHNICAL_VALIDATED", "BIOLOGICALLY_VALIDATED", "AVAILABLE", "SENT", "VERIFIED", "COMPLETED"]);
   const lockedRequestStatuses = new Set(["AVAILABLE", "SENT", "VERIFIED", "COMPLETED"]);
   const lockedItemStatuses = new Set(["AVAILABLE", "SENT"]);
-  const isResultLocked = [
+  const hasMultipleRequestedExams = (requestDetail?.items?.length ?? 0) > 1;
+  const hasPendingExamResults = (requestDetail?.items ?? []).some((item) => !item.results?.length);
+  const shouldEnforceRequestLock = !hasMultipleRequestedExams || !hasPendingExamResults;
+  const isResultLocked = shouldEnforceRequestLock && [
     (latestResult?.resultStatus || "").toUpperCase(),
     (requestDetail?.status || "").toUpperCase(),
     (currentItem?.status || "").toUpperCase(),
@@ -169,7 +179,16 @@ export default function ActivityLab() {
   const isItemAssigned = Boolean(currentItem?.assignedToId);
   const isAssignedToCurrentTechnician = Boolean(currentItem?.assignedToId && currentUser?.id && currentItem.assignedToId === currentUser?.id);
   const canSubmitResult = !isResultLocked && (!isItemAssigned || isAssignedToCurrentTechnician || isLabManager);
-  const resultButtonLabel = isResultLocked ? "Résultat déjà transmis" : isItemAssigned ? "Envoyer le résultat" : "Enregistrer le résultat";
+  const shouldShowNextButton = hasMultipleRequestedExams && hasPendingExamResults;
+  const resultButtonLabel = isResultLocked
+    ? "Résultat déjà transmis"
+    : shouldShowNextButton
+      ? "Suivant"
+      : !isItemAssigned
+        ? "Enregistrer le résultat"
+        : isLabManager
+          ? "Envoyer le résultat"
+          : "Demander la validation";
   const requesterSummary = requestDetail?.consultation?.provider
     ? `Médecin ${[requestDetail.consultation.provider.firstName, requestDetail.consultation.provider.lastName].filter(Boolean).join(" ") || requestDetail.consultation.provider.displayName || "Demandeur"}`
     : `Patient ${[requestDetail?.patient?.firstName, requestDetail?.patient?.lastName].filter(Boolean).join(" ") || "Demandeur"}`;
@@ -188,7 +207,8 @@ export default function ActivityLab() {
         request.priority,
         request.specimenType,
         request.assignedTo || "non assigné",
-        formatDate(request.requestedAt),
+        formatDateTime(request.requestedAt),
+        formatDateTime(request.resultSentAt),
       ]
         .join(" ")
         .toLowerCase();
@@ -276,28 +296,33 @@ export default function ActivityLab() {
     return formattedReference;
   };
 
-  const openRequestDetail = async (requestId: string) => {
+  const openRequestDetail = async (requestId: string, preferredItemId?: string | null) => {
     setIsDetailLoading(true);
     setSelectedRequest(requestId);
     try {
       const detail = await fetchLaboratoryRequest(requestId);
-      setRequestDetail(detail as unknown as LabRequestDetail);
-      const firstItem = (detail as unknown as LabRequestDetail)?.items?.[0];
-      const examName = firstItem?.labTest?.name || firstItem?.results?.[0]?.resultName || "";
-      const referenceRange = formatReferenceRange(firstItem);
-      setResultForm({
+      const detailData = detail as unknown as LabRequestDetail;
+      setRequestDetail(detailData);
+      const selectedItem = preferredItemId
+        ? detailData.items?.find((item) => item.id === preferredItemId)
+        : detailData.items?.[0];
+      const examName = selectedItem?.labTest?.name || selectedItem?.results?.[0]?.resultName || "";
+      const referenceRange = formatReferenceRange(selectedItem);
+      setSelectedExamItemId(selectedItem?.id || null);
+      const nextResultForm = {
         resultName: examName,
-        resultValue: firstItem?.results?.[0]?.resultValue || "",
+        resultValue: selectedItem?.results?.[0]?.resultValue || "",
         referenceRange,
-        interpretation: firstItem?.results?.[0]?.interpretation || "",
-        notes: firstItem?.results?.[0]?.comments || "",
-      });
+        interpretation: selectedItem?.results?.[0]?.interpretation || "",
+        notes: selectedItem?.results?.[0]?.comments || "",
+      };
+      setResultForm(nextResultForm);
 
-      const requestParameterTemplates = firstItem?.labTest?.parameterTemplates || [];
-      const existingParameters = Array.isArray(firstItem?.results?.[0]?.parameters)
-        ? firstItem?.results?.[0]?.parameters
+      const requestParameterTemplates = selectedItem?.labTest?.parameterTemplates || [];
+      const existingParameters = Array.isArray(selectedItem?.results?.[0]?.parameters)
+        ? selectedItem?.results?.[0]?.parameters
         : [];
-      if (requestParameterTemplates.length > 0 && /(^|\s)(nfs|h[eé]mogramme|num[eé]ration formule sanguine)(\s|$)/i.test(firstItem?.labTest?.name || "")) {
+      if (requestParameterTemplates.length > 0 && /(^|\s)(nfs|h[eé]mogramme|num[eé]ration formule sanguine)(\s|$)/i.test(selectedItem?.labTest?.name || "")) {
         setResultParameters(
           requestParameterTemplates.map((parameter) => {
             const existing = existingParameters.find((item) => item.labTestParameterId === parameter.id);
@@ -305,7 +330,7 @@ export default function ActivityLab() {
               labTestParameterId: parameter.id,
               name: parameter.name || "Paramètre",
               unit: parameter.unit || null,
-              referenceRange: formatNfsParameterReference(parameter, detail?.patient?.gender),
+              referenceRange: formatNfsParameterReference(parameter, detailData?.patient?.gender),
               resultValue:
                 existing?.valueNumeric != null
                   ? String(existing.valueNumeric)
@@ -321,16 +346,16 @@ export default function ActivityLab() {
       setShowSendChoice(false);
       setDeliveryMode("validation");
 
-      if (!patientList && detail?.patient?.id) {
+      if (!patientList && detailData?.patient?.id) {
         try {
-          const patientPositionFallback = detail?.patient?.id ? 1 : undefined;
+          const patientPositionFallback = detailData?.patient?.id ? 1 : undefined;
           setPatientList((current) => current ?? [{
-            id: detail.patient?.id || "",
-            firstName: detail.patient?.firstName || "",
-            lastName: detail.patient?.lastName || "",
-            phone: detail.patient?.phone || "",
-            email: detail.patient?.email || "",
-            address: detail.patient?.address || "",
+            id: detailData.patient?.id || "",
+            firstName: detailData.patient?.firstName || "",
+            lastName: detailData.patient?.lastName || "",
+            phone: detailData.patient?.phone || "",
+            email: detailData.patient?.email || "",
+            address: detailData.patient?.address || "",
             createdAt: new Date().toISOString(),
           } as PatientRecord]);
           if (patientPositionFallback) {
@@ -349,7 +374,7 @@ export default function ActivityLab() {
   };
 
   const submitResult = async () => {
-    if (!selectedRequest) return;
+    if (!selectedRequest || !currentItem?.id) return;
 
     setIsSubmittingResult(true);
     try {
@@ -361,6 +386,7 @@ export default function ActivityLab() {
           resultValue: isNfsRequest ? null : resultForm.resultValue,
           referenceRange: isNfsRequest ? null : resultForm.referenceRange || currentItem?.labTest?.referenceRange || null,
           interpretation: isNfsRequest ? null : resultForm.interpretation || null,
+          comments: resultForm.notes || null,
           units: isNfsRequest ? null : currentItem?.labTest?.unit || null,
           labRequestItemId: currentItem?.id || null,
           resultType: isNfsRequest ? "MULTI_PARAMETER" : undefined,
@@ -382,8 +408,9 @@ export default function ActivityLab() {
       });
 
       setShowSendChoice(false);
-      setRequestDetail(null);
-      setSelectedRequest(null);
+      const pendingItems = (requestDetail?.items ?? []).filter((item) => !item.results?.length);
+      const nextPendingItem = pendingItems.find((item) => item.id !== currentItem?.id) || pendingItems[0];
+      await openRequestDetail(selectedRequest, nextPendingItem?.id || null);
       await loadActivity();
     } catch (error) {
       console.error("Impossible d'enregistrer le résultat", error);
@@ -404,7 +431,8 @@ export default function ActivityLab() {
       return;
     }
 
-    if (isItemAssigned && (isAssignedToCurrentTechnician || isLabManager)) {
+    const isPendingMultiExamRequest = hasMultipleRequestedExams && hasPendingExamResults;
+    if (!isPendingMultiExamRequest && isItemAssigned && (isAssignedToCurrentTechnician || isLabManager)) {
       setShowSendChoice(true);
       return;
     }
@@ -445,6 +473,17 @@ export default function ActivityLab() {
       window.removeEventListener("aulia:lab.result.created", handler);
     };
   }, []);
+
+  const groupedItemsBySection = useMemo(() => {
+    if (!requestDetail?.items?.length) return [];
+    const grouped = new Map<string, Array<LabRequestDetailItem>>();
+    for (const item of requestDetail.items) {
+      const sectionName = item.labTest?.section?.name || "Autre";
+      if (!grouped.has(sectionName)) grouped.set(sectionName, []);
+      grouped.get(sectionName)!.push(item);
+    }
+    return Array.from(grouped.entries()).map(([sectionName, items]) => ({ sectionName, items }));
+  }, [requestDetail?.items]);
 
   const printLaboratoryResultDocument = () => {
     if (!requestDetail) return;
@@ -675,7 +714,7 @@ export default function ActivityLab() {
               />
             </label>
             <DataTable
-              headers={["ID", "Patient", "Statut", "Priorité", "Examen", "Assigné à", "Demandé le"]}
+              headers={["ID", "Patient", "Statut", "Priorité", "Examen", "Assigné à", "Demandé le", "Résultat envoyé le"]}
               rows={filteredRecentRequests.map((request) => [
                 <button key={request.id} onClick={() => openRequestDetail(request.id)} className="text-left font-semibold text-emerald-700 hover:underline">
                   {request.displayId}
@@ -685,7 +724,8 @@ export default function ActivityLab() {
                 request.priority,
                 request.specimenType,
                 request.assignedTo || "Non assigné",
-                formatDate(request.requestedAt),
+                formatDateTime(request.requestedAt),
+                formatDateTime(request.resultSentAt),
               ])}
             />
           </Panel>
@@ -796,87 +836,93 @@ export default function ActivityLab() {
                     </div>
                   </Panel>
 
-                  <Panel title="Détails de l’examen" subtitle="Section, catégorie, examen, paramètres, échantillons et consommables associés.">
-                    {requestDetail?.items?.map((item, index) => (
-                      <div key={item.id || index} className="space-y-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div>
-                            <p className="text-xs uppercase tracking-wide text-slate-500">Section</p>
-                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{item?.labTest?.section?.name || "—"}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs uppercase tracking-wide text-slate-500">Catégorie</p>
-                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{item?.labTest?.category?.name || "—"}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs uppercase tracking-wide text-slate-500">Examen</p>
-                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{item?.labTest?.name || "—"}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs uppercase tracking-wide text-slate-500">Statut</p>
-                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{getLabStatusLabel(item?.status, item?.results?.[0]?.resultStatus)}</p>
-                          </div>
-                        </div>
+                  <Panel title="Détails de l’examen" subtitle="Les examens sont regroupés par section et catégorie pour une lecture plus claire.">
+                    <div className="space-y-4">
+                      {groupedItemsBySection.map(({ sectionName, items }) => {
+                        const groupedByCategory = new Map<string, LabRequestDetailItem[]>();
+                        for (const item of items) {
+                          const categoryName = item.labTest?.category?.name || "Autre";
+                          if (!groupedByCategory.has(categoryName)) groupedByCategory.set(categoryName, []);
+                          groupedByCategory.get(categoryName)!.push(item);
+                        }
 
-                        <div>
-                          <p className="text-xs uppercase tracking-wide text-slate-500">Paramètres</p>
-                          <ul className="mt-2 space-y-2 text-sm text-slate-700 dark:text-slate-300">
-                            {(item?.labTest?.parameterTemplates || []).length === 0 ? (
-                              <li>Aucun paramètre défini.</li>
-                            ) : (item.labTest?.parameterTemplates || []).map((parameter) => (
-                              <li key={parameter.id} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
-                                {parameter.name} — {parameter.unit || "unité non précisée"}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                        return (
+                          <div key={sectionName} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-xs uppercase tracking-wide text-slate-500">Section</p>
+                                <p className="mt-1 font-semibold text-slate-900 dark:text-white">{sectionName}</p>
+                              </div>
+                            </div>
+                            <div className="mt-4 space-y-4">
+                              {Array.from(groupedByCategory.entries()).map(([categoryName, categoryItems]) => (
+                                <div key={`${sectionName}-${categoryName}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-950/60">
+                                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Catégorie : {categoryName}</p>
+                                  <div className="mt-3 space-y-3">
+                                    {categoryItems.map((item, index) => {
+                                      const isActive = currentItem?.id === item.id;
+                                      return (
+                                        <button
+                                          key={item.id || `${sectionName}-${categoryName}-${index}`}
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedExamItemId(item.id || null);
+                                            const nextResultForm = {
+                                              resultName: item.labTest?.name || item.results?.[0]?.resultName || "",
+                                              resultValue: item.results?.[0]?.resultValue || "",
+                                              referenceRange: formatReferenceRange(item),
+                                              interpretation: item.results?.[0]?.interpretation || "",
+                                              notes: item.results?.[0]?.comments || "",
+                                            };
+                                            setResultForm(nextResultForm);
 
-                        <div>
-                          <p className="text-xs uppercase tracking-wide text-slate-500">Échantillons</p>
-                          <ul className="mt-2 space-y-2 text-sm text-slate-700 dark:text-slate-300">
-                            {(() => {
-                              const sampleEntries = (item?.samples && item.samples.length > 0)
-                                ? item.samples.map((sample) => ({
-                                    id: sample.id,
-                                    name: sample.labSampleType?.name || "Échantillon",
-                                    detail: sample.status || "État non précisé",
-                                  }))
-                                : (item?.labTest?.sampleRequirements || []).map((requirement) => ({
-                                    id: requirement.id,
-                                    name: requirement.labSampleType?.name || "Échantillon",
-                                    detail: [
-                                      requirement.volumeRequired ? `${requirement.volumeRequired}${requirement.volumeUnit ? ` ${requirement.volumeUnit}` : ""}` : null,
-                                      requirement.storageCondition,
-                                      requirement.instructions,
-                                    ].filter(Boolean).join(" • ") || "Exigence d'échantillon",
-                                  }));
-
-                              return sampleEntries.length === 0 ? (
-                                <li>Aucun échantillon associé.</li>
-                              ) : sampleEntries.map((sample) => (
-                                <li key={sample.id} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
-                                  <div className="font-medium">{sample.name}</div>
-                                  {sample.detail ? <div className="mt-1 text-xs text-slate-500">{sample.detail}</div> : null}
-                                </li>
-                              ));
-                            })()}
-                          </ul>
-                        </div>
-
-                        <div>
-                          <p className="text-xs uppercase tracking-wide text-slate-500">Exigences et consommables</p>
-                          <ul className="mt-2 space-y-2 text-sm text-slate-700 dark:text-slate-300">
-                            {(item?.labTest?.consumableRequirements || []).length === 0 ? (
-                              <li>Aucun consommable requis.</li>
-                            ) : (item.labTest?.consumableRequirements || []).map((requirement) => (
-                              <li key={requirement.id} className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
-                                {requirement.labConsumable?.name} — {requirement.quantity} {requirement.unit || requirement.labConsumable?.unit || ""}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    ))}
+                                            const requestParameterTemplates = item.labTest?.parameterTemplates || [];
+                                            const existingParameters = Array.isArray(item.results?.[0]?.parameters)
+                                              ? item.results?.[0]?.parameters
+                                              : [];
+                                            if (requestParameterTemplates.length > 0 && /(^|\s)(nfs|h[eé]mogramme|num[eé]ration formule sanguine)(\s|$)/i.test(item.labTest?.name || "")) {
+                                              setResultParameters(
+                                                requestParameterTemplates.map((parameter) => {
+                                                  const existing = existingParameters.find((entry) => entry.labTestParameterId === parameter.id);
+                                                  return {
+                                                    labTestParameterId: parameter.id,
+                                                    name: parameter.name || "Paramètre",
+                                                    unit: parameter.unit || null,
+                                                    referenceRange: formatNfsParameterReference(parameter, requestDetail?.patient?.gender),
+                                                    resultValue:
+                                                      existing?.valueNumeric != null
+                                                        ? String(existing.valueNumeric)
+                                                        : existing?.valueText || "",
+                                                    interpretation: existing?.interpretation || "",
+                                                  };
+                                                }),
+                                              );
+                                            } else {
+                                              setResultParameters([]);
+                                            }
+                                          }}
+                                          className={`w-full rounded-lg border p-3 text-left transition ${isActive ? "border-emerald-400 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/40" : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900"}`}
+                                        >
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                              <p className="font-semibold text-slate-900 dark:text-white">{item.labTest?.name || "—"}</p>
+                                              <p className="mt-1 text-xs text-slate-500">{getLabStatusLabel(item?.status, item?.results?.[0]?.resultStatus)}</p>
+                                            </div>
+                                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                              {isActive ? "Sélectionné" : "Ouvrir"}
+                                            </span>
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </Panel>
                 </div>
 

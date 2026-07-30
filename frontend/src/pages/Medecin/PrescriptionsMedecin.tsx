@@ -15,6 +15,15 @@ export default function PrescriptionsMedecin() {
   const [categoryId, setCategoryId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [editingPrescriptionId, setEditingPrescriptionId] = useState<string | null>(null);
+  const [selectedMedicationIds, setSelectedMedicationIds] = useState<string[]>([]);
+  const [selectedMedicationDetails, setSelectedMedicationDetails] = useState<Record<string, {
+    quantity: string;
+    dosage: string;
+    route: string;
+    frequency: string;
+    durationDays: string;
+    notes: string;
+  }>>({});
   const [editForm, setEditForm] = useState({
     medicationId: "",
     quantity: "1",
@@ -116,9 +125,44 @@ export default function PrescriptionsMedecin() {
     }),
   );
 
+  const addMedicationSelection = (medicationId: string) => {
+    setSelectedMedicationIds((current) => (current.includes(medicationId) ? current : [...current, medicationId]));
+    setSelectedMedicationDetails((current) => {
+      if (current[medicationId]) {
+        return current;
+      }
+      return {
+        ...current,
+        [medicationId]: {
+          quantity: form.quantity,
+          dosage: form.dosage,
+          route: form.route,
+          frequency: form.frequency,
+          durationDays: form.durationDays,
+          notes: form.notes,
+        },
+      };
+    });
+  };
+
+  const updateMedicationDetail = (medicationId: string, patch: Partial<(typeof selectedMedicationDetails)[string]>) => {
+    setSelectedMedicationDetails((current) => ({
+      ...current,
+      [medicationId]: {
+        quantity: current[medicationId]?.quantity ?? form.quantity,
+        dosage: current[medicationId]?.dosage ?? form.dosage,
+        route: current[medicationId]?.route ?? form.route,
+        frequency: current[medicationId]?.frequency ?? form.frequency,
+        durationDays: current[medicationId]?.durationDays ?? form.durationDays,
+        notes: current[medicationId]?.notes ?? form.notes,
+        ...patch,
+      },
+    }));
+  };
+
   const submit = async () => {
-    if (!selectedConsultation || !form.medicationId) {
-      setMessage("Choisissez une consultation et un medicament.");
+    if (!selectedConsultation || selectedMedicationIds.length === 0) {
+      setMessage("Choisissez une consultation et au moins un médicament.");
       return;
     }
     if (!canWrite) {
@@ -130,22 +174,34 @@ export default function PrescriptionsMedecin() {
       return;
     }
 
-    const medication = medications.find((item) => item.id === form.medicationId);
+    const lines = selectedMedicationIds.map((medicationId) => {
+      const medication = medications.find((item) => item.id === medicationId);
+      const detail = selectedMedicationDetails[medicationId] || {
+        quantity: form.quantity,
+        dosage: form.dosage,
+        route: form.route,
+        frequency: form.frequency,
+        durationDays: form.durationDays,
+        notes: form.notes,
+      };
+      return {
+        medicationId,
+        quantity: Number(detail.quantity || 1),
+        dosage: detail.dosage,
+        route: detail.route,
+        frequency: detail.frequency,
+        durationDays: detail.durationDays ? Number(detail.durationDays) : undefined,
+        notes: detail.notes,
+        unitPrice: medication?.unitPrice ? Number(medication.unitPrice) : undefined,
+      };
+    });
+
     await createPrescription(selectedConsultation.id, {
       instruction: form.instruction,
-      lines: [
-        {
-          medicationId: form.medicationId,
-          quantity: Number(form.quantity || 1),
-          dosage: form.dosage,
-          route: form.route,
-          frequency: form.frequency,
-          durationDays: form.durationDays ? Number(form.durationDays) : undefined,
-          notes: form.notes,
-          unitPrice: medication?.unitPrice ? Number(medication.unitPrice) : undefined,
-        },
-      ],
+      lines,
     });
+    setSelectedMedicationIds([]);
+    setSelectedMedicationDetails({});
     setForm({ medicationId: "", quantity: "1", dosage: "", route: "ORAL", frequency: "DAILY", durationDays: "", notes: "", instruction: "" });
     setMessage("Prescription creee et envoyee a la caisse.");
     await load();
@@ -250,7 +306,92 @@ export default function PrescriptionsMedecin() {
                     <Select label="Section" value={sectionId} onChange={(value) => { setSectionId(value); setCategoryId(""); setForm((current) => ({ ...current, medicationId: "" })); }} options={[['', 'Toutes les sections'], ...sections.map((section) => [section.id, section.name] as [string, string])]} />
                     <Select label="Catégorie" value={categoryId} onChange={(value) => { setCategoryId(value); setForm((current) => ({ ...current, medicationId: "" })); }} options={sectionId ? [['', 'Choisir une catégorie'], ...categories.map((category) => [category.id, category.name] as [string, string])] : [['', 'Choisir une section d\'abord']]} />
                     <Input label="Rechercher un médicament" value={searchTerm} onChange={setSearchTerm} />
-                    <Select label="Médicament disponible" value={form.medicationId} onChange={(value) => setForm((current) => ({ ...current, medicationId: value }))} options={sectionId && categoryId ? [['', 'Choisir'], ...selectableMedications.map((medication) => [medication.id, `${medication.name}${medication.strength ? ` ${medication.strength}` : ""} - stock ${medication.availableQuantity}`] as [string, string])] : [['', 'Choisir une section puis une catégorie']]} />
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-slate-600 dark:text-slate-300">Médicaments disponibles</label>
+                      <select
+                        value=""
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          if (!value) return;
+                          addMedicationSelection(value);
+                          event.target.value = "";
+                        }}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                      >
+                        <option value="">Choisir un médicament</option>
+                        {selectableMedications.map((medication) => (
+                          <option key={medication.id} value={medication.id}>{`${medication.name}${medication.strength ? ` ${medication.strength}` : ""} - stock ${medication.availableQuantity}`}</option>
+                        ))}
+                      </select>
+                      {selectedMedicationIds.length > 0 ? (
+                        <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950">
+                          {selectedMedicationIds.map((medicationId) => {
+                            const medication = selectableMedications.find((item) => item.id === medicationId) || medications.find((item) => item.id === medicationId);
+                            if (!medication) return null;
+                            return (
+                              <div key={medication.id} className="rounded-lg bg-white px-3 py-2 dark:bg-slate-900">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <p className="font-medium text-slate-800 dark:text-slate-100">{medication.name}{medication.strength ? ` ${medication.strength}` : ""}</p>
+                                    <p className="text-xs text-slate-500">Stock : {medication.availableQuantity}</p>
+                                  </div>
+                                  <button type="button" onClick={() => {
+                                    setSelectedMedicationIds((current) => current.filter((id) => id !== medication.id));
+                                    setSelectedMedicationDetails((current) => {
+                                      const next = { ...current };
+                                      delete next[medication.id];
+                                      return next;
+                                    });
+                                  }} className="text-xs font-semibold text-rose-600">Retirer</button>
+                                </div>
+                                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                                  <label className="block text-xs">
+                                    <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Quantité</span>
+                                    <input type="number" min="1" value={selectedMedicationDetails[medication.id]?.quantity ?? "1"} onChange={(event) => updateMedicationDetail(medication.id, { quantity: event.target.value })} className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+                                  </label>
+                                  <label className="block text-xs">
+                                    <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Posologie</span>
+                                    <input type="text" value={selectedMedicationDetails[medication.id]?.dosage ?? ""} onChange={(event) => updateMedicationDetail(medication.id, { dosage: event.target.value })} className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+                                  </label>
+                                  <label className="block text-xs">
+                                    <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Voie</span>
+                                    <select value={selectedMedicationDetails[medication.id]?.route ?? "ORAL"} onChange={(event) => updateMedicationDetail(medication.id, { route: event.target.value })} className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white">
+                                      <option value="ORAL">Orale</option>
+                                      <option value="INTRAVENOUS">IV</option>
+                                      <option value="INTRAMUSCULAR">IM</option>
+                                      <option value="SUBCUTANEOUS">SC</option>
+                                      <option value="TOPICAL">Topique</option>
+                                      <option value="INHALATION">Inhalation</option>
+                                      <option value="OTHER">Autre</option>
+                                    </select>
+                                  </label>
+                                  <label className="block text-xs">
+                                    <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Fréquence</span>
+                                    <select value={selectedMedicationDetails[medication.id]?.frequency ?? "DAILY"} onChange={(event) => updateMedicationDetail(medication.id, { frequency: event.target.value })} className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white">
+                                      <option value="ONCE">Une fois</option>
+                                      <option value="DAILY">Quotidien</option>
+                                      <option value="BID">2x/jour</option>
+                                      <option value="TID">3x/jour</option>
+                                      <option value="QID">4x/jour</option>
+                                      <option value="PRN">Si besoin</option>
+                                      <option value="CONTINUOUS">Continu</option>
+                                    </select>
+                                  </label>
+                                  <label className="block text-xs">
+                                    <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Durée (jours)</span>
+                                    <input type="number" min="1" value={selectedMedicationDetails[medication.id]?.durationDays ?? ""} onChange={(event) => updateMedicationDetail(medication.id, { durationDays: event.target.value })} className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+                                  </label>
+                                  <label className="block text-xs md:col-span-2">
+                                    <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Note</span>
+                                    <input type="text" value={selectedMedicationDetails[medication.id]?.notes ?? ""} onChange={(event) => updateMedicationDetail(medication.id, { notes: event.target.value })} className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+                                  </label>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
                     <div className="grid gap-3 md:grid-cols-2">
                       <Input label="Quantite" value={form.quantity} onChange={(value) => setForm((current) => ({ ...current, quantity: value }))} type="number" />
                       <Input label="Posologie" value={form.dosage} onChange={(value) => setForm((current) => ({ ...current, dosage: value }))} />
@@ -260,7 +401,7 @@ export default function PrescriptionsMedecin() {
                       <Input label="Note" value={form.notes} onChange={(value) => setForm((current) => ({ ...current, notes: value }))} />
                     </div>
                     <Textarea label="Conseils / recommandations" value={form.instruction} onChange={(value) => setForm((current) => ({ ...current, instruction: value }))} />
-                    <button disabled={!canWrite || pendingExam || !sectionId || !categoryId || !form.medicationId} onClick={submit} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:bg-slate-300 disabled:text-slate-600">Prescrire</button>
+                    <button disabled={!canWrite || pendingExam || !sectionId || !categoryId || selectedMedicationIds.length === 0} onClick={submit} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:bg-slate-300 disabled:text-slate-600">Prescrire</button>
                   </Panel>
                   <Panel title="Prescriptions du patient">
                     {(selectedPatient.prescriptions || []).length === 0 ? <SmallEmpty /> : selectedPatient.prescriptions?.slice(0, 5).map((prescription) => (

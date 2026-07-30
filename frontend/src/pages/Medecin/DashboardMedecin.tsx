@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AlertTriangle, Mic, MicOff, PhoneCall, Sparkles } from "lucide-react";
-import PageBreadcrumb from "../../components/common/PageBreadCrumb";
+import { Mic, MicOff, Sparkles } from "lucide-react";
 import PageMeta from "../../components/common/PageMeta";
 import {
   DoctorPatient,
@@ -9,9 +8,7 @@ import {
   formatDoctorPatientName,
   saveClinicalSections,
 } from "../../api/doctor";
-import { apiFetch, ApiError } from "../../config/api";
 import { useAuth } from "../../context/AuthContext";
-import { callPatientToWaitingRoom } from "../../utils/patientCall";
 
 // Petit hook utilitaire pour gérer l'état d'une modale
 function useModal(initialState = false) {
@@ -274,9 +271,6 @@ export default function DashboardMedecin() {
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [isConsultationOpen, setIsConsultationOpen] = useState(false);
-  const [conflictMedication, setConflictMedication] = useState<any | null>(null);
-  const [conflictMessage, setConflictMessage] = useState<string | null>(null);
-  const { isOpen: isConflictOpen, openModal: openConflictModal, closeModal: closeConflictModal } = useModal(false);
   
   const speechRecognitionRef = useRef<any>(null);
   const speechFinalTextRef = useRef("");
@@ -887,7 +881,6 @@ export default function DashboardMedecin() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
       <PageMeta title="Dashboard medecin | D7 Clinique" description="File medecin alimentee par PostgreSQL." />
-      <PageBreadcrumb pageTitle="Dashboard medecin" />
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

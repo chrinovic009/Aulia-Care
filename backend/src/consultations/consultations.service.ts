@@ -348,6 +348,38 @@ export class ConsultationsService {
         });
       }
 
+      const sectionConsumableUsage = await this.resolveSectionConsumableUsage(tx, selectedLabTests);
+      if (sectionConsumableUsage.length > 0) {
+        for (const usage of sectionConsumableUsage) {
+          const availableStock = await tx.labConsumableStock.findFirst({
+            where: { labConsumableId: usage.labConsumableId },
+            select: { id: true, quantity: true },
+          });
+          const currentQty = Number(availableStock?.quantity || 0);
+          const requiredQty = Number(usage.quantity || 0);
+          if (currentQty < requiredQty) {
+            throw new BadRequestException(`Stock insuffisant pour ${usage.consumableName}.`);
+          }
+          if (availableStock) {
+            await tx.labConsumableStock.update({
+              where: { id: availableStock.id },
+              data: { quantity: currentQty - requiredQty, lastUpdatedAt: new Date() },
+            });
+          }
+          await tx.labConsumableTransaction.create({
+            data: {
+              labConsumableId: usage.labConsumableId,
+              type: 'OUT',
+              quantity: requiredQty,
+              unit: usage.unit || 'unité',
+              reference: created.id,
+              note: `Consommation pour demande laboratoire ${created.id} - ${usage.sectionName}`,
+              performedById: actorId || null,
+            },
+          });
+        }
+      }
+
       const handledBySubscription = await this.recordSubscriptionChargeForInvoice(
         tx,
         consultation.patientId,
@@ -439,6 +471,41 @@ export class ConsultationsService {
     this.notificationsGateway.notify('invoice.created', request.invoice);
 
     return request;
+  }
+
+  private async resolveSectionConsumableUsage(tx: any, selectedLabTests: Array<any>) {
+    const usageByKey = new Map<string, { sectionId: string; sectionName: string; labConsumableId: string; consumableName: string; quantity: number; unit?: string | null }>();
+
+    for (const labTest of selectedLabTests) {
+      const sectionId = labTest.section?.id || labTest.sectionId;
+      if (!sectionId) continue;
+
+      const requirements = await tx.labTestConsumableRequirement.findMany({
+        where: { labTestId: labTest.id },
+        include: { labConsumable: true },
+      });
+
+      for (const requirement of requirements) {
+        const key = `${sectionId}:${requirement.labConsumableId}`;
+        const quantity = Number(requirement.quantity || 0);
+        if (!quantity) continue;
+        if (!usageByKey.has(key)) {
+          usageByKey.set(key, {
+            sectionId,
+            sectionName: labTest.section?.name || 'Section laboratoire',
+            labConsumableId: requirement.labConsumableId,
+            consumableName: requirement.labConsumable?.name || 'Consommable',
+            quantity,
+            unit: requirement.unit || requirement.labConsumable?.unit || null,
+          });
+          continue;
+        }
+        const existing = usageByKey.get(key)!;
+        existing.quantity += quantity;
+      }
+    }
+
+    return Array.from(usageByKey.values());
   }
 
   async createPrescription(id: string, dto: any, actorId?: string) {

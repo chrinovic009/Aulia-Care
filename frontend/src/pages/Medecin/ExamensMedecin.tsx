@@ -79,19 +79,19 @@ const getLabRequestViewState = (request: { status?: string | null; results?: Arr
   };
 };
 
+const formatLabResultParameter = (parameter: LabResultParameter) => {
+  const name = parameter.labTestParameter?.name || "Paramètre";
+  const value = parameter.valueNumeric?.toString() || parameter.valueText || "Non renseigné";
+  const unit = parameter.labTestParameter?.unit?.trim() || "";
+  const reference = parameter.labTestParameter?.referenceRange?.trim() || "";
+  const interpretation = parameter.interpretation ? ` • ${parameter.interpretation}` : "";
+  const referenceText = reference ? ` | Réf: ${reference}${unit && !reference.toLowerCase().includes(unit.toLowerCase()) ? ` ${unit}` : ""}` : unit ? ` ${unit}` : "";
+  return `${name}: ${value}${referenceText}${interpretation}`;
+};
+
 const formatLabResultTextWithReference = (result: DoctorLabResult) => {
   if (Array.isArray(result.parameters) && result.parameters.length > 0) {
-    return result.parameters
-      .map((parameter) => {
-        const name = parameter.labTestParameter?.name || "Paramètre";
-        const value = parameter.valueNumeric?.toString() || parameter.valueText || "Non renseigné";
-        const unit = parameter.labTestParameter?.unit?.trim() || "";
-        const reference = parameter.labTestParameter?.referenceRange?.trim() || "";
-        const interpretation = parameter.interpretation ? ` • ${parameter.interpretation}` : "";
-        const referenceText = reference ? ` | Réf: ${reference}${unit && !reference.toLowerCase().includes(unit.toLowerCase()) ? ` ${unit}` : ""}` : unit ? ` ${unit}` : "";
-        return `${name}: ${value}${referenceText}${interpretation}`;
-      })
-      .join("\n");
+    return result.parameters.map((parameter) => formatLabResultParameter(parameter)).join("\n");
   }
 
   const resultValue = result.resultValue?.trim() || "Non renseigné";
@@ -184,8 +184,8 @@ export default function ExamensMedecin() {
     await createLabRequest(selectedConsultation.id, {
       ...form,
       labTestIds,
-      examName: selectedLabTests[0]?.name || form.examName,
-      specimenType: selectedLabTests[0]?.name || form.specimenType || selectedService?.name || form.examName,
+      examName: selectedLabTests.length > 0 ? selectedLabTests.map((test) => test.name).join(", ") : form.examName,
+      specimenType: selectedLabTests.length > 0 ? selectedLabTests.map((test) => test.name).join(", ") : (form.specimenType || selectedService?.name || form.examName),
       notes: [
         form.notes,
         selectedService ? `Service paramedical: ${selectedService.name}` : "",
@@ -231,6 +231,7 @@ export default function ExamensMedecin() {
                               const value = event.target.value;
                               if (!value) return;
                               setSelectedLabTestIds((current) => current.includes(value) ? current : [...current, value]);
+                              event.target.value = "";
                             }}
                             className="w-full rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                           >
