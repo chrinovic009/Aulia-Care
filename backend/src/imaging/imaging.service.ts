@@ -17,6 +17,34 @@ export class ImagingService {
     });
   }
 
+  findCatalogue() {
+    return this.prisma.imagingCatalogue.findMany({
+      where: { active: true },
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+    });
+  }
+
+  findMachines() {
+    return this.prisma.imagingMachine.findMany({
+      orderBy: [{ name: 'asc' }],
+    });
+  }
+
+  createMachine(dto: { name: string; roomNumber?: string; isOperational?: boolean }) {
+    const name = typeof dto.name === 'string' ? dto.name.trim() : '';
+    if (!name) {
+      throw new BadRequestException('Le nom de l équipement est requis.');
+    }
+
+    return this.prisma.imagingMachine.create({
+      data: {
+        name,
+        roomNumber: typeof dto.roomNumber === 'string' && dto.roomNumber.trim() ? dto.roomNumber.trim() : null,
+        isOperational: dto.isOperational !== false,
+      },
+    });
+  }
+
   async findOne(id: string) {
     const imagingRequest = await this.prisma.imagingRequest.findUnique({ where: { id }, include: { patient: true, requestedBy: true, consultation: true, report: true } });
     if (!imagingRequest) {

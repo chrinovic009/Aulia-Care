@@ -348,10 +348,13 @@ function EditParameterModal({ open, value, onChange, onCancel, onSave, isSaving,
   );
 }
 
-function EditSampleTypeModal({ open, value, onChange, onCancel, onSave, isSaving }: { open: boolean; value: { id: string; name: string; description: string; active: boolean } | null; onChange: (value: { id: string; name: string; description: string; active: boolean }) => void; onCancel: () => void; onSave: () => void; isSaving: boolean }) {
+function EditSampleTypeModal({ open, value, onChange, onCancel, onSave, isSaving, tests }: { open: boolean; value: { id: string; name: string; description: string; active: boolean; linkedTestIds: string[]; initialLinkedTestIds: string[]; associatedRequirements: Array<{ id: string; labTestId: string }> } | null; onChange: (value: { id: string; name: string; description: string; active: boolean; linkedTestIds: string[]; initialLinkedTestIds: string[]; associatedRequirements: Array<{ id: string; labTestId: string }> }) => void; onCancel: () => void; onSave: () => void; isSaving: boolean; tests: Array<{ id: string; name: string }> }) {
   if (!open || !value) return null;
+
+  const selectedTests = new Set(value.linkedTestIds);
+
   return (
-    <Modal isOpen={open} onClose={onCancel} className="max-w-2xl border border-slate-200 p-0 shadow-2xl">
+    <Modal isOpen={open} onClose={onCancel} className="max-w-3xl border border-slate-200 p-0 shadow-2xl">
       <div className="rounded-3xl bg-white p-6 dark:bg-slate-900">
         <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Modifier le type d’échantillon</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -368,6 +371,37 @@ function EditSampleTypeModal({ open, value, onChange, onCancel, onSave, isSaving
             Active
           </label>
         </div>
+
+        <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950/40">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Examens liés</h4>
+            <span className="text-xs text-slate-500 dark:text-slate-300">{value.linkedTestIds.length} sélectionné(s)</span>
+          </div>
+
+          {tests.length === 0 ? (
+            <p className="text-sm text-slate-500">Aucun examen disponible pour lier cet échantillon.</p>
+          ) : (
+            <div className="grid max-h-60 gap-2 overflow-auto pr-1 md:grid-cols-2">
+              {tests.map((test) => (
+                <label key={test.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={selectedTests.has(test.id)}
+                    onChange={(event) => {
+                      const nextIds = event.target.checked
+                        ? [...value.linkedTestIds, test.id]
+                        : value.linkedTestIds.filter((id) => id !== test.id);
+                      onChange({ ...value, linkedTestIds: nextIds });
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                  />
+                  <span>{test.name}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="mt-6 flex justify-end gap-3">
           <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Annuler</button>
           <button type="button" disabled={isSaving} onClick={onSave} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? 'Enregistrement...' : 'Enregistrer'}</button>
@@ -551,7 +585,7 @@ export default function CatalogueLab() {
   const [editingCategory, setEditingCategory] = useState<{ id: string; sectionId: string; name: string; code: string; description: string; order: string; active: boolean } | null>(null);
   const [editingTest, setEditingTest] = useState<{ id: string; code: string; name: string; categoryId: string; sectionId: string; description: string; price: string; turnaroundTimeMinutes: string; resultType: string; unit: string; referenceRange: string; genderRestriction: string; minAge: string; maxAge: string; active: boolean } | null>(null);
   const [editingParameter, setEditingParameter] = useState<{ id: string; labTestId: string; code: string; name: string; unit: string; resultType: string; referenceRange: string; minValue: string; maxValue: string; order: string; active: boolean } | null>(null);
-  const [editingSampleType, setEditingSampleType] = useState<{ id: string; name: string; description: string; active: boolean } | null>(null);
+  const [editingSampleType, setEditingSampleType] = useState<{ id: string; name: string; description: string; active: boolean; linkedTestIds: string[]; initialLinkedTestIds: string[]; associatedRequirements: Array<{ id: string; labTestId: string }> } | null>(null);
   const [editingSampleRequirement, setEditingSampleRequirement] = useState<{ id: string; labTestId: string; labSampleTypeId: string; volumeRequired: string; volumeUnit: string; storageCondition: string; maxAgeMinutes: string; instructions: string } | null>(null);
   const [editingConsumable, setEditingConsumable] = useState<{ id: string; name: string; code: string; description: string; unit: string; active: boolean } | null>(null);
   const [editingConsumableRequirement, setEditingConsumableRequirement] = useState<{ id: string; labTestId: string; labConsumableId: string; quantity: string; unit: string } | null>(null);
@@ -562,7 +596,7 @@ export default function CatalogueLab() {
   const [testForm, setTestForm] = useState({ code: '', name: '', categoryId: '', sectionId: '', description: '', price: '0', turnaroundTimeMinutes: '30', resultType: 'MULTI_PARAMETER', unit: '', referenceRange: '', genderRestriction: 'ALL', minAge: '', maxAge: '', active: true });
   const [parameterSuggestions, setParameterSuggestions] = useState<Array<{ code: string; name: string; unit: string; reference: string }>>([]);
   const [parameterForm, setParameterForm] = useState({ labTestId: '', code: '', name: '', unit: '', resultType: 'NUMERIC', referenceRange: '', minValue: '', maxValue: '', order: '0', active: true });
-  const [sampleTypeForm, setSampleTypeForm] = useState({ labTestId: '', name: '', description: '', active: true });
+  const [sampleTypeForm, setSampleTypeForm] = useState({ name: '', description: '', active: true });
   const [showSectionForm, setShowSectionForm] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [showTestForm, setShowTestForm] = useState(false);
@@ -970,8 +1004,17 @@ export default function CatalogueLab() {
     }
   };
 
-  const handleEditSampleType = (sampleType: { id: string; name: string; description?: string | null; active: boolean }) => {
-    setEditingSampleType({ id: sampleType.id, name: sampleType.name, description: sampleType.description || '', active: sampleType.active });
+  const handleEditSampleType = (sampleType: { id: string; name: string; description?: string | null; active: boolean; sampleRequirements?: Array<{ id: string; labTestId: string }> }) => {
+    const linkedTestIds = sampleType.sampleRequirements?.map((requirement) => requirement.labTestId) ?? [];
+    setEditingSampleType({
+      id: sampleType.id,
+      name: sampleType.name,
+      description: sampleType.description || '',
+      active: sampleType.active,
+      linkedTestIds,
+      initialLinkedTestIds: [...linkedTestIds],
+      associatedRequirements: sampleType.sampleRequirements ?? [],
+    });
   };
 
   const handleSaveSampleType = async () => {
@@ -980,6 +1023,7 @@ export default function CatalogueLab() {
       showError('Validation', 'Le nom du type d\'échantillon est requis.');
       return;
     }
+
     setIsSaving(true);
     try {
       await updateLabCatalogueItem('sample-types', editingSampleType.id, {
@@ -987,9 +1031,27 @@ export default function CatalogueLab() {
         description: editingSampleType.description,
         active: editingSampleType.active,
       });
+
+      const selectedIds = new Set(editingSampleType.linkedTestIds);
+      const initialIds = new Set(editingSampleType.initialLinkedTestIds);
+
+      const idsToLink = [...selectedIds].filter((testId) => !initialIds.has(testId));
+      const requirementsToUnlink = (editingSampleType.associatedRequirements ?? []).filter((requirement) => !selectedIds.has(requirement.labTestId));
+
+      for (const testId of idsToLink) {
+        await createLabTestSampleRequirement({
+          labTestId: testId,
+          labSampleTypeId: editingSampleType.id,
+        });
+      }
+
+      for (const requirement of requirementsToUnlink) {
+        await deleteLabCatalogueItem('sample-requirements', requirement.id);
+      }
+
       setEditingSampleType(null);
       await loadCatalogue();
-      showSuccess('Type d\'échantillon mis à jour.');
+      showSuccess('Type d\'échantillon mis à jour avec les examens associés.');
     } catch (error) {
       showError('Modification impossible', error instanceof Error ? error.message : 'Impossible de mettre à jour l\'échantillon.');
     } finally {
@@ -1249,10 +1311,6 @@ export default function CatalogueLab() {
   };
 
   const handleCreateSampleType = async () => {
-    if (!sampleTypeForm.labTestId) {
-      showError('Validation', 'L\'examen lié est requis.');
-      return;
-    }
     if (!sampleTypeForm.name.trim()) {
       showError('Validation', 'Le nom du type d\'échantillon est requis.');
       return;
@@ -1260,28 +1318,19 @@ export default function CatalogueLab() {
 
     setIsSaving(true);
     try {
-      const createdSampleType = await createLabSampleType({
+      await createLabSampleType({
         name: sampleTypeForm.name,
         description: sampleTypeForm.description || undefined,
         active: sampleTypeForm.active,
-      }) as { id?: string };
-
-      if (!createdSampleType?.id) {
-        throw new Error('Identifiant du type d\'échantillon manquant après création.');
-      }
-
-      await createLabTestSampleRequirement({
-        labTestId: sampleTypeForm.labTestId,
-        labSampleTypeId: createdSampleType.id,
       });
 
-      setSampleTypeForm({ labTestId: '', name: '', description: '', active: true });
+      setSampleTypeForm({ name: '', description: '', active: true });
       setShowSampleTypeForm(false);
       await loadCatalogue();
-      showSuccess('Type d\'échantillon créé et lié à l\'examen avec succès.');
+      showSuccess('Type d\'échantillon créé avec succès. Vous pouvez maintenant le relier à un ou plusieurs examens via les exigences.');
     } catch (error) {
       console.error(error);
-      showError('Création impossible', 'Impossible de créer le type d\'échantillon lié à l\'examen.');
+      showError('Création impossible', 'Impossible de créer le type d\'échantillon.');
     } finally {
       setIsSaving(false);
     }
@@ -2056,49 +2105,40 @@ export default function CatalogueLab() {
 
                   {showSampleTypeForm && (
                     <Panel title="Ajouter un type d'échantillon">
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <label className="block text-sm">
-                          <span className="block text-slate-700">Examen</span>
-                          <select
-                            required
-                            value={sampleTypeForm.labTestId}
-                            onChange={(event) => setSampleTypeForm((current) => ({ ...current, labTestId: event.target.value }))}
-                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          >
-                            <option value="">Sélectionner</option>
-                            {catalogue.tests.map((test) => (
-                              <option key={test.id} value={test.id}>{test.name}</option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="block text-sm">
-                          <span className="block text-slate-700">Nom</span>
-                          <input
-                            required
-                            value={sampleTypeForm.name}
-                            onChange={(event) => setSampleTypeForm((current) => ({ ...current, name: event.target.value }))}
-                            placeholder="Ex: Sang veineux"
-                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          />
-                        </label>
-                        <label className="block text-sm">
-                          <span className="block text-slate-700">Description</span>
-                          <input
-                            value={sampleTypeForm.description}
-                            onChange={(event) => setSampleTypeForm((current) => ({ ...current, description: event.target.value }))}
-                            placeholder="Description (optionnel)"
-                            className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-                          />
-                        </label>
-                        <div className="flex items-end">
-                          <button
-                            type="button"
-                            disabled={isSaving}
-                            onClick={handleCreateSampleType}
-                            className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Enregistrer
-                          </button>
+                      <div className="space-y-4">
+                        <p className="text-sm text-slate-600 dark:text-slate-300">
+                          Un échantillon est un type réutilisable. Il est ensuite relié à un ou plusieurs examens depuis l’onglet Exigences.
+                        </p>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="block text-sm md:col-span-2">
+                            <span className="block text-slate-700">Nom</span>
+                            <input
+                              required
+                              value={sampleTypeForm.name}
+                              onChange={(event) => setSampleTypeForm((current) => ({ ...current, name: event.target.value }))}
+                              placeholder="Ex: Sang veineux"
+                              className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                            />
+                          </label>
+                          <label className="block text-sm md:col-span-2">
+                            <span className="block text-slate-700">Description</span>
+                            <input
+                              value={sampleTypeForm.description}
+                              onChange={(event) => setSampleTypeForm((current) => ({ ...current, description: event.target.value }))}
+                              placeholder="Description (optionnel)"
+                              className="mt-1 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                            />
+                          </label>
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              disabled={isSaving}
+                              onClick={handleCreateSampleType}
+                              className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Enregistrer
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </Panel>
@@ -2538,7 +2578,15 @@ export default function CatalogueLab() {
       <EditCategoryModal open={Boolean(editingCategory)} value={editingCategory} onChange={(next) => setEditingCategory(next)} onCancel={() => setEditingCategory(null)} onSave={handleSaveCategory} isSaving={isSaving} sections={(catalogue?.sections ?? []).map((section) => ({ id: section.id, name: section.name }))} />
       <EditTestModal open={Boolean(editingTest)} value={editingTest} onChange={(next) => setEditingTest(next)} onCancel={() => setEditingTest(null)} onSave={handleSaveTest} isSaving={isSaving} categories={(catalogue?.categories ?? []).map((category) => ({ id: category.id, name: category.name }))} sections={(catalogue?.sections ?? []).map((section) => ({ id: section.id, name: section.name }))} />
       <EditParameterModal open={Boolean(editingParameter)} value={editingParameter} onChange={(next) => setEditingParameter(next)} onCancel={() => setEditingParameter(null)} onSave={handleSaveParameter} isSaving={isSaving} tests={(catalogue?.tests ?? []).map((test) => ({ id: test.id, name: test.name }))} />
-      <EditSampleTypeModal open={Boolean(editingSampleType)} value={editingSampleType} onChange={(next) => setEditingSampleType(next)} onCancel={() => setEditingSampleType(null)} onSave={handleSaveSampleType} isSaving={isSaving} />
+      <EditSampleTypeModal
+        open={Boolean(editingSampleType)}
+        value={editingSampleType}
+        onChange={(next) => setEditingSampleType(next)}
+        onCancel={() => setEditingSampleType(null)}
+        onSave={handleSaveSampleType}
+        isSaving={isSaving}
+        tests={(catalogue?.tests ?? []).map((test) => ({ id: test.id, name: test.name }))}
+      />
       <EditSampleRequirementModal open={Boolean(editingSampleRequirement)} value={editingSampleRequirement} onChange={(next) => setEditingSampleRequirement(next)} onCancel={() => setEditingSampleRequirement(null)} onSave={handleSaveSampleRequirement} isSaving={isSaving} tests={(catalogue?.tests ?? []).map((test) => ({ id: test.id, name: test.name }))} sampleTypes={(catalogue?.sampleTypes ?? []).map((sampleType) => ({ id: sampleType.id, name: sampleType.name }))} />
       <EditConsumableModal open={Boolean(editingConsumable)} value={editingConsumable} onChange={(next) => setEditingConsumable(next)} onCancel={() => setEditingConsumable(null)} onSave={handleSaveConsumable} isSaving={isSaving} />
       <EditConsumableRequirementModal open={Boolean(editingConsumableRequirement)} value={editingConsumableRequirement} onChange={(next) => setEditingConsumableRequirement(next)} onCancel={() => setEditingConsumableRequirement(null)} onSave={handleSaveConsumableRequirement} isSaving={isSaving} tests={(catalogue?.tests ?? []).map((test) => ({ id: test.id, name: test.name }))} consumables={(catalogue?.consumables ?? []).map((consumable) => ({ id: consumable.id, name: consumable.name }))} />

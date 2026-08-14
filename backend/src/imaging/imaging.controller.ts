@@ -15,10 +15,28 @@ export class ImagingController {
     return this.imagingService.findAll();
   }
 
+  @Get('catalogue')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')
+  findCatalogue() {
+    return this.imagingService.findCatalogue();
+  }
+
   @Get('dashboard/overview')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')
   getDashboardOverview(@Query('period') period?: string, @Query('modality') modality?: string, @Query('service') service?: string) {
     return this.imagingService.getDashboardOverview(period, modality, service);
+  }
+
+  @Get('machines')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')
+  findMachines() {
+    return this.imagingService.findMachines();
+  }
+
+  @Post('machines')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')
+  createMachine(@Body() body: { name: string; roomNumber?: string; isOperational?: boolean }) {
+    return this.imagingService.createMachine(body);
   }
 
   @Get(':id')
