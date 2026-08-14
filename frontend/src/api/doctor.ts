@@ -65,6 +65,11 @@ export const createLabRequest = (consultationId: string, payload: Record<string,
     method: "POST",
     body: JSON.stringify(payload),
   });
+export const createImagingRequest = (consultationId: string, payload: Record<string, unknown>) =>
+  apiFetch(`/consultations/${consultationId}/imaging-requests`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 
 export const createPrescription = (consultationId: string, payload: Record<string, unknown>) =>
   apiFetch(`/consultations/${consultationId}/prescriptions`, {

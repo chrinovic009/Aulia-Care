@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ConsultationStatus, PatientWorkflowStatus } from '@prisma/client';
+import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreateConsultationDto } from './dto/create-consultation.dto';
+import { CreateImagingRequestDto } from './dto/create-imaging-request.dto';
 import { UpdateConsultationDto } from './dto/update-consultation.dto';
 
 @Injectable()
@@ -456,6 +457,197 @@ export class ConsultationsService {
             priority: request.priority === 'CRITICAL' ? 'CRITICAL' : request.priority === 'URGENT' ? 'HIGH' : 'MEDIUM',
             title: 'Paiement examen laboratoire',
             message: `Valider ${requestLabel} pour ${consultation.patient.firstName} ${consultation.patient.lastName}: ${Number(request.invoice.totalAmount).toLocaleString('fr-FR')} CDF.`,
+            relatedEntity: 'Invoice',
+            relatedId: request.invoice.id,
+            sendAt: new Date(),
+          },
+        }),
+      ),
+    );
+
+    notifications.forEach((notification) => {
+      this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification);
+    });
+    this.notificationsGateway.notify('patient.updated', { id: consultation.patientId, workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT });
+    this.notificationsGateway.notify('invoice.created', request.invoice);
+
+    return request;
+  }
+
+  async createImagingRequest(id: string, dto: CreateImagingRequestDto, actorId?: string) {
+    const consultation = await this.findOne(id);
+    await this.ensureWriteAccess(consultation.providerId, actorId);
+
+    const request = await this.prisma.$transaction(async (tx) => {
+      const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
+      const imagingCatalogueId = typeof dto.imagingCatalogueId === 'string' && dto.imagingCatalogueId ? dto.imagingCatalogueId : null;
+
+      let imagingCatalogue: any = null;
+      if (imagingCatalogueId) {
+        imagingCatalogue = await tx.imagingCatalogue.findUnique({ where: { id: imagingCatalogueId } });
+        if (!imagingCatalogue) {
+          throw new BadRequestException('Un examen du catalogue d imagerie est introuvable.');
+        }
+      } else if (trimmedExamName) {
+        imagingCatalogue = await tx.imagingCatalogue.findFirst({
+          where: {
+            active: true,
+            OR: [
+              { name: { equals: trimmedExamName, mode: 'insensitive' } },
+              { code: { equals: trimmedExamName, mode: 'insensitive' } },
+            ],
+          },
+        });
+
+        if (!imagingCatalogue) {
+          imagingCatalogue = await tx.imagingCatalogue.findFirst({
+            where: {
+              active: true,
+              name: { contains: trimmedExamName, mode: 'insensitive' },
+            },
+            orderBy: { name: 'asc' },
+          });
+        }
+
+        if (!imagingCatalogue) {
+          throw new BadRequestException('Veuillez choisir un examen du catalogue d imagerie valide.');
+        }
+      } else {
+        throw new BadRequestException('Un examen d imagerie du catalogue est requis.');
+      }
+
+      const price = Number(imagingCatalogue.price || 0);
+      if (price <= 0) {
+        throw new BadRequestException('Le prix de l examen d imagerie n est pas valide.');
+      }
+
+      const selectedIncidences = Array.isArray(dto.availableIncidences)
+        ? dto.availableIncidences.filter((value: unknown): value is string => typeof value === 'string' && Boolean(value.trim()))
+        : typeof dto.availableIncidences === 'string'
+          ? dto.availableIncidences.split(',').map((item: string) => item.trim()).filter(Boolean)
+          : [];
+
+      const requestLabel = imagingCatalogue.name;
+      const bodyPart = typeof dto.bodyPart === 'string' && dto.bodyPart.trim() ? dto.bodyPart.trim() : imagingCatalogue.name;
+      const urgency = typeof dto.urgency === 'string' && dto.urgency.trim() ? dto.urgency.toUpperCase() : 'ROUTINE';
+      const machineId = typeof dto.machineId === 'string' && dto.machineId ? dto.machineId : null;
+      const scheduledAt = typeof dto.scheduledAt === 'string' && dto.scheduledAt.trim() ? new Date(dto.scheduledAt) : null;
+      const status = typeof dto.status === 'string' && dto.status.trim() ? dto.status.toUpperCase() as ImagingRequestStatus : 'REQUESTED';
+
+      const created = await tx.imagingRequest.create({
+        data: {
+          consultationId: id,
+          patientId: consultation.patientId,
+          requestedById: actorId || null,
+          imagingCatalogueId: imagingCatalogue.id,
+          modality: imagingCatalogue.modality,
+          bodyPart,
+          urgency,
+          examSubType: dto.examSubType || null,
+          laterality: dto.laterality || null,
+          clinicalIndication: dto.clinicalIndication || null,
+          contraindications: dto.contraindications || null,
+          contrastAgentUsed: Boolean(dto.contrastAgentUsed),
+          contrastDetails: dto.contrastDetails || null,
+          selectedIncidences,
+          protocolNotes: dto.protocolNotes || null,
+          notes: dto.notes || null,
+          machineId,
+          scheduledAt,
+          status,
+        },
+        include: { patient: true, requestedBy: true, consultation: true, imagingCatalogue: true, report: true },
+      });
+
+      const invoice = await tx.invoice.create({
+        data: {
+          patientId: consultation.patientId,
+          issuedById: actorId,
+          type: InvoiceType.RADIOLOGY,
+          status: 'PENDING',
+          totalAmount: price,
+          balanceDue: price,
+          remarks: `ImagingRequest:${created.id} - Demande imagerie ${requestLabel}`,
+        },
+      });
+
+      await tx.invoiceLine.create({
+        data: {
+          invoiceId: invoice.id,
+          label: `Examen d'imagerie - ${requestLabel}`,
+          quantity: 1,
+          unitPrice: price,
+          totalAmount: price,
+        },
+      });
+
+      const handledBySubscription = await this.recordSubscriptionChargeForInvoice(
+        tx,
+        consultation.patientId,
+        invoice.id,
+        `Examen d'imagerie - ${requestLabel}`,
+        price,
+        imagingCatalogue.id,
+      );
+
+      await tx.patient.update({
+        where: { id: consultation.patientId },
+        data: { workflowStatus: handledBySubscription ? PatientWorkflowStatus.EN_RADIOLOGIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
+      });
+
+      await tx.medicalHistory.create({
+        data: {
+          patientId: consultation.patientId,
+          kind: 'IMAGING_REQUEST',
+          details: JSON.stringify({
+            imagingRequestId: created.id,
+            invoiceId: invoice.id,
+            imagingCatalogueId: imagingCatalogue.id,
+            examName: imagingCatalogue.name,
+            examSubType: dto.examSubType || null,
+            laterality: dto.laterality || null,
+            clinicalIndication: dto.clinicalIndication || null,
+            contraindications: dto.contraindications || null,
+            bodyPart,
+            urgency,
+            scheduledAt: scheduledAt?.toISOString() || null,
+            machineId,
+            selectedIncidences,
+            protocolNotes: dto.protocolNotes || null,
+            price,
+            currency: 'CDF',
+            notes: dto.notes || null,
+          }),
+          createdById: actorId,
+        },
+      });
+
+      return { ...created, invoice };
+    });
+
+    const cashiers = await this.prisma.user.findMany({
+      where: {
+        OR: [
+          { primaryRole: 'CASHIER' as any },
+          { roles: { some: { role: { slug: 'CASHIER' as any } } } },
+        ],
+      },
+    });
+
+    const requestLabel = request.imagingCatalogue?.name || 'examen d imagerie';
+    const notificationMessage = `Valider ${requestLabel} pour ${consultation.patient.firstName} ${consultation.patient.lastName}: ${Number(request.invoice.totalAmount).toLocaleString('fr-FR')} CDF.`;
+
+    const notifications = await Promise.all(
+      cashiers.map((user) =>
+        this.prisma.notification.create({
+          data: {
+            recipientId: user.id,
+            patientId: consultation.patientId,
+            type: 'TASK',
+            status: 'UNREAD',
+            priority: 'MEDIUM',
+            title: 'Paiement examen d imagerie',
+            message: notificationMessage,
             relatedEntity: 'Invoice',
             relatedId: request.invoice.id,
             sendAt: new Date(),

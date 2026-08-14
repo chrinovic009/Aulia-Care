@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { ConsultationsService } from './consultations.service';
 import { CreateConsultationDto } from './dto/create-consultation.dto';
+import { CreateImagingRequestDto } from './dto/create-imaging-request.dto';
 import { UpdateConsultationDto } from './dto/update-consultation.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -45,6 +46,12 @@ export class ConsultationsController {
   @Roles('SUPER_ADMIN', 'PHYSICIAN')
   createLabRequest(@Param('id') id: string, @Body() body: any, @Request() req: any) {
     return this.consultationsService.createLabRequest(id, body, req.user?.userId);
+  }
+
+  @Post(':id/imaging-requests')
+  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  createImagingRequest(@Param('id') id: string, @Body() body: CreateImagingRequestDto, @Request() req: any) {
+    return this.consultationsService.createImagingRequest(id, body, req.user?.userId);
   }
 
   @Post(':id/prescriptions')

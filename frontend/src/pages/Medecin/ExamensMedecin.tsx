@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
-import { DoctorPatient, createLabRequest, fetchDoctorVisiblePatients, formatDoctorPatientName } from "../../api/doctor";
+import { DoctorPatient, createImagingRequest, createLabRequest, fetchDoctorVisiblePatients, formatDoctorPatientName } from "../../api/doctor";
 import { apiFetch } from "../../config/api";
+import { fetchImagingCatalogue } from "../../api/imaging";
 import { fetchLaboratoryCatalogue } from "../../api/laboratory";
 import { consultationLabel, formatDateTime, hasConsultations, patientSearchText, serviceLabel } from "./medecinShared";
 
@@ -21,6 +22,21 @@ type DoctorLabResult = {
   verified?: boolean;
   interpretation?: string | null;
   parameters?: LabResultParameter[];
+};
+
+type ImagingCatalogueItem = {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  modality: string;
+  preparationInstructions?: string | null;
+  category?: string | null;
+  availableIncidences: string[];
+  supportsContrast: boolean;
+  price: string;
+  turnaroundTimeMinutes?: number | null;
+  active: boolean;
 };
 
 const formatLabStatus = (status?: string | null) => {
@@ -112,19 +128,22 @@ export default function ExamensMedecin() {
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
   const [services, setServices] = useState<Array<{ id: string; name: string; type?: string | null; category?: string | null }>>([]);
   const [labTests, setLabTests] = useState<Array<{ id: string; name: string; code: string; price: string; turnaroundTimeMinutes?: number | null; section?: { name: string } | null; category?: { name: string } | null }>>([]);
+  const [imagingCatalogue, setImagingCatalogue] = useState<ImagingCatalogueItem[]>([]);
   const [departments, setDepartments] = useState<Array<{ id: string; name: string; isParamedical?: boolean; type?: string | null }>>([]);
   const [serviceUnits, setServiceUnits] = useState<Array<{ id: string; name: string; departmentId?: string }>>([]);
   const [selectedPatientId, setSelectedPatientId] = useState("");
   const [selectedConsultationId, setSelectedConsultationId] = useState("");
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState<string | null>(null);
-  const [form, setForm] = useState({ examName: "", departmentId: "", serviceId: "", labTestId: "", specimenType: "", priority: "NORMAL", notes: "" });
+  const initialForm = { examName: "", imagingCatalogueId: "", bodyPart: "", urgency: "ROUTINE", contrastAgentUsed: false, contrastDetails: "", selectedIncidences: "", protocolNotes: "", notes: "", departmentId: "", serviceId: "", labTestId: "", specimenType: "", priority: "NORMAL" };
+  const [form, setForm] = useState(initialForm);
   const [selectedLabTestIds, setSelectedLabTestIds] = useState<string[]>([]);
 
   const load = async () => {
-    const [patientData, serviceData, catalogueData, departmentsData, serviceUnitsData] = await Promise.all([
+    const [patientData, serviceData, imagingCatalogueData, catalogueData, departmentsData, serviceUnitsData] = await Promise.all([
       fetchDoctorVisiblePatients(),
       apiFetch<Array<{ id: string; name: string; type?: string | null; category?: string | null }>>("/services").catch(() => []),
+      fetchImagingCatalogue().catch(() => []),
       fetchLaboratoryCatalogue().catch(() => null),
       apiFetch<Array<{ id: string; name: string; isParamedical?: boolean }>>("/administration/departments").catch(() => []),
       apiFetch<Array<{ id: string; name: string; departmentId?: string }>>("/administration/service-units").catch(() => []),
@@ -132,6 +151,7 @@ export default function ExamensMedecin() {
     const withConsultations = patientData.filter(hasConsultations);
     setPatients(withConsultations);
     setServices(serviceData || []);
+    setImagingCatalogue(imagingCatalogueData || []);
     setDepartments(departmentsData || []);
     setServiceUnits(serviceUnitsData || []);
     setLabTests(catalogueData?.tests || []);
@@ -163,14 +183,17 @@ export default function ExamensMedecin() {
   const selectedService = serviceUnits.find((s) => s.id === form.serviceId) || services.find((service) => service.id === form.serviceId);
   const isDepartmentLaboratory = Boolean(departments.find((d) => d.id === form.departmentId && d.name === "Laboratoire Medical"));
   const selectedLabTests = useMemo(() => labTests.filter((test) => selectedLabTestIds.includes(test.id)), [labTests, selectedLabTestIds]);
+  const selectedImagingItem = imagingCatalogue.find((item) => item.id === form.imagingCatalogueId) || null;
   const paramedicalDepartments = useMemo(
     () => departments.filter((d) => d.isParamedical && !/pharmacie|pharmacy/i.test(d.name || "")),
     [departments],
   );
 
   const submit = async () => {
-    const hasSelectedLabTests = isDepartmentLaboratory ? selectedLabTestIds.length > 0 : Boolean(form.labTestId || form.examName.trim());
-    if (!selectedConsultation || !hasSelectedLabTests) {
+    const isImagingRequest = Boolean(form.imagingCatalogueId || form.examName.trim());
+    const isLabRequest = isDepartmentLaboratory ? selectedLabTestIds.length > 0 : Boolean(form.labTestId || form.examName.trim());
+
+    if (!selectedConsultation || (!isLabRequest && !isImagingRequest)) {
       setMessage("Choisissez une consultation et renseignez au moins un examen.");
       return;
     }
@@ -179,22 +202,40 @@ export default function ExamensMedecin() {
       return;
     }
 
-    const labTestIds = isDepartmentLaboratory ? selectedLabTestIds : (form.labTestId ? [form.labTestId] : []);
+    if (form.imagingCatalogueId) {
+      await createImagingRequest(selectedConsultation.id, {
+        imagingCatalogueId: form.imagingCatalogueId,
+        examName: form.examName,
+        bodyPart: form.bodyPart,
+        urgency: form.urgency,
+        contrastAgentUsed: form.contrastAgentUsed,
+        contrastDetails: form.contrastDetails,
+        selectedIncidences: form.selectedIncidences.split(',').map((item) => item.trim()).filter(Boolean),
+        protocolNotes: form.protocolNotes,
+        notes: form.notes,
+      });
+      setForm(initialForm);
+      setSelectedLabTestIds([]);
+      setMessage("Demande d'imagerie envoyee.");
+    } else {
+      const labTestIds = isDepartmentLaboratory ? selectedLabTestIds : (form.labTestId ? [form.labTestId] : []);
 
-    await createLabRequest(selectedConsultation.id, {
-      ...form,
-      labTestIds,
-      examName: selectedLabTests.length > 0 ? selectedLabTests.map((test) => test.name).join(", ") : form.examName,
-      specimenType: selectedLabTests.length > 0 ? selectedLabTests.map((test) => test.name).join(", ") : (form.specimenType || selectedService?.name || form.examName),
-      notes: [
-        form.notes,
-        selectedService ? `Service paramedical: ${selectedService.name}` : "",
-        selectedLabTests.length > 0 ? `Examens catalogue: ${selectedLabTests.map((test) => test.name).join(", ")}` : "",
-      ].filter(Boolean).join("\n"),
-    });
-    setForm({ examName: "", departmentId: "", serviceId: "", labTestId: "", specimenType: "", priority: "NORMAL", notes: "" });
-    setSelectedLabTestIds([]);
-    setMessage("Demande d'examen envoyee.");
+      await createLabRequest(selectedConsultation.id, {
+        ...form,
+        labTestIds,
+        examName: selectedLabTests.length > 0 ? selectedLabTests.map((test) => test.name).join(", ") : form.examName,
+        specimenType: selectedLabTests.length > 0 ? selectedLabTests.map((test) => test.name).join(", ") : (form.specimenType || selectedService?.name || form.examName),
+        notes: [
+          form.notes,
+          selectedService ? `Service paramedical: ${selectedService.name}` : "",
+          selectedLabTests.length > 0 ? `Examens catalogue: ${selectedLabTests.map((test) => test.name).join(", ")}` : "",
+        ].filter(Boolean).join("\n"),
+      });
+      setForm(initialForm);
+      setSelectedLabTestIds([]);
+      setMessage("Demande d'examen envoyee.");
+    }
+
     await load();
   };
 
@@ -203,6 +244,12 @@ export default function ExamensMedecin() {
     requests.sort((a, b) => new Date(b.requestedAt || (b as any).createdAt || 0).getTime() - new Date(a.requestedAt || (a as any).createdAt || 0).getTime());
     return requests.slice(0, 5);
   }, [selectedPatient?.labRequests]);
+
+  const recentImagingRequests = useMemo(() => {
+    const requests = (selectedPatient?.imagingRequests || []).slice();
+    requests.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    return requests.slice(0, 5);
+  }, [selectedPatient?.imagingRequests]);
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
@@ -220,7 +267,67 @@ export default function ExamensMedecin() {
                 <div className="mt-5 grid gap-4 xl:grid-cols-2">
                   <Panel title="Nouvelle demande">
                     <Select label="Consultation" value={selectedConsultation.id} onChange={setSelectedConsultationId} options={(selectedPatient.consultations || []).map((consultation) => [consultation.id, consultationLabel(consultation)] as [string, string])} />
-                    <Select label="Departement paramedical" value={form.departmentId} onChange={(value) => setForm((current) => ({ ...current, departmentId: value, serviceId: "", labTestId: "" }))} options={[ ["", "Choisir"], ...paramedicalDepartments.map((d) => [d.id, d.name] as [string, string]) ]} />
+                    <Select label="Departement paramedical" value={form.departmentId} onChange={(value) => setForm((current) => ({ ...current, departmentId: value, serviceId: "", labTestId: "", imagingCatalogueId: "" }))} options={[ ["", "Choisir"], ...paramedicalDepartments.map((d) => [d.id, d.name] as [string, string]) ]} />
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Examen d'imagerie</span>
+                      <select
+                        value={form.imagingCatalogueId}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          const selected = imagingCatalogue.find((item) => item.id === value) || null;
+                          setForm((current) => ({
+                            ...current,
+                            imagingCatalogueId: value,
+                            examName: selected?.name || current.examName,
+                            bodyPart: selected?.name || current.bodyPart,
+                          }));
+                        }}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                      >
+                        <option value="">Choisir un examen d'imagerie</option>
+                        {imagingCatalogue.map((item) => (
+                          <option key={item.id} value={item.id}>{`${item.name} (${item.modality}) - ${Number(item.price || 0).toLocaleString('fr-FR')} CDF`}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {selectedImagingItem ? (
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950">
+                        <p className="font-semibold text-slate-900 dark:text-white">{selectedImagingItem.name}</p>
+                        <p className="text-xs text-slate-500">{selectedImagingItem.description || 'Aucune description disponible.'}</p>
+                        <p className="mt-2 text-xs text-slate-500">Modalité: {selectedImagingItem.modality}</p>
+                        <p className="text-xs text-slate-500">Catégorie: {selectedImagingItem.category || 'Général'}</p>
+                        <p className="text-xs text-slate-500">Incidences possibles: {selectedImagingItem.availableIncidences.join(', ') || 'Aucune'}</p>
+                        <p className="text-xs text-slate-500">Contraste autorisé: {selectedImagingItem.supportsContrast ? 'Oui' : 'Non'}</p>
+                      </div>
+                    ) : null}
+                    {selectedImagingItem ? (
+                      <>
+                        <Input label="Partie du corps" value={form.bodyPart} onChange={(value) => setForm((current) => ({ ...current, bodyPart: value }))} />
+                        <Select label="Urgence" value={form.urgency} onChange={(value) => setForm((current) => ({ ...current, urgency: value }))} options={[['ROUTINE', 'Routine'], ['URGENT', 'Urgent'], ['CRITICAL', 'Critique']]} />
+                        <label className="block text-sm">
+                          <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Incidences demandées</span>
+                          <input
+                            value={form.selectedIncidences}
+                            onChange={(event) => setForm((current) => ({ ...current, selectedIncidences: event.target.value }))}
+                            placeholder="Ex: Face, Profil gauche"
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                          />
+                        </label>
+                        <label className="flex items-center gap-3 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={form.contrastAgentUsed}
+                            onChange={(event) => setForm((current) => ({ ...current, contrastAgentUsed: event.target.checked }))}
+                            className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                          />
+                          <span className="font-medium text-slate-600 dark:text-slate-300">Contraste requis</span>
+                        </label>
+                        {form.contrastAgentUsed ? (
+                          <Textarea label="Détails contraste" value={form.contrastDetails} onChange={(value) => setForm((current) => ({ ...current, contrastDetails: value }))} />
+                        ) : null}
+                        <Textarea label="Protocole / remarques" value={form.protocolNotes} onChange={(value) => setForm((current) => ({ ...current, protocolNotes: value }))} />
+                      </>
+                    ) : null}
                     {isDepartmentLaboratory ? (
                       <div className="space-y-2">
                         <label className="block text-sm">
@@ -278,52 +385,86 @@ export default function ExamensMedecin() {
                     <button disabled={!canWrite} onClick={submit} className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:bg-slate-300 disabled:text-slate-600">Envoyer la demande</button>
                   </Panel>
                   <Panel title="Demandes et resultats">
-                    {(selectedPatient.labRequests || []).length === 0 ? <SmallEmpty /> : recentLabRequests?.map((request) => {
-                      const viewState = getLabRequestViewState(request, selectedPatient.workflowStatus);
-                      return (
-                        <div key={request.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950">
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div>
-                              <p className="font-semibold text-slate-900 dark:text-white">{request.specimenType || "Examen"}</p>
-                              <p className="mt-1 text-xs text-slate-500">{formatDateTime(request.requestedAt)}</p>
+                    {(selectedPatient.labRequests || selectedPatient.imagingRequests || []).length === 0 ? <SmallEmpty /> : (
+                      <div className="space-y-4">
+                        {recentImagingRequests.length > 0 ? (
+                          <div className="space-y-3">
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950">
+                              <p className="font-semibold text-slate-900 dark:text-white">Demandes d'imagerie récentes</p>
                             </div>
-                            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${viewState.badgeClassName}`}>
-                              {viewState.badgeLabel}
-                            </span>
-                          </div>
-                          <p className="mt-2 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                            {formatLabStatus(request.status)}
-                          </p>
-                          <p className="mt-3 text-slate-600 dark:text-slate-300">{viewState.message}</p>
-                          {viewState.showResults ? (
-                            <div className="mt-3 space-y-2">
-                              {(() => {
-                                const examName = (request as any).examName || request.specimenType || "";
-                                const isNfsRequest = isNfsExam(examName) || Boolean(request.results?.some((r: any) => Array.isArray(r.parameters) && r.parameters.length > 0));
-                                if (isNfsRequest) {
-                                  const params = (request.results || []).flatMap((r: any) => r.parameters || []);
-                                  if (params.length === 0) return <p className="text-sm text-slate-500">Aucun sous-examen NFS disponible.</p>;
-                                  return params.map((p: any, idx: number) => (
-                                    <div key={`${request.id}-param-${idx}`} className="rounded-lg border border-slate-200 bg-white/80 p-2.5 dark:border-slate-800 dark:bg-slate-900/70">
-                                      <p className="font-medium text-slate-700 dark:text-slate-200 whitespace-pre-line">{formatLabResultParameter(p)}</p>
-                                    </div>
-                                  ));
-                                }
-                                return request.results?.map((result, index) => (
-                                  <div key={`${request.id}-${index}`} className="rounded-lg border border-slate-200 bg-white/80 p-2.5 dark:border-slate-800 dark:bg-slate-900/70">
-                                    <p className="font-medium text-slate-700 dark:text-slate-200 whitespace-pre-line">
-                                      {formatLabResultTextWithReference(result)}
-                                      {result.verified ? " • Validé" : ""}
-                                    </p>
-                                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Interprétation : {result.interpretation || "Aucune interprétation fournie."}</p>
+                            {recentImagingRequests.map((request) => (
+                              <div key={request.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950">
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <div>
+                                    <p className="font-semibold text-slate-900 dark:text-white">{request.modality} - {request.bodyPart || 'Imagerie'}</p>
+                                    <p className="mt-1 text-xs text-slate-500">{formatDateTime(request.createdAt)}</p>
                                   </div>
-                                ));
-                              })()}
+                                  <span className="inline-flex rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">{request.status || 'REQUESTED'}</span>
+                                </div>
+                                {request.report?.impression ? (
+                                  <p className="mt-3 text-slate-600 dark:text-slate-300">Impression: {request.report.impression}</p>
+                                ) : (
+                                  <p className="mt-3 text-slate-600 dark:text-slate-300">Aucun rapport disponible.</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {recentLabRequests.length > 0 ? (
+                          <div className="space-y-3">
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950">
+                              <p className="font-semibold text-slate-900 dark:text-white">Demandes de laboratoire récentes</p>
                             </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
+                            {recentLabRequests.map((request) => {
+                              const viewState = getLabRequestViewState(request, selectedPatient.workflowStatus);
+                              return (
+                                <div key={request.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950">
+                                  <div className="flex flex-wrap items-start justify-between gap-2">
+                                    <div>
+                                      <p className="font-semibold text-slate-900 dark:text-white">{request.specimenType || "Examen"}</p>
+                                      <p className="mt-1 text-xs text-slate-500">{formatDateTime(request.requestedAt)}</p>
+                                    </div>
+                                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${viewState.badgeClassName}`}>
+                                      {viewState.badgeLabel}
+                                    </span>
+                                  </div>
+                                  <p className="mt-2 inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                    {formatLabStatus(request.status)}
+                                  </p>
+                                  <p className="mt-3 text-slate-600 dark:text-slate-300">{viewState.message}</p>
+                                  {viewState.showResults ? (
+                                    <div className="mt-3 space-y-2">
+                                      {(() => {
+                                        const examName = (request as any).examName || request.specimenType || "";
+                                        const isNfsRequest = isNfsExam(examName) || Boolean(request.results?.some((r: any) => Array.isArray(r.parameters) && r.parameters.length > 0));
+                                        if (isNfsRequest) {
+                                          const params = (request.results || []).flatMap((r: any) => r.parameters || []);
+                                          if (params.length === 0) return <p className="text-sm text-slate-500">Aucun sous-examen NFS disponible.</p>;
+                                          return params.map((p: any, idx: number) => (
+                                            <div key={`${request.id}-param-${idx}`} className="rounded-lg border border-slate-200 bg-white/80 p-2.5 dark:border-slate-800 dark:bg-slate-900/70">
+                                              <p className="font-medium text-slate-700 dark:text-slate-200 whitespace-pre-line">{formatLabResultParameter(p)}</p>
+                                            </div>
+                                          ));
+                                        }
+                                        return request.results?.map((result, index) => (
+                                          <div key={`${request.id}-${index}`} className="rounded-lg border border-slate-200 bg-white/80 p-2.5 dark:border-slate-800 dark:bg-slate-900/70">
+                                            <p className="font-medium text-slate-700 dark:text-slate-200 whitespace-pre-line">
+                                              {formatLabResultTextWithReference(result)}
+                                              {result.verified ? " • Validé" : ""}
+                                            </p>
+                                            <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Interprétation : {result.interpretation || "Aucune interprétation fournie."}</p>
+                                          </div>
+                                        ));
+                                      })()}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
                   </Panel>
                 </div>
               </>
