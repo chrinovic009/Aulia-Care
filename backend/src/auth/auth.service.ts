@@ -101,8 +101,8 @@ export class AuthService {
         where: { id: payload.sub },
       });
 
-      if (!user) {
-        throw new UnauthorizedException('User not found');
+      if (!user || user.deletedAt || user.status !== 'ACTIVE') {
+        throw new UnauthorizedException('Compte inactif ou suspendu');
       }
 
       const accessToken = this.signAccessToken(user);

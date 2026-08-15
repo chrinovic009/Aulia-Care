@@ -248,13 +248,29 @@ export class PatientsService {
 
     if (params.name) {
       const name = params.name.trim();
-      // Try a performant Postgres unaccent + ILIKE search via raw SQL when available
+      const actorId = currentUser?.userId || currentUser?.id;
+      const actor = actorId
+        ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } })
+        : null;
+      // PostgreSQL unaccent search, fully parameterized and scoped to the clinic.
       try {
-        const query = `SELECT id, "firstName", "lastName", "middleName", "phone", "email", "dateOfBirth" FROM "Patient" WHERE unaccent(lower(concat("firstName", ' ', "lastName"))) LIKE unaccent(lower($1)) LIMIT 10`;
         const pattern = `%${name.replace(/%/g, '\\%')}%`;
-        const raw: any[] = await this.prisma.$queryRawUnsafe(query, pattern);
+        const clinicFilter = actor?.clinicId
+          ? Prisma.sql`AND "clinicId" = ${actor.clinicId}`
+          : Prisma.empty;
+        const raw = await this.prisma.$queryRaw<Array<{
+          id: string; firstName: string; lastName: string; middleName: string | null;
+          phone: string | null; email: string | null; dateOfBirth: Date;
+        }>>(
+          Prisma.sql`SELECT id, "firstName", "lastName", "middleName", "phone", "email", "dateOfBirth"
+            FROM "Patient"
+            WHERE "deletedAt" IS NULL
+              ${clinicFilter}
+              AND unaccent(lower(concat("firstName", ' ', "lastName"))) LIKE unaccent(lower(${pattern}))
+            LIMIT 10`,
+        );
         if (raw && raw.length > 0) return role === 'CASHIER'
-          ? raw.map(({ id, firstName, lastName, dateOfBirth }: any) => ({ id, firstName, lastName, dateOfBirth }))
+          ? raw.map(({ id, firstName, lastName, dateOfBirth }) => ({ id, firstName, lastName, dateOfBirth }))
           : raw;
       } catch (e) {
         // fallback to Prisma insensitive contains search
@@ -357,7 +373,7 @@ export class PatientsService {
 
   async createAdmission(createAdmissionDto: any, actorId?: string) {
     if (!actorId) throw new ForbiddenException('Une admission doit être réalisée par une réceptionniste authentifiée.');
-    let email = normalizeEmail(createAdmissionDto.email);
+    const email = normalizeEmail(createAdmissionDto.email);
     const phone = normalizePhone(createAdmissionDto.phone);
     const { firstName, lastName } = createAdmissionDto.fullName
       ? splitFullName(createAdmissionDto.fullName)

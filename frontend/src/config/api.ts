@@ -15,12 +15,6 @@ export const API_CONFIG = {
     LOGOUT: "/auth/logout",
   },
 
-  // Patient endpoints - PUBLIC (no auth required)
-  PUBLIC_PATIENTS: {
-    SEARCH: "/public/patients/search",
-    CREATE_ADMISSION: "/public/patients/admissions",
-  },
-
   // Patient endpoints - PROTECTED (auth required)
   PATIENTS: {
     GET_ALL: "/patients",

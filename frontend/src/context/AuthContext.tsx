@@ -176,6 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const refresh = await fetch(`${API_BASE_URL}/auth/refresh`, {
           method: "POST",
           credentials: "include",
+          headers: getAuthHeaders(),
           signal: controller.signal,
         });
         if (refresh.ok) {

@@ -52,6 +52,7 @@ backend/dist/
 # Temporary and sensitive local folders
 temp/
 tmp/
+temp_*.cjs
 coverage/
 
 # Misc

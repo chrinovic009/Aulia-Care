@@ -3,11 +3,18 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix("api");
+  app.use(helmet({
+    // A strict CSP is introduced after the legacy document-print components
+    // are migrated away from inline document.write scripts.
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  }));
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -28,13 +35,12 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Cookies authenticate browser requests. State-changing requests must originate
-  // from the configured frontend. API clients send the per-session CSRF value;
-  // it is validated whenever present while older internal screens are migrated.
+  // Cookies authenticate browser requests. Every state-changing browser request
+  // must also carry the non-HttpOnly per-session CSRF value.
   app.use((req, res, next) => {
     const unsafeMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
     const hasSessionCookie = String(req.headers.cookie || '').includes('aulia_access_token=');
-    const exemptPath = ['/api/auth/login', '/api/auth/refresh'].includes(req.path);
+    const exemptPath = ['/api/auth/login'].includes(req.path);
     if (!unsafeMethod || !hasSessionCookie || exemptPath) {
       return next();
     }
@@ -50,7 +56,9 @@ async function bootstrap() {
     if (
       !origin ||
       (!corsOrigins.includes(origin) && origin !== hostOrigin) ||
-      (csrfHeader !== undefined && (!csrfCookie || csrfHeader !== csrfCookie))
+      !csrfHeader ||
+      !csrfCookie ||
+      csrfHeader !== csrfCookie
     ) {
       return res.status(403).json({ message: 'Requête CSRF refusée' });
     }
