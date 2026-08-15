@@ -10,6 +10,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { randomBytes } from 'crypto';
 
@@ -81,6 +82,7 @@ export class AuthController {
 
   // 🔓 PUBLIC - Connexion
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000, blockDuration: 15 * 60_000 } })
   @HttpCode(HttpStatus.OK)
   @Post('login')
   async login(@Body() payload: LoginDto, @Res({ passthrough: true }) response: Response) {

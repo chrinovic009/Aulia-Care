@@ -33,7 +33,7 @@ export class IntelligenceService {
     if (!file?.buffer || !String(file?.mimetype || '').includes('pdf')) throw new BadRequestException('Un fichier PDF est requis.');
     // Provider boundary: replace this deterministic fallback with a secured OCR/LLM adapter in production.
     const text = file.buffer.toString('utf8').replace(/[^\x20-\x7EÀ-ÿ\n]/g, ' ');
-    const companyName = /(?:entreprise|societe|société)\s*[:\-]\s*([^\n]+)/i.exec(text)?.[1]?.trim() || null;
+    const companyName = /(?:entreprise|societe|société)\s*[:-]\s*([^\n]+)/i.exec(text)?.[1]?.trim() || null;
     return { status: 'NEEDS_REVIEW', provider: 'LOCAL_FALLBACK', warning: 'PDF reçu. Vérifiez les données extraites avant import transactionnel.', draft: { company: { name: companyName, contractNumber: null }, employees: [] } };
   }
 }

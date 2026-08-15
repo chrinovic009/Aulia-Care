@@ -101,7 +101,7 @@ export default function ReceptionPatients() {
     if (!isNaN(iso.getTime())) d = iso;
     // try dd/mm/yyyy
     if (!d) {
-      const parts = bd.split(/[-\/]/).map((p) => parseInt(p, 10));
+      const parts = bd.split(/[-/]/).map((p) => parseInt(p, 10));
       if (parts.length === 3) {
         const [d1, m1, y1] = parts;
         if (y1 > 31) d = new Date(y1, (m1 || 1) - 1, d1);
@@ -121,7 +121,7 @@ export default function ReceptionPatients() {
     if (!Number.isNaN(parsed.getTime())) {
       return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(parsed);
     }
-    const parts = value.split(/[-\/]/).map((p) => p.trim());
+    const parts = value.split(/[-/]/).map((p) => p.trim());
     if (parts.length === 3) {
       let [d, m, y] = parts;
       if (parts[0].length === 4) {

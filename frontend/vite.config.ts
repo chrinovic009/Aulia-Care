@@ -15,11 +15,11 @@ export default defineConfig({
       },
 
       manifest: {
-        name: "D7 Clinic",
-        short_name: "D7 Clinic",
+        name: "Aulia Care",
+        short_name: "Aulia Care",
 
         description:
-          "Plateforme de gestion hospitalière D7 Clinic",
+          "Plateforme de gestion hospitalière Aulia Care",
 
         theme_color: "#ffffff",
 

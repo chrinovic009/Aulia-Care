@@ -42,9 +42,10 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   ) {}
 
   afterInit() {
-    PrismaService.realtimeEvents.on('db.changed', (payload) => {
-      this.server?.emit('db.changed', payload);
-    });
+    // Never broadcast generic database activity to every connected user. Clinical
+    // updates must be emitted explicitly to the relevant user, service or clinic.
+    // This avoids leaking cross-clinic operational metadata through WebSockets.
+    PrismaService.realtimeEvents.on('db.changed', () => undefined);
   }
 
   async handleConnection(client: Socket) {
