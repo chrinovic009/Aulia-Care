@@ -75,6 +75,7 @@ import ProfileFinance from "./pages/Finance/ProfileFinance";
 import DashboardRadio from "./pages/Radiologie/DashboardRadio";
 import WaitingQueueRadio from "./pages/Radiologie/WaitingQueueRadio";
 import WorkflowRadio from "./pages/Radiologie/WorkflowRadio";
+import CatalogueRadio from "./pages/Radiologie/CatalogueRadio";
 import EquipmentRadio from "./pages/Radiologie/EquipmentRadio";
 import SchedulingRadio from "./pages/Radiologie/SchedulingRadio";
 import HistoryRadio from "./pages/Radiologie/HistoryRadio";
@@ -159,6 +160,7 @@ export default function App() {
             <Route path="/radiologie" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><DashboardRadio /></RoleGuard>} />
             <Route path="/radiologie/file-attente" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><WaitingQueueRadio /></RoleGuard>} />
             <Route path="/radiologie/workflow" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><WorkflowRadio /></RoleGuard>} />
+            <Route path="/radiologie/catalogue" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><CatalogueRadio /></RoleGuard>} />
             <Route path="/radiologie/equipements" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><EquipmentRadio /></RoleGuard>} />
             <Route path="/radiologie/planning" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><SchedulingRadio /></RoleGuard>} />
             <Route path="/radiologie/historique" element={<RoleGuard requiredRoles={["RADIOLOGIST"]}><HistoryRadio /></RoleGuard>} />

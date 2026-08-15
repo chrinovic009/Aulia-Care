@@ -14,6 +14,12 @@ export class CreateImagingRequestDto {
   @IsOptional()
   imagingCatalogueId?: string;
 
+  /** Backwards-compatible catalogue lookup for existing consultation forms. */
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  examName?: string;
+
   @IsEnum(ImagingModality)
   @IsOptional()
   modality?: ImagingModality;
@@ -55,6 +61,23 @@ export class CreateImagingRequestDto {
   @IsOptional()
   @MaxLength(500)
   contrastDetails?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  informedConsentConfirmed?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  pregnancyScreened?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  renalFunctionVerified?: boolean;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(1_000)
+  duplicateOverrideReason?: string;
 
   @IsArray()
   @IsOptional()

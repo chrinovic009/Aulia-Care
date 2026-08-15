@@ -16,12 +16,18 @@ async function bootstrap() {
     }),
   );
 
+  const configService = app.get(ConfigService);
+  const corsOrigins = configService
+    .getOrThrow<string>('CORS_ORIGIN')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   app.enableCors({
-    origin: true,
+    origin: corsOrigins,
     credentials: true,
   });
 
-  const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') || 3000;
 
   await app.listen(port, "0.0.0.0");

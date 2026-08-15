@@ -259,6 +259,7 @@ const radiologyNavItems: NavItem[] = [
   { icon: <GridIcon />, name: "Dashboard Radiologie", path: "/radiologie" },
   { icon: <FolderIcon />, name: "File d'attente", path: "/radiologie/file-attente" },
   { icon: <DocsIcon />, name: "Workflow PACS / RIS", path: "/radiologie/workflow" },
+  { icon: <TaskIcon />, name: "Catalogue & tarification", path: "/radiologie/catalogue" },
   { icon: <BoxCubeIcon />, name: "Équipements & maintenance", path: "/radiologie/equipements" },
   { icon: <CalenderIcon />, name: "Planning & agenda", path: "/radiologie/planning" },
   { icon: <TaskIcon />, name: "Dossiers & historique", path: "/radiologie/historique" },

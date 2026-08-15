@@ -277,6 +277,7 @@ export default function DashboardMedecin() {
   const speechSilenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceRouteRef = useRef<VoiceRoute | null>(null);
   const voiceAnswerRef = useRef("");
+  const restoredDraftRef = useRef<string | null>(null);
   
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
@@ -444,6 +445,42 @@ export default function DashboardMedecin() {
   }, [selectedPatient?.id, selectedPatient?.latestConsultation, selectedPatient?.consultations]);
 
   const currentConsultationId = selectedPatient?.latestConsultation?.id || selectedPatient?.consultations?.[0]?.id || "";
+  const consultationDraftKey = currentConsultationId && currentUser?.id
+    ? `aulia:consultation-draft:${currentUser.id}:${currentConsultationId}`
+    : "";
+
+  // Short-lived recovery copy only: it stays in the browser session and is
+  // removed after a successful server save or clinical finalisation.
+  useEffect(() => {
+    if (!consultationDraftKey || restoredDraftRef.current === consultationDraftKey) return;
+    restoredDraftRef.current = consultationDraftKey;
+    const rawDraft = window.sessionStorage.getItem(consultationDraftKey);
+    if (!rawDraft) return;
+    try {
+      const draft = JSON.parse(rawDraft) as {
+        clinicalForm?: typeof clinicalForm;
+        consultationModule?: ConsultationModuleState;
+        capturedAt?: string;
+      };
+      if (!draft.clinicalForm || !draft.consultationModule) return;
+      if (window.confirm(`Un brouillon non envoyé du ${formatDateTime(draft.capturedAt)} a été retrouvé. Le restaurer ?`)) {
+        setClinicalForm(draft.clinicalForm);
+        setConsultationModule(draft.consultationModule);
+        setActionMessage("Brouillon local restauré. Enregistrez-le pour le sécuriser sur le serveur.");
+      }
+    } catch {
+      window.sessionStorage.removeItem(consultationDraftKey);
+    }
+  }, [consultationDraftKey]);
+
+  useEffect(() => {
+    if (!consultationDraftKey) return;
+    window.sessionStorage.setItem(consultationDraftKey, JSON.stringify({
+      clinicalForm,
+      consultationModule,
+      capturedAt: new Date().toISOString(),
+    }));
+  }, [consultationDraftKey, clinicalForm, consultationModule]);
 
   const applyVoiceToConsultationModule = (transcript: string) => {
     const fields = extractClinicalVoiceFields(transcript);
@@ -559,6 +596,7 @@ export default function DashboardMedecin() {
       consultationModule,
       status: "DRAFT",
     });
+    if (consultationDraftKey) window.sessionStorage.removeItem(consultationDraftKey);
     setActionMessage("Brouillon enregistré. Les informations sont prêtes pour la validation clinique.");
   };
 
@@ -614,11 +652,13 @@ export default function DashboardMedecin() {
       complementaryAnamnesis: complementDescription,
       consultationModule,
       status: "FINALIZED",
+      attestation: true,
       validationSummary: {
         diagnosis: consultationModule.selectedDiagnosis.label || clinicalForm.principalDiagnosis,
         followUp: consultationModule.followUp.recommendedInterval || clinicalForm.followUp,
       },
     });
+    if (consultationDraftKey) window.sessionStorage.removeItem(consultationDraftKey);
     setActionMessage("Consultation validée. Mise à jour des données cliniques...");
     // Refresh local list so other panels reflect the validated consultation
     try {
@@ -696,15 +736,9 @@ export default function DashboardMedecin() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setVoiceMessage("Reconnaissance vocale non disponible; mode démonstration activé.");
-      setIsVoiceListening(true);
-      window.setTimeout(() => {
-        const demoTranscript = "Le patient signale une douleur abdominale depuis deux jours avec fièvre légère.";
-        setVoiceTranscript(demoTranscript);
-        applyVoiceToConsultationModule(demoTranscript);
-        setVoiceMessage("Exemple de dictée appliqué, vous pouvez corriger librement.");
-        setIsVoiceListening(false);
-      }, 1000);
+      setVoiceTranscript("");
+      setIsVoiceListening(false);
+      setVoiceMessage("Reconnaissance vocale indisponible : aucune donnée n’a été ajoutée au dossier. Saisissez les informations manuellement.");
       return;
     }
 
@@ -714,6 +748,11 @@ export default function DashboardMedecin() {
       }
       setIsVoiceListening(false);
       setVoiceMessage("Assistance vocale désactivée.");
+      return;
+    }
+
+    if (!window.confirm("Autorisez-vous la capture vocale temporaire pour préparer un brouillon clinique ? Vérifiez chaque information avant validation.")) {
+      setVoiceMessage("Assistance vocale non activée : consentement non accordé.");
       return;
     }
 
@@ -744,8 +783,9 @@ export default function DashboardMedecin() {
         clearTimeout(speechSilenceTimerRef.current);
       }
       speechSilenceTimerRef.current = setTimeout(() => {
-        setVoiceMessage("Écoute en arrière-plan (silence temporaire)...");
-      }, 3000);
+        recognition.stop();
+        setVoiceMessage("Écoute arrêtée après silence. Vérifiez le brouillon avant de l’enregistrer.");
+      }, 8000);
     };
 
     recognition.onerror = (event: any) => {

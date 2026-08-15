@@ -4,6 +4,7 @@ import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { AdminPageShell, Panel, StatCard, formatDate } from "../Administration/adminUi";
 import { apiFetch } from "../../config/api";
+import { useRealtime } from "../../context/RealtimeContext";
 
 type PerformanceSummary = {
   totalAnalyses: number;
@@ -90,6 +91,7 @@ type TechnicianPayload = {
 };
 
 export default function TechniciensLab() {
+  const { socket } = useRealtime();
   const [payload, setPayload] = useState<TechnicianPayload>({ technicians: [], unassignedItems: [] });
   const [selectedTechnician, setSelectedTechnician] = useState<TechnicianSummary | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string>("");
@@ -118,7 +120,14 @@ export default function TechniciensLab() {
 
   useEffect(() => {
     loadData();
-  }, []);
+    const refresh = () => loadData();
+    socket?.on("lab.item.assigned", refresh);
+    socket?.on("lab.result.created", refresh);
+    return () => {
+      socket?.off("lab.item.assigned", refresh);
+      socket?.off("lab.result.created", refresh);
+    };
+  }, [socket]);
 
   const filteredTechnicians = useMemo(() => {
     const term = search.toLowerCase();

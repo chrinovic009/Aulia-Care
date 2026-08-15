@@ -36,6 +36,18 @@ export class CreateLabTestParameterDto {
 
   @IsOptional()
   @IsString()
+  criticalLow?: string;
+
+  @IsOptional()
+  @IsString()
+  criticalHigh?: string;
+
+  @IsOptional()
+  @IsString()
+  method?: string;
+
+  @IsOptional()
+  @IsString()
   order?: string;
 
   @IsOptional()

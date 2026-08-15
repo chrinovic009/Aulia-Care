@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, AuditAction, PatientWorkflowStatus, VitalType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
@@ -241,6 +241,22 @@ export class PatientsService {
       throw new NotFoundException('Patient introuvable');
     }
     return patient;
+  }
+
+  async findOneForDoctor(id: string, doctorId?: string) {
+    if (!doctorId) throw new ForbiddenException('Médecin non identifié.');
+    const isInCareTeam = await this.prisma.patient.count({
+      where: {
+        id,
+        deletedAt: null,
+        OR: [
+          { consultations: { some: { providerId: doctorId, deletedAt: null } } },
+          { hospitalizations: { some: { physicianId: doctorId, deletedAt: null } } },
+        ],
+      },
+    });
+    if (!isInCareTeam) throw new ForbiddenException('Accès au dossier patient non autorisé.');
+    return this.findOne(id);
   }
 
   async getPatientProfileForUser(userId: string) {
@@ -1130,20 +1146,8 @@ export class PatientsService {
       where: {
         deletedAt: null,
         OR: [
-          {
-            consultations: {
-              some: {
-                deletedAt: null,
-              },
-            },
-          },
-          {
-            appointments: {
-              some: {
-                deletedAt: null,
-              },
-            },
-          },
+          { consultations: { some: { providerId: doctorId, deletedAt: null } } },
+          { hospitalizations: { some: { physicianId: doctorId, deletedAt: null } } },
         ],
       },
       include: {

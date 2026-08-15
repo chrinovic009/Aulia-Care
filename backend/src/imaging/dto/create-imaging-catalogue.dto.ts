@@ -1,4 +1,5 @@
-import { IsArray, IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
 import { ImagingModality } from '@prisma/client';
 
 export class CreateImagingCatalogueDto {
@@ -38,10 +39,15 @@ export class CreateImagingCatalogueDto {
   @IsOptional()
   supportsContrast?: boolean;
 
-  @IsOptional()
-  price?: number;
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  price: number;
 
+  @Type(() => Number)
   @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 0 })
+  @IsPositive()
   turnaroundTimeMinutes?: number;
 
   @IsBoolean()

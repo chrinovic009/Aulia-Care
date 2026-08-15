@@ -17,9 +17,9 @@ export class AuthService {
     private readonly jwtService: JwtService,
     configService: ConfigService,
   ) {
-    this.accessTokenSecret = configService.get<string>('JWT_SECRET', 'change_me_access');
-    this.refreshTokenSecret = configService.get<string>('JWT_REFRESH_SECRET', 'change_me_refresh');
-    this.accessTokenExpires = configService.get<string>('JWT_EXPIRES_IN', '365d');
+    this.accessTokenSecret = configService.getOrThrow<string>('JWT_SECRET');
+    this.refreshTokenSecret = configService.getOrThrow<string>('JWT_REFRESH_SECRET');
+    this.accessTokenExpires = configService.get<string>('JWT_ACCESS_EXPIRES_IN', '15m');
     this.refreshTokenExpires = configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d');
   }
 

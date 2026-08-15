@@ -108,6 +108,8 @@ model User {
   labRequestEventsPerformed        LabRequestEvent[]          @relation("LabRequestEventPerformedBy")
   labResultTechnicalValidated      LabResult[]                @relation("LabResultTechnicalValidator")
   labResultBiologicalValidated     LabResult[]                @relation("LabResultBiologicalValidator")
+  labResultParametersReported      LabResultParameter[]       @relation("LabResultParameterReporter")
+  labCriticalAlertsAcknowledged    LabCriticalAlert[]         @relation("LabCriticalAlertAcknowledger")
   labReportsIssued                 LabReport[]                @relation("LabReportIssuedBy")
   labConsumableStockUpdates        LabConsumableStock[]       @relation("LabConsumableStockUpdatedBy")
   labConsumableTransactions        LabConsumableTransaction[] @relation("LabConsumableTransactionPerformedBy")
@@ -151,6 +153,8 @@ model User {
   emergencyLocationRequests        EmergencyLocationRequest[] @relation("EmergencyLocationRequester")
   parentChildLinks                 ParentChildLink[]          @relation("ParentUser")
   hospitalizationNurseAssignments  HospitalizationNurseAssignment[]
+  nursingTasksAssigned             NursingCareTask[]          @relation("NursingTaskAssignedNurse")
+  medicationAdministrations        MedicationAdministration[] @relation("MedicationAdministeredBy")
 
   @@index([primaryRole])
   @@index([clinicId])
@@ -364,6 +368,7 @@ model Patient {
   imagingRequests        ImagingRequest[]
   invoices               Invoice[]
   labRequests            LabRequest[]
+  labCriticalAlerts      LabCriticalAlert[]
   medicalHistories       MedicalHistory[]
   notifications          Notification[]
   receptionist           User?                    @relation("PatientReceptionist", fields: [receptionistId], references: [id])
@@ -617,6 +622,8 @@ model Hospitalization {
   bed             Bed?                  @relation("HospitalizationBed")
   Consultation    Consultation[]
   nurseAssignments HospitalizationNurseAssignment[]
+  nursingCareTasks NursingCareTask[]
+  medicationAdministrations MedicationAdministration[]
   nurseInCharge   User?                 @relation("HospitalizationNurse", fields: [nurseInChargeId], references: [id])
   patient         Patient               @relation(fields: [patientId], references: [id], onDelete: Cascade)
   physician       User?                 @relation("HospitalizationPhysician", fields: [physicianId], references: [id])
@@ -747,6 +754,8 @@ model PrescriptionLine {
   version        Int                 @default(1)
   medication     Medication          @relation(fields: [medicationId], references: [id])
   prescription   Prescription        @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  nursingCareTasks NursingCareTask[]
+  medicationAdministrations MedicationAdministration[]
 }
 
 model Medication {
@@ -790,6 +799,48 @@ model HospitalizationNurseAssignment {
 
   @@unique([hospitalizationId, coverage])
   @@index([nurseId, releasedAt])
+}
+
+model NursingCareTask {
+  id                 String                @id @default(uuid())
+  hospitalizationId  String
+  assignedNurseId    String?
+  prescriptionLineId String?
+  title              String
+  instructions       String?
+  dueAt              DateTime
+  status             NursingCareTaskStatus @default(PENDING)
+  completedAt        DateTime?
+  completedById      String?
+  escalationReason   String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  hospitalization    Hospitalization       @relation(fields: [hospitalizationId], references: [id], onDelete: Cascade)
+  assignedNurse      User?                 @relation("NursingTaskAssignedNurse", fields: [assignedNurseId], references: [id], onDelete: SetNull)
+  prescriptionLine   PrescriptionLine?     @relation(fields: [prescriptionLineId], references: [id], onDelete: SetNull)
+
+  @@index([assignedNurseId, dueAt, status])
+  @@index([hospitalizationId, dueAt])
+}
+
+model MedicationAdministration {
+  id                 String                         @id @default(uuid())
+  hospitalizationId  String
+  prescriptionLineId String
+  administeredById   String
+  scheduledAt        DateTime
+  administeredAt     DateTime?
+  status             MedicationAdministrationStatus
+  doseGiven          String?
+  reason             String?
+  observation        String?
+  createdAt          DateTime                       @default(now())
+  hospitalization    Hospitalization                @relation(fields: [hospitalizationId], references: [id], onDelete: Cascade)
+  prescriptionLine   PrescriptionLine                @relation(fields: [prescriptionLineId], references: [id], onDelete: Restrict)
+  administeredBy     User                            @relation("MedicationAdministeredBy", fields: [administeredById], references: [id], onDelete: Restrict)
+
+  @@index([hospitalizationId, scheduledAt])
+  @@index([prescriptionLineId, scheduledAt])
 }
 
 /// Pharmacy catalogue hierarchy used by the prescription search: Section -> Category -> Medication.
@@ -1053,6 +1104,7 @@ model LabResult {
   technicalValidatedBy  User?                @relation("LabResultTechnicalValidator", fields: [technicalValidatedById], references: [id])
   biologicalValidatedBy User?                @relation("LabResultBiologicalValidator", fields: [biologicalValidatedById], references: [id])
   parameters            LabResultParameter[]
+  criticalAlerts        LabCriticalAlert[]
 
   @@index([resultCode])
   @@index([labRequestItemId])
@@ -1062,14 +1114,25 @@ model LabResultParameter {
   id                 String   @id @default(uuid())
   labResultId        String
   labTestParameterId String?
+  parameterCode      String?
+  parameterName      String?
   valueNumeric       Decimal? @db.Decimal(12, 4)
   valueText          String?
+  unit               String?
+  referenceRange     String?
+  method             String?
   interpretation     String?
+  reportedById       String?
+  reportedAt         DateTime @default(now())
+  validatedAt        DateTime?
+  validationNote     String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @default(now())
 
   labResult        LabResult         @relation(fields: [labResultId], references: [id], onDelete: Cascade)
   labTestParameter LabTestParameter? @relation(fields: [labTestParameterId], references: [id])
+  reportedBy       User?             @relation("LabResultParameterReporter", fields: [reportedById], references: [id])
+  criticalAlerts   LabCriticalAlert[]
 
   @@index([labResultId])
   @@index([labTestParameterId])
@@ -1149,7 +1212,11 @@ model LabTestParameter {
   referenceRange String?
   minValue       Decimal?      @db.Decimal(12, 4)
   maxValue       Decimal?      @db.Decimal(12, 4)
+  criticalLow    Decimal?      @db.Decimal(12, 4)
+  criticalHigh   Decimal?      @db.Decimal(12, 4)
+  method         String?
   active         Boolean       @default(true)
+  archivedAt     DateTime?
   order          Int           @default(0)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @default(now())
@@ -1169,6 +1236,7 @@ model LabTestSampleRequirement {
   storageCondition String?
   maxAgeMinutes    Int?
   instructions     String?
+  archivedAt       DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @default(now())
 
@@ -1202,6 +1270,7 @@ model LabTestConsumableRequirement {
   unit            String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now())
+  archivedAt      DateTime?
 
   labTest       LabTest       @relation(fields: [labTestId], references: [id], onDelete: Cascade)
   labConsumable LabConsumable @relation(fields: [labConsumableId], references: [id], onDelete: Cascade)
@@ -1219,6 +1288,7 @@ model LabConsumableStock {
   location        String?
   lastUpdatedAt   DateTime @default(now())
   updatedById     String?
+  archivedAt      DateTime?
 
   labConsumable LabConsumable @relation(fields: [labConsumableId], references: [id], onDelete: Cascade)
   updatedBy     User?         @relation("LabConsumableStockUpdatedBy", fields: [updatedById], references: [id])
@@ -1379,6 +1449,10 @@ model ImagingRequest {
   
   modality             ImagingModality      // Utiliser l'enum plutôt qu'un String libre
   bodyPart             String
+  examSubType          String?
+  laterality           String?
+  clinicalIndication   String?
+  contraindications    String?
   urgency              String?              @default("ROUTINE")
   
   // GESTION INJECTION & CONTRASTE //
@@ -1482,9 +1556,59 @@ model Surgery {
   operatingRoom      OperatingRoom? @relation(fields: [operatingRoomId], references: [id])
   patient            Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
   surgeon            User?          @relation("SurgerySurgeon", fields: [surgeonId], references: [id])
+  safetyChecklist    SurgerySafetyChecklist?
 
   @@index([status])
   @@index([scheduledAt])
+}
+
+/// A critical value is an auditable clinical event. It remains open until a qualified user acknowledges it.
+model LabCriticalAlert {
+  id                   String                 @id @default(uuid())
+  patientId            String
+  labResultId          String
+  labResultParameterId String?
+  severity             LabCriticalAlertSeverity @default(CRITICAL)
+  status               LabCriticalAlertStatus @default(PENDING)
+  message              String
+  detectedAt           DateTime               @default(now())
+  acknowledgedAt       DateTime?
+  acknowledgedById     String?
+  acknowledgementNote  String?
+  resolvedAt           DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  patient          Patient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  labResult        LabResult           @relation(fields: [labResultId], references: [id], onDelete: Cascade)
+  labResultParameter LabResultParameter? @relation(fields: [labResultParameterId], references: [id], onDelete: SetNull)
+  acknowledgedBy   User?               @relation("LabCriticalAlertAcknowledger", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+
+  @@index([patientId, status, detectedAt])
+  @@index([labResultId])
+}
+
+model SurgerySafetyChecklist {
+  id                     String   @id @default(uuid())
+  surgeryId              String   @unique
+  identityConfirmed      Boolean  @default(false)
+  procedureSiteConfirmed Boolean  @default(false)
+  consentConfirmed       Boolean  @default(false)
+  anesthesiaCheckDone    Boolean  @default(false)
+  antibioticProphylaxis  Boolean  @default(false)
+  imagingAvailable       Boolean  @default(false)
+  instrumentCountCorrect Boolean  @default(false)
+  specimenLabelled       Boolean  @default(false)
+  signInAt               DateTime?
+  timeOutAt              DateTime?
+  signOutAt              DateTime?
+  completedById          String?
+  notes                  String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  surgery                Surgery  @relation(fields: [surgeryId], references: [id], onDelete: Cascade)
+
+  @@index([completedById])
 }
 
 /// Billing and payments.
@@ -1866,6 +1990,21 @@ enum NursingCoverage {
   NIGHT
 }
 
+enum NursingCareTaskStatus {
+  PENDING
+  COMPLETED
+  MISSED
+  ESCALATED
+  CANCELLED
+}
+
+enum MedicationAdministrationStatus {
+  ADMINISTERED
+  REFUSED
+  HELD
+  MISSED
+}
+
 /// Negotiated discounts are never applied by a cashier without an auditable approval.
 model InvoiceDiscountRequest {
   id           String                @id @default(uuid())
@@ -2004,6 +2143,17 @@ enum LabResultValidationStatus {
   BIOLOGICALLY_VALIDATED
   REJECTED
   CORRECTION_REQUESTED
+}
+
+enum LabCriticalAlertSeverity {
+  HIGH
+  CRITICAL
+}
+
+enum LabCriticalAlertStatus {
+  PENDING
+  ACKNOWLEDGED
+  RESOLVED
 }
 
 enum LabStaffRole {

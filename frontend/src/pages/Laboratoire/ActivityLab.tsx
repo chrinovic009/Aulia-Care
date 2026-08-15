@@ -10,57 +10,13 @@ import {
 } from "../../api/laboratory";
 import { type PatientRecord } from "../../api/reception";
 import { useAuth } from "../../context/AuthContext";
-
-type LabRequestResultParameter = {
-  valueNumeric?: number | null;
-  valueText?: string | null;
-  interpretation?: string | null;
-  labTestParameter?: { name?: string | null; unit?: string | null; referenceRange?: string | null } | null;
-};
-
-type LabRequestResult = {
-  resultStatus?: string | null;
-  resultName?: string | null;
-  resultValue?: string | null;
-  interpretation?: string | null;
-  units?: string | null;
-  referenceRange?: string | null;
-  comments?: string | null;
-  reportedAt?: string | null;
-  parameters?: LabRequestResultParameter[];
-};
-
-type LabRequestDetailItem = {
-  id?: string;
-  status?: string | null;
-  requestedAt?: string | null;
-  assignedToId?: string | null;
-  labTest?: {
-    name?: string | null;
-    section?: { name?: string | null } | null;
-    category?: { name?: string | null } | null;
-    referenceRange?: string | null;
-    unit?: string | null;
-    parameterTemplates?: Array<{ id: string; name?: string | null; unit?: string | null }>;
-    sampleRequirements?: Array<{ id: string; labSampleType?: { name?: string | null } | null; volumeRequired?: string | number | null; volumeUnit?: string | null; storageCondition?: string | null; maxAgeMinutes?: string | number | null; instructions?: string | null }>;
-    consumableRequirements?: Array<{ id: string; labConsumable?: { name?: string | null; unit?: string | null } | null; quantity?: string | number | null; unit?: string | null }>;
-  } | null;
-  results?: LabRequestResult[];
-  samples?: Array<{ id: string; status?: string | null; labSampleType?: { name?: string | null } | null }>;
-};
-
-type LabRequestDetail = {
-  id?: string;
-  status?: string | null;
-  items?: LabRequestDetailItem[];
-  results?: LabRequestResult[];
-  patient?: { id?: string; firstName?: string | null; lastName?: string | null; phone?: string | null; email?: string | null; address?: string | null; gender?: string | null } | null;
-  consultation?: { provider?: { firstName?: string | null; lastName?: string | null; displayName?: string | null; phone?: string | null } | null } | null;
-  requestedBy?: { phone?: string | null } | null;
-};
+import { useRealtime } from "../../context/RealtimeContext";
+import type { LabRequestDetail, LabRequestDetailItem, LabRequestResult } from "./activityLab.types";
+import { buildLabRequestDisplayId, formatNfsParameterReference, getLabStatusLabel, normalizeInitial } from "./activityLab.utils";
 
 export default function ActivityLab() {
   const { currentUser } = useAuth();
+  const { socket } = useRealtime();
   const [activity, setActivity] = useState<LabActivityPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingAuthorization, setIsSavingAuthorization] = useState(false);
@@ -117,47 +73,9 @@ export default function ActivityLab() {
     return sortedPatients.findIndex((patient) => patient.id === requestDetail.patient?.id) + 1 || undefined;
   }, [patientList, requestDetail?.patient?.id]);
 
-  const normalizeInitial = (value?: string | null) => {
-    const trimmed = String(value || "").trim();
-    return trimmed ? trimmed[0].toUpperCase() : "X";
-  };
-
-  const getLabStatusLabel = (requestStatus?: string | null, resultStatus?: string | null) => {
-    const status = String(requestStatus || "").trim().toUpperCase();
-    const result = String(resultStatus || "").trim().toUpperCase();
-    const validatedStatuses = new Set(["TECHNICAL_VALIDATED", "BIOLOGICALLY_VALIDATED", "AVAILABLE", "SENT", "VERIFIED", "COMPLETED"]);
-    const treatedStatuses = new Set(["PENDING", "CORRECTION_REQUESTED", "IN_ANALYSIS", "RECEIVED", "COLLECTED"]);
-    const requestStatuses = new Set(["REQUESTED", "COLLECTED", "RECEIVED", "IN_ANALYSIS"]);
-
-    if (validatedStatuses.has(result) || validatedStatuses.has(status)) {
-      return "Validé";
-    }
-
-    if (result && treatedStatuses.has(result)) {
-      return "Traité";
-    }
-
-    if (status && requestStatuses.has(status)) {
-      return "Demande";
-    }
-
-    if (status && treatedStatuses.has(status)) {
-      return "Traité";
-    }
-
-    return status ? status : "Demande";
-  };
-
   const getExamRepeatCount = (requestedExamName?: string) => {
     if (!requestedExamName || !requestDetail?.items) return 1;
     return requestDetail.items.filter((item) => item.labTest?.name?.trim().toUpperCase() === requestedExamName.trim().toUpperCase()).length || 1;
-  };
-
-  const buildLabRequestDisplayId = (position?: number, patient?: LabRequestDetail["patient"], examCount?: number) => {
-    if (!position) return requestDetail?.id || "-";
-    const initials = `${normalizeInitial(patient?.firstName)}${normalizeInitial(patient?.lastName)}`;
-    const count = examCount || 1;
-    return `${position}${initials}-EXAMD${count}`;
   };
 
   const currentExamName = currentItem?.labTest?.name || requestDetail?.items?.[0]?.labTest?.name || "Examen";
@@ -174,7 +92,7 @@ export default function ActivityLab() {
   const isBacteriologyRequest = /\bbacteriologie\b/.test(normalizedSectionName);
 
   const currentExamRequestCount = getExamRepeatCount(currentExamName);
-  const displayRequestId = buildLabRequestDisplayId(patientPosition, requestDetail?.patient, currentExamRequestCount);
+  const displayRequestId = buildLabRequestDisplayId(patientPosition, requestDetail?.patient, currentExamRequestCount, requestDetail?.id);
   const translatedRequestStatus = getLabStatusLabel(requestDetail?.status, latestResult?.resultStatus);
   const isItemAssigned = Boolean(currentItem?.assignedToId);
   const isAssignedToCurrentTechnician = Boolean(currentItem?.assignedToId && currentUser?.id && currentItem.assignedToId === currentUser?.id);
@@ -244,56 +162,6 @@ export default function ActivityLab() {
     }
 
     return baseRange;
-  };
-
-  const normalizePatientGender = (gender?: string | null) => {
-    if (!gender) return undefined;
-    const normalized = gender.trim().toUpperCase();
-    if (normalized === "F" || normalized === "FEMININ" || normalized === "FÉMININ") return "F";
-    if (normalized === "M" || normalized === "MASCULIN") return "M";
-    return undefined;
-  };
-
-  const formatNfsParameterReference = (
-    parameter: { referenceRange?: string | null; unit?: string | null; name: string },
-    patientGender?: string | null,
-  ) => {
-    const referenceValue = String(parameter.referenceRange || "").trim();
-    const unit = String(parameter.unit || "").trim();
-    const gender = normalizePatientGender(patientGender);
-
-    if (!referenceValue) {
-      return unit ? `— ${unit}` : "—";
-    }
-
-    const normalizedName = parameter.name.trim().toLowerCase();
-    let formattedReference = referenceValue;
-
-    if (referenceValue.includes("(H)") || referenceValue.includes("(F)")) {
-      const parts = referenceValue.split("/").map((part) => part.trim());
-      if (gender === "F") {
-        formattedReference = parts.find((part) => /\(F\)/i.test(part)) || parts[1] || parts[0];
-      } else {
-        formattedReference = parts.find((part) => /\(H\)/i.test(part)) || parts[0] || parts[1] || parts[0];
-      }
-      formattedReference = formattedReference.replace(/\s*\([^)]*\)/g, "").trim();
-    }
-
-    if (normalizedName.includes("globules rouges") && /\(h\)|\(f\)/i.test(referenceValue)) {
-      const parts = referenceValue.split("/").map((part) => part.trim());
-      if (gender === "F") {
-        formattedReference = parts.find((part) => /\(F\)/i.test(part)) || parts[1] || parts[0];
-      } else if (gender === "M") {
-        formattedReference = parts.find((part) => /\(H\)/i.test(part)) || parts[0] || parts[1] || parts[0];
-      }
-      formattedReference = formattedReference.replace(/\s*\([^)]*\)/g, "").trim();
-    }
-
-    if (unit && !formattedReference.toLowerCase().includes(unit.toLowerCase())) {
-      return `${formattedReference} ${unit}`;
-    }
-
-    return formattedReference;
   };
 
   const openRequestDetail = async (requestId: string, preferredItemId?: string | null) => {
@@ -468,11 +336,18 @@ export default function ActivityLab() {
     };
     window.addEventListener("aulia:lab.request.created", handler);
     window.addEventListener("aulia:lab.result.created", handler);
+    const refreshFromSocket = () => loadActivity();
+    socket?.on("lab.result.created", refreshFromSocket);
+    socket?.on("lab.item.assigned", refreshFromSocket);
+    socket?.on("lab.critical-alert.acknowledged", refreshFromSocket);
     return () => {
       window.removeEventListener("aulia:lab.request.created", handler);
       window.removeEventListener("aulia:lab.result.created", handler);
+      socket?.off("lab.result.created", refreshFromSocket);
+      socket?.off("lab.item.assigned", refreshFromSocket);
+      socket?.off("lab.critical-alert.acknowledged", refreshFromSocket);
     };
-  }, []);
+  }, [socket]);
 
   const groupedItemsBySection = useMemo(() => {
     if (!requestDetail?.items?.length) return [];

@@ -198,7 +198,8 @@ export class UsersService {
   async findContactsForRole(role?: RoleSlug | 'PATIENT', userId?: string) {
     type ContactRole = RoleSlug | 'PATIENT';
     const allowedRolesByRole: Partial<Record<RoleSlug | 'PATIENT', ContactRole[]>> = {
-      // Super admin can contact everyone
+      // Administrative accounts do not directly message patients; clinical roles
+      // remain the designated communication channel.
       SUPER_ADMIN: [
         'ADMIN',
         'RECEPTIONIST',
@@ -209,10 +210,9 @@ export class UsersService {
         'RADIOLOGIST',
         'PHARMACIST',
         'CASHIER',
-        'PATIENT',
       ],
 
-      // Admin can contact (and be contacted by) everyone
+      // Admin can contact staff, but not patients.
       ADMIN: [
         'SUPER_ADMIN',
         'RECEPTIONIST',
@@ -223,7 +223,6 @@ export class UsersService {
         'RADIOLOGIST',
         'PHARMACIST',
         'CASHIER',
-        'PATIENT',
       ],
       RECEPTIONIST: ['RECEPTIONIST', 'PATIENT', 'CASHIER'],
       NURSE: ['NURSE', 'PHYSICIAN', 'PATIENT', 'CASHIER'],
