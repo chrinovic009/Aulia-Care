@@ -1,16 +1,11 @@
 import { useEffect, useState } from "react";
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  BoxIconLine,
-  GroupIcon,
-} from "../../icons";
+import { BoxIconLine, GroupIcon } from "../../icons";
 import Badge from "../ui/badge/Badge";
 import { fetchAppointmentsFromDatabase, fetchPatientsFromDatabase } from "../../api/reception";
 
 export default function ReceptionMetrics() {
-  const [waitingCount, setWaitingCount] = useState(0);
-  const [todayAppointments, setTodayAppointments] = useState(0);
+  const [waitingCount, setWaitingCount] = useState<number | null>(null);
+  const [todayAppointments, setTodayAppointments] = useState<number | null>(null);
 
   const refreshMetrics = async () => {
     try {
@@ -35,25 +30,17 @@ export default function ReceptionMetrics() {
       );
     } catch (error) {
       console.error("Unable to load reception metrics from Prisma DB:", error);
-      setWaitingCount(0);
-      setTodayAppointments(0);
+      setWaitingCount(null);
+      setTodayAppointments(null);
     }
   };
 
   useEffect(() => {
     refreshMetrics();
     const handleUpdate = () => refreshMetrics();
-    const storageHandler = (event: StorageEvent) => {
-      if (event.key === "d7-clinic-patients" || event.key === "d7-clinic-reception-appointments") {
-        refreshMetrics();
-      }
-    };
-
     window.addEventListener("d7:patientRecordsUpdated", handleUpdate as EventListener);
-    window.addEventListener("storage", storageHandler as EventListener);
     return () => {
       window.removeEventListener("d7:patientRecordsUpdated", handleUpdate as EventListener);
-      window.removeEventListener("storage", storageHandler as EventListener);
     };
   }, []);
 
@@ -68,16 +55,13 @@ export default function ReceptionMetrics() {
         <div className="flex items-end justify-between mt-5">
           <div>
             <span className="text-sm text-gray-500 dark:text-gray-400">
-              Patients reÃ§us
+              Admissions aujourd’hui
             </span>
             <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-white/90">
-              {waitingCount} Patients
+              {waitingCount === null ? "Indisponible" : `${waitingCount} patient${waitingCount > 1 ? "s" : ""}`}
             </h4>
           </div>
-          <Badge color="warning">
-            <ArrowUpIcon />
-            Salle d'attente
-          </Badge>
+          <Badge color="warning">Temps réel</Badge>
         </div>
       </div>
       {/* <!-- Metric Item End --> */}
@@ -93,14 +77,11 @@ export default function ReceptionMetrics() {
               Rendez-vous aujourd’hui
             </span>
             <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-white/90">
-              {todayAppointments} Rendez-vous
+              {todayAppointments === null ? "Indisponible" : `${todayAppointments} rendez-vous`}
             </h4>
           </div>
 
-          <Badge color="success">
-            <ArrowDownIcon />
-            Planning stable
-          </Badge>
+          <Badge color="success">Base de données</Badge>
         </div>
       </div>
       {/* <!-- Metric Item End --> */}

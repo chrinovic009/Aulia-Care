@@ -387,11 +387,7 @@ const Admission: React.FC = () => {
       const { firstName, lastName } = splitFullName(form.name);
       const safeFirstName = firstName || "Patient";
       const safeLastName = lastName || form.voucherNumber || "Externe";
-      const finalEmail = form.email?.trim() || (
-        isVoucherAdmission
-          ? `bon-${normalizeEmailLocalPart(form.voucherNumber || String(Date.now()))}@external.d7.local`
-          : buildDefaultEmail(safeFirstName, safeLastName)
-      );
+      const finalEmail = form.email?.trim() || undefined;
       const familyContacts = (form.contacts || []).filter((contact: any) =>
         contact && (contact.name || contact.relation || contact.phone || contact.address)
       );
@@ -412,10 +408,6 @@ const Admission: React.FC = () => {
         admissionType: isVoucherAdmission ? "BON_PARAMEDICAL" : form.admissionType,
         serviceId: form.serviceId,
         priority: form.priority,
-        receptionistId: currentUser?.id,
-        receptionist: form.receptionist,
-        arrivalAt: form.arrival,
-        amountDue: effectiveAmountDue, // Transmission de la valeur sélectionnée en CDF
         voucherNumber: form.voucherNumber,
         voucherIssuer: form.voucherIssuer,
         voucherNotes: form.voucherNotes,

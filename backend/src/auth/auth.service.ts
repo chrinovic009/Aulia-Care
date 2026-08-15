@@ -83,8 +83,11 @@ export class AuthService {
     };
   }
 
-  async refreshAccessToken(token: string) {
+  async refreshAccessToken(token?: string) {
     try {
+      if (!token) {
+        throw new UnauthorizedException('Refresh token missing');
+      }
       const payload = this.jwtService.verify(token, {
         secret: this.refreshTokenSecret,
       });
@@ -103,7 +106,8 @@ export class AuthService {
       }
 
       const accessToken = this.signAccessToken(user);
-      return { accessToken };
+      const refreshToken = this.signRefreshToken(user);
+      return { accessToken, refreshToken };
     } catch (error) {
       throw new UnauthorizedException('Invalid refresh token');
     }

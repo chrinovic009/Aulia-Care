@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import { getAuthHeaders } from "../config/api";
 
 export type RoleSlug =
   | "SUPER_ADMIN"
@@ -74,10 +75,21 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const ACCESS_TOKEN_KEY = "d7-clinic-access-token";
-const REFRESH_TOKEN_KEY = "d7-clinic-refresh-token";
-
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+const LEGACY_BROWSER_TOKEN_KEYS = [
+  "d7-clinic-access-token",
+  "d7-clinic-refresh-token",
+  "d7-clinic-auth-token",
+  "d7-clinic-api-token",
+];
+
+const clearLegacyBrowserTokens = () => {
+  try {
+    LEGACY_BROWSER_TOKEN_KEYS.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    // Storage may be unavailable in privacy-restricted browser contexts.
+  }
+};
 
 export function getRedirectPath(role: RoleSlug) {
   const rolePathMap: Record<RoleSlug, string> = {
@@ -141,34 +153,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Charger le user depuis /auth/me si un token existe
+  // The server owns the session through HttpOnly cookies; no credential is read
+  // from browser storage.
   const initializeAuth = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    clearLegacyBrowserTokens();
 
     try {
-      const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-      if (!token) {
-        setCurrentUser(null);
-        setIsLoading(false);
-        return;
-      }
-
       // Créer un AbortController pour cette requête
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      const res = await fetch(`${API_BASE_URL}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
+      let res = await fetch(`${API_BASE_URL}/auth/me`, {
         credentials: "include",
         signal: controller.signal,
       });
 
+      // A short-lived access cookie is renewed server-side from the HttpOnly
+      // refresh cookie. No token is ever exposed to the page.
+      if (res.status === 401) {
+        const refresh = await fetch(`${API_BASE_URL}/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+          signal: controller.signal,
+        });
+        if (refresh.ok) {
+          res = await fetch(`${API_BASE_URL}/auth/me`, {
+            credentials: "include",
+            signal: controller.signal,
+          });
+        }
+      }
+
       if (!res.ok) {
         if (res.status === 401) {
-          // Token expiré ou invalide
-          localStorage.removeItem(ACCESS_TOKEN_KEY);
-          localStorage.removeItem(REFRESH_TOKEN_KEY);
           setCurrentUser(null);
         }
         setIsLoading(false);
@@ -177,8 +196,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const profile = await res.json() as AuthUser;
       if (profile.status && profile.status !== "ACTIVE") {
-        localStorage.removeItem(ACCESS_TOKEN_KEY);
-        localStorage.removeItem(REFRESH_TOKEN_KEY);
         setRestrictedAccount(profile);
         setCurrentUser(null);
         setIsLoading(false);
@@ -191,8 +208,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       setError("Erreur lors du chargement du profil");
-      localStorage.removeItem(ACCESS_TOKEN_KEY);
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
       setCurrentUser(null);
     } finally {
       setIsLoading(false);
@@ -230,7 +245,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const loginPayload = await loginRes.json();
-      const { accessToken, refreshToken, user: loginUser } = loginPayload;
+      const { user: loginUser } = loginPayload;
 
       if (loginUser?.status && loginUser.status !== "ACTIVE") {
         const blockedUser = loginUser as AuthUser;
@@ -239,36 +254,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return blockedUser;
       }
 
-      if (!accessToken || !refreshToken) {
+      if (!loginUser) {
         setError("Réponse du serveur invalide");
         return null;
       }
 
-      // 2. Sauvegarder les tokens
-      localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-      localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
-
-      // 3. Appeler GET /auth/me pour récupérer le profil complet
+      // The HttpOnly session cookies are set by the login response.
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
       const meRes = await fetch(`${API_BASE_URL}/auth/me`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
         credentials: "include",
         signal: controller.signal,
       });
 
       if (!meRes.ok) {
         setError("Erreur lors de la récupération du profil");
-        localStorage.removeItem(ACCESS_TOKEN_KEY);
-        localStorage.removeItem(REFRESH_TOKEN_KEY);
         return null;
       }
 
       const profile = await meRes.json() as AuthUser;
       if (profile.status && profile.status !== "ACTIVE") {
-        localStorage.removeItem(ACCESS_TOKEN_KEY);
-        localStorage.removeItem(REFRESH_TOKEN_KEY);
         setCurrentUser(null);
         setRestrictedAccount(profile);
         return profile;
@@ -287,8 +293,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = () => {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    void fetch(`${API_BASE_URL}/auth/logout`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+      credentials: "include",
+    });
     setCurrentUser(null);
     setError(null);
   };
@@ -303,17 +312,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
 
     try {
-      const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-      if (!token) {
-        setError("Token manquant");
-        return null;
-      }
-
       const response = await fetch(`${API_BASE_URL}/auth/profile`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          ...getAuthHeaders(),
         },
         credentials: "include",
         body: JSON.stringify(updates),

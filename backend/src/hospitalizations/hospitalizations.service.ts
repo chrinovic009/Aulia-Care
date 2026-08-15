@@ -231,8 +231,24 @@ export class HospitalizationsService {
     return created;
   }
 
-  findAll() {
-    return this.prisma.hospitalization.findMany({ include: this.hospitalizationInclude });
+  private async clinicScope(currentUser?: any) {
+    const role = String(currentUser?.primaryRole || currentUser?.role || '').toUpperCase();
+    if (role === 'SUPER_ADMIN') return {};
+    const actorId = currentUser?.userId || currentUser?.id;
+    if (!actorId) throw new ForbiddenException('Utilisateur authentifié requis.');
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } });
+    return actor?.clinicId ? { patient: { clinicId: actor.clinicId } } : {};
+  }
+
+  async findAll(currentUser?: any, requestedLimit = 100) {
+    const take = Math.min(Math.max(requestedLimit, 1), 250);
+    const scope = await this.clinicScope(currentUser);
+    return this.prisma.hospitalization.findMany({
+      where: scope,
+      include: this.hospitalizationInclude,
+      orderBy: { admittedAt: 'desc' },
+      take,
+    });
   }
 
   async getNurseHospitalizations(userId?: string) {
@@ -386,14 +402,16 @@ export class HospitalizationsService {
     });
   }
 
-  async search(query: string) {
+  async search(query: string, currentUser?: any) {
     const normalized = query?.trim();
     if (!normalized) {
-      return this.findAll();
+      throw new BadRequestException('Un critère de recherche est obligatoire.');
     }
+    const scope = await this.clinicScope(currentUser);
 
     return this.prisma.hospitalization.findMany({
       where: {
+        ...scope,
         OR: [
           { patient: { firstName: { contains: normalized, mode: 'insensitive' } } },
           { patient: { lastName: { contains: normalized, mode: 'insensitive' } } },
@@ -407,20 +425,22 @@ export class HospitalizationsService {
     });
   }
 
-  async getStats() {
+  async getStats(currentUser?: any) {
+    const scope = await this.clinicScope(currentUser);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
 
     const [hospitalized, availableRooms, totalBeds, occupiedBeds, admissionsToday, emergencyAdmissions] = await Promise.all([
-      this.prisma.hospitalization.count({ where: { status: { in: ['ADMITTED', 'TRANSFERRED'] } } }),
+      this.prisma.hospitalization.count({ where: { ...scope, status: { in: ['ADMITTED', 'TRANSFERRED'] } } }),
       this.prisma.room.count({ where: { status: 'AVAILABLE' } }),
       this.prisma.bed.count(),
       this.prisma.bed.count({ where: { status: 'OCCUPIED' } }),
-      this.prisma.hospitalization.count({ where: { admittedAt: { gte: today, lt: tomorrow } } }),
+      this.prisma.hospitalization.count({ where: { ...scope, admittedAt: { gte: today, lt: tomorrow } } }),
       this.prisma.hospitalization.count({
         where: {
+          ...scope,
           OR: [
             { admissionReason: { contains: 'urgence', mode: 'insensitive' } },
             { ServiceUnit: { name: { contains: 'urgence', mode: 'insensitive' } } },
@@ -440,7 +460,7 @@ export class HospitalizationsService {
     };
   }
 
-  async getRoomInventory() {
+  async getRoomInventory(_currentUser?: any) {
     const rooms = await this.prisma.room.findMany({
       include: {
         serviceUnit: true,
@@ -477,7 +497,18 @@ export class HospitalizationsService {
     return hospitalization;
   }
 
-  async getTimeline(id: string) {
+  async findOneForActor(id: string, currentUser?: any) {
+    const scope = await this.clinicScope(currentUser);
+    const hospitalization = await this.prisma.hospitalization.findFirst({
+      where: { id, ...scope },
+      include: this.hospitalizationInclude,
+    });
+    if (!hospitalization) throw new NotFoundException('Hospitalisation introuvable.');
+    return hospitalization;
+  }
+
+  async getTimeline(id: string, currentUser?: any) {
+    await this.findOneForActor(id, currentUser);
     const events = await this.prisma.notification.findMany({
       where: { relatedEntity: 'hospitalization', relatedId: id },
       orderBy: { sendAt: 'desc' },

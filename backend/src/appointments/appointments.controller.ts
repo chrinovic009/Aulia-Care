@@ -12,13 +12,13 @@ export class AppointmentsController {
   constructor(private readonly appointmentsService: AppointmentsService) {}
 
   @Get()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
   findAll() {
     return this.appointmentsService.findAll();
   }
 
   @Get(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
   findOne(@Param('id') id: string) {
     return this.appointmentsService.findOne(id);
   }
@@ -31,8 +31,8 @@ export class AppointmentsController {
 
   @Patch(':id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')
-  update(@Param('id') id: string, @Body() updateAppointmentDto: UpdateAppointmentDto) {
-    return this.appointmentsService.update(id, updateAppointmentDto);
+  update(@Param('id') id: string, @Body() updateAppointmentDto: UpdateAppointmentDto, @Request() req: any) {
+    return this.appointmentsService.update(id, updateAppointmentDto, req.user);
   }
 
   @Delete(':id')

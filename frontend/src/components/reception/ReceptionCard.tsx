@@ -88,7 +88,7 @@ export default function DemographicCard() {
           </h3>
 
           <p className="mt-1 text-gray-500 text-theme-sm dark:text-gray-400">
-            Analyse des zones qui fréquentent le plus la clinique cette semaine.
+            Répartition basée sur les adresses renseignées dans les dossiers accessibles.
           </p>
         </div>
 

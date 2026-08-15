@@ -122,6 +122,7 @@ model User {
   sentChatMessages                 ChatMessage[]              @relation("ChatMessageSender")
   receivedChatMessages             ChatMessage[]              @relation("ChatMessageRecipient")
   registeredPatients               Patient[]                  @relation("PatientReceptionist")
+  receptionPatientVisits           PatientVisit[]             @relation("ReceptionPatientVisits")
   paymentsMade                     Payment[]                  @relation("PaymentPayer")
   pharmacyDispenses                PharmacyDispense[]         @relation("PharmacyDispenseDispenser")
   prescriptionsPrescribed          Prescription[]             @relation("PrescriptionPrescriber")
@@ -241,6 +242,7 @@ model Service {
   staff         ServiceStaff[]
   tarifs        ServiceTarif[]
   subscriptionCharges SubscriptionCharge[]
+  patientVisits PatientVisit[]
 
   @@index([clinicId])
 }
@@ -392,6 +394,8 @@ model Patient {
   emergencyLocations     EmergencyLocation[]
   locationRequests       EmergencyLocationRequest[]
   childLinks             ParentChildLink[]       @relation("ChildPatient")
+  paramedicalVouchers    ParamedicalVoucher[]
+  visits                 PatientVisit[]
 
   @@index([lastName, firstName])
   @@index([dateOfBirth])
@@ -415,6 +419,41 @@ model PatientContact {
   patient      Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   @@index([patientId])
+}
+
+/// Immutable trace of each passage through reception. It is intentionally
+/// separate from the longitudinal patient record.
+model PatientVisit {
+  id                 String             @id @default(uuid())
+  patientId          String
+  receptionistId     String?
+  clinicId           String?
+  appointmentId      String?            @unique
+  invoiceId          String?            @unique
+  serviceId          String?
+  visitType          String
+  reason             String?
+  status             PatientVisitStatus @default(REGISTERED)
+  arrivedAt          DateTime           @default(now())
+  orientedAt         DateTime?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  metadata           Json?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  patient            Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  receptionist       User?              @relation("ReceptionPatientVisits", fields: [receptionistId], references: [id], onDelete: SetNull)
+  clinic             Clinic?            @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+  appointment        Appointment?       @relation("AppointmentPatientVisit", fields: [appointmentId], references: [id], onDelete: SetNull)
+  invoice            Invoice?           @relation("InvoicePatientVisit", fields: [invoiceId], references: [id], onDelete: SetNull)
+  service            Service?           @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@index([patientId, arrivedAt])
+  @@index([receptionistId, arrivedAt])
+  @@index([clinicId, arrivedAt])
+  @@index([status, arrivedAt])
 }
 
 /// Wear OS and watchOS devices may transmit while their eSIM connection is active.
@@ -588,6 +627,9 @@ model Appointment {
   durationMinutes Int               @default(30)
   reason          String?
   status          AppointmentStatus @default(SCHEDULED)
+  statusReason    String?
+  cancelledAt     DateTime?
+  cancelledById   String?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   deletedAt       DateTime?
@@ -598,6 +640,7 @@ model Appointment {
   requestedBy     User?             @relation("AppointmentRequester", fields: [requestedById], references: [id])
   serviceUnit     ServiceUnit?      @relation(fields: [serviceUnitId], references: [id])
   consultation    Consultation?     @relation("AppointmentConsultation")
+  patientVisit    PatientVisit?     @relation("AppointmentPatientVisit")
 
   @@index([scheduledAt])
   @@index([status])
@@ -799,6 +842,24 @@ model HospitalizationNurseAssignment {
 
   @@unique([hospitalizationId, coverage])
   @@index([nurseId, releasedAt])
+}
+
+/// A voucher is consumed exactly once. It is separate from free-text admission metadata so reuse is prevented by a database constraint.
+model ParamedicalVoucher {
+  id          String   @id @default(uuid())
+  number      String   @unique
+  issuer      String
+  serviceId   String
+  patientId   String   @unique
+  receivedAt  DateTime @default(now())
+  scanUrl     String?
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@index([issuer, receivedAt])
+  @@index([serviceId])
 }
 
 model NursingCareTask {
@@ -1638,6 +1699,7 @@ model Invoice {
   subscriptionCharges SubscriptionCharge[]
   monthlySubscriptionInvoices MonthlySubscriptionInvoice[]
   discountRequests     InvoiceDiscountRequest[]
+  patientVisit         PatientVisit? @relation("InvoicePatientVisit")
 
   @@index([status])
   @@index([clinicId])
@@ -1692,6 +1754,7 @@ model Clinic {
   StockLot         StockLot[]
   StockTransaction StockTransaction[]
   Employee         Employee[]
+  patientVisits    PatientVisit[]
 }
 
 model Supplier {
@@ -1988,6 +2051,15 @@ enum VitalType {
 enum NursingCoverage {
   DAY
   NIGHT
+}
+
+enum PatientVisitStatus {
+  REGISTERED
+  AWAITING_PAYMENT
+  ORIENTED
+  IN_CONSULTATION
+  COMPLETED
+  CANCELLED
 }
 
 enum NursingCareTaskStatus {

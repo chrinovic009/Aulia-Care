@@ -1,17 +1,31 @@
 
 import { useEffect, useMemo, useState } from "react";
-import { fetchPatientsFromDatabase, PatientRecord } from "../../api/reception";
+import { fetchAppointmentsFromDatabase, fetchPatientsFromDatabase, PatientRecord } from "../../api/reception";
 
 export default function ReceptionAssistantIA() {
   const [patients, setPatients] = useState<PatientRecord[]>([]);
+  const [todayAppointments, setTodayAppointments] = useState<number | null>(null);
 
   const refresh = async () => {
     try {
-      const dbPatients = await fetchPatientsFromDatabase();
+      const [dbPatients, appointments] = await Promise.all([
+        fetchPatientsFromDatabase(),
+        fetchAppointmentsFromDatabase(),
+      ]);
       setPatients(dbPatients);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      setTodayAppointments(appointments.filter((appointment) => {
+        const sourceDate = appointment.scheduledAt || appointment.requestedAt || appointment.createdAt;
+        if (!sourceDate) return false;
+        const date = new Date(sourceDate);
+        date.setHours(0, 0, 0, 0);
+        return date.getTime() === today.getTime();
+      }).length);
     } catch (error) {
       console.error("Unable to load patients from Prisma DB:", error);
       setPatients([]);
+      setTodayAppointments(null);
     }
   };
 
@@ -46,11 +60,11 @@ export default function ReceptionAssistantIA() {
     return Math.round((totalMs / queue.length) / 60000);
   }, [waiting, awaitingNurse]);
 
-  const satisfactionPct = useMemo(() => {
+  const orientationPct = useMemo(() => {
     const a = awaitingNurse.length;
     const b = waiting.length;
     const denom = a + b;
-    if (denom === 0) return 100;
+    if (denom === 0) return null;
     return Math.round((a / denom) * 100);
   }, [awaitingNurse.length, waiting.length]);
 
@@ -73,13 +87,13 @@ export default function ReceptionAssistantIA() {
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Assistant IA - Réception</h3>
-            <p className="mt-1 text-gray-500 text-theme-sm dark:text-gray-400">Gestion intelligente du flux des patients</p>
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Suivi opérationnel - Réception</h3>
+            <p className="mt-1 text-gray-500 text-theme-sm dark:text-gray-400">Indicateurs calculés à partir des données de la base</p>
           </div>
 
           <div className="flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 dark:bg-emerald-500/10">
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">IA Active</span>
+            <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Données API</span>
           </div>
         </div>
 
@@ -102,9 +116,9 @@ export default function ReceptionAssistantIA() {
 
           {/* Satisfaction */}
           <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Fluidité d’accueil</p>
-            <h4 className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400">{satisfactionPct}%</h4>
-            <p className="mt-1 text-xs text-emerald-500">Activité stable</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Orientation vers les soins</p>
+            <h4 className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400">{orientationPct === null ? "—" : `${orientationPct}%`}</h4>
+            <p className="mt-1 text-xs text-emerald-500">Sur les patients actuellement en attente</p>
           </div>
         </div>
 
@@ -117,7 +131,7 @@ export default function ReceptionAssistantIA() {
       {/* Bottom Stats */}
       <div className="flex flex-col gap-4 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-center sm:text-left">
-          <p className="text-xs text-gray-500 dark:text-gray-400">Admissions aujourd’hui</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Orientés vers l’infirmerie aujourd’hui</p>
           <p className="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">
             {patients.filter((p) => {
               if (p.workflowStatus !== "EN_ATTENTE_INFIRMERIE") return false;
@@ -132,18 +146,9 @@ export default function ReceptionAssistantIA() {
         <div className="hidden h-10 w-px bg-gray-200 dark:bg-gray-800 sm:block"></div>
 
         <div className="text-center sm:text-left">
-          <p className="text-xs text-gray-500 dark:text-gray-400">Rendez-vous confirmés</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Rendez-vous prévus aujourd’hui</p>
           <p className="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">
-            {patients.filter((p) => {
-              if (p.workflowStatus !== "EN_ATTENTE_INFIRMERIE") return false;
-              if (!p.createdAt) return false;
-              const createdAt = new Date(p.createdAt);
-              createdAt.setHours(0, 0, 0, 0);
-              return (
-                createdAt.getTime() === new Date().setHours(0, 0, 0, 0) &&
-                (p.admissionType === "Consultation" || p.admissionType?.toLowerCase().includes("consult"))
-              );
-            }).length}
+            {todayAppointments === null ? "Indisponible" : todayAppointments}
           </p>
         </div>
 

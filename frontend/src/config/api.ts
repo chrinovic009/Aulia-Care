@@ -89,27 +89,24 @@ export const buildUrl = (endpoint: string): string => {
   return `${baseUrl}${path}`;
 };
 
-/**
- * Get authentication token from localStorage
- */
-export const getAuthToken = (): string | null => {
-  try {
-    return (
-      localStorage.getItem("d7-clinic-access-token") ||
-      localStorage.getItem("d7-clinic-auth-token") ||
-      localStorage.getItem("d7-clinic-api-token")
-    );
-  } catch {
-    return null;
-  }
+const getCookie = (name: string): string | null => {
+  if (typeof document === "undefined") return null;
+  const prefix = `${name}=`;
+  return document.cookie
+    .split(";")
+    .map((value) => value.trim())
+    .find((value) => value.startsWith(prefix))
+    ?.slice(prefix.length) ?? null;
 };
 
-/**
- * Get authorization headers
- */
+// Access tokens are deliberately never exposed to JavaScript. This function is
+// retained only for compatibility with callers that previously read localStorage.
+export const getAuthToken = (): string | null => null;
+
+/** Adds the non-sensitive CSRF value required for cookie-authenticated writes. */
 export const getAuthHeaders = (): Record<string, string> => {
-  const token = getAuthToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const csrfToken = getCookie("aulia_csrf_token");
+  return csrfToken ? { "X-CSRF-Token": csrfToken } : {};
 };
 
 export class ApiError extends Error {

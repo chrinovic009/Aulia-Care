@@ -116,10 +116,19 @@ export class PatientsService {
     return created;
   }
 
-  findAll() {
-    // Always return comprehensive patient data for UI lists.
-    // The frontend needs all fields for display in patient lists and details.
+  findAll(currentUser?: any) {
+    const role = String(currentUser?.primaryRole || currentUser?.role || '').toUpperCase();
+    // Cashiers only need enough identity to identify the invoice owner; they do not need clinical/contact data.
+    if (role === 'CASHIER') {
+      return this.prisma.patient.findMany({
+        where: { deletedAt: null },
+        select: { id: true, firstName: true, lastName: true, externalId: true, workflowStatus: true, admissionType: true, arrivalAt: true },
+        orderBy: { updatedAt: 'desc' },
+        take: 250,
+      });
+    }
     return this.prisma.patient.findMany({
+      where: { deletedAt: null },
       select: {
         id: true,
         firstName: true,
@@ -183,10 +192,46 @@ export class PatientsService {
           },
         },
       },
+      orderBy: { updatedAt: 'desc' },
+      take: 500,
     });
   }
 
-  async search(params: PatientSearchParams) {
+  async getReceptionVisits(actorId?: string, requestedLimit = 100) {
+    const limit = Math.min(Math.max(requestedLimit, 1), 250);
+    const actor = actorId
+      ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } })
+      : null;
+    return (this.prisma as any).patientVisit.findMany({
+      where: actor?.clinicId ? { clinicId: actor.clinicId } : undefined,
+      include: {
+        patient: {
+          select: {
+            id: true,
+            externalId: true,
+            firstName: true,
+            middleName: true,
+            lastName: true,
+            phone: true,
+            insuranceProvider: true,
+            insuranceNumber: true,
+          },
+        },
+        receptionist: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+        service: { select: { id: true, name: true } },
+        invoice: { select: { id: true, status: true, totalAmount: true, balanceDue: true } },
+        appointment: { select: { id: true, status: true, scheduledAt: true, statusReason: true } },
+      },
+      orderBy: { arrivedAt: 'desc' },
+      take: limit,
+    });
+  }
+
+  async search(params: PatientSearchParams, currentUser?: any) {
+    const role = String(currentUser?.primaryRole || currentUser?.role || '').toUpperCase();
+    if (!params.email && !params.phone && !params.name) {
+      throw new BadRequestException('Un critère de recherche patient est obligatoire.');
+    }
     const conditions: Prisma.PatientWhereInput[] = [];
 
     if (params.email) {
@@ -208,7 +253,9 @@ export class PatientsService {
         const query = `SELECT id, "firstName", "lastName", "middleName", "phone", "email", "dateOfBirth" FROM "Patient" WHERE unaccent(lower(concat("firstName", ' ', "lastName"))) LIKE unaccent(lower($1)) LIMIT 10`;
         const pattern = `%${name.replace(/%/g, '\\%')}%`;
         const raw: any[] = await this.prisma.$queryRawUnsafe(query, pattern);
-        if (raw && raw.length > 0) return raw;
+        if (raw && raw.length > 0) return role === 'CASHIER'
+          ? raw.map(({ id, firstName, lastName, dateOfBirth }: any) => ({ id, firstName, lastName, dateOfBirth }))
+          : raw;
       } catch (e) {
         // fallback to Prisma insensitive contains search
         const { firstName, lastName } = splitFullName(name);
@@ -222,11 +269,14 @@ export class PatientsService {
       }
     }
 
-    if (conditions.length === 0) {
-      return this.findAll();
-    }
-
-    return this.prisma.patient.findMany({ where: { OR: conditions } });
+    if (conditions.length === 0) return [];
+    return this.prisma.patient.findMany({
+      where: { OR: conditions, deletedAt: null },
+      select: role === 'CASHIER'
+        ? { id: true, firstName: true, lastName: true, dateOfBirth: true, externalId: true }
+        : { id: true, firstName: true, lastName: true, middleName: true, dateOfBirth: true, phone: true, email: true, externalId: true, workflowStatus: true },
+      take: 20,
+    });
   }
 
   async findOne(id: string) {
@@ -306,6 +356,7 @@ export class PatientsService {
   }
 
   async createAdmission(createAdmissionDto: any, actorId?: string) {
+    if (!actorId) throw new ForbiddenException('Une admission doit être réalisée par une réceptionniste authentifiée.');
     let email = normalizeEmail(createAdmissionDto.email);
     const phone = normalizePhone(createAdmissionDto.phone);
     const { firstName, lastName } = createAdmissionDto.fullName
@@ -316,7 +367,7 @@ export class PatientsService {
       throw new BadRequestException('Le prénom et le nom du patient doivent être fournis.');
     }
 
-    email = email || `${this.slugifyUsername(`${firstName}${lastName}`)}@gmail.com`;
+    // No fabricated Gmail address: it creates false unique conflicts and can expose notifications to a third party.
 
     const conflicts: Prisma.PatientWhereInput[] = [];
     if (email) {
@@ -356,12 +407,18 @@ export class PatientsService {
     }
 
     const isParamedicalVoucher = String(createAdmissionDto.admissionType || '').toUpperCase() === 'BON_PARAMEDICAL';
+    if (isParamedicalVoucher) {
+      if (!createAdmissionDto.voucherNumber?.trim() || !createAdmissionDto.voucherIssuer?.trim()) {
+        throw new BadRequestException('Le numéro et l’émetteur du bon paramédical sont obligatoires.');
+      }
+      if (!resolvedService?.isParamedical) {
+        throw new BadRequestException('Le bon paramédical doit cibler un service paramédical actif.');
+      }
+    }
     const billableService = await this.resolveBillableServiceForAdmission(createAdmissionDto, resolvedService, isParamedicalVoucher);
     
     // 🟢 AJUSTEMENT : On utilise le montant envoyé par le formulaire s'il existe, sinon on prend le tarif par défaut du service
-    const admissionFee = createAdmissionDto.amountDue !== undefined 
-      ? Number(createAdmissionDto.amountDue) 
-      : this.getActiveServicePrice(billableService);
+    const admissionFee = this.getActiveServicePrice(billableService);
 
     const invoiceType = isParamedicalVoucher ? 'SERVICE' : 'ADMISSION_FEE';
     
@@ -371,16 +428,15 @@ export class PatientsService {
       ? `Bon paramedical - ${billableService.name}`
       : `${isSpecialist ? 'Consultation Spécialisée' : 'Consultation Générale'} - Réception`;
 
-    const receptionistConnect = actorId
-      ? { connect: { id: actorId } }
-      : createAdmissionDto.receptionistId
-        ? { connect: { id: createAdmissionDto.receptionistId } }
-        : undefined;
+    const receptionistConnect = { connect: { id: actorId } };
+    const receptionistUser = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { clinicId: true },
+    });
 
     // 🟢 CORRECTION DE L'ERREUR : Déclaration de la variable manquante
-    const isCorporateSubscriber = 
-      createAdmissionDto.category === 'S' || 
-      !!createAdmissionDto.insuranceProvider;
+    // Company subscriptions are admitted only through SubscriptionsService, which links a verified employee.
+    const isCorporateSubscriber = false;
 
     const admissionData: any = {
       firstName,
@@ -400,7 +456,8 @@ export class PatientsService {
       workflowStatus: isCorporateSubscriber ? PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
       admissionType: createAdmissionDto.admissionType,
       priority: createAdmissionDto.priority,
-      arrivalAt: createAdmissionDto.arrivalAt ? new Date(createAdmissionDto.arrivalAt) : new Date(),
+      arrivalAt: new Date(),
+      clinicId: receptionistUser?.clinicId || undefined,
       ...(resolvedService ? { service: { connect: { id: resolvedService.id } } } : {}),
       ...(receptionistConnect ? { receptionist: receptionistConnect } : {}),
     };
@@ -424,6 +481,17 @@ export class PatientsService {
         }
 
       const patient = await prisma.patient.create({ data: admissionData });
+      if (isParamedicalVoucher) {
+        await prisma.paramedicalVoucher.create({
+          data: {
+            number: createAdmissionDto.voucherNumber.trim(),
+            issuer: createAdmissionDto.voucherIssuer.trim(),
+            serviceId: resolvedService.id,
+            patientId: patient.id,
+            notes: createAdmissionDto.voucherNotes?.trim() || null,
+          },
+        });
+      }
       const invoice = await prisma.invoice.create({
         data: {
           patientId: patient.id,
@@ -449,6 +517,24 @@ export class PatientsService {
           totalAmount: admissionFee,
         },
       });
+      await (prisma as any).patientVisit.create({
+        data: {
+          patientId: patient.id,
+          receptionistId: actorId,
+          clinicId: receptionistUser?.clinicId || null,
+          invoiceId: invoice.id,
+          serviceId: resolvedService?.id || null,
+          visitType: createAdmissionDto.admissionType || 'ADMISSION',
+          reason: createAdmissionDto.consultationKind || createAdmissionDto.admissionType || 'Admission réception',
+          status: isCorporateSubscriber ? 'ORIENTED' : 'AWAITING_PAYMENT',
+          arrivedAt: patient.arrivalAt || new Date(),
+          metadata: {
+            consultationKind: isSpecialist ? 'SPECIALIST' : 'GENERAL',
+            voucherNumber: createAdmissionDto.voucherNumber || null,
+            invoiceId: invoice.id,
+          },
+        },
+      });
 
       return { patient, invoice };
     });
@@ -459,11 +545,7 @@ export class PatientsService {
 
     // Resolve receptionist name from provided form value or user record
     let receptionistName: string | null = null;
-    if (createAdmissionDto.receptionist) receptionistName = createAdmissionDto.receptionist;
-    else if (createAdmissionDto.receptionistId) {
-      const rec = await this.prisma.user.findUnique({ where: { id: createAdmissionDto.receptionistId } });
-      receptionistName = rec ? rec.displayName || `${rec.firstName || ''} ${rec.lastName || ''}`.trim() : null;
-    } else if (actorId) {
+    if (actorId) {
       const rec = await this.prisma.user.findUnique({ where: { id: actorId } });
       receptionistName = rec ? rec.displayName || `${rec.firstName || ''} ${rec.lastName || ''}`.trim() : null;
     }
@@ -493,7 +575,7 @@ export class PatientsService {
           billingServiceName: billableService.name,
           billingAmount: admissionFee,
         }),
-        createdById: actorId || createAdmissionDto.receptionistId || null,
+        createdById: actorId,
       },
     });
 
@@ -555,39 +637,27 @@ export class PatientsService {
     };
   }
 
-  async update(id: string, updatePatientDto: UpdatePatientDto) {
+  async update(id: string, updatePatientDto: UpdatePatientDto, currentUser?: any) {
     const existing = await this.findOne(id);
-
-    const { service, receptionist, ...patientData } = updatePatientDto;
+    const actorId = currentUser?.userId || currentUser?.id;
+    const role = String(currentUser?.primaryRole || currentUser?.role || '').toUpperCase();
+    const receptionFields = ['firstName', 'lastName', 'middleName', 'gender', 'dateOfBirth', 'email', 'phone', 'address', 'city', 'postalCode', 'nationality', 'emergencyContact', 'emergencyPhone', 'profession'];
+    const adminOnlyFields = ['insuranceProvider', 'insuranceNumber', 'status', 'admissionType', 'priority', 'arrivalAt', 'workflowStatus', 'bloodType'];
+    const allowedFields = role === 'RECEPTIONIST' ? receptionFields : [...receptionFields, ...adminOnlyFields];
+    const patientData = Object.fromEntries(Object.entries(updatePatientDto).filter(([key]) => allowedFields.includes(key)));
+    if (Object.keys(patientData).length === 0) throw new ForbiddenException('Aucun champ autorisé pour votre rôle.');
     const updatePayload: Prisma.PatientUpdateInput = {
       ...patientData,
-      ...(service
-        ? {
-            service: {
-              connect: {
-                id: service,
-              },
-            },
-          }
-        : {}),
-      ...(receptionist
-        ? {
-            receptionist: {
-              connect: {
-                id: receptionist,
-              },
-            },
-          }
-        : {}),
     };
 
     const updated = await this.prisma.patient.update({ where: { id }, data: updatePayload });
     if (
-      updatePatientDto.workflowStatus === PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE &&
+      patientData.workflowStatus === PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE &&
       existing.workflowStatus !== PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE
     ) {
       await this.ensurePatientUserAndNotifyReceptionist(updated.id);
     }
+    await this.prisma.auditLog.create({ data: { actorId: actorId || null, patientId: id, action: AuditAction.UPDATE, entity: 'Patient', entityId: id, summary: 'Données administratives patient mises à jour.', metadata: { fields: Object.keys(patientData) } } });
     this.notificationsGateway.notify('patient.updated', updated);
     return updated;
   }

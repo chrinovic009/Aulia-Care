@@ -48,7 +48,12 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   }
 
   async handleConnection(client: Socket) {
-    const rawToken = client.handshake.auth?.token || client.handshake.headers.authorization;
+    const cookieToken = String(client.handshake.headers.cookie || '')
+      .split(';')
+      .map((value) => value.trim())
+      .find((value) => value.startsWith('aulia_access_token='))
+      ?.slice('aulia_access_token='.length);
+    const rawToken = cookieToken || client.handshake.headers.authorization;
     const token = typeof rawToken === 'string' ? rawToken.replace(/^Bearer\s+/i, '').trim() : '';
     if (!token) return client.disconnect(true);
 
