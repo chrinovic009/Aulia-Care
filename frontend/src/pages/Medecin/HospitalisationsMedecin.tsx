@@ -147,6 +147,7 @@ export default function HospitalisationsMedecin() {
       method: "POST",
       body: JSON.stringify({
         patientId: selectedPatient.id,
+        consultationId: selectedConsultation.id,
         physicianId: currentUser?.id,
         admissionReason: form.admissionReason,
         bedId: selectedBedId,

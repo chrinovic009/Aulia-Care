@@ -69,7 +69,10 @@ export class PatientsController {
 
   @Get(':id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id') id: string, @Request() req: any) {
+    if (req.user?.role === 'PHYSICIAN') {
+      return this.patientsService.findOneForDoctor(id, req.user.userId);
+    }
     return this.patientsService.findOne(id);
   }
 

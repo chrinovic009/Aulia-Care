@@ -90,6 +90,18 @@ export class LaboratoryController {
     return this.laboratoryService.getValidations(req.user?.userId, req.user?.primaryRole);
   }
 
+  @Get('critical-alerts')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER', 'PHYSICIAN')
+  criticalAlerts(@Request() req: any) {
+    return this.laboratoryService.getCriticalAlerts(req.user);
+  }
+
+  @Post('critical-alerts/:id/acknowledge')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER', 'PHYSICIAN')
+  acknowledgeCriticalAlert(@Param('id') id: string, @Body() body: { note?: string }, @Request() req: any) {
+    return this.laboratoryService.acknowledgeCriticalAlert(id, req.user, body?.note);
+  }
+
   @Post('validations/:id/decision')
   @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
   decision(@Param('id') id: string, @Body() body: any, @Request() req: any) {

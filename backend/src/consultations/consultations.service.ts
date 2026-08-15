@@ -1,10 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreateConsultationDto } from './dto/create-consultation.dto';
 import { CreateImagingRequestDto } from './dto/create-imaging-request.dto';
 import { UpdateConsultationDto } from './dto/update-consultation.dto';
+import { ClinicalSectionsDto } from './dto/clinical-sections.dto';
+import { CreateLabRequestDto } from './dto/create-lab-request.dto';
+import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 
 @Injectable()
 export class ConsultationsService {
@@ -77,17 +80,28 @@ export class ConsultationsService {
     }
   }
 
-  async create(createConsultationDto: CreateConsultationDto) {
-    const consultation = await this.prisma.consultation.create({ data: createConsultationDto as any });
+  async create(createConsultationDto: CreateConsultationDto, actorId?: string) {
+    if (!actorId) throw new ForbiddenException('Médecin authentifié requis.');
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { primaryRole: true } });
+    if (actor?.primaryRole !== 'PHYSICIAN') throw new ForbiddenException('Seul un médecin peut ouvrir une consultation.');
 
-    await this.prisma.appointment.update({
-      where: { id: createConsultationDto.appointmentId },
-      data: { status: 'CHECKED_IN' },
-    });
+    const appointment = await this.prisma.appointment.findUnique({ where: { id: createConsultationDto.appointmentId } });
+    if (!appointment || appointment.patientId !== createConsultationDto.patientId) {
+      throw new BadRequestException('Le rendez-vous sélectionné ne correspond pas au patient.');
+    }
+    if (appointment.status === 'COMPLETED' || appointment.status === 'CANCELLED' || appointment.status === 'NO_SHOW') {
+      throw new BadRequestException('Ce rendez-vous ne peut pas être ouvert en consultation.');
+    }
 
-    await this.prisma.patient.update({
-      where: { id: createConsultationDto.patientId },
-      data: { workflowStatus: PatientWorkflowStatus.EN_CONSULTATION },
+    const consultation = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.consultation.findUnique({ where: { appointmentId: createConsultationDto.appointmentId } });
+      if (existing) throw new BadRequestException('Une consultation existe déjà pour ce rendez-vous.');
+      const created = await tx.consultation.create({
+        data: { ...createConsultationDto, providerId: actorId } as any,
+      });
+      await tx.appointment.update({ where: { id: createConsultationDto.appointmentId }, data: { status: 'CHECKED_IN' } });
+      await tx.patient.update({ where: { id: createConsultationDto.patientId }, data: { workflowStatus: PatientWorkflowStatus.EN_CONSULTATION } });
+      return created;
     });
 
     this.notificationsGateway.notify('patient.updated', {
@@ -98,8 +112,9 @@ export class ConsultationsService {
     return consultation;
   }
 
-  findAll() {
+  findAll(actorId?: string, actorRole?: string) {
     return this.prisma.consultation.findMany({
+      where: actorRole === 'PHYSICIAN' ? { providerId: actorId } : undefined,
       include: {
         patient: true,
         provider: true,
@@ -128,7 +143,7 @@ export class ConsultationsService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, actorId?: string, actorRole?: string) {
     const consultation = await this.prisma.consultation.findUnique({
       where: { id },
       include: {
@@ -146,26 +161,45 @@ export class ConsultationsService {
     if (!consultation) {
       throw new NotFoundException('Consultation introuvable');
     }
+    if (actorRole === 'PHYSICIAN' && consultation.providerId !== actorId) {
+      throw new ForbiddenException('Accès à cette consultation non autorisé.');
+    }
     return consultation;
   }
 
   async update(id: string, updateConsultationDto: UpdateConsultationDto, actorId?: string) {
     const consultation = await this.findOne(id);
     await this.ensureWriteAccess(consultation.providerId, actorId);
-    const updated = await this.prisma.consultation.update({ where: { id }, data: updateConsultationDto as any });
+    if (consultation.status === ConsultationStatus.FINALIZED) {
+      throw new BadRequestException('Consultation finalisée : utilisez la procédure d’avenant documentée.');
+    }
+    // A clinical note update must never silently reassign its patient, encounter,
+    // hospitalization or author. Those links are established by admission/creation workflows.
+    const { patientId: _patientId, appointmentId: _appointmentId, hospitalizationId: _hospitalizationId, providerId: _providerId, ...clinicalUpdate } = updateConsultationDto;
+    const updated = await this.prisma.consultation.update({
+      where: { id },
+      data: { ...clinicalUpdate, version: { increment: 1 } } as any,
+    });
     if (updated.status === ConsultationStatus.FINALIZED) {
       await this.prisma.appointment.update({ where: { id: updated.appointmentId }, data: { status: 'COMPLETED' } });
     }
     return updated;
   }
 
-  async saveClinicalSections(id: string, dto: any, actorId?: string) {
+  async saveClinicalSections(id: string, dto: ClinicalSectionsDto, actorId?: string) {
     const consultation = await this.findOne(id);
     await this.ensureWriteAccess(consultation.providerId, actorId);
-    const payload = dto.clinicalSummary && typeof dto.clinicalSummary === 'object' && !Array.isArray(dto.clinicalSummary)
+    const amendmentReason = dto.amendmentReason?.trim();
+    const isAmendment = consultation.status === ConsultationStatus.FINALIZED;
+    if (isAmendment && !amendmentReason) {
+      throw new BadRequestException('Une consultation finalisée est protégée : indiquez le motif de l’avenant.');
+    }
+    // DTO validation owns the HTTP boundary; this compatibility view supports
+    // existing JSON clinical drafts until their fields are fully normalised.
+    const payload: Record<string, any> | null = dto.clinicalSummary && typeof dto.clinicalSummary === 'object' && !Array.isArray(dto.clinicalSummary)
       ? dto.clinicalSummary
       : null;
-    const consultationModule = dto.consultationModule || payload?.consultationModule || null;
+    const consultationModule: Record<string, any> | null = dto.consultationModule || payload?.consultationModule || null;
     const currentMedicationValue = dto.medicalHistory?.currentMedications
       || payload?.medicalHistory?.currentMedications
       || (Array.isArray(consultationModule?.currentMedications) ? consultationModule.currentMedications : null);
@@ -197,8 +231,11 @@ export class ConsultationsService {
       complementaryAnamnesis: dto.complementaryAnamnesis || payload?.complementaryAnamnesis || null,
     };
 
-    const requestedStatus = dto.status || dto.consultationStatus || consultation.status;
+    const requestedStatus = dto.status || consultation.status;
     const normalizedStatus = this.normalizeConsultationStatus(requestedStatus);
+    if (!isAmendment && normalizedStatus === ConsultationStatus.FINALIZED && dto.attestation !== true) {
+      throw new BadRequestException('La validation exige l’attestation explicite du médecin.');
+    }
 
     const updated = await this.prisma.consultation.update({
       where: { id },
@@ -208,7 +245,8 @@ export class ConsultationsService {
         diagnosis: dto.diagnosis?.principal || dto.diagnosis?.main || dto.diagnosisText || consultation.diagnosis,
         assessment: dto.diagnosis?.hypotheses ? JSON.stringify(dto.diagnosis.hypotheses) : consultation.assessment,
         plan: dto.treatmentPlan ? JSON.stringify(dto.treatmentPlan) : consultation.plan,
-        status: normalizedStatus,
+        status: isAmendment ? ConsultationStatus.FINALIZED : normalizedStatus,
+        version: { increment: 1 },
       } as any,
       include: { patient: true, provider: true },
     });
@@ -217,6 +255,21 @@ export class ConsultationsService {
       await this.prisma.appointment.update({ where: { id: updated.appointmentId }, data: { status: 'COMPLETED' } });
     }
 
+    // A draft is visible through its consultation only. It is not duplicated in
+    // the longitudinal patient history until the doctor signs it.
+    if (!isAmendment && normalizedStatus !== ConsultationStatus.FINALIZED) return updated;
+
+    await this.prisma.consultationNote.create({
+      data: {
+        consultationId: id,
+        authorId: actorId,
+        noteType: isAmendment ? 'AMENDMENT' : 'FINALIZATION_SIGNATURE',
+        content: isAmendment
+          ? `Avenant v${updated.version}: ${amendmentReason}`
+          : 'Consultation relue et validée par le médecin responsable.',
+      },
+    });
+
     await this.prisma.medicalHistory.create({
       data: {
         patientId: consultation.patientId,
@@ -224,9 +277,11 @@ export class ConsultationsService {
         details: JSON.stringify({
           ...structured,
           consultationId: id,
-          consultationStatus: normalizedStatus,
+          consultationStatus: updated.status,
           chiefComplaint: updated.chiefComplaint,
           savedAt: new Date().toISOString(),
+          amendmentReason: amendmentReason || null,
+          consultationVersion: updated.version,
         }),
         createdById: actorId,
       },
@@ -235,7 +290,7 @@ export class ConsultationsService {
     return updated;
   }
 
-  async createLabRequest(id: string, dto: any, actorId?: string) {
+  async createLabRequest(id: string, dto: CreateLabRequestDto, actorId?: string) {
     const consultation = await this.findOne(id);
     await this.ensureWriteAccess(consultation.providerId, actorId);
     const request = await this.prisma.$transaction(async (tx) => {
@@ -520,12 +575,24 @@ export class ConsultationsService {
       if (price <= 0) {
         throw new BadRequestException('Le prix de l examen d imagerie n est pas valide.');
       }
+      if (dto.contrastAgentUsed && (!dto.informedConsentConfirmed || !dto.pregnancyScreened || !dto.renalFunctionVerified)) {
+        throw new BadRequestException('Avant contraste : consentement, dépistage grossesse et fonction rénale doivent être confirmés.');
+      }
+      const duplicate = await tx.imagingRequest.findFirst({
+        where: {
+          consultationId: id,
+          imagingCatalogueId: imagingCatalogue.id,
+          deletedAt: null,
+          status: { in: ['REQUESTED', 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'VERIFIED'] },
+        },
+      });
+      if (duplicate && !dto.duplicateOverrideReason?.trim()) {
+        throw new BadRequestException('Demande d’imagerie similaire déjà active. Documentez le motif clinique de répétition.');
+      }
 
       const selectedIncidences = Array.isArray(dto.availableIncidences)
         ? dto.availableIncidences.filter((value: unknown): value is string => typeof value === 'string' && Boolean(value.trim()))
-        : typeof dto.availableIncidences === 'string'
-          ? dto.availableIncidences.split(',').map((item: string) => item.trim()).filter(Boolean)
-          : [];
+        : [];
 
       const requestLabel = imagingCatalogue.name;
       const bodyPart = typeof dto.bodyPart === 'string' && dto.bodyPart.trim() ? dto.bodyPart.trim() : imagingCatalogue.name;
@@ -549,9 +616,10 @@ export class ConsultationsService {
           contraindications: dto.contraindications || null,
           contrastAgentUsed: Boolean(dto.contrastAgentUsed),
           contrastDetails: dto.contrastDetails || null,
+          notes: [dto.notes, dto.duplicateOverrideReason ? `Répétition justifiée: ${dto.duplicateOverrideReason}` : ''].filter(Boolean).join('\n') || null,
           selectedIncidences,
           protocolNotes: dto.protocolNotes || null,
-          notes: dto.notes || null,
+          
           machineId,
           scheduledAt,
           status,
@@ -700,7 +768,7 @@ export class ConsultationsService {
     return Array.from(usageByKey.values());
   }
 
-  async createPrescription(id: string, dto: any, actorId?: string) {
+  async createPrescription(id: string, dto: CreatePrescriptionDto, actorId?: string) {
     const consultation = await this.findOne(id);
     await this.ensureWriteAccess(consultation.providerId, actorId);
     const lines = Array.isArray(dto.lines) ? dto.lines : [];
@@ -727,9 +795,9 @@ export class ConsultationsService {
       const latestLot = medication.StockLot
         .slice()
         .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())[0];
-      const explicitPrice = Number(line.unitPrice ?? 0);
       const stockPrice = Number(latestLot?.purchasePrice ?? 0);
-      const unitPrice = explicitPrice > 0 ? explicitPrice : stockPrice;
+      // Billing values are computed by the server; a browser must never set a price.
+      const unitPrice = stockPrice;
 
       return { ...line, quantity, unitPrice, medication };
     });
@@ -812,7 +880,7 @@ export class ConsultationsService {
     });
   }
 
-  async updatePrescription(consultationId: string, prescriptionId: string, dto: any, actorId?: string) {
+  async updatePrescription(consultationId: string, prescriptionId: string, dto: CreatePrescriptionDto, actorId?: string) {
     const consultation = await this.findOne(consultationId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
 
@@ -859,12 +927,11 @@ export class ConsultationsService {
       const available = medication.StockLot.reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
       if (available < quantity) throw new BadRequestException(`Stock insuffisant pour ${medication.name}.`);
       const latestLot = medication.StockLot.slice().sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())[0];
-      const explicitPrice = Number(line.unitPrice ?? 0);
       const stockPrice = Number(latestLot?.purchasePrice ?? 0);
       return {
         ...line,
         quantity,
-        unitPrice: explicitPrice > 0 ? explicitPrice : stockPrice,
+        unitPrice: stockPrice,
       };
     });
 

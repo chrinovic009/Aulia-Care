@@ -168,42 +168,11 @@ export default function HospitalisationsSuivi() {
   };
 
   const submitTransfer = () => {
-    if (!selected || !transferRoom) return;
-    setItems((prev) =>
-      prev.map((p) =>
-        p.id === selected.id
-          ? {
-              ...p,
-              room: transferRoom,
-              bed: transferBed,
-              notes: (p.notes ? p.notes + "\n" : "") + `Transfert: ${transferReason || "sans raison"}`,
-            }
-          : p,
-      ),
-    );
-    setTransferRoom("");
-    setTransferBed("");
-    setTransferReason("");
-    setPanelMode("dossier");
+    setError("Le transfert doit être prescrit et validé par le médecin responsable avec un lit réellement disponible. Aucun changement local n’a été effectué.");
   };
 
   const submitDischarge = () => {
-    if (!selected) return;
-    setItems((prev) =>
-      prev.map((p) =>
-        p.id === selected.id
-          ? {
-              ...p,
-              dischargePlanned: true,
-              dischargeStage: dischargeStageSel,
-              notes: (p.notes ? p.notes + "\n" : "") + (dischargeNote || ""),
-            }
-          : p,
-      ),
-    );
-    setDischargeStageSel(null);
-    setDischargeNote("");
-    setPanelMode("dossier");
+    setError("La sortie doit être validée par le médecin responsable. Aucun changement local n’a été effectué.");
   };
 
   const [dischargeModalOpen, setDischargeModalOpen] = useState(false);
@@ -215,12 +184,8 @@ export default function HospitalisationsSuivi() {
   };
 
   const finalizeDischarge = (id: string) => {
-    const now = new Date().toISOString();
-    setItems((prev) => prev.map((p) => (p.id === id ? { ...p, dischargedAt: now, dischargePlanned: false } : p)));
-    if (modalDischarge && modalDischarge.id === id) {
-      setModalDischarge((prev) => (prev ? { ...prev, dischargedAt: now, dischargePlanned: false } : prev));
-      setDischargeModalOpen(false);
-    }
+    setError("La finalisation de sortie est réservée au workflow médical validé. Aucun changement local n’a été effectué.");
+    setDischargeModalOpen(false);
   };
 
   const formatSince = (iso?: string | null) => {

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ImagingRequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateImagingCatalogueDto } from './dto/create-imaging-catalogue.dto';
 
 type DashboardPeriod = 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH';
 
@@ -12,7 +13,7 @@ export class ImagingService {
 
   findAll() {
     return this.prisma.imagingRequest.findMany({
-      include: { patient: true, requestedBy: true, consultation: true, report: true },
+      include: { patient: true, requestedBy: true, consultation: true, report: true, machine: true, imagingCatalogue: true },
       orderBy: [{ urgency: 'desc' }, { createdAt: 'asc' }],
     });
   }
@@ -21,6 +22,27 @@ export class ImagingService {
     return this.prisma.imagingCatalogue.findMany({
       where: { active: true },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
+    });
+  }
+
+  async createCatalogue(dto: CreateImagingCatalogueDto) {
+    const code = dto.code.trim().toUpperCase();
+    const name = dto.name.trim();
+    if (!code || !name) throw new BadRequestException('Le code et le nom de l examen sont requis.');
+    return this.prisma.imagingCatalogue.create({
+      data: {
+        code,
+        name,
+        modality: dto.modality,
+        category: dto.category?.trim() || null,
+        description: dto.description?.trim() || null,
+        preparationInstructions: dto.preparationInstructions?.trim() || null,
+        availableIncidences: dto.availableIncidences?.map((value) => value.trim()).filter(Boolean) || [],
+        supportsContrast: Boolean(dto.supportsContrast),
+        price: dto.price,
+        turnaroundTimeMinutes: dto.turnaroundTimeMinutes ?? null,
+        active: dto.active !== false,
+      },
     });
   }
 
@@ -46,7 +68,7 @@ export class ImagingService {
   }
 
   async findOne(id: string) {
-    const imagingRequest = await this.prisma.imagingRequest.findUnique({ where: { id }, include: { patient: true, requestedBy: true, consultation: true, report: true } });
+    const imagingRequest = await this.prisma.imagingRequest.findUnique({ where: { id }, include: { patient: true, requestedBy: true, consultation: true, report: true, machine: true, imagingCatalogue: true } });
     if (!imagingRequest) {
       throw new NotFoundException("Demande d'imagerie introuvable");
     }
@@ -54,9 +76,18 @@ export class ImagingService {
   }
 
   async updateStatus(id: string, rawStatus: string) {
-    await this.findOne(id);
+    const request = await this.findOne(id);
     const status = String(rawStatus || '').toUpperCase() as ImagingRequestStatus;
     if (!Object.values(ImagingRequestStatus).includes(status)) throw new BadRequestException('Statut de radiologie invalide.');
+    const allowedTransitions: Partial<Record<ImagingRequestStatus, ImagingRequestStatus[]>> = {
+      REQUESTED: ['SCHEDULED', 'CANCELLED'],
+      SCHEDULED: ['IN_PROGRESS', 'CANCELLED'],
+      IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
+      COMPLETED: ['VERIFIED'],
+    };
+    if (request.status !== status && !allowedTransitions[request.status]?.includes(status)) {
+      throw new BadRequestException(`Transition radiologique interdite : ${request.status} vers ${status}.`);
+    }
     return this.prisma.imagingRequest.update({ where: { id }, data: { status, ...(status === 'COMPLETED' ? { completedAt: new Date() } : {}) }, include: { patient: true, report: true } });
   }
 

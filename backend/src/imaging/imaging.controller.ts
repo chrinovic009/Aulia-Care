@@ -3,6 +3,7 @@ import { ImagingService } from './imaging.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { CreateImagingCatalogueDto } from './dto/create-imaging-catalogue.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('imaging')
@@ -19,6 +20,12 @@ export class ImagingController {
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')
   findCatalogue() {
     return this.imagingService.findCatalogue();
+  }
+
+  @Post('catalogue')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')
+  createCatalogue(@Body() body: CreateImagingCatalogueDto) {
+    return this.imagingService.createCatalogue(body);
   }
 
   @Get('dashboard/overview')

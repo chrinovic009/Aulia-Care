@@ -15,7 +15,19 @@ import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-@WebSocketGateway({ cors: { origin: true, credentials: true } })
+@WebSocketGateway({
+  cors: {
+    origin: (origin, callback) => {
+      const allowedOrigins = (process.env.CORS_ORIGIN || '')
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+      // Non-browser clients do not send Origin; browser origins must be explicitly allowed.
+      callback(null, !origin || allowedOrigins.includes(origin));
+    },
+    credentials: true,
+  },
+})
 export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;

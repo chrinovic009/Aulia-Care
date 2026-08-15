@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateHospitalizationDto } from './dto/create-hospitalization.dto';
 import { UpdateHospitalizationDto } from './dto/update-hospitalization.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CreateNursingCareTaskDto } from './dto/create-nursing-care-task.dto';
+import { RecordMedicationAdministrationDto } from './dto/record-medication-administration.dto';
 
 @Injectable()
 export class HospitalizationsService {
@@ -140,7 +142,14 @@ export class HospitalizationsService {
     return available.filter(Boolean);
   }
 
-  async create(createHospitalizationDto: CreateHospitalizationDto) {
+  async create(createHospitalizationDto: CreateHospitalizationDto, actorId?: string) {
+    if (!actorId) throw new ForbiddenException('Médecin authentifié requis.');
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { primaryRole: true } });
+    if (actor?.primaryRole !== 'PHYSICIAN') throw new ForbiddenException('Seul le médecin responsable peut hospitaliser.');
+    const sourceConsultation = await this.prisma.consultation.findUnique({ where: { id: createHospitalizationDto.consultationId } });
+    if (!sourceConsultation || sourceConsultation.patientId !== createHospitalizationDto.patientId || sourceConsultation.providerId !== actorId) {
+      throw new BadRequestException('La consultation source doit appartenir au patient et au médecin connecté.');
+    }
     const created = await this.prisma.$transaction(async (tx) => {
       const bedId = createHospitalizationDto.bedId;
       let assignedBed: any = null;
@@ -155,7 +164,7 @@ export class HospitalizationsService {
         }
       }
 
-      const { bedId: _bedId, dayNurseId, nightNurseId, ...hospitalizationData } = createHospitalizationDto as any;
+      const { bedId: _bedId, consultationId: _consultationId, physicianId: _physicianId, dayNurseId, nightNurseId, ...hospitalizationData } = createHospitalizationDto as any;
       const requestedAssignments = [
         dayNurseId ? { nurseId: dayNurseId, coverage: 'DAY' as const } : null,
         nightNurseId ? { nurseId: nightNurseId, coverage: 'NIGHT' as const } : null,
@@ -170,7 +179,8 @@ export class HospitalizationsService {
         const activeLoad = await (tx as any).hospitalizationNurseAssignment.count({ where: { nurseId: assignment.nurseId, releasedAt: null, hospitalization: { status: { in: ['ADMITTED', 'TRANSFERRED'] } } } });
         if (activeLoad >= 5) throw new BadRequestException('Cet infirmier a déjà atteint la limite de 5 patients hospitalisés.');
       }
-      const hospitalization = await tx.hospitalization.create({ data: hospitalizationData });
+      const hospitalization = await tx.hospitalization.create({ data: { ...hospitalizationData, physicianId: actorId } });
+      await tx.consultation.update({ where: { id: createHospitalizationDto.consultationId }, data: { hospitalizationId: hospitalization.id } });
       if (requestedAssignments.length) {
         await (tx as any).hospitalizationNurseAssignment.createMany({ data: requestedAssignments.map((assignment) => ({ ...assignment, hospitalizationId: hospitalization.id, assignedById: createHospitalizationDto.physicianId || null })) });
       }
@@ -198,10 +208,11 @@ export class HospitalizationsService {
             admissionReason: createHospitalizationDto.admissionReason,
             bedNumber: createHospitalizationDto.bedNumber || null,
             serviceUnitId: createHospitalizationDto.serviceUnitId || null,
-            physicianId: createHospitalizationDto.physicianId || null,
+            consultationId: createHospitalizationDto.consultationId,
+            physicianId: actorId,
             nurseInChargeId: createHospitalizationDto.nurseInChargeId || null,
           }),
-          createdById: createHospitalizationDto.physicianId || createHospitalizationDto.nurseInChargeId || null,
+          createdById: actorId,
         },
       });
       return hospitalization;
@@ -336,6 +347,45 @@ export class HospitalizationsService {
     return history;
   }
 
+  async createCareTask(id: string, dto: CreateNursingCareTaskDto, actorId?: string) {
+    const hospitalization = await this.findOne(id);
+    if (!actorId || hospitalization.physicianId !== actorId) {
+      throw new ForbiddenException('Seul le médecin responsable peut planifier un soin.');
+    }
+    const dueAt = new Date(dto.dueAt);
+    if (Number.isNaN(dueAt.getTime()) || dueAt <= new Date()) throw new BadRequestException('L’échéance du soin doit être future.');
+    if (dto.assignedNurseId) {
+      const assignment = hospitalization.nurseAssignments?.find((item: any) => item.nurseId === dto.assignedNurseId && !item.releasedAt);
+      if (!assignment) throw new BadRequestException('L’infirmier choisi n’est pas affecté à cette hospitalisation.');
+    }
+    if (dto.prescriptionLineId) {
+      const line = await this.prisma.prescriptionLine.findFirst({ where: { id: dto.prescriptionLineId, prescription: { patientId: hospitalization.patientId } } });
+      if (!line) throw new BadRequestException('La ligne de prescription ne correspond pas au patient hospitalisé.');
+    }
+    return this.prisma.nursingCareTask.create({
+      data: { hospitalizationId: id, assignedNurseId: dto.assignedNurseId || null, prescriptionLineId: dto.prescriptionLineId || null, title: dto.title.trim(), instructions: dto.instructions || null, dueAt },
+    });
+  }
+
+  async recordMedicationAdministration(id: string, dto: RecordMedicationAdministrationDto, userId?: string) {
+    const hospitalization = await this.findOne(id);
+    const access = await this.buildNurseAccess(hospitalization, userId);
+    if (!access.canWrite || !userId) throw new ForbiddenException('Administration non autorisée pour cette hospitalisation.');
+    const line = await this.prisma.prescriptionLine.findFirst({ where: { id: dto.prescriptionLineId, prescription: { patientId: hospitalization.patientId, status: { in: ['PRESCRIBED', 'PARTIALLY_DISPENSED'] } } } });
+    if (!line) throw new BadRequestException('Prescription active introuvable pour ce patient.');
+    if (dto.status !== 'ADMINISTERED' && !dto.reason?.trim()) throw new BadRequestException('Un motif est obligatoire pour une dose refusée, suspendue ou manquée.');
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const administration = await tx.medicationAdministration.create({
+        data: { hospitalizationId: id, prescriptionLineId: line.id, administeredById: userId, scheduledAt: now, administeredAt: dto.status === 'ADMINISTERED' ? now : null, status: dto.status, doseGiven: dto.doseGiven || null, reason: dto.reason || null, observation: dto.observation || null },
+      });
+      await tx.medicalHistory.create({
+        data: { patientId: hospitalization.patientId, kind: 'MEDICATION_ADMINISTRATION', details: JSON.stringify({ administrationId: administration.id, hospitalizationId: id, prescriptionLineId: line.id, status: dto.status, reason: dto.reason || null }), createdById: userId },
+      });
+      return administration;
+    });
+  }
+
   async search(query: string) {
     const normalized = query?.trim();
     if (!normalized) {
@@ -440,9 +490,11 @@ export class HospitalizationsService {
     }));
   }
 
-  async update(id: string, updateHospitalizationDto: UpdateHospitalizationDto) {
-    await this.findOne(id);
-    const updated = await this.prisma.hospitalization.update({ where: { id }, data: updateHospitalizationDto as any });
+  async update(id: string, updateHospitalizationDto: UpdateHospitalizationDto, actorId?: string) {
+    const current = await this.findOne(id);
+    if (!actorId || current.physicianId !== actorId) throw new ForbiddenException('Seul le médecin responsable peut modifier cette hospitalisation.');
+    const { patientId: _patientId, physicianId: _physicianId, ...safeUpdate } = updateHospitalizationDto;
+    const updated = await this.prisma.hospitalization.update({ where: { id }, data: { ...safeUpdate, version: { increment: 1 } } as any });
     try {
       await this.notifications.createAndEmit({
         title: `Hospitalisation mise à jour: ${updated.id}`,

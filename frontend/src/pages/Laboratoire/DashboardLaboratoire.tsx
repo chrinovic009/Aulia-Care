@@ -2,6 +2,7 @@ import { Component, ErrorInfo, ReactNode, useEffect, useMemo, useState } from "r
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { apiFetch } from "../../config/api";
+import { useRealtime } from "../../context/RealtimeContext";
 
 type LabRequest = {
   id: string;
@@ -54,6 +55,7 @@ class DashboardErrorBoundary extends Component<{ children: ReactNode }, { hasErr
 }
 
 export default function DashboardLaboratoire() {
+  const { socket } = useRealtime();
   const [requests, setRequests] = useState<LabRequest[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<LabRequest | null>(null);
   const [query, setQuery] = useState("");
@@ -153,14 +155,21 @@ export default function DashboardLaboratoire() {
     window.addEventListener("d7:clinicalDataUpdated", handler);
     window.addEventListener("d7:lab.request.created", handler);
     window.addEventListener("d7:lab.result.created", handler);
+    const refreshFromSocket = () => refreshDashboard();
+    socket?.on("lab.result.created", refreshFromSocket);
+    socket?.on("lab.item.assigned", refreshFromSocket);
+    socket?.on("lab.critical-alert.acknowledged", refreshFromSocket);
     return () => {
       window.removeEventListener("d7:consultation.created", handler);
       window.removeEventListener("d7:patient.updated", handler);
       window.removeEventListener("d7:clinicalDataUpdated", handler);
       window.removeEventListener("d7:lab.request.created", handler);
       window.removeEventListener("d7:lab.result.created", handler);
+      socket?.off("lab.result.created", refreshFromSocket);
+      socket?.off("lab.item.assigned", refreshFromSocket);
+      socket?.off("lab.critical-alert.acknowledged", refreshFromSocket);
     };
-  }, []);
+  }, [socket]);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();

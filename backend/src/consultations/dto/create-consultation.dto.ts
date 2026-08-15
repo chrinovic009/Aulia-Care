@@ -1,20 +1,20 @@
-import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ConsultationStatus, EncounterType } from '@prisma/client';
 
 export class CreateConsultationDto {
-  @IsString()
-  @IsNotEmpty()
+  @IsUUID()
   patientId: string;
 
-  @IsString()
-  @IsOptional()
-  appointmentId?: string;
+  @IsUUID()
+  @IsNotEmpty()
+  appointmentId: string;
 
-  @IsString()
+  @IsUUID()
   @IsOptional()
   hospitalizationId?: string;
 
-  @IsString()
+  // The service ignores this field and uses the authenticated physician.
+  @IsUUID()
   @IsOptional()
   providerId?: string;
 

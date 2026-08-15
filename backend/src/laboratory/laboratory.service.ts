@@ -976,14 +976,19 @@ export class LaboratoryService {
       throw new NotFoundException('Analyse introuvable');
     }
 
-    const updated = await this.prisma.labRequestItem.update({
-      where: { id: itemId },
+    // Conditional update is the concurrency boundary: only one manager can claim an unassigned analysis.
+    const claimed = await this.prisma.labRequestItem.updateMany({
+      where: { id: itemId, assignedToId: null, status: { notIn: ['CANCELLED', 'AVAILABLE', 'SENT'] as any } },
       data: {
         assignedToId: dto.technicianId,
         status: item.status === 'REQUESTED' ? 'RECEIVED' : item.status,
         updatedAt: new Date(),
       },
     });
+    if (claimed.count !== 1) {
+      throw new BadRequestException('Cette analyse vient déjà d’être attribuée ou n’est plus disponible. Actualisez la liste.');
+    }
+    const updated = await this.prisma.labRequestItem.findUniqueOrThrow({ where: { id: itemId } });
 
     await this.prisma.labRequestEvent.create({
       data: {
@@ -1094,6 +1099,9 @@ export class LaboratoryService {
       referenceRange: dto.referenceRange?.trim() || undefined,
       minValue: dto.minValue === undefined || dto.minValue === '' ? undefined : Number(dto.minValue),
       maxValue: dto.maxValue === undefined || dto.maxValue === '' ? undefined : Number(dto.maxValue),
+      criticalLow: dto.criticalLow === undefined || dto.criticalLow === '' ? undefined : Number(dto.criticalLow),
+      criticalHigh: dto.criticalHigh === undefined || dto.criticalHigh === '' ? undefined : Number(dto.criticalHigh),
+      method: dto.method?.trim() || undefined,
       order: dto.order === undefined ? undefined : Number(dto.order) || 0,
       active: dto.active,
     } });
@@ -1137,51 +1145,47 @@ export class LaboratoryService {
     });
   }
 
-  private async removeTestFromCatalogue(tx: any, id: string) {
-    const usages = await tx.labRequestItem.count({ where: { labTestId: id, deletedAt: null } });
-    if (usages > 0) throw new BadRequestException('Cet examen possède des demandes cliniques. Il peut être désactivé, mais pas supprimé afin de préserver le dossier médical.');
-    await tx.labTestSampleRequirement.deleteMany({ where: { labTestId: id } });
-    await tx.labTestConsumableRequirement.deleteMany({ where: { labTestId: id } });
-    await tx.labTestParameter.deleteMany({ where: { labTestId: id } });
-    await tx.labTest.delete({ where: { id } });
+  private async archiveTestFromCatalogue(tx: any, id: string) {
+    const archivedAt = new Date();
+    await tx.labTest.update({ where: { id }, data: { active: false } });
+    await tx.labTestSampleRequirement.updateMany({ where: { labTestId: id, archivedAt: null }, data: { archivedAt } });
+    await tx.labTestConsumableRequirement.updateMany({ where: { labTestId: id, archivedAt: null }, data: { archivedAt } });
+    await tx.labTestParameter.updateMany({ where: { labTestId: id, archivedAt: null }, data: { active: false, archivedAt } });
   }
 
   async deleteCatalogue(kind: 'sections' | 'categories' | 'tests' | 'sample-types' | 'consumables' | 'test-parameters' | 'sample-requirements' | 'consumable-requirements' | 'stock', id: string) {
     return this.prisma.$transaction(async (tx) => {
-      if (kind === 'tests') { await this.removeTestFromCatalogue(tx, id); return { deleted: true, kind, id }; }
-      if (kind === 'test-parameters') { await tx.labTestParameter.delete({ where: { id } }); return { deleted: true, kind, id }; }
-      if (kind === 'sample-requirements') { await tx.labTestSampleRequirement.delete({ where: { id } }); return { deleted: true, kind, id }; }
-      if (kind === 'consumable-requirements') { await tx.labTestConsumableRequirement.delete({ where: { id } }); return { deleted: true, kind, id }; }
-      if (kind === 'stock') { await tx.labConsumableStock.delete({ where: { id } }); return { deleted: true, kind, id }; }
+      const archivedAt = new Date();
+      if (kind === 'tests') { await this.archiveTestFromCatalogue(tx, id); return { archived: true, kind, id }; }
+      if (kind === 'test-parameters') { await tx.labTestParameter.update({ where: { id }, data: { active: false, archivedAt } }); return { archived: true, kind, id }; }
+      if (kind === 'sample-requirements') { await tx.labTestSampleRequirement.update({ where: { id }, data: { archivedAt } }); return { archived: true, kind, id }; }
+      if (kind === 'consumable-requirements') { await tx.labTestConsumableRequirement.update({ where: { id }, data: { archivedAt } }); return { archived: true, kind, id }; }
+      if (kind === 'stock') { await tx.labConsumableStock.update({ where: { id }, data: { archivedAt } }); return { archived: true, kind, id }; }
       if (kind === 'categories') {
         const tests = await tx.labTest.findMany({ where: { categoryId: id }, select: { id: true } });
-        for (const test of tests) await this.removeTestFromCatalogue(tx, test.id);
-        await tx.labCategory.delete({ where: { id } });
-        return { deleted: true, kind, id };
+        for (const test of tests) await this.archiveTestFromCatalogue(tx, test.id);
+        await tx.labCategory.update({ where: { id }, data: { active: false } });
+        return { archived: true, kind, id };
       }
       if (kind === 'sections') {
         const categories = await tx.labCategory.findMany({ where: { sectionId: id }, select: { id: true } });
         for (const category of categories) {
           const tests = await tx.labTest.findMany({ where: { categoryId: category.id }, select: { id: true } });
-          for (const test of tests) await this.removeTestFromCatalogue(tx, test.id);
-          await tx.labCategory.delete({ where: { id: category.id } });
+          for (const test of tests) await this.archiveTestFromCatalogue(tx, test.id);
+          await tx.labCategory.update({ where: { id: category.id }, data: { active: false } });
         }
-        await tx.labSection.delete({ where: { id } });
-        return { deleted: true, kind, id };
+        await tx.labSection.update({ where: { id }, data: { active: false } });
+        return { archived: true, kind, id };
       }
       if (kind === 'sample-types') {
-        const samples = await tx.labSample.count({ where: { labSampleTypeId: id, deletedAt: null } });
-        if (samples > 0) throw new BadRequestException('Cet échantillon est déjà utilisé dans un dossier clinique. Désactivez-le plutôt que de le supprimer.');
-        await tx.labTestSampleRequirement.deleteMany({ where: { labSampleTypeId: id } });
-        await tx.labSampleType.delete({ where: { id } });
-        return { deleted: true, kind, id };
+        await tx.labTestSampleRequirement.updateMany({ where: { labSampleTypeId: id, archivedAt: null }, data: { archivedAt } });
+        await tx.labSampleType.update({ where: { id }, data: { active: false } });
+        return { archived: true, kind, id };
       }
-      const transactions = await tx.labConsumableTransaction.count({ where: { labConsumableId: id } });
-      if (transactions > 0) throw new BadRequestException('Ce consommable a des mouvements de stock historiques. Désactivez-le plutôt que de le supprimer.');
-      await tx.labTestConsumableRequirement.deleteMany({ where: { labConsumableId: id } });
-      await tx.labConsumableStock.deleteMany({ where: { labConsumableId: id } });
-      await tx.labConsumable.delete({ where: { id } });
-      return { deleted: true, kind, id };
+      await tx.labTestConsumableRequirement.updateMany({ where: { labConsumableId: id, archivedAt: null }, data: { archivedAt } });
+      await tx.labConsumableStock.updateMany({ where: { labConsumableId: id, archivedAt: null }, data: { archivedAt } });
+      await tx.labConsumable.update({ where: { id }, data: { active: false } });
+      return { archived: true, kind, id };
     });
   }
 
@@ -1327,8 +1331,11 @@ export class LaboratoryService {
     unit?: string;
     resultType?: string;
     referenceRange?: string;
-    minValue?: string;
-    maxValue?: string;
+      minValue?: string;
+      maxValue?: string;
+      criticalLow?: string;
+      criticalHigh?: string;
+      method?: string;
     order?: string;
     active?: boolean;
   }) {
@@ -1342,6 +1349,9 @@ export class LaboratoryService {
         referenceRange: dto.referenceRange?.trim() || undefined,
         minValue: dto.minValue || undefined,
         maxValue: dto.maxValue || undefined,
+        criticalLow: dto.criticalLow || undefined,
+        criticalHigh: dto.criticalHigh || undefined,
+        method: dto.method?.trim() || undefined,
         order: dto.order ? Number(dto.order) || 0 : 0,
         active: dto.active ?? true,
       },
@@ -1409,6 +1419,7 @@ export class LaboratoryService {
           where: {
             labTestId: test.id,
             labConsumableId: dto.labConsumableId,
+            archivedAt: null,
           },
           select: { id: true },
         });
@@ -1698,6 +1709,10 @@ export class LaboratoryService {
       return;
     }
 
+    const reference = `lab-result:${resultId}`;
+    const alreadyConsumed = await tx.labConsumableTransaction.count({ where: { reference, type: 'OUT' } });
+    if (alreadyConsumed > 0) return;
+
     const requirements = await tx.labTestConsumableRequirement.findMany({
       where: { labTestId: item.labTestId },
       include: { labConsumable: true },
@@ -1711,7 +1726,7 @@ export class LaboratoryService {
       }
 
       const stockEntries = await tx.labConsumableStock.findMany({
-        where: { labConsumableId: requirement.labConsumableId },
+        where: { labConsumableId: requirement.labConsumableId, archivedAt: null },
         orderBy: [{ lastUpdatedAt: 'asc' }, { id: 'asc' }],
       });
 
@@ -1742,7 +1757,7 @@ export class LaboratoryService {
             type: 'OUT',
             quantity: consumedQuantity,
             unit: requirement.unit || requirement.labConsumable?.unit || 'unité',
-            reference: `lab-result:${resultId}`,
+            reference,
             note: `Consommation liée à la validation du résultat de laboratoire`,
             performedById: performedById || null,
           },
@@ -1754,6 +1769,77 @@ export class LaboratoryService {
       if (remainingToConsume > 0) {
         throw new BadRequestException(`Stock insuffisant pour ${requirement.labConsumable?.name || 'un consommable laboratoire'}.`);
       }
+    }
+  }
+
+  async getCriticalAlerts(currentUser?: any) {
+    const userId = currentUser?.userId || currentUser?.id;
+    const role = String(currentUser?.primaryRole || '').toUpperCase();
+    const where: any = { status: 'PENDING' };
+    if (role === 'PHYSICIAN') {
+      where.labResult = { labRequest: { OR: [{ requestedById: userId }, { consultation: { providerId: userId } }] } };
+    }
+    return this.prisma.labCriticalAlert.findMany({
+      where,
+      include: { patient: { select: { id: true, firstName: true, lastName: true } }, labResultParameter: true, labResult: { select: { resultName: true, labRequestId: true } } },
+      orderBy: { detectedAt: 'desc' },
+    });
+  }
+
+  async acknowledgeCriticalAlert(id: string, currentUser: any, note?: string) {
+    const userId = currentUser?.userId || currentUser?.id;
+    if (!userId) throw new BadRequestException('Utilisateur non identifié.');
+    const alert = await this.prisma.labCriticalAlert.findUnique({
+      where: { id },
+      include: { labResult: { include: { labRequest: { include: { consultation: true } } } } },
+    });
+    if (!alert) throw new NotFoundException('Alerte critique introuvable.');
+    const role = String(currentUser?.primaryRole || '').toUpperCase();
+    const isClinicalOwner = alert.labResult.labRequest.requestedById === userId || alert.labResult.labRequest.consultation?.providerId === userId;
+    if (role === 'PHYSICIAN' && !isClinicalOwner) throw new BadRequestException('Vous ne pouvez accuser réception que des alertes de vos patients.');
+    const updated = await this.prisma.labCriticalAlert.update({
+      where: { id },
+      data: { status: 'ACKNOWLEDGED', acknowledgedAt: new Date(), acknowledgedById: userId, acknowledgementNote: note?.trim() || null },
+    });
+    this.notificationsGateway.notify('lab.critical-alert.acknowledged', { alertId: id, acknowledgedById: userId, acknowledgedAt: updated.acknowledgedAt });
+    return updated;
+  }
+
+  /** Reverses exactly the recorded OUT movements; never deletes a stock movement. */
+  private async reverseConsumablesForResult(tx: any, resultId: string, performedById?: string, reason?: string) {
+    const reference = `lab-result:${resultId}`;
+    const alreadyReversed = await tx.labConsumableTransaction.count({
+      where: { reference: `reversal:${reference}`, type: 'IN' },
+    });
+    if (alreadyReversed > 0) return;
+
+    const movements = await tx.labConsumableTransaction.findMany({
+      where: { reference, type: 'OUT' },
+      orderBy: { createdAt: 'asc' },
+    });
+    for (const movement of movements) {
+      const stock = await tx.labConsumableStock.findFirst({
+        where: { labConsumableId: movement.labConsumableId, archivedAt: null },
+        orderBy: [{ lastUpdatedAt: 'asc' }, { id: 'asc' }],
+      });
+      if (!stock) {
+        throw new BadRequestException('Impossible d’annuler la consommation : aucun emplacement de stock actif ne peut recevoir le réactif.');
+      }
+      await tx.labConsumableStock.update({
+        where: { id: stock.id },
+        data: { quantity: Number(stock.quantity) + Number(movement.quantity), lastUpdatedAt: new Date(), updatedById: performedById || null },
+      });
+      await tx.labConsumableTransaction.create({
+        data: {
+          labConsumableId: movement.labConsumableId,
+          type: 'IN',
+          quantity: movement.quantity,
+          unit: movement.unit,
+          reference: `reversal:${reference}`,
+          note: `Annulation traçable de consommation — ${reason || 'résultat rejeté ou corrigé'}`,
+          performedById: performedById || null,
+        },
+      });
     }
   }
 
@@ -1832,6 +1918,8 @@ export class LaboratoryService {
             },
           });
         }
+      } else if (decision === 'REJECT' || decision === 'CORRECTION') {
+        await this.reverseConsumablesForResult(tx, updatedResult.id, currentUserId, dto.reason || dto.instructions);
       }
 
       return updatedResult;
@@ -1925,17 +2013,61 @@ export class LaboratoryService {
       });
 
       const parameters = Array.isArray(dto.parameters) ? dto.parameters : [];
+      const criticalNotifications: any[] = [];
       for (const parameter of parameters) {
-        if (!parameter.labTestParameterId && !parameter.valueNumeric && !parameter.valueText) continue;
-        await tx.labResultParameter.create({
+        if (!parameter.labTestParameterId && parameter.valueNumeric === undefined && !parameter.valueText) continue;
+        const template = parameter.labTestParameterId
+          ? await tx.labTestParameter.findUnique({ where: { id: parameter.labTestParameterId } })
+          : null;
+        const recordedParameter = await tx.labResultParameter.create({
           data: {
             labResultId: created.id,
             labTestParameterId: parameter.labTestParameterId || undefined,
-            valueNumeric: parameter.valueNumeric || undefined,
-            valueText: parameter.valueText || undefined,
+            parameterCode: template?.code || parameter.parameterCode || undefined,
+            parameterName: template?.name || parameter.parameterName || undefined,
+            valueNumeric: parameter.valueNumeric === undefined || parameter.valueNumeric === '' ? undefined : parameter.valueNumeric,
+            valueText: parameter.valueText?.trim() || undefined,
+            unit: template?.unit || parameter.unit || undefined,
+            referenceRange: template?.referenceRange || parameter.referenceRange || undefined,
+            method: template?.method || parameter.method || undefined,
             interpretation: parameter.interpretation || undefined,
+            reportedById: reportedById || undefined,
+            reportedAt: new Date(),
           },
         });
+
+        const numericValue = recordedParameter.valueNumeric === null ? undefined : Number(recordedParameter.valueNumeric);
+        const isCritical = Number.isFinite(numericValue)
+          && ((template?.criticalLow !== null && template?.criticalLow !== undefined && numericValue <= Number(template.criticalLow))
+            || (template?.criticalHigh !== null && template?.criticalHigh !== undefined && numericValue >= Number(template.criticalHigh)));
+        if (isCritical) {
+          const direction = template?.criticalLow !== null && template?.criticalLow !== undefined && numericValue <= Number(template.criticalLow) ? 'bas' : 'élevé';
+          const alert = await tx.labCriticalAlert.create({
+            data: {
+              patientId: request.patientId,
+              labResultId: created.id,
+              labResultParameterId: recordedParameter.id,
+              severity: 'CRITICAL',
+              message: `Valeur critique ${direction} : ${recordedParameter.parameterName || 'paramètre'} = ${numericValue} ${recordedParameter.unit || ''}`.trim(),
+            },
+          });
+          const alertRecipients = Array.from(new Set([
+            recipientId,
+            ...(await tx.user.findMany({ where: { primaryRole: 'LAB_MANAGER', status: 'ACTIVE' }, select: { id: true } })).map((user) => user.id),
+          ].filter(Boolean)));
+          for (const userId of alertRecipients) {
+            criticalNotifications.push(await tx.notification.create({
+              data: {
+                recipientId: userId,
+                patientId: request.patientId,
+                type: 'ALERT', status: 'UNREAD', priority: 'CRITICAL',
+                title: 'Valeur biologique critique',
+                message: alert.message,
+                relatedEntity: 'LabCriticalAlert', relatedId: alert.id, sendAt: new Date(),
+              },
+            }));
+          }
+        }
       }
 
       await tx.labRequest.update({
@@ -2027,13 +2159,16 @@ export class LaboratoryService {
         ),
       );
 
-      return { created, notification, managerNotifications };
+      return { created, notification, managerNotifications, criticalNotifications };
     });
 
     if (result.notification && recipientId) {
       this.notificationsGateway.notifyToUser(recipientId, 'notification.created', result.notification);
     }
     result.managerNotifications.forEach((notification) => {
+      this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification);
+    });
+    result.criticalNotifications.forEach((notification) => {
       this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification);
     });
     this.notificationsGateway.notify('lab.result.created', {

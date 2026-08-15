@@ -2,6 +2,9 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseG
 import { HospitalizationsService } from './hospitalizations.service';
 import { CreateHospitalizationDto } from './dto/create-hospitalization.dto';
 import { UpdateHospitalizationDto } from './dto/update-hospitalization.dto';
+import { CreateNursingCareTaskDto } from './dto/create-nursing-care-task.dto';
+import { RecordMedicationAdministrationDto } from './dto/record-medication-administration.dto';
+import { RecordNurseRoundDto } from './dto/record-nurse-round.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -49,12 +52,24 @@ export class HospitalizationsController {
 
   @Post(':id/nurse-rounds')
   @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE')
-  recordNurseRound(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+  recordNurseRound(@Param('id') id: string, @Body() body: RecordNurseRoundDto, @Request() req: any) {
     return this.hospitalizationsService.recordNurseRound(id, req.user?.userId, body);
   }
 
+  @Post(':id/care-tasks')
+  @Roles('PHYSICIAN')
+  createCareTask(@Param('id') id: string, @Body() body: CreateNursingCareTaskDto, @Request() req: any) {
+    return this.hospitalizationsService.createCareTask(id, body, req.user?.userId);
+  }
+
+  @Post(':id/medication-administrations')
+  @Roles('NURSE')
+  recordMedicationAdministration(@Param('id') id: string, @Body() body: RecordMedicationAdministrationDto, @Request() req: any) {
+    return this.hospitalizationsService.recordMedicationAdministration(id, body, req.user?.userId);
+  }
+
   @Get(':id/timeline')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN', 'CASHIER')
   timeline(@Param('id') id: string) {
     return this.hospitalizationsService.getTimeline(id);
   }
@@ -72,15 +87,15 @@ export class HospitalizationsController {
   }
 
   @Post()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')
-  create(@Body() dto: CreateHospitalizationDto) {
-    return this.hospitalizationsService.create(dto);
+  @Roles('PHYSICIAN')
+  create(@Body() dto: CreateHospitalizationDto, @Request() req: any) {
+    return this.hospitalizationsService.create(dto, req.user?.userId);
   }
 
   @Patch(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')
-  update(@Param('id') id: string, @Body() dto: UpdateHospitalizationDto) {
-    return this.hospitalizationsService.update(id, dto);
+  @Roles('PHYSICIAN')
+  update(@Param('id') id: string, @Body() dto: UpdateHospitalizationDto, @Request() req: any) {
+    return this.hospitalizationsService.update(id, dto, req.user?.userId);
   }
 
   @Delete(':id')

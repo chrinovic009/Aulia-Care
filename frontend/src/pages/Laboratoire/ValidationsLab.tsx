@@ -5,6 +5,7 @@ import PageMeta from "../../components/common/PageMeta";
 import { AdminPageShell, DataTable, Panel, StatCard, formatDate } from "../Administration/adminUi";
 import { apiFetch } from "../../config/api";
 import { useAuth } from "../../context/AuthContext";
+import { useRealtime } from "../../context/RealtimeContext";
 
 type ValidationItem = {
   id: string;
@@ -66,6 +67,7 @@ const isManagerRole = (role?: string | null) => role === "LAB_MANAGER" || role =
 
 export default function ValidationsLab() {
   const { currentUser } = useAuth();
+  const { socket } = useRealtime();
   const [items, setItems] = useState<ValidationItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<ValidationItem | null>(null);
   const [selectedValidationId, setSelectedValidationId] = useState<string>("");
@@ -101,7 +103,14 @@ export default function ValidationsLab() {
 
   useEffect(() => {
     loadItems();
-  }, []);
+    const refresh = () => loadItems();
+    socket?.on("lab.result.created", refresh);
+    socket?.on("lab.critical-alert.acknowledged", refresh);
+    return () => {
+      socket?.off("lab.result.created", refresh);
+      socket?.off("lab.critical-alert.acknowledged", refresh);
+    };
+  }, [socket]);
 
   const pendingItems = useMemo(() => items.filter(
     (item) => item.resultStatus === "PENDING" || item.resultStatus === "TECHNICAL_VALIDATED" || item.status === "TECHNICAL_VALIDATION"
