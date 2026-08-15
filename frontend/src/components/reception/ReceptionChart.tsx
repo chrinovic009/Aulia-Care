@@ -28,7 +28,7 @@ export default function StatisticsChart() {
   ]);
   const [todayAdmissions, setTodayAdmissions] = useState(0);
   const [averageWait, setAverageWait] = useState("—");
-  const [capacity, setCapacity] = useState("0%");
+  const [capacity, setCapacity] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const hasChartData = series.some((serie) => serie.data.some((value) => value > 0));
@@ -198,11 +198,8 @@ export default function StatisticsChart() {
           waitMinutes.length > 0 ? `${Math.round(waitMinutes.reduce((sum, value) => sum + value, 0) / waitMinutes.length)} min` : "—",
         );
 
-        const openingMinutes = 8 * 60;
-        const averageProcessingMinutes = 5;
-        const openDesks = 2;
-        const theoreticalCapacity = Math.floor((openingMinutes / averageProcessingMinutes) * openDesks);
-        setCapacity(`${theoreticalCapacity} patients`);
+        // No theoretical capacity: this requires actual rooms/desks and staffing from the backend.
+        setCapacity(null);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setError(`Impossible de charger les statistiques depuis la base de données. ${message}`);
@@ -413,7 +410,7 @@ export default function StatisticsChart() {
           </p>
 
           <h4 className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-            {capacity}
+            {capacity || "Non disponible"}
           </h4>
         </div>
       </div>

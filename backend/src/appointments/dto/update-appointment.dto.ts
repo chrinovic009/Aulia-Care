@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { AppointmentStatus } from '@prisma/client';
 
 export class UpdateAppointmentDto {
@@ -26,10 +26,17 @@ export class UpdateAppointmentDto {
   @IsOptional()
   reason?: string;
 
+  @IsString()
+  @IsOptional()
+  statusReason?: string;
+
   @IsEnum(AppointmentStatus)
   @IsOptional()
   status?: AppointmentStatus;
 
+  @IsInt()
+  @Min(5)
+  @Max(480)
   @IsOptional()
   durationMinutes?: number;
 }

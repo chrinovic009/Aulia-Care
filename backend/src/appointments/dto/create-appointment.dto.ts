@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
 import { AppointmentStatus } from '@prisma/client';
 
 export class CreateAppointmentDto {
@@ -30,6 +30,8 @@ export class CreateAppointmentDto {
   @IsOptional()
   status?: AppointmentStatus;
 
-  @IsNotEmpty()
+  @IsInt()
+  @Min(5)
+  @Max(480)
   durationMinutes: number;
 }

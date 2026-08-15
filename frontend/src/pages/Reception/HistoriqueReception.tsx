@@ -2,14 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
-import { fetchPatientsFromDatabase } from "../../api/reception";
+import { fetchReceptionVisits, type ReceptionVisitRecord } from "../../api/reception";
 import { formatPatientDossierId } from "../../utils/formatId";
 
 type AdmissionRecord = {
   id: string;
+  patientId: string;
   patient: string;
   service: string;
   doctor: string;
+  receptionist: string;
   entryDate: string;
   entryHour: number;
   reason: string;
@@ -21,35 +23,33 @@ type AdmissionRecord = {
 const formatDate = (value?: string | null) =>
   value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(new Date(value)) : "-";
 
-const patientName = (patient: any) =>
+const patientName = (patient: ReceptionVisitRecord["patient"]) =>
   [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(" ") || patient.name || "Patient";
 
-const serviceName = (patient: any) =>
-  patient.service?.name || patient.serviceName || patient.service || "Non affecte";
+const serviceName = (visit: ReceptionVisitRecord) => visit.service?.name || "Non affecté";
 
-const doctorName = (patient: any) =>
-  patient.doctor ||
-  patient.physician?.displayName ||
-  patient.consultations?.[0]?.provider?.displayName ||
-  [patient.consultations?.[0]?.provider?.firstName, patient.consultations?.[0]?.provider?.lastName].filter(Boolean).join(" ") ||
-  "-";
+const receptionistName = (visit: ReceptionVisitRecord) =>
+  visit.receptionist?.displayName ||
+  [visit.receptionist?.firstName, visit.receptionist?.lastName].filter(Boolean).join(" ") ||
+  "Non renseigné";
 
-const reasonText = (patient: any) =>
-  patient.reason || patient.visitReason || patient.motif || patient.admissionType || patient.priority || "Reception";
+const reasonText = (visit: ReceptionVisitRecord) => visit.reason || visit.visitType;
 
-const toAdmissionRecord = (patient: any): AdmissionRecord => {
-  const createdAt = patient.arrivalAt || patient.createdAt;
-  const createdDate = createdAt ? new Date(createdAt) : new Date();
+const toAdmissionRecord = (visit: ReceptionVisitRecord): AdmissionRecord => {
+  const createdAt = visit.arrivedAt;
+  const createdDate = new Date(createdAt);
   return {
-    id: formatPatientDossierId(patient.id, patient.externalId, { truncateTo: 8 }),
-    patient: patientName(patient),
-    service: serviceName(patient),
-    doctor: doctorName(patient),
+    id: formatPatientDossierId(visit.patient.id, visit.patient.externalId, { truncateTo: 8 }),
+    patientId: visit.patient.id,
+    patient: patientName(visit.patient),
+    service: serviceName(visit),
+    doctor: visit.appointment ? "À affecter / consulter le rendez-vous" : "-",
+    receptionist: receptionistName(visit),
     entryDate: formatDate(createdAt),
     entryHour: createdDate.getHours(),
-    reason: reasonText(patient),
-    status: patient.workflowStatus || patient.status || "ENREGISTRE",
-    insurance: patient.insuranceProvider || patient.insurance || "-",
+    reason: reasonText(visit),
+    status: visit.status,
+    insurance: visit.patient.insuranceProvider || "-",
     createdAt,
   };
 };
@@ -65,14 +65,11 @@ export default function HistoriqueReception() {
     setIsLoading(true);
     setError(null);
     try {
-      const patients = await fetchPatientsFromDatabase();
-      const sorted = (patients || [])
+      const visits = await fetchReceptionVisits();
+      const sorted = (visits || [])
         .slice()
-        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      const mapped = sorted.map((patient, idx) => ({
-        ...toAdmissionRecord(patient),
-        id: formatPatientDossierId(patient.id, patient.externalId, { truncateTo: 8, position: idx + 1 }),
-      }));
+        .sort((a, b) => new Date(b.arrivedAt).getTime() - new Date(a.arrivedAt).getTime());
+      const mapped = sorted.map(toAdmissionRecord);
       setRecords(mapped);
       setSelectedRecord((current) => current || mapped[0] || null);
     } catch (err) {
@@ -120,10 +117,12 @@ export default function HistoriqueReception() {
   }, [records]);
 
   const frequentAdmissions = useMemo(() => {
-    const counts = new Map<string, number>();
-    records.forEach((record) => counts.set(record.patient, (counts.get(record.patient) || 0) + 1));
-    return Array.from(counts.entries())
-      .map(([patient, count]) => ({ patient, count }))
+    const counts = new Map<string, { patient: string; count: number }>();
+    records.forEach((record) => {
+      const existing = counts.get(record.patientId);
+      counts.set(record.patientId, { patient: record.patient, count: (existing?.count || 0) + 1 });
+    });
+    return Array.from(counts.values())
       .filter((item) => item.count > 1)
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
@@ -174,7 +173,7 @@ export default function HistoriqueReception() {
                   <th className="py-3 pr-4">Dossier</th>
                   <th className="py-3 pr-4">Patient</th>
                   <th className="py-3 pr-4">Service</th>
-                  <th className="py-3 pr-4">Medecin</th>
+                <th className="py-3 pr-4">Réceptionniste</th>
                   <th className="py-3 pr-4">Date</th>
                   <th className="py-3 pr-4">Statut</th>
                   <th className="py-3 pr-4">Assurance</th>
@@ -190,7 +189,7 @@ export default function HistoriqueReception() {
                     <td className="py-3 pr-4 font-medium text-slate-900 dark:text-white">{record.id}</td>
                     <td className="py-3 pr-4">{record.patient}</td>
                     <td className="py-3 pr-4">{record.service}</td>
-                    <td className="py-3 pr-4">{record.doctor}</td>
+                    <td className="py-3 pr-4">{record.receptionist}</td>
                     <td className="py-3 pr-4">{record.entryDate}</td>
                     <td className="py-3 pr-4"><StatusBadge status={record.status} /></td>
                     <td className="py-3 pr-4">{record.insurance}</td>
@@ -208,6 +207,7 @@ export default function HistoriqueReception() {
               <div className="mt-4 space-y-3">
                 <Info label="Patient" value={selectedRecord.patient} />
                 <Info label="Service" value={selectedRecord.service} />
+                <Info label="Réceptionniste" value={selectedRecord.receptionist} />
                 <Info label="Motif" value={selectedRecord.reason} />
                 <Info label="Heure d'arrivee" value={`${selectedRecord.entryHour}h`} />
                 <Info label="Statut" value={<StatusBadge status={selectedRecord.status} />} />

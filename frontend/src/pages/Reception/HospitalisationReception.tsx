@@ -14,6 +14,7 @@ import {
 } from "../../api/reception";
 
 import { formatPatientDossierId } from "../../utils/formatId";
+import { useRealtime } from "../../context/RealtimeContext";
 
 const statusStyles: Record<string, string> = {
   ADMITTED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
@@ -127,17 +128,18 @@ function HospitalizationDetails(props: {
 }
 
 export default function HospitalisationReception() {
+  const { socket } = useRealtime();
   const [hospitalizations, setHospitalizations] = useState<HospitalizationRecord[]>([]);
   const [selectedHospitalization, setSelectedHospitalization] = useState<HospitalizationRecord | null>(null);
   const [timeline, setTimeline] = useState<HospitalizationTimelineEvent[]>([]);
-  const [stats, setStats] = useState<HospitalizationStats>({ hospitalized: 0, availableRooms: 0, capacityRate: 0, admissionsToday: 0, emergencyAdmissions: 0, totalBeds: 0, occupiedBeds: 0 });
+  const [stats, setStats] = useState<HospitalizationStats | null>(null);
   const [rooms, setRooms] = useState<HospitalizationRoomInventoryItem[]>([]);
-  const [modal, setModal] = useState<null | 'new' | 'search' | 'discharge'>(null);
+  const [modal, setModal] = useState<null | 'search'>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [roomFilter, setRoomFilter] = useState<'all' | 'available' | 'occupied' | 'cleaning'>('all');
   const [viewFilter, setViewFilter] = useState<'all' | 'admissions' | 'discharges' | 'services'>('all');
-  const [_loading, setLoading] = useState(false);
-  const [_error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadPageData = async () => {
     setLoading(true);
@@ -164,6 +166,16 @@ export default function HospitalisationReception() {
     loadPageData();
   }, []);
 
+  useEffect(() => {
+    const refresh = () => { void loadPageData(); };
+    socket?.on('hospitalization.created', refresh);
+    socket?.on('db.changed', refresh);
+    return () => {
+      socket?.off('hospitalization.created', refresh);
+      socket?.off('db.changed', refresh);
+    };
+  }, [socket]);
+
   const handleSelectHospitalization = async (id: string) => {
     try {
       const [detail, timelineData] = await Promise.all([fetchHospitalizationById(id), fetchHospitalizationTimeline(id)]);
@@ -183,15 +195,24 @@ export default function HospitalisationReception() {
   }, [rooms, roomFilter]);
 
   const filteredHospitalizations = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
     return hospitalizations.filter((record) => {
+      const matchesSearch = !query || [
+        formatPatientName(record.patient),
+        record.patient?.phone,
+        getRoomLabel(record),
+        record.ServiceUnit?.name,
+      ].filter(Boolean).join(' ').toLocaleLowerCase().includes(query);
+      if (!matchesSearch) return false;
       if (viewFilter === 'admissions') return record.status === 'ADMITTED' || record.status === 'TRANSFERRED';
       if (viewFilter === 'discharges') return record.status === 'DISCHARGED';
       if (viewFilter === 'services') return Boolean(record.ServiceUnit?.name);
       return true;
     });
-  }, [hospitalizations, viewFilter]);
+  }, [hospitalizations, searchQuery, viewFilter]);
 
   const alerts = useMemo(() => {
+    if (!stats) return ['Données de capacité indisponibles'];
     const items: string[] = [];
     if (stats.availableRooms === 0) items.push('Aucune chambre disponible');
     if (stats.capacityRate >= 90) items.push('Capacité élevée');
@@ -218,47 +239,46 @@ export default function HospitalisationReception() {
             <div className="mb-2 text-lg">🛏️</div>
             Voir chambres disponibles
           </button>
-          <button onClick={() => setModal('discharge')} className="rounded-3xl border border-slate-200 bg-white px-4 py-4 text-left text-sm font-medium text-slate-900 shadow-sm transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-            <div className="mb-2 text-lg">📤</div>
-            Préparer sortie
-          </button>
         </div>
 
         <div className="grid gap-4 xl:grid-cols-4">
 
           <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-900">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Patients hospitalisés</p>
-            <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats.hospitalized}</p>
+            <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats?.hospitalized ?? '—'}</p>
             <span className="mt-3 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
-              +6 aujourd'hui
+              Données temps réel
             </span>
           </div>
 
           <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-900">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Chambres disponibles</p>
-            <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats.availableRooms}</p>
+            <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats?.availableRooms ?? '—'}</p>
             <span className="mt-3 inline-flex rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-800 dark:bg-sky-900 dark:text-sky-200">
-              Capacité {stats.capacityRate}%
+              Capacité {stats?.capacityRate ?? '—'}%
             </span>
           </div>
 
           <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-900">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Admissions aujourd'hui</p>
-            <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats.admissionsToday}</p>
+            <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats?.admissionsToday ?? '—'}</p>
             <span className="mt-3 inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-              Urgences : {stats.emergencyAdmissions}
+              Urgences : {stats?.emergencyAdmissions ?? '—'}
             </span>
           </div>
 
           <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-900">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Lits libres</p>
-            <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats.totalBeds - stats.occupiedBeds}</p>
+            <p className="mt-4 text-3xl font-semibold text-slate-900 dark:text-white">{stats ? stats.totalBeds - stats.occupiedBeds : '—'}</p>
             <span className="mt-3 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800 dark:bg-slate-800 dark:text-slate-100">
-              Sur {stats.totalBeds} lits
+              Sur {stats?.totalBeds ?? '—'} lits
             </span>
           </div>
           
         </div>
+
+        {loading ? <p className="text-sm text-slate-500">Actualisation des données hospitalières…</p> : null}
+        {error ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
 
         <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
           <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-slate-900">

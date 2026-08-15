@@ -15,21 +15,21 @@ export class HospitalizationsController {
   constructor(private readonly hospitalizationsService: HospitalizationsService) {}
 
   @Get('search')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
-  search(@Query('q') q: string) {
-    return this.hospitalizationsService.search(q || '');
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
+  search(@Query('q') q: string, @Request() req: any) {
+    return this.hospitalizationsService.search(q || '', req.user);
   }
 
   @Get('stats')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
-  stats() {
-    return this.hospitalizationsService.getStats();
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
+  stats(@Request() req: any) {
+    return this.hospitalizationsService.getStats(req.user);
   }
 
   @Get('rooms')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
-  rooms() {
-    return this.hospitalizationsService.getRoomInventory();
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
+  rooms(@Request() req: any) {
+    return this.hospitalizationsService.getRoomInventory(req.user);
   }
 
   @Get('nurse/followed')
@@ -69,21 +69,21 @@ export class HospitalizationsController {
   }
 
   @Get(':id/timeline')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN', 'CASHIER')
-  timeline(@Param('id') id: string) {
-    return this.hospitalizationsService.getTimeline(id);
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
+  timeline(@Param('id') id: string, @Request() req: any) {
+    return this.hospitalizationsService.getTimeline(id, req.user);
   }
 
   @Get()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
-  findAll() {
-    return this.hospitalizationsService.findAll();
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
+  findAll(@Request() req: any, @Query('limit') limit?: string) {
+    return this.hospitalizationsService.findAll(req.user, Number(limit) || 100);
   }
 
   @Get(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
-  findOne(@Param('id') id: string) {
-    return this.hospitalizationsService.findOne(id);
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.hospitalizationsService.findOneForActor(id, req.user);
   }
 
   @Post()

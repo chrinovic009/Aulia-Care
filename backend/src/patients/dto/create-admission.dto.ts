@@ -1,4 +1,4 @@
-import { IsDateString, IsEmail, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateAdmissionDto {
   @IsString()
@@ -73,14 +73,6 @@ export class CreateAdmissionDto {
   @IsOptional()
   priority?: string;
 
-  @IsString()
-  @IsOptional()
-  receptionistId?: string;
-
-  @IsString()
-  @IsOptional()
-  receptionist?: string;
-
   @IsDateString()
   @IsOptional()
   arrivalAt?: string;
@@ -104,7 +96,4 @@ export class CreateAdmissionDto {
   @IsOptional()
   voucherNotes?: string;
 
-  @IsNumber()
-  @IsOptional()
-  amountDue?: number;
 }

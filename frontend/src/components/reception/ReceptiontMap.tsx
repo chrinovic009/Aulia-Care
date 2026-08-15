@@ -12,29 +12,6 @@ interface CountryMapProps {
   }>;
 }
 
-const defaultMarkers = [
-  {
-    latLng: [-10.718, 25.468],
-    name: "Hôpital Kolwezi - Aéroport",
-    style: {
-      fill: "#ef4444",
-      r: 6,
-      stroke: "#ffffff",
-      strokeWidth: 2,
-    },
-  },
-  {
-    latLng: [-11.672, 27.483],
-    name: "Patient - Joli Site (Gouvernorat)",
-    style: {
-      fill: "#2563eb",
-      r: 6,
-      stroke: "#ffffff",
-      strokeWidth: 2,
-    },
-  },
-];
-
 const CountryMap: React.FC<CountryMapProps> = ({ mapColor, markers }) => {
   return (
     <VectorMap
@@ -47,7 +24,7 @@ const CountryMap: React.FC<CountryMapProps> = ({ mapColor, markers }) => {
         } as any,
       }}
       markersSelectable={true}
-      markers={markers ?? defaultMarkers}
+      markers={markers ?? []}
       zoomOnScroll={false}
       zoomMax={12}
       zoomMin={3}

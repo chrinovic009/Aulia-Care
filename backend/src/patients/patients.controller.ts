@@ -1,6 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { PatientsService } from './patients.service';
-import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -15,14 +14,14 @@ export class PatientsController {
 
   @Get()
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
-  findAll() {
-    return this.patientsService.findAll();
+  findAll(@Request() req: any) {
+    return this.patientsService.findAll(req.user);
   }
 
   @Get('search')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
-  search(@Query('email') email?: string, @Query('phone') phone?: string, @Query('name') name?: string) {
-    return this.patientsService.search({ email, phone, name });
+  search(@Query('email') email?: string, @Query('phone') phone?: string, @Query('name') name?: string, @Request() req?: any) {
+    return this.patientsService.search({ email, phone, name }, req?.user);
   }
 
   @Get('cashier/awaiting-payment')
@@ -55,6 +54,12 @@ export class PatientsController {
     return this.patientsService.getPatientsVisibleToDoctors(req.user?.userId);
   }
 
+  @Get('reception-visits')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
+  getReceptionVisits(@Query('limit') limit: string | undefined, @Request() req: any) {
+    return this.patientsService.getReceptionVisits(req.user?.userId, Number(limit) || 100);
+  }
+
   @Get('me/profile')
   @Roles('PATIENT')
   getMyPatientProfile(@Request() req: any) {
@@ -70,7 +75,7 @@ export class PatientsController {
   @Get(':id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
   findOne(@Param('id') id: string, @Request() req: any) {
-    if (req.user?.role === 'PHYSICIAN') {
+    if (req.user?.primaryRole === 'PHYSICIAN' || req.user?.role === 'PHYSICIAN') {
       return this.patientsService.findOneForDoctor(id, req.user.userId);
     }
     return this.patientsService.findOne(id);
@@ -82,16 +87,10 @@ export class PatientsController {
     return this.patientsService.createAdmission(createAdmissionDto, req.user?.userId);
   }
 
-  @Post()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
-  create(@Body() createPatientDto: CreatePatientDto) {
-    return this.patientsService.create(createPatientDto);
-  }
-
   @Patch(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
-  update(@Param('id') id: string, @Body() updatePatientDto: UpdatePatientDto) {
-    return this.patientsService.update(id, updatePatientDto);
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
+  update(@Param('id') id: string, @Body() updatePatientDto: UpdatePatientDto, @Request() req: any) {
+    return this.patientsService.update(id, updatePatientDto, req.user);
   }
 
   @Delete(':id')

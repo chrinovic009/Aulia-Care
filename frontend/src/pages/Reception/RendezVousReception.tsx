@@ -1,15 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
-
-const availabilityTimeline = [
-  { time: "08:00", state: "Occupé" },
-  { time: "09:00", state: "Disponible" },
-  { time: "10:00", state: "Disponible" },
-  { time: "11:00", state: "Consultation" },
-  { time: "12:00", state: "Disponible" },
-  { time: "13:00", state: "Occupé" },
-];
+import { useRealtime } from "../../context/RealtimeContext";
+import { getAuthHeaders } from "../../config/api";
 
 const statusColor: Record<string, string> = {
   "En attente": "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
@@ -25,19 +18,6 @@ const priorityColor: Record<string, string> = {
   Urgent: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
 };
 
-const scheduleColor: Record<string, string> = {
-  Occupé: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-  Disponible: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
-  Consultation: "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200",
-};
-
-const aiTips = [
-  "Synthèse clinique: charge actuelle élevée pour certains services; prioriser les cas urgents.",
-  "Temps d'attente moyen (Cardiologie) estimé: ~52 minutes — ajuster les créneaux si nécessaire.",
-  "Historique de non-présentation: vérifier les patients à risque d'absentéisme récurrent.",
-];
-
-// Note: emergency queue and history are computed from PostgreSQL-driven requests
 
 type ReceptionRequest = {
   id: string;
@@ -71,7 +51,7 @@ function toReceptionRequest(appointment: any): ReceptionRequest {
     ...appointment,
     patientName: [patient.lastName, patient.firstName].filter(Boolean).join(" ") || "Patient non renseigné",
     service: appointment.serviceUnit?.name || "Service à confirmer",
-    doctorRequested: appointment.requestedBy?.displayName || "À affecter",
+    doctorRequested: appointment.provider?.displayName || "À affecter",
     dateRequested: appointment.scheduledAt ? new Date(appointment.scheduledAt).toLocaleString("fr-CD") : "Non planifié",
     requestedOn: appointment.scheduledAt,
     status,
@@ -86,43 +66,29 @@ function toReceptionRequest(appointment: any): ReceptionRequest {
 }
 
 export default function RendezVousReception() {
+  const { socket } = useRealtime();
   const [requests, setRequests] = useState<ReceptionRequest[]>([]);
   const [filter, setFilter] = useState<'day' | 'week' | 'month'>('week');
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
-  const [reprogramDate, setReprogramDate] = useState("2026-05-20");
+  const [reprogramDate, setReprogramDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [reprogramTime, setReprogramTime] = useState("09:00");
   const [refusalReason, setRefusalReason] = useState("");
   const [loading, setLoading] = useState(true);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
-
-  const [patients, setPatients] = useState<any[]>([]);
-  const [physicians, setPhysicians] = useState<any[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
 
-        // Load appointments, patients and physicians from backend (PostgreSQL)
-        const [appsRes, patsRes, docsRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/appointments`, { credentials: "include" }),
-          fetch(`${API_BASE_URL}/patients`, { credentials: "include" }),
-          fetch(`${API_BASE_URL}/users?role=PHYSICIAN`, { credentials: "include" }),
-        ]);
-
+        const appsRes = await fetch(`${API_BASE_URL}/appointments`, { credentials: "include" });
         const apps = appsRes.ok ? await appsRes.json() : [];
-        const pats = patsRes.ok ? await patsRes.json() : [];
-        const docs = docsRes.ok ? await docsRes.json() : [];
-
         setRequests(Array.isArray(apps) ? apps.map(toReceptionRequest) : []);
-        setPatients(Array.isArray(pats) ? pats : []);
-        setPhysicians(Array.isArray(docs) ? docs : []);
       } catch (e) {
         console.error("Error loading reception data:", e);
         setRequests([]);
-        setPatients([]);
-        setPhysicians([]);
       } finally {
         setLoading(false);
       }
@@ -138,30 +104,47 @@ export default function RendezVousReception() {
     return () => window.clearInterval(timer);
   }, [API_BASE_URL]);
 
-  const stats = useMemo(() => {
-    // total = patients with PatientWorkflowStatus EN_ATTENTE_INFIRMERIE or EN_ATTENTE_MEDECIN
-    const total = patients.filter((p: any) => {
-      const s = (p.patientWorkflowStatus || p.workflowStatus || p.status || "").toString().toUpperCase();
-      return s === "EN_ATTENTE_INFIRMERIE" || s === "EN_ATTENTE_MEDECIN";
-    }).length;
+  useEffect(() => {
+    const refresh = async () => {
+      const response = await fetch(`${API_BASE_URL}/appointments`, { credentials: "include" });
+      if (response.ok) setRequests((await response.json()).map(toReceptionRequest));
+    };
+    socket?.on("appointment.created", refresh);
+    socket?.on("appointment.updated", refresh);
+    return () => {
+      socket?.off("appointment.created", refresh);
+      socket?.off("appointment.updated", refresh);
+    };
+  }, [API_BASE_URL, socket]);
 
-    const confirmed = requests.filter((item) => {
+  const stats = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const todayRequests = requests.filter((item) => {
+      const date = new Date(item.requestedOn);
+      return date >= today && date < tomorrow;
+    });
+    const total = todayRequests.length;
+
+    const confirmed = todayRequests.filter((item) => {
       const s = (item.appointmentStatus || item.status || "").toString().toUpperCase();
       return s === "CONFIRMED" || s === "CONFIRME" || s === "CONFIRMÉ" || s === "CONFIRMÉE";
     }).length;
 
-    const pending = requests.filter((item) => {
+    const pending = todayRequests.filter((item) => {
       const s = (item.appointmentStatus || item.status || "").toString().toUpperCase();
       return s === "CHECKED_IN" || s === "CHECKEDIN" || s === "CHECKED-IN" || s === "EN_ATTENTE";
     }).length;
 
-    const refused = requests.filter((item) => {
+    const refused = todayRequests.filter((item) => {
       const s = (item.appointmentStatus || item.status || "").toString().toUpperCase();
       return s === "CANCELLED" || s === "CANCELÉ" || s === "REFUSÉ" || s === "REFUSE";
     }).length;
 
     return { total, confirmed, pending, refused };
-  }, [patients, requests]);
+  }, [requests]);
 
   const filteredRequests = useMemo(() => {
     const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -275,66 +258,60 @@ export default function RendezVousReception() {
     }).length;
   }, [requests]);
 
-  const doctorsFreeThisMonth = useMemo(() => {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = new Date(now.getFullYear(), now.getMonth()+1, 1);
-    const busy: Record<string, boolean> = {};
-    requests.forEach((r) => {
-      const iso = r.requestedOn || r.dateRequested || r.scheduledAt || r.startDate || r.date;
-      if (!iso) return;
-      const d = new Date(iso);
-      if (d >= start && d < end && r.doctorRequested) busy[r.doctorRequested] = true;
-    });
-    return physicians.filter((doc) => !busy[doc.displayName || doc.username]).slice(0, 8);
-  }, [requests, physicians]);
-
   const openRequest = (request: ReceptionRequest) => {
     setSelectedRequest(request);
     setRefusalReason("");
-    setReprogramDate(request.dateRequested === "Aujourd'hui" ? "2026-05-18" : "2026-05-20");
-    setReprogramTime("09:00");
+    const scheduled = request.requestedOn ? new Date(request.requestedOn) : new Date();
+    setReprogramDate(scheduled.toISOString().slice(0, 10));
+    setReprogramTime(scheduled.toTimeString().slice(0, 5));
   };
 
   const closeRequest = () => setSelectedRequest(null);
 
-  const updateRequest = async (id: string, changes: any) => {
+  const updateRequest = async (id: string, changes: Record<string, unknown>) => {
+    setActionError(null);
     try {
       const url = `${API_BASE_URL}/appointments/${id}`;
       const response = await fetch(url, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
         body: JSON.stringify(changes),
       });
       if (response.ok) {
         const updated = await response.json();
         setRequests((prev) => prev.map((r) => (r.id === id ? toReceptionRequest({ ...r, ...updated }) : r)));
+        return true;
       }
+      const body = await response.json().catch(() => null);
+      setActionError(body?.message || "La modification du rendez-vous a été refusée.");
     } catch (e) {
       console.error("Error updating request:", e);
+      setActionError("Impossible de joindre le serveur. Aucun changement n’a été enregistré.");
     }
+    return false;
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!selectedRequest) return;
-    updateRequest(selectedRequest.id, { status: "CONFIRMED" });
-    closeRequest();
+    if (await updateRequest(selectedRequest.id, { status: "CONFIRMED" })) closeRequest();
   };
 
-  const handleReprogram = () => {
+  const handleReprogram = async () => {
     if (!selectedRequest) return;
-    updateRequest(selectedRequest.id, {
+    if (await updateRequest(selectedRequest.id, {
       status: "SCHEDULED",
       scheduledAt: new Date(`${reprogramDate}T${reprogramTime}`).toISOString(),
-    });
-    closeRequest();
+    })) closeRequest();
   };
 
-  const handleRefuse = () => {
+  const handleRefuse = async () => {
     if (!selectedRequest) return;
-    updateRequest(selectedRequest.id, { status: "CANCELLED" });
-    closeRequest();
+    if (!refusalReason.trim()) {
+      setActionError("Le motif de refus est obligatoire.");
+      return;
+    }
+    if (await updateRequest(selectedRequest.id, { status: "CANCELLED", statusReason: refusalReason.trim() })) closeRequest();
   };
 
   if (loading) {
@@ -468,14 +445,8 @@ export default function RendezVousReception() {
 
           <aside className="space-y-6">
             <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-900">
-              <h4 className="text-base font-semibold text-slate-900 dark:text-white">IA assistance réception</h4>
-              <ul className="mt-3 space-y-3 text-sm text-slate-600 dark:text-slate-300">
-                {aiTips.map((tip) => (
-                  <li key={tip} className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
-                    {tip}
-                  </li>
-                ))}
-              </ul>
+              <h4 className="text-base font-semibold text-slate-900 dark:text-white">Suivi opérationnel</h4>
+              <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Les créneaux sont contrôlés par le serveur à la confirmation et à la reprogrammation. Aucun conseil clinique ou délai estimé fictif n’est affiché.</p>
             </div>
 
             <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-900">
@@ -491,7 +462,7 @@ export default function RendezVousReception() {
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
                   <p className="text-sm uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">Mois</p>
-                  <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">Médecins sans rendez-vous ce mois • {doctorsFreeThisMonth.length}</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">Affectation médicale gérée par le service</p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Annulés / non respectés: {cancelledOrMissed.length}</p>
                 </div>
               </div>
@@ -606,15 +577,8 @@ export default function RendezVousReception() {
                   </div>
 
                   <div className="rounded-3xl border border-gray-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-800">
-                    <h4 className="text-base font-semibold text-slate-900 dark:text-white">Disponibilité médecin</h4>
-                    <div className="mt-4 grid gap-2">
-                      {availabilityTimeline.map((slot) => (
-                        <div key={slot.time} className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900">
-                          <span className="font-medium text-slate-900 dark:text-white">{slot.time}</span>
-                          <span className={`rounded-full px-2 py-1 text-xs font-semibold ${scheduleColor[slot.state]}`}>{slot.state}</span>
-                        </div>
-                      ))}
-                    </div>
+                    <h4 className="text-base font-semibold text-slate-900 dark:text-white">Disponibilité</h4>
+                    <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">Le créneau est vérifié contre les rendez-vous actifs de l’unité lors de l’enregistrement. En cas de collision, le backend refuse la modification.</p>
                   </div>
                 </div>
 
@@ -622,6 +586,7 @@ export default function RendezVousReception() {
                   <div className="rounded-3xl border border-gray-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-800">
                     <h4 className="text-base font-semibold text-slate-900 dark:text-white">Actions réceptionniste</h4>
                     <div className="mt-4 space-y-3">
+                      {actionError ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{actionError}</p> : null}
                       <button onClick={handleConfirm} className="w-full rounded-2xl bg-emerald-900 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800">✅ Confirmer</button>
                       <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">🔄 Reprogrammer</p>

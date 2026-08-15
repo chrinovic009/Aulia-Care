@@ -25,9 +25,8 @@ export class PaymentsService {
 
     const amount = Number(createPaymentDto.amount);
     const balanceDue = Number(invoice.balanceDue.toString());
-    if (amount < balanceDue) {
-      throw new BadRequestException('Le montant doit couvrir le solde dû.');
-    }
+    if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('Le montant payé doit être positif.');
+    if (amount > balanceDue) throw new BadRequestException('Le montant payé ne peut pas dépasser le solde dû sans avoir validé.');
 
     const result = await this.prisma.$transaction(async (prisma) => {
       const payment = await prisma.payment.create({
@@ -42,11 +41,12 @@ export class PaymentsService {
         },
       });
 
+      const remainingBalance = Math.max(0, balanceDue - amount);
       const updatedInvoice = await prisma.invoice.update({
         where: { id: invoice.id },
         data: {
-          status: 'PAID',
-          balanceDue: 0,
+          status: remainingBalance === 0 ? 'PAID' : 'PARTIALLY_PAID',
+          balanceDue: remainingBalance,
           updatedAt: new Date(),
         },
       });
@@ -55,7 +55,9 @@ export class PaymentsService {
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .toLowerCase();
-      const nextWorkflowStatus =
+      const nextWorkflowStatus = remainingBalance > 0
+        ? PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT
+        :
         invoice.type === 'PHARMACY'
           ? PatientWorkflowStatus.EN_PHARMACIE
           : invoice.type === 'LABORATORY' || normalizedServiceName.includes('laboratoire')
@@ -76,7 +78,7 @@ export class PaymentsService {
       const patientUserAccess = await this.ensurePatientUserAccess(prisma, updatedPatient);
 
       let labRequest: any = null;
-      if (invoice.type === 'LABORATORY') {
+      if (remainingBalance === 0 && invoice.type === 'LABORATORY') {
         const labRequestMatch = invoice.remarks?.match(/(?:LabRequest|Demande laboratoire):?\s*([a-zA-Z0-9-]+)/i);
         if (labRequestMatch?.[1]) {
           labRequest = await prisma.labRequest.update({
@@ -86,7 +88,7 @@ export class PaymentsService {
         }
       }
 
-      if (invoice.type === 'PHARMACY') {
+      if (remainingBalance === 0 && invoice.type === 'PHARMACY') {
         const prescriptionMatch = invoice.remarks?.match(/Prescription:([a-zA-Z0-9-]+)/);
         if (prescriptionMatch?.[1]) {
           await prisma.prescription.update({
@@ -141,7 +143,7 @@ export class PaymentsService {
             ...(invoice.patient?.service?.staff || []).map((item: any) => item.userId || item.user?.id),
           ].filter(Boolean)
         : [];
-      const targetUsers = await prisma.user.findMany({
+      const targetUsers = remainingBalance > 0 ? [] : await prisma.user.findMany({
         where: {
           ...(serviceUserIds.length ? { id: { in: serviceUserIds } } : {}),
           OR: serviceUserIds.length

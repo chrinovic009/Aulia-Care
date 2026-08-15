@@ -55,9 +55,7 @@ export default function ReceptionStatisticsChart() {
     },
 
     xaxis: {
-      categories: categories.length ? categories : [
-        "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim",
-      ],
+      categories,
 
       axisBorder: {
         show: false,
@@ -221,7 +219,7 @@ export default function ReceptionStatisticsChart() {
             <div className="flex h-[320px] items-center justify-center text-sm text-red-600 dark:text-red-400">
               {error}
             </div>
-          ) : noChartData ? (
+          ) : noChartData || categories.length === 0 ? (
             <div className="flex h-[320px] items-center justify-center text-sm text-slate-500 dark:text-slate-400">
               Aucune donnée disponible pour cette semaine.
             </div>

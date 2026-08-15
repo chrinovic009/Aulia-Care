@@ -8,7 +8,14 @@ import { PrismaService } from '../prisma/prisma.service';
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(configService: ConfigService, private readonly prisma: PrismaService) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        (request) => String(request?.headers?.cookie || '')
+          .split(';')
+          .map((value) => value.trim())
+          .find((value) => value.startsWith('aulia_access_token='))
+          ?.slice('aulia_access_token='.length) || null,
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ]),
       ignoreExpiration: false,
       secretOrKey: configService.getOrThrow<string>('JWT_SECRET'),
     });
