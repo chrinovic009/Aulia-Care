@@ -5,6 +5,7 @@ import { CreateHospitalizationDto } from './dto/create-hospitalization.dto';
 import { UpdateHospitalizationDto } from './dto/update-hospitalization.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateNursingCareTaskDto } from './dto/create-nursing-care-task.dto';
+import { UpdateNursingCareTaskDto } from './dto/update-nursing-care-task.dto';
 import { RecordMedicationAdministrationDto } from './dto/record-medication-administration.dto';
 
 @Injectable()
@@ -282,37 +283,107 @@ export class HospitalizationsService {
   }
 
   async getNurseRounds(userId?: string) {
+    if (!userId) throw new ForbiddenException('Utilisateur authentifié requis.');
     const hospitalizations = await this.getNurseHospitalizations(userId);
     const now = new Date();
-    const todayKey = now.toISOString().slice(0, 10);
+    const byId = new Map(hospitalizations.map((item: any) => [item.id, item]));
+    if (!byId.size) return [];
+    const tasks = await this.prisma.nursingCareTask.findMany({
+      where: {
+        hospitalizationId: { in: [...byId.keys()] },
+        status: { not: 'CANCELLED' },
+      },
+      orderBy: { dueAt: 'asc' },
+      take: 250,
+    });
 
-    return hospitalizations.map((hospitalization: any) => {
-      const histories = hospitalization.patient?.medicalHistories || [];
-      const latestRound = histories.find((history) => ['NURSE_ROUND_DONE', 'NURSE_OBSERVATION', 'NURSE_PROBLEM'].includes(history.kind));
-      const roundDoneToday = histories.some((history) => history.kind === 'NURSE_ROUND_DONE' && new Date(history.eventDate).toISOString().slice(0, 10) === todayKey);
-      const problemToday = histories.some((history) => history.kind === 'NURSE_PROBLEM' && new Date(history.eventDate).toISOString().slice(0, 10) === todayKey);
-      const scheduledAt = hospitalization.admittedAt || now;
-      const overdue = !roundDoneToday && new Date(scheduledAt).getTime() + 4 * 60 * 60 * 1000 < now.getTime();
-
+    return tasks.map((task) => {
+      const hospitalization: any = byId.get(task.hospitalizationId);
+      const overdue = task.status === 'PENDING' && task.dueAt.getTime() < now.getTime();
       return {
-        id: hospitalization.id,
-        hospitalizationId: hospitalization.id,
+        id: task.id,
+        hospitalizationId: task.hospitalizationId,
         patientId: hospitalization.patientId,
-        scheduledAt,
-        patient: [hospitalization.patient?.firstName, hospitalization.patient?.middleName, hospitalization.patient?.lastName].filter(Boolean).join(' ') || 'Patient',
-        room: hospitalization.bed?.room?.number || hospitalization.bedNumber || 'Non assigne',
+        scheduledAt: task.dueAt,
+        patient: [hospitalization.patient?.firstName, hospitalization.patient?.middleName, hospitalization.patient?.lastName].filter(Boolean).join(' ') || 'Patient non identifié',
+        room: hospitalization.bed?.room?.number || hospitalization.bedNumber || 'Non assignée',
         bed: hospitalization.bed?.code || hospitalization.bedNumber || null,
-        type: 'Tournee infirmiere hospitalisation',
-        priority: problemToday || /urgence|critique|critical/i.test(hospitalization.admissionReason || '') ? 'High' : 'Normal',
-        status: roundDoneToday ? 'Termine' : overdue ? 'En retard' : 'A faire',
-        note: latestRound?.details || hospitalization.admissionReason || null,
+        title: task.title,
+        instructions: task.instructions,
+        priority: task.status === 'ESCALATED' || /urgence|critique|critical/i.test(task.title + ' ' + (task.instructions || '')) ? 'HIGH' : 'NORMAL',
+        status: overdue ? 'OVERDUE' : task.status,
+        completedAt: task.completedAt,
+        escalationReason: task.escalationReason,
+        updatedAt: task.updatedAt,
         service: hospitalization.ServiceUnit?.name || null,
-        nurseInCharge: hospitalization.nurseInCharge?.displayName || null,
-        nurseInChargeId: hospitalization.nurseInChargeId || null,
-        lastUpdated: latestRound?.eventDate || hospitalization.updatedAt || hospitalization.admittedAt,
         access: hospitalization.access,
       };
     });
+  }
+
+  async updateNurseCareTask(taskId: string, dto: UpdateNursingCareTaskDto, userId?: string) {
+    if (!userId) throw new ForbiddenException('Utilisateur authentifié requis.');
+    const task = await this.prisma.nursingCareTask.findUnique({
+      where: { id: taskId },
+      include: { hospitalization: { include: this.hospitalizationInclude } },
+    });
+    if (!task || ['CANCELLED', 'COMPLETED'].includes(task.status)) {
+      throw new BadRequestException('Tâche introuvable ou déjà clôturée.');
+    }
+    const access = await this.buildNurseAccess(task.hospitalization, userId);
+    const isAssigned = task.assignedNurseId === userId;
+    if (!access.canWrite || (!isAssigned && task.assignedNurseId !== null)) {
+      throw new ForbiddenException('Cette tâche n’est pas attribuée à l’infirmier connecté ou son shift est inactif.');
+    }
+    const observation = dto.observation?.trim();
+    const escalationReason = dto.escalationReason?.trim();
+    if (dto.status === 'COMPLETED' && !observation) {
+      throw new BadRequestException('Une observation est obligatoire pour attester l’exécution du soin.');
+    }
+    if (dto.status === 'ESCALATED' && !(escalationReason || observation)) {
+      throw new BadRequestException('Le motif de l’escalade est obligatoire.');
+    }
+    const now = new Date();
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const careTask = await tx.nursingCareTask.update({
+        where: { id: taskId },
+        data: {
+          status: dto.status,
+          completedAt: dto.status === 'COMPLETED' ? now : null,
+          completedById: dto.status === 'COMPLETED' ? userId : null,
+          escalationReason: dto.status === 'ESCALATED' ? escalationReason || observation || null : null,
+        },
+      });
+      await tx.medicalHistory.create({
+        data: {
+          patientId: task.hospitalization.patientId,
+          kind: 'NURSING_CARE_TASK',
+          details: JSON.stringify({
+            taskId,
+            hospitalizationId: task.hospitalizationId,
+            status: dto.status,
+            observation: observation || null,
+            escalationReason: escalationReason || null,
+            performedAt: now.toISOString(),
+          }),
+          createdById: userId,
+        },
+      });
+      return careTask;
+    });
+    if (dto.status === 'ESCALATED' && task.hospitalization.physicianId) {
+      await this.notifications.createAndEmit({
+        recipientId: task.hospitalization.physicianId,
+        patientId: task.hospitalization.patientId,
+        relatedEntity: 'nursing-care-task',
+        relatedId: taskId,
+        title: 'Escalade de soin infirmier',
+        body: escalationReason || observation || task.title,
+        type: 'ALERT',
+        priority: 'HIGH',
+      });
+    }
+    return updated;
   }
 
   async recordNurseRound(id: string, userId: string | undefined, body: any) {

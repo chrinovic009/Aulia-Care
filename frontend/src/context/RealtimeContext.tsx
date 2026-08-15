@@ -92,7 +92,7 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
           window.dispatchEvent(new CustomEvent('d7:billingDataUpdated', { detail: payload }));
           window.dispatchEvent(new CustomEvent('d7:patientRecordsUpdated', { detail: payload }));
         }
-        if (['VitalSign', 'Consultation', 'Prescription', 'LabRequest', 'LabResult', 'ImagingRequest', 'ImagingReport', 'Hospitalization'].includes(payload?.model)) {
+        if (['VitalSign', 'Consultation', 'Prescription', 'LabRequest', 'LabResult', 'ImagingRequest', 'ImagingReport', 'Hospitalization', 'NursingCareTask', 'MedicationAdministration'].includes(payload?.model)) {
           window.dispatchEvent(new CustomEvent('d7:clinicalDataUpdated', { detail: payload }));
           window.dispatchEvent(new CustomEvent('d7:patientRecordsUpdated', { detail: payload }));
         }

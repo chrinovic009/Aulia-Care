@@ -1,540 +1,135 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
-import { useTheme } from "../../context/ThemeContext";
-import { apiFetch } from "../../config/api";
-import {
-  fetchNurseRounds,
-  recordNurseRound,
-} from "../../api/nurse";
+import { useRealtime } from "../../context/RealtimeContext";
+import { fetchNurseRounds, NursingCareTask, recordNurseObservation, updateNurseCareTask } from "../../api/nurse";
 
-type Priority = "High" | "Normal" | "Low";
-type Status = "À faire" | "En cours" | "Terminé" | "En retard";
+type DisplayStatus = "À faire" | "Terminé" | "Manqué" | "Escaladé" | "En retard";
+type Action = "complete" | "observe" | "problem";
 
-type TaskItem = {
-  id: string;
-  hospitalizationId?: string;
-  patientId?: string;
-  scheduledAt: string; // ISO
-  patient: string;
-  room: string;
-  type: string;
-  priority: Priority;
-  status: Status;
-  allergy?: string;
-  note?: string;
-  service?: string;
-  lastUpdated?: string;
-  access?: { canWrite: boolean; mode: string; reason: string };
-};
-
-const statusColor: Record<Status, string> = {
-  "À faire": "bg-sky-100 text-sky-700",
-  "En cours": "bg-amber-100 text-amber-700",
-  "Terminé": "bg-emerald-100 text-emerald-700",
+const statusColor: Record<DisplayStatus, string> = {
+  "À faire": "bg-sky-100 text-sky-700", "Terminé": "bg-emerald-100 text-emerald-700",
+  "Manqué": "bg-slate-200 text-slate-700", "Escaladé": "bg-amber-100 text-amber-800",
   "En retard": "bg-red-100 text-red-700",
 };
-
-const getTaskStatus = (patient: any): Status => {
-  const now = new Date();
-  const scheduled = new Date(patient.arrivalAt || patient.createdAt);
-  const diffMinutes = (now.getTime() - scheduled.getTime()) / 60000;
-  if (patient.status === "Termine") return "TerminÃ©";
-  if (patient.status === "En retard") return "En retard";
-  if (patient.status === "En cours") return "En cours";
-  if (patient.status === "A faire") return "Ã€ faire";
-  if (patient.workflowStatus !== "EN_ATTENTE_INFIRMERIE") {
-    return "En cours";
-  }
-  if (diffMinutes > 45) return "En retard";
-  return "À faire";
-};
-
-const formatRoundNote = (value?: string | null) => {
-  if (!value) return "";
-  try {
-    const parsed = JSON.parse(value);
-    return [parsed.observation, parsed.problem, parsed.accessReason].filter(Boolean).join("\n");
-  } catch {
-    return value;
-  }
-};
-
-const mapPatientToTask = (patient: any): TaskItem => ({
-  id: patient.id,
-  hospitalizationId: patient.hospitalizationId || patient.id,
-  patientId: patient.patientId,
-  scheduledAt: patient.scheduledAt || patient.arrivalAt || patient.createdAt || new Date().toISOString(),
-  patient: patient.patient || [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(" ") || "Patient",
-  room: patient.service || "—",
-  type: patient.workflowStatus === "EN_ATTENTE_INFIRMERIE" ? "Prise de signes vitaux" : "Suivi infirmier",
-  priority: patient.priority === "High" ? "High" : "Normal",
-  status: getTaskStatus(patient),
-  allergy: patient.priority || undefined,
-  note: formatRoundNote(patient.note) || patient.access?.reason || patient.receptionist || `Statut: ${patient.workflowStatus || patient.status || ""}`,
-  service: patient.service || undefined,
-  lastUpdated: patient.lastUpdated || patient.lastVitalRecordedAt || patient.createdAt,
-  access: patient.access,
-});
+const statusOf = (task: NursingCareTask): DisplayStatus =>
+  task.status === "COMPLETED" ? "Terminé" : task.status === "MISSED" ? "Manqué" :
+  task.status === "ESCALATED" ? "Escaladé" : task.status === "OVERDUE" ? "En retard" : "À faire";
+const startOf = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
 export default function Rounds() {
-  const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
-  const [periodFilter, setPeriodFilter] = useState<"all" | "morning" | "afternoon" | "night" | "today" | "tomorrow">("today");
+  const [tasks, setTasks] = useState<NursingCareTask[]>([]);
+  const [selected, setSelected] = useState<NursingCareTask | null>(null);
+  const [filter, setFilter] = useState<"today" | "tomorrow" | "morning" | "afternoon" | "night" | "all">("today");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [action, setAction] = useState<Action | null>(null);
+  const [note, setNote] = useState("");
+  const [escalate, setEscalate] = useState(true);
+  const [reminders, setReminders] = useState<string[]>([]);
+  const announced = useRef(new Set<string>());
+  const { socket } = useRealtime();
 
-  const loadTasks = async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
     try {
-      const patients = await fetchNurseRounds();
-      setTasks(patients.map(mapPatientToTask));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible de charger les tournées infirmières.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadTasks();
+      const result = await fetchNurseRounds();
+      setTasks(result);
+      setSelected((current) => result.find((task) => task.id === current?.id) ?? null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Impossible de charger les tâches planifiées.");
+    } finally { setLoading(false); }
   }, []);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const refresh = (event: Event) => {
+      const model = (event as CustomEvent<{ model?: string }>).detail?.model;
+      if (!model || ["NursingCareTask", "Hospitalization", "MedicationAdministration"].includes(model)) void load();
+    };
+    window.addEventListener("d7:clinicalDataUpdated", refresh);
+    window.addEventListener("d7:db.changed", refresh);
+    socket?.on("nursing-care-task.updated", load);
+    return () => {
+      window.removeEventListener("d7:clinicalDataUpdated", refresh);
+      window.removeEventListener("d7:db.changed", refresh);
+      socket?.off("nursing-care-task.updated", load);
+    };
+  }, [load, socket]);
+
+  const visible = useMemo(() => {
+    const now = new Date();
+    return tasks.filter((task) => {
+      const due = new Date(task.scheduledAt);
+      const inPeriod = filter === "all" ||
+        (filter === "today" && startOf(due).getTime() === startOf(now).getTime()) ||
+        (filter === "tomorrow" && startOf(due).getTime() === startOf(new Date(now.getTime() + 86_400_000)).getTime()) ||
+        (filter === "morning" && due.getHours() >= 6 && due.getHours() < 12) ||
+        (filter === "afternoon" && due.getHours() >= 12 && due.getHours() < 18) ||
+        (filter === "night" && (due.getHours() >= 18 || due.getHours() < 6));
+      const text = query.trim().toLocaleLowerCase();
+      return inPeriod && (!text || [task.patient, task.room, task.title, task.service || ""].some((value) => value.toLocaleLowerCase().includes(text)));
+    }).sort((a, b) => (a.status === "OVERDUE" ? -1 : b.status === "OVERDUE" ? 1 : a.priority === "HIGH" ? -1 : b.priority === "HIGH" ? 1 : new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()));
+  }, [filter, query, tasks]);
 
   const summary = useMemo(() => {
-    const totalPatients = new Set(tasks.map((t) => t.patient)).size;
-    const pending = tasks.filter((t) => t.status !== "Terminé").length;
-    const overdue = tasks.filter((t) => t.status === "En retard").length;
-    const urgencies = tasks.filter((t) => t.priority === "High" && t.status !== "Terminé").length;
-    return { totalPatients, pending, overdue, urgencies };
+    const active = tasks.filter((task) => !["COMPLETED", "MISSED", "CANCELLED"].includes(task.status));
+    return { patients: new Set(active.map((task) => task.patientId)).size, pending: active.length, overdue: tasks.filter((task) => task.status === "OVERDUE").length, escalated: tasks.filter((task) => task.status === "ESCALATED").length };
+  }, [tasks]);
+  const timeline = useMemo(() => visible.reduce<Map<string, NursingCareTask[]>>((map, task) => {
+    const key = new Date(task.scheduledAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    map.set(key, [...(map.get(key) || []), task]); return map;
+  }, new Map()), [visible]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      tasks.filter((task) => task.status === "PENDING" && new Date(task.scheduledAt).getTime() > now && new Date(task.scheduledAt).getTime() - now <= 600_000).forEach((task) => {
+        if (announced.current.has(task.id)) return;
+        announced.current.add(task.id);
+        const message = `${task.title} — ${task.patient} dans ${Math.max(1, Math.ceil((new Date(task.scheduledAt).getTime() - now) / 60_000))} min`;
+        setReminders((current) => [message, ...current].slice(0, 5));
+        if ("speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+          const speech = new SpeechSynthesisUtterance(`Rappel de tournée. ${message}`);
+          speech.lang = "fr-FR"; window.speechSynthesis.speak(speech);
+        }
+      });
+    }, 30_000);
+    return () => window.clearInterval(timer);
   }, [tasks]);
 
-  const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-  const inPeriod = (iso: string) => {
-    const d = new Date(iso);
-    const now = new Date();
-    if (periodFilter === "morning") return d.getHours() >= 6 && d.getHours() < 12;
-    if (periodFilter === "afternoon") return d.getHours() >= 12 && d.getHours() < 18;
-    if (periodFilter === "night") return d.getHours() >= 18 || d.getHours() < 6;
-    if (periodFilter === "today") return startOf(d).getTime() === startOf(now).getTime();
-    if (periodFilter === "tomorrow") return startOf(d).getTime() === startOf(new Date(now.getTime() + 24 * 3600 * 1000)).getTime();
-    return true;
-  };
-
-  const visibleTasks = useMemo(() => {
-    return tasks
-      .filter((t) => inPeriod(t.scheduledAt))
-      .filter(
-        (t) =>
-          t.patient.toLowerCase().includes(query.toLowerCase()) ||
-          t.room.toLowerCase().includes(query.toLowerCase()) ||
-          t.type.toLowerCase().includes(query.toLowerCase()) ||
-          (t.service || "").toLowerCase().includes(query.toLowerCase()),
-      )
-      .sort((a, b) => {
-        const prio = { High: 0, Normal: 1, Low: 2 } as any;
-        if (prio[a.priority] !== prio[b.priority]) return prio[a.priority] - prio[b.priority];
-        const order = { "En retard": 0, "À faire": 1, "En cours": 2, "Terminé": 3 } as any;
-        if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
-        return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
-      });
-  }, [tasks, periodFilter, query]);
-
-  const timeline = useMemo(() => {
-    const map = new Map<string, TaskItem[]>();
-    visibleTasks.forEach((t) => {
-      const h = new Date(t.scheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      if (!map.has(h)) map.set(h, []);
-      map.get(h)!.push(t);
-    });
-    return Array.from(map.entries());
-  }, [visibleTasks]);
-
-  const markDone = async (id: string) => {
-    const task = tasks.find((t) => t.id === id);
-    if (!task) return;
-    setError(null);
-    setSuccessMessage(null);
+  const openAction = (next: Action) => { setAction(next); setNote(""); setEscalate(next === "problem"); };
+  const submit = async () => {
+    if (!selected || !action || !note.trim()) { setError("Une observation clinique est obligatoire."); return; }
     try {
-      const hospitalizationId = task.hospitalizationId || task.id;
-      await recordNurseRound(hospitalizationId, { action: "done", observation: "Tournée infirmière effectuée" });
-      setSuccessMessage("Tâche marquée comme effectuée.");
-      await loadTasks();
-      setSelectedTask(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible de marquer la tâche comme effectuée.");
-    }
-  };
-
-  const addObservation = (id: string) => {
-    const task = tasks.find((t) => t.id === id);
-    if (!task) return;
-    setSelectedTask(task);
-    setObservationText("");
-    setOpenObservationModal(true);
-  };
-
-  const reportProblem = (id: string) => {
-    const task = tasks.find((t) => t.id === id);
-    if (!task) return;
-    setSelectedTask(task);
-    setProblemText("");
-    setOpenProblemModal(true);
-  };
-
-  const submitObservation = async () => {
-    if (!selectedTask || !observationText) return;
-    setError(null);
-    setSuccessMessage(null);
-    try {
-      const hospitalizationId = selectedTask.hospitalizationId || selectedTask.id;
-      await recordNurseRound(hospitalizationId, { action: "observation", observation: observationText });
-      setSuccessMessage("Observation enregistrée.");
-      setOpenObservationModal(false);
-      setObservationText("");
-      await loadTasks();
-      setSelectedTask(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible d'enregistrer l'observation.");
-    }
-  };
-
-  const submitProblem = async (escalate = false) => {
-    if (!selectedTask || !problemText) return;
-    setError(null);
-    setSuccessMessage(null);
-    try {
-      const hospitalizationId = selectedTask.hospitalizationId || selectedTask.id;
-      await recordNurseRound(hospitalizationId, { action: "problem", problem: problemText, escalated: escalate });
-      setSuccessMessage(escalate ? "Problème signalé et escaladé." : "Problème signalé.");
-      setOpenProblemModal(false);
-      setProblemText("");
-      await loadTasks();
-      setSelectedTask(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Impossible de signaler le problème.");
-    }
-  };
-
-  const [notifications, setNotifications] = useState<string[]>([]);
-  const lastAnnouncedReminder = useRef("");
-  useEffect(() => {
-    const id = setInterval(() => {
-      const soon = tasks.find((t) => {
-        const diff = new Date(t.scheduledAt).getTime() - Date.now();
-        return diff > 0 && diff < 10 * 60 * 1000 && t.status !== "Terminé";
-      });
-      if (soon) {
-        setNotifications((n) => {
-          const msg = `${soon.type} — ${soon.patient} dans ${Math.ceil((new Date(soon.scheduledAt).getTime() - Date.now()) / 60000)} min`;
-          if (n.includes(msg)) return n;
-          return [msg, ...n].slice(0, 5);
-        });
+      setError(null);
+      if (action === "complete") {
+        await updateNurseCareTask(selected.id, { status: "COMPLETED", observation: note.trim() });
+        setSuccess("Soin attesté et clôturé.");
+      } else if (action === "problem") {
+        await updateNurseCareTask(selected.id, escalate ? { status: "ESCALATED", observation: note.trim(), escalationReason: note.trim() } : { status: "MISSED", observation: note.trim() });
+        setSuccess(escalate ? "Problème escaladé au médecin responsable." : "Soin déclaré non réalisé avec motif.");
+      } else {
+        await recordNurseObservation(selected.hospitalizationId, note.trim());
+        setSuccess("Observation clinique enregistrée.");
       }
-    }, 5000);
-    return () => clearInterval(id);
-  }, [tasks]);
+      setAction(null); setNote(""); await load();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Action clinique impossible à enregistrer."); }
+  };
 
-  useEffect(() => {
-    const reminder = notifications[0];
-    if (!reminder || reminder === lastAnnouncedReminder.current || !("speechSynthesis" in window)) return;
-    lastAnnouncedReminder.current = reminder;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(`Rappel de tournée infirmière. ${reminder}`);
-    utterance.lang = "fr-FR";
-    utterance.rate = 0.95;
-    window.speechSynthesis.speak(utterance);
-  }, [notifications]);
-
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setTasks((prev) =>
-        prev.map((t, i) =>
-          i === 0 ? { ...t, note: (t.note || "") + "\nMise à jour: ordre médecin reçu." } : t,
-        ),
-      );
-    }, 15000);
-    return () => clearTimeout(id);
-  }, []);
-
-  const { theme, toggleTheme } = useTheme();
-  const [openObservationModal, setOpenObservationModal] = useState(false);
-  const [observationText, setObservationText] = useState("");
-  const observationSuggestions = [
-    "Patient stable",
-    "Douleur modérée, administrer analgésique",
-    "Site d'injection propre, pas de fuite",
-    "Pâleur constatée, surveillance renforcée",
-  ];
-  const [openProblemModal, setOpenProblemModal] = useState(false);
-  const [problemText, setProblemText] = useState("");
-  const problemSuggestions = [
-    "Difficulté d'accès veineux",
-    "Réaction allergique suspectée",
-    "Matériel manquant",
-    "Patient instable — appel médecin requis",
-  ];
-
-  return (
-    <div className="p-4 sm:p-6 bg-slate-50 dark:bg-slate-950 min-h-screen">
-      <PageMeta title="Tournées & horaires | D7 Clinique" description="Plan d'exécution clinique pour les tournées infirmières" />
-      <PageBreadcrumb pageTitle="Tournées & horaires" />
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-3xl border bg-white p-4">
-          <p className="text-xs text-slate-500">Patients à visiter</p>
-          <p className="mt-2 text-2xl font-semibold">{summary.totalPatients}</p>
-        </div>
-        <div className="rounded-3xl border bg-white p-4">
-          <p className="text-xs text-slate-500">Tâches restantes</p>
-          <p className="mt-2 text-2xl font-semibold">{summary.pending}</p>
-        </div>
-        <div className="rounded-3xl border bg-white p-4">
-          <p className="text-xs text-slate-500">Soins en retard</p>
-          <p className="mt-2 text-2xl font-semibold text-red-600">{summary.overdue}</p>
-        </div>
-        <div className="rounded-3xl border bg-white p-4">
-          <p className="text-xs text-slate-500">Urgences actives</p>
-          <p className="mt-2 text-2xl font-semibold text-amber-700">{summary.urgencies}</p>
-        </div>
-      </div>
-
-      <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-6">
-        <div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <input
-              placeholder="Rechercher patient, chambre, soin"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="flex-1 rounded-2xl border px-4 py-2"
-            />
-            <select
-              value={periodFilter}
-              onChange={(e) => setPeriodFilter(e.target.value as any)}
-              className="rounded-2xl border px-3 py-2"
-            >
-              <option value="morning">Matin</option>
-              <option value="afternoon">Après-midi</option>
-              <option value="night">Nuit</option>
-              <option value="today">Aujourd'hui</option>
-              <option value="tomorrow">Demain</option>
-              <option value="all">Tous</option>
-            </select>
-            <button
-              onClick={loadTasks}
-              disabled={loading}
-              className="rounded-2xl border bg-white px-4 py-2 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loading ? "Chargement..." : "Actualiser"}
-            </button>
-            <button onClick={toggleTheme} className="rounded-2xl border px-3 py-2 text-sm">
-              {theme === "dark" ? "Light" : "Dark"}
-            </button>
-          </div>
-
-          {successMessage && (
-            <div className="mt-4 rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
-              {successMessage}
-            </div>
-          )}
-
-          {error && (
-            <div className="mt-4 rounded-3xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
-          <div className="mt-4 space-y-4">
-            {timeline.length === 0 && (
-              <div className="rounded-2xl p-6 bg-white">Aucune tâche pour cette période.</div>
-            )}
-            {timeline.map(([hour, items]) => (
-              <div key={hour} className="rounded-2xl bg-white p-4 border">
-                <div className="mb-2 text-sm text-slate-500 font-semibold">{hour}</div>
-                <div className="space-y-2">
-                  {items.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => setSelectedTask(item)}
-                      className="w-full flex items-center justify-between rounded-xl border px-3 py-2 text-left hover:bg-slate-50"
-                    >
-                      <div>
-                        <div className="font-semibold">{item.patient} — {item.type}</div>
-                        <div className="text-xs text-slate-500">Salle {item.room}</div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className={`${statusColor[item.status]} inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold`}>
-                          {item.status}
-                        </span>
-                        <span className={`text-xs px-2 py-1 rounded ${item.priority === "High" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-700"}`}>
-                          {item.priority}
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div className="rounded-3xl border bg-white p-4 h-full">
-            {!selectedTask && (
-              <div className="text-slate-500">Sélectionnez une tâche pour voir les détails.</div>
-            )}
-            {selectedTask && (
-              <div>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs text-slate-500">Patient</p>
-                    <h3 className="mt-1 text-xl font-semibold">{selectedTask.patient}</h3>
-                    <p className="text-sm text-slate-500">Salle {selectedTask.room}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-slate-500">Heure</p>
-                    <p className="font-semibold">{new Date(selectedTask.scheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="text-xs text-slate-500">Type de tâche</p>
-                    <p className="mt-1 font-semibold">{selectedTask.type}</p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="text-xs text-slate-500">Dernière mise à jour</p>
-                    <p className="mt-1 font-semibold">{new Date(selectedTask.lastUpdated || selectedTask.scheduledAt).toLocaleString('fr-FR')}</p>
-                  </div>
-                </div>
-
-                <div className="mt-3 space-y-3 text-sm text-slate-700">
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <p className="text-xs text-slate-500">Détails</p>
-                    <p className="mt-1 font-semibold">{selectedTask.note}</p>
-                  </div>
-                  {selectedTask.allergy && (
-                    <div className="rounded-2xl bg-slate-50 p-4">
-                      <p className="text-xs text-slate-500">Allergie</p>
-                      <p className="mt-1 font-semibold">{selectedTask.allergy}</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                  <button
-                    onClick={() => markDone(selectedTask.id)}
-                    className="flex-1 rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
-                  >
-                    ✔ Marquer effectué
-                  </button>
-                  <button
-                    onClick={() => addObservation(selectedTask.id)}
-                    className="rounded-2xl border px-4 py-2 text-sm"
-                  >
-                    📝 Ajouter observation
-                  </button>
-                  <button
-                    onClick={() => reportProblem(selectedTask.id)}
-                    className="rounded-2xl border border-red-400 px-4 py-2 text-sm text-red-700"
-                  >
-                    🚨 Signaler problème
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 rounded-3xl border bg-white p-4">
-            <p className="text-sm font-semibold">Notifications</p>
-            <div className="mt-3 space-y-2 text-sm text-slate-700">
-              {notifications.length === 0 && <div className="text-slate-500">Aucune notification</div>}
-              {notifications.map((n, i) => (
-                <div key={i} className="rounded-lg bg-slate-50 p-2">{n}</div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {openObservationModal && selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <p className="text-xs text-slate-500">Ajouter observation</p>
-                <h3 className="mt-1 text-lg font-semibold">{selectedTask.patient} — {selectedTask.type}</h3>
-              </div>
-              <button onClick={() => setOpenObservationModal(false)} className="rounded-2xl border px-3 py-2">Fermer</button>
-            </div>
-            <div className="space-y-3">
-              <div className="flex gap-2 flex-wrap">
-                {observationSuggestions.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setObservationText(s)}
-                    className="rounded-full bg-slate-100 px-3 py-1 text-sm"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-              <textarea
-                value={observationText}
-                onChange={(e) => setObservationText(e.target.value)}
-                rows={4}
-                className="w-full rounded-2xl border p-3"
-                placeholder="Observation rapide..."
-              />
-              <div className="flex gap-3 flex-col sm:flex-row">
-                <button onClick={submitObservation} className="flex-1 rounded-2xl bg-slate-900 px-4 py-2 text-white">Enregistrer</button>
-                <button onClick={() => setOpenObservationModal(false)} className="flex-1 rounded-2xl border px-4 py-2">Annuler</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {openProblemModal && selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <p className="text-xs text-red-600">Signaler un problème</p>
-                <h3 className="mt-1 text-lg font-semibold">{selectedTask.patient} — {selectedTask.type}</h3>
-              </div>
-              <button onClick={() => setOpenProblemModal(false)} className="rounded-2xl border px-3 py-2">Fermer</button>
-            </div>
-            <div className="space-y-3">
-              <div className="flex gap-2 flex-wrap">
-                {problemSuggestions.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setProblemText(s)}
-                    className="rounded-full bg-red-50 px-3 py-1 text-sm text-red-700"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-              <textarea
-                value={problemText}
-                onChange={(e) => setProblemText(e.target.value)}
-                rows={4}
-                className="w-full rounded-2xl border p-3"
-                placeholder="Décrivez le problème..."
-              />
-              <div className="flex gap-3 flex-col sm:flex-row">
-                <button onClick={() => submitProblem(true)} className="flex-1 rounded-2xl bg-red-700 px-4 py-2 text-white">Signaler & escalader</button>
-                <button onClick={() => submitProblem(false)} className="flex-1 rounded-2xl border px-4 py-2">Signaler sans escalade</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  return <div className="min-h-screen bg-slate-50 p-4 sm:p-6 dark:bg-slate-950">
+    <PageMeta title="Tournées & horaires | Aulia Care" description="Tâches de soins infirmiers planifiées et traçables" />
+    <PageBreadcrumb pageTitle="Tournées & horaires" />
+    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[["Patients à visiter", summary.patients, ""], ["Tâches restantes", summary.pending, ""], ["Soins en retard", summary.overdue, "text-red-600"], ["Escalades actives", summary.escalated, "text-amber-700"]].map(([label, value, color]) => <div key={label} className="rounded-3xl border bg-white p-4 dark:bg-slate-900"><p className="text-xs text-slate-500">{label}</p><p className={`mt-2 text-2xl font-semibold ${color}`}>{value}</p></div>)}</div>
+    <p className="mt-3 text-xs text-slate-500">Seuls les soins réellement planifiés dans le dossier d’hospitalisation sont affichés. Les rappels vocaux nécessitent que l’application reste ouverte.</p>
+    <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_420px]"><section>
+      <div className="flex flex-col gap-3 sm:flex-row"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Patient, chambre, soin" className="flex-1 rounded-2xl border px-4 py-2" /><select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)} className="rounded-2xl border px-3 py-2"><option value="today">Aujourd’hui</option><option value="tomorrow">Demain</option><option value="morning">Matin</option><option value="afternoon">Après-midi</option><option value="night">Nuit</option><option value="all">Toutes</option></select><button onClick={() => void load()} disabled={loading} className="rounded-2xl border bg-white px-4 py-2 text-sm font-semibold disabled:opacity-60">{loading ? "Chargement…" : "Actualiser"}</button></div>
+      {error && <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}{success && <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{success}</p>}
+      <div className="mt-4 space-y-4">{!loading && !timeline.size && <div className="rounded-2xl border bg-white p-6 text-slate-500">Aucun soin planifié pour cette période.</div>}{[...timeline].map(([time, items]) => <div key={time} className="rounded-2xl border bg-white p-4 dark:bg-slate-900"><p className="mb-2 text-sm font-semibold text-slate-500">{time}</p><div className="space-y-2">{items.map((task) => { const state = statusOf(task); return <button key={task.id} onClick={() => setSelected(task)} className="flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800"><div><p className="font-semibold">{task.patient} — {task.title}</p><p className="text-xs text-slate-500">Chambre {task.room}{task.service ? ` · ${task.service}` : ""}</p></div><span className={`${statusColor[state]} rounded-full px-3 py-1 text-xs font-semibold`}>{state}</span></button>; })}</div></div>)}</div>
+    </section><aside className="space-y-4"><div className="rounded-3xl border bg-white p-4 dark:bg-slate-900">{!selected ? <p className="text-slate-500">Sélectionnez une tâche pour consulter les consignes et l’exécuter.</p> : <><div className="flex justify-between gap-3"><div><p className="text-xs text-slate-500">Patient</p><h3 className="text-xl font-semibold">{selected.patient}</h3><p className="text-sm text-slate-500">Chambre {selected.room}</p></div><p className="text-right text-sm font-semibold">{new Date(selected.scheduledAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</p></div><div className="mt-4 rounded-2xl bg-slate-50 p-4 dark:bg-slate-800"><p className="text-xs text-slate-500">Consignes prescrites</p><p className="mt-1 whitespace-pre-wrap">{selected.instructions || "Aucune consigne complémentaire."}</p></div>{selected.escalationReason && <div className="mt-3 rounded-2xl bg-amber-50 p-4 text-amber-900">{selected.escalationReason}</div>}<div className="mt-4 grid gap-2"><button disabled={!selected.access?.canWrite || ["COMPLETED", "CANCELLED"].includes(selected.status)} onClick={() => openAction("complete")} className="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Attester le soin effectué</button><button disabled={!selected.access?.canWrite} onClick={() => openAction("observe")} className="rounded-2xl border px-4 py-2 text-sm">Ajouter une observation</button><button disabled={!selected.access?.canWrite} onClick={() => openAction("problem")} className="rounded-2xl border border-red-300 px-4 py-2 text-sm text-red-700">Signaler un problème</button></div>{!selected.access?.canWrite && <p className="mt-3 text-xs text-amber-700">{selected.access?.reason || "Écriture non autorisée hors shift actif."}</p>}</>}</div><div className="rounded-3xl border bg-white p-4 dark:bg-slate-900"><p className="font-semibold">Rappels actifs</p><div className="mt-3 space-y-2 text-sm">{reminders.length ? reminders.map((item) => <p key={item} className="rounded-lg bg-slate-50 p-2">{item}</p>) : <p className="text-slate-500">Aucun rappel imminent.</p>}</div></div></aside></div>
+    {action && selected && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 p-4"><div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl"><h3 className="text-lg font-semibold">{action === "complete" ? "Attester le soin" : action === "observe" ? "Observation clinique" : "Signaler un problème"}</h3><p className="text-sm text-slate-500">{selected.patient} — {selected.title}</p><textarea value={note} onChange={(event) => setNote(event.target.value)} rows={5} maxLength={2000} placeholder="Constat clinique et preuve d’exécution…" className="mt-4 w-full rounded-2xl border p-3" />{action === "problem" && <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={escalate} onChange={(event) => setEscalate(event.target.checked)} /> Prévenir immédiatement le médecin responsable</label>}<div className="mt-4 flex gap-3"><button onClick={() => void submit()} className="flex-1 rounded-2xl bg-slate-900 px-4 py-2 font-semibold text-white">Enregistrer</button><button onClick={() => setAction(null)} className="rounded-2xl border px-4 py-2">Annuler</button></div></div></div>}
+  </div>;
 }

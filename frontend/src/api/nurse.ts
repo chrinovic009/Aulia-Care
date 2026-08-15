@@ -81,8 +81,37 @@ export const fetchNurseHospitalizations = async () => {
 };
 
 export const fetchNurseRounds = async () => {
-  return apiFetch("/hospitalizations/nurse/rounds");
+  return apiFetch<NursingCareTask[]>("/hospitalizations/nurse/rounds");
 };
+
+export type NursingCareTaskStatus = "PENDING" | "COMPLETED" | "MISSED" | "ESCALATED" | "CANCELLED" | "OVERDUE";
+
+export type NursingCareTask = {
+  id: string;
+  hospitalizationId: string;
+  patientId: string;
+  scheduledAt: string;
+  patient: string;
+  room: string;
+  bed?: string | null;
+  title: string;
+  instructions?: string | null;
+  priority: "HIGH" | "NORMAL";
+  status: NursingCareTaskStatus;
+  completedAt?: string | null;
+  escalationReason?: string | null;
+  updatedAt: string;
+  service?: string | null;
+  access?: { canWrite: boolean; mode: string; reason: string };
+};
+
+export const updateNurseCareTask = async (
+  taskId: string,
+  payload: { status: "COMPLETED" | "MISSED" | "ESCALATED"; observation?: string; escalationReason?: string },
+) => apiFetch<NursingCareTask>(`/hospitalizations/nurse/care-tasks/${taskId}`, {
+  method: "PATCH",
+  body: JSON.stringify(payload),
+});
 
 export const recordNurseRound = async (hospitalizationId: string, payload: Record<string, unknown>) => {
   return apiFetch(`/hospitalizations/${hospitalizationId}/nurse-rounds`, {
@@ -90,6 +119,9 @@ export const recordNurseRound = async (hospitalizationId: string, payload: Recor
     body: JSON.stringify(payload),
   });
 };
+
+export const recordNurseObservation = async (hospitalizationId: string, observation: string) =>
+  recordNurseRound(hospitalizationId, { action: "observation", observation });
 
 export const fetchNurseHospitalizationById = async (id: string) => {
   return apiFetch(API_CONFIG.HOSPITALIZATIONS.GET_BY_ID(id));
