@@ -3,6 +3,7 @@ import { HospitalizationsService } from './hospitalizations.service';
 import { CreateHospitalizationDto } from './dto/create-hospitalization.dto';
 import { UpdateHospitalizationDto } from './dto/update-hospitalization.dto';
 import { CreateNursingCareTaskDto } from './dto/create-nursing-care-task.dto';
+import { UpdateNursingCareTaskDto } from './dto/update-nursing-care-task.dto';
 import { RecordMedicationAdministrationDto } from './dto/record-medication-administration.dto';
 import { RecordNurseRoundDto } from './dto/record-nurse-round.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -48,6 +49,12 @@ export class HospitalizationsController {
   @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
   nurseRounds(@Request() req: any) {
     return this.hospitalizationsService.getNurseRounds(req.user?.userId);
+  }
+
+  @Patch('nurse/care-tasks/:taskId')
+  @Roles('NURSE')
+  updateNurseCareTask(@Param('taskId') taskId: string, @Body() body: UpdateNursingCareTaskDto, @Request() req: any) {
+    return this.hospitalizationsService.updateNurseCareTask(taskId, body, req.user?.userId);
   }
 
   @Post(':id/nurse-rounds')
