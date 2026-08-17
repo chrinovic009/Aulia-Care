@@ -104,7 +104,7 @@ export function getRedirectPath(role: RoleSlug) {
     SURGEON: "/surgery",
     ANESTHESIOLOGIST: "/anesthesiologist",
     PHARMACIST: "/pharmacie",
-    PATIENT: "/dossier-medical",
+    PATIENT: "/patient",
     ADMIN: "/administration",
     SUPER_ADMIN: "/admin",
   };

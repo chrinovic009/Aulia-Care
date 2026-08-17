@@ -2,6 +2,93 @@ import { useEffect, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { apiFetch } from "../../config/api";
-type Item={id:string;status:string;modality:string;bodyPart:string;patient:{firstName:string;lastName:string};imagingCatalogue?:{name:string}|null;report?:{verified:boolean}|null};
-const groups=[{title:"Prescription & validation",states:["REQUESTED","SCHEDULED"]},{title:"Acquisition / PACS",states:["IN_PROGRESS"]},{title:"Interprétation & résultat",states:["COMPLETED","VERIFIED"]}];
-export default function WorkflowRadio(){const [items,setItems]=useState<Item[]>([]);const [error,setError]=useState<string|null>(null);useEffect(()=>{const load=async()=>{try{setItems(await apiFetch<Item[]>("/imaging"));}catch(e){setError(e instanceof Error?e.message:"Workflow indisponible.");}};void load();const t=window.setInterval(()=>void load(),15000);return()=>window.clearInterval(t);},[]);return <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6"><PageMeta title="Radiologie | Workflow PACS RIS" description="Workflow RIS connecté à la base"/><PageBreadcrumb pageTitle="Workflow PACS / RIS"/><section className="rounded-xl bg-slate-900 p-6 text-white"><h1 className="text-2xl font-semibold">Workflow PACS / RIS</h1><p className="mt-2 text-sm text-slate-300">Les statuts affichés proviennent des demandes enregistrées ; l’intégration DICOM utilisera les références PACS réelles.</p></section>{error&&<p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}<div className="mt-5 grid gap-4 lg:grid-cols-3">{groups.map(group=><section key={group.title} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"><h2 className="font-semibold text-slate-900 dark:text-white">{group.title}</h2><div className="mt-4 space-y-3">{items.filter(item=>group.states.includes(item.status)).map(item=><div key={item.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800"><p className="font-medium">{item.patient.lastName} {item.patient.firstName}</p><p className="text-sm text-slate-600 dark:text-slate-300">{item.imagingCatalogue?.name||item.bodyPart} · {item.modality}</p><p className="mt-2 text-xs font-semibold text-blue-600">{item.status}{item.report?.verified?" · Rapport validé":""}</p></div>)}{!items.some(item=>group.states.includes(item.status))&&<p className="text-sm text-slate-500">Aucune demande à cette étape.</p>}</div></section>)}</div></div>}
+type Item = {
+  id: string;
+  status: string;
+  modality: string;
+  bodyPart: string;
+  patient: { firstName: string; lastName: string };
+  imagingCatalogue?: { name: string } | null;
+  report?: { verified: boolean } | null;
+};
+const groups = [
+  { title: "Prescription & validation", states: ["REQUESTED", "SCHEDULED"] },
+  { title: "Acquisition / PACS", states: ["IN_PROGRESS"] },
+  { title: "Interprétation & résultat", states: ["COMPLETED", "VERIFIED"] },
+];
+export default function WorkflowRadio() {
+  const [items, setItems] = useState<Item[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setItems(await apiFetch<Item[]>("/imaging"));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Workflow indisponible.");
+      }
+    };
+    void load();
+    const t = window.setInterval(() => void load(), 15000);
+    return () => window.clearInterval(t);
+  }, []);
+  return (
+    <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
+      <PageMeta
+        title="Radiologie | Workflow PACS RIS"
+        description="Workflow RIS connecté à la base"
+      />
+      <PageBreadcrumb pageTitle="Workflow PACS / RIS" />
+      <section className="rounded-xl bg-slate-900 p-6 text-white">
+        <h1 className="text-2xl font-semibold">Workflow PACS / RIS</h1>
+        <p className="mt-2 text-sm text-slate-300">
+          Les statuts affichés proviennent des demandes enregistrées ;
+          l’intégration DICOM utilisera les références PACS réelles.
+        </p>
+      </section>
+      {error && (
+        <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      <div className="mt-5 grid gap-4 lg:grid-cols-3">
+        {groups.map((group) => (
+          <section
+            key={group.title}
+            className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          >
+            <h2 className="font-semibold text-slate-900 dark:text-white">
+              {group.title}
+            </h2>
+            <div className="mt-4 space-y-3">
+              {items
+                .filter((item) => group.states.includes(item.status))
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-lg border border-slate-200 p-3 dark:border-slate-800"
+                  >
+                    <p className="font-medium">
+                      {item.patient.lastName} {item.patient.firstName}
+                    </p>
+                    <p className="text-sm text-slate-600 dark:text-slate-300">
+                      {item.imagingCatalogue?.name || item.bodyPart} ·{" "}
+                      {item.modality}
+                    </p>
+                    <p className="mt-2 text-xs font-semibold text-blue-600">
+                      {item.status}
+                      {item.report?.verified ? " · Rapport validé" : ""}
+                    </p>
+                  </div>
+                ))}
+              {!items.some((item) => group.states.includes(item.status)) && (
+                <p className="text-sm text-slate-500">
+                  Aucune demande à cette étape.
+                </p>
+              )}
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
+  );
+}

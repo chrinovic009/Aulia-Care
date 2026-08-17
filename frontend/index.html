@@ -9,6 +9,11 @@
       name="description"
       content="Aulia Care - Gestion hospitalière intelligente et centralisée"
     />
+    <script>
+      try {
+        if (localStorage.getItem("theme") === "dark") document.documentElement.classList.add("dark");
+      } catch (_) {}
+    </script>
   </head>
   <body class="dark:bg-gray-900">
     <div id="root"></div>

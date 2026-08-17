@@ -9,6 +9,7 @@ import {
   saveClinicalSections,
 } from "../../api/doctor";
 import { useAuth } from "../../context/AuthContext";
+import { DoctorTelehealthCall } from "../../components/telehealth/TelehealthCall";
 
 // Petit hook utilitaire pour gérer l'état d'une modale
 function useModal(initialState = false) {
@@ -230,6 +231,7 @@ type ConsultationModuleState = {
   safetyConsignes: string;
   sickLeave: { active: boolean; durationDays?: number; startDate?: string };
   followUp: { recommendedInterval: string; specificDate?: string };
+  telehealthTranscript: Array<{ id: string; speaker: "MEDECIN" | "PATIENT"; text: string; at: string }>;
 };
 
 const createInitialConsultationModule = (): ConsultationModuleState => ({
@@ -255,6 +257,7 @@ const createInitialConsultationModule = (): ConsultationModuleState => ({
   safetyConsignes: "",
   sickLeave: { active: false, durationDays: 0, startDate: "" },
   followUp: { recommendedInterval: "", specificDate: "" },
+  telehealthTranscript: [],
 });
 
 const splitList = (value: string) => value.split(/\n|,/).map((item) => item.trim()).filter(Boolean);
@@ -1084,6 +1087,14 @@ export default function DashboardMedecin() {
                       <FormSelect label="Mode d'arrivée" value={consultationModule.arrivalMode} onChange={(value) => setConsultationModule((current) => ({ ...current, arrivalMode: value }))} options={[['SPONTANEOUS','Spontané'], ['AMBULATORY','Ambulatoire'], ['REFERRED','Orienté'], ['EMERGENCY_TRANSFER','Transfert urgence']]} />
                       <FormSelect label="Priorité de triage" value={consultationModule.triagePriority} onChange={(value) => setConsultationModule((current) => ({ ...current, triagePriority: value }))} options={[['GREEN','Normal'], ['YELLOW','Prioritaire'], ['RED','Urgent']]} />
                     </div>
+                    {consultationModule.consultationMode === "TELECONSULTATION" && (
+                      <DoctorTelehealthCall
+                        consultationId={currentConsultationId}
+                        patientName={formatDoctorPatientName(selectedPatient)}
+                        autoStart
+                        onTranscript={(entries) => setConsultationModule((current) => ({ ...current, telehealthTranscript: entries }))}
+                      />
+                    )}
                   </SectionBox>
 
                   <SectionBox title="Motif, triage et plainte principale">

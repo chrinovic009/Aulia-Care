@@ -3,7 +3,7 @@ import { ApexOptions } from "apexcharts";
 
 export default function BarChartOne() {
   const options: ApexOptions = {
-    colors: ["#465fff"],
+    colors: ["#0D9488"],
     chart: {
       fontFamily: "Outfit, sans-serif",
       type: "bar",
@@ -89,7 +89,7 @@ export default function BarChartOne() {
   ];
   return (
     <div className="max-w-full overflow-x-auto custom-scrollbar">
-      <div id="chartOne" className="min-w-[1000px]">
+      <div id="chartOne" className="min-w-[640px] sm:min-w-[760px] xl:min-w-full">
         <Chart options={options} series={series} type="bar" height={180} />
       </div>
     </div>

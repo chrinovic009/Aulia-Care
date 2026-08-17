@@ -285,7 +285,7 @@ const HistoriqueCaissier: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded shadow overflow-auto">
+      <div className="overflow-x-auto overscroll-x-contain rounded bg-white shadow">
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr>

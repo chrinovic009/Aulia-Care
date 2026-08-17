@@ -27,6 +27,12 @@ export class WearablesController {
     return this.wearables.confirmParentChildLink(String(body?.token || ''), req.user?.userId);
   }
 
+  @Get('parent-child-links/me')
+  @Roles('PATIENT')
+  myChildren(@Request() req: any) {
+    return this.wearables.listMyChildren(req.user?.userId);
+  }
+
   @Post('devices/:deviceId/measurements')
   @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
   ingestMeasurement(@Param('deviceId') deviceId: string, @Body() body: any, @Request() req: any) {

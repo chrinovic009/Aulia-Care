@@ -6,6 +6,7 @@ import { ClinicalSectionsDto } from './dto/clinical-sections.dto';
 import { CreateLabRequestDto } from './dto/create-lab-request.dto';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { UpdateConsultationDto } from './dto/update-consultation.dto';
+import { SaveTelehealthTranscriptDto } from './dto/save-telehealth-transcript.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -43,6 +44,12 @@ export class ConsultationsController {
   @Roles('SUPER_ADMIN', 'PHYSICIAN')
   saveClinicalSections(@Param('id') id: string, @Body() body: ClinicalSectionsDto, @Request() req: any) {
     return this.consultationsService.saveClinicalSections(id, body, req.user?.userId);
+  }
+
+  @Post(':id/telehealth-transcript')
+  @Roles('PHYSICIAN')
+  saveTelehealthTranscript(@Param('id') id: string, @Body() body: SaveTelehealthTranscriptDto, @Request() req: any) {
+    return this.consultationsService.saveTelehealthTranscript(id, body.entries, req.user?.userId);
   }
 
   @Post(':id/lab-requests')

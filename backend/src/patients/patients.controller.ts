@@ -6,6 +6,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CreateAdmissionDto } from './dto/create-admission.dto';
 import { RecordVitalSignsDto } from './dto/record-vital-signs.dto';
+import { CreateDailyCheckinDto } from './dto/create-daily-checkin.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('patients')
@@ -64,6 +65,12 @@ export class PatientsController {
   @Roles('PATIENT')
   getMyPatientProfile(@Request() req: any) {
     return this.patientsService.getPatientProfileForUser(req.user?.userId);
+  }
+
+  @Post('me/daily-checkins')
+  @Roles('PATIENT')
+  createDailyCheckin(@Body() dto: CreateDailyCheckinDto, @Request() req: any) {
+    return this.patientsService.createDailyCheckin(req.user?.userId, dto);
   }
 
   @Post(':id/vital-signs')

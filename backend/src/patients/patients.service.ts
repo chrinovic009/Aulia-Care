@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { RecordVitalSignsDto } from './dto/record-vital-signs.dto';
+import { CreateDailyCheckinDto } from './dto/create-daily-checkin.dto';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import * as bcrypt from 'bcrypt';
 
@@ -354,13 +355,36 @@ export class PatientsService {
         medicalHistories: { orderBy: { eventDate: 'desc' } },
         familyContacts: true,
         vitalSigns: { orderBy: { recordedAt: 'desc' }, take: 20 },
-        consultations: { orderBy: { createdAt: 'desc' }, take: 20, include: { provider: true } },
-        prescriptions: { orderBy: { prescribingDate: 'desc' }, take: 20, include: { prescriber: true, lineItems: true } },
-        labRequests: { where: this.getVisibleLabRequestsWhere(), orderBy: { requestedAt: 'desc' }, take: 20, include: { results: true } },
+        consultations: { orderBy: { createdAt: 'desc' }, take: 20, include: { provider: { select: { displayName: true, firstName: true, lastName: true, specialty: true } } } },
+        prescriptions: {
+          orderBy: { prescribingDate: 'desc' },
+          take: 20,
+          include: {
+            prescriber: { select: { displayName: true, firstName: true, lastName: true, specialty: true } },
+            lineItems: { include: { medication: { select: { name: true, strength: true, unit: true } } } },
+          },
+        },
+        labRequests: {
+          where: this.getVisibleLabRequestsWhere(),
+          orderBy: { requestedAt: 'desc' },
+          take: 20,
+          include: { results: { include: { parameters: { include: { labTestParameter: true } } } }, requestedBy: { select: { displayName: true, firstName: true, lastName: true } } },
+        },
         imagingRequests: { orderBy: { createdAt: 'desc' }, take: 20, include: { report: true } },
         appointments: { orderBy: { scheduledAt: 'desc' }, take: 20, include: { serviceUnit: true } },
-        hospitalizations: { orderBy: { admittedAt: 'desc' }, take: 10 },
-        invoices: { orderBy: { issuedAt: 'desc' }, take: 20, include: { payments: true } },
+        hospitalizations: {
+          orderBy: { admittedAt: 'desc' },
+          take: 10,
+          include: {
+            ServiceUnit: { select: { name: true, location: true } },
+            physician: { select: { displayName: true, firstName: true, lastName: true, specialty: true } },
+            nurseInCharge: { select: { displayName: true, firstName: true, lastName: true } },
+            nurseAssignments: { where: { releasedAt: null }, include: { nurse: { select: { displayName: true, firstName: true, lastName: true } } } },
+            nursingCareTasks: { orderBy: { dueAt: 'asc' }, take: 30, include: { assignedNurse: { select: { displayName: true, firstName: true, lastName: true } } } },
+            medicationAdministrations: { orderBy: { scheduledAt: 'desc' }, take: 30, include: { prescriptionLine: { include: { medication: { select: { name: true, strength: true, unit: true } } } } } },
+          },
+        },
+        invoices: { orderBy: { issuedAt: 'desc' }, take: 20, include: { payments: true, discountRequests: { select: { amount: true, status: true, reason: true, reviewedAt: true } } } },
       },
     });
 
@@ -369,6 +393,53 @@ export class PatientsService {
     }
 
     return patient;
+  }
+
+  async createDailyCheckin(userId: string, dto: CreateDailyCheckinDto) {
+    const profile = await this.getPatientProfileForUser(userId);
+    const normalizedSymptoms = [...new Set((dto.symptoms || []).map((item) => String(item).trim()).filter(Boolean))].slice(0, 20);
+    const event = await this.prisma.medicalHistory.create({
+      data: {
+        patientId: profile.id,
+        kind: 'PATIENT_DAILY_CHECKIN',
+        details: JSON.stringify({
+          feelsWell: dto.feelsWell,
+          symptoms: normalizedSymptoms,
+          message: dto.message?.trim() || null,
+          voiceTranscript: dto.voiceTranscript?.trim() || null,
+          submittedAt: new Date().toISOString(),
+          source: 'PATIENT_PORTAL',
+        }),
+      },
+    });
+    const activeStay = await this.prisma.hospitalization.findFirst({
+      where: { patientId: profile.id, dischargedAt: null, status: { in: ['ADMITTED', 'TRANSFERRED'] } },
+      orderBy: { admittedAt: 'desc' },
+      select: { nurseInChargeId: true, nurseAssignments: { where: { releasedAt: null }, select: { nurseId: true } } },
+    });
+    const recipients = [...new Set([activeStay?.nurseInChargeId, ...(activeStay?.nurseAssignments.map((item) => item.nurseId) || [])].filter(Boolean) as string[])];
+    await Promise.all(recipients.map(async (recipientId) => {
+      const notification = await this.prisma.notification.create({
+        data: {
+          patientId: profile.id,
+          recipientId,
+          type: 'TASK',
+          priority: dto.feelsWell ? 'MEDIUM' : 'HIGH',
+          title: 'Nouveau suivi quotidien patient',
+          message: dto.feelsWell ? 'Le patient a complété son suivi quotidien.' : 'Le patient signale un inconfort : une évaluation humaine est demandée.',
+          relatedEntity: 'MedicalHistory',
+          relatedId: event.id,
+        },
+      });
+      this.notificationsGateway.notifyToUser(recipientId, 'patient.daily-checkin.created', notification);
+    }));
+    return {
+      id: event.id,
+      submittedAt: event.eventDate,
+      message: dto.feelsWell
+        ? 'Merci pour votre suivi. Continuez à respecter les consignes de votre équipe soignante.'
+        : 'Votre signalement a été enregistré et transmis à l’équipe infirmière de votre séjour lorsqu’elle est affectée. En cas d’urgence, contactez immédiatement les services d’urgence.',
+    };
   }
 
   async createAdmission(createAdmissionDto: any, actorId?: string) {

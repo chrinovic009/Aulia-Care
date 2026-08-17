@@ -10,13 +10,16 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     await this.$connect();
     this.$use(async (params, next) => {
       const result = await next(params);
-      if (
-        params.model &&
-        ['create', 'createMany', 'update', 'updateMany', 'upsert', 'delete', 'deleteMany'].includes(params.action)
-      ) {
+      const recordId = typeof (result as { id?: unknown } | null)?.id === 'string'
+        ? (result as { id: string }).id
+        : typeof (params.args as { where?: { id?: unknown } } | undefined)?.where?.id === 'string'
+          ? String((params.args as { where: { id: string } }).where.id)
+          : null;
+      if (params.model && recordId && ['create', 'update', 'upsert', 'delete'].includes(params.action)) {
         PrismaService.realtimeEvents.emit('db.changed', {
           model: params.model,
           action: params.action,
+          recordId,
           at: new Date().toISOString(),
         });
       }

@@ -46,14 +46,24 @@ const navItems: NavItem[] = [
     path: "/traitements",
   },
   {
+    icon: <TimeIcon />,
+    name: "Ma montre connectée",
+    path: "/montre-connectee",
+  },
+  {
+    icon: <UserCircleIcon />,
+    name: "Mes enfants",
+    path: "/enfants",
+  },
+  {
     icon: <CalenderIcon />,
     name: "Rendez-vous",
-    path: "/calendar",
+    path: "/rendez-vous",
   },
   {
     icon: <DocsIcon />,
     name: "Examens & résultats",
-    path: "/basic-tables",
+    path: "/examens-resultats",
   },
   {
     icon: <BoxCubeIcon />,
@@ -78,7 +88,7 @@ const navItems: NavItem[] = [
   {
     icon: <DollarLineIcon />,
     name: "Paiements",
-    path: "/form-elements",
+    path: "/paiements",
   },
   {
     icon: <LockIcon />,
@@ -539,7 +549,7 @@ const AppSidebar: React.FC = () => {
 
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
+      className={`fixed top-16 flex h-[calc(100dvh-4rem)] flex-col px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 transition-all duration-300 ease-in-out z-50 border-r border-gray-200 lg:top-0 lg:h-[100dvh] 
         ${
           isExpanded || isMobileOpen
             ? "w-[290px]"
@@ -552,27 +562,21 @@ const AppSidebar: React.FC = () => {
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div
-        className={`py-8 flex ${
-          !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
-        }`}
-      >
-        <Link to="/">
+      <div className="flex w-full justify-center py-8">
+        <Link to="/" className="flex items-center justify-center" aria-label="Accueil Aulia Care">
           {isExpanded || isHovered || isMobileOpen ? (
             <>
               <img
                 className="dark:hidden"
                 src="/images/logo/logo.png"
                 alt="Logo"
-                width={150}
-                height={40}
+                width={80}
               />
               <img
                 className="hidden dark:block"
                 src="/images/logo/logo-dark.png"
                 alt="Logo"
-                width={150}
-                height={40}
+                width={80}
               />
             </>
           ) : (

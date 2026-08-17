@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Outfit:wght@100..900&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -8,7 +8,7 @@
 
 @theme {
   --font-*: initial;
-  --font-outfit: Outfit, sans-serif;
+  --font-outfit: Montserrat, Outfit, sans-serif;
 
   --breakpoint-*: initial;
   --breakpoint-2xsm: 375px;
@@ -42,45 +42,169 @@
   --color-white: #ffffff;
   --color-black: #101828;
 
-  --color-brand-25: #f6fff3;
-  --color-brand-50: #efffe8;
-  --color-brand-100: #daf8cf;
-  --color-brand-200: #bfe5ad;
-  --color-brand-300: #95cf7a;
-  --color-brand-400: #6ab84f;
-  --color-brand-500: #449c32;
-  --color-brand-600: #2d7f24;
-  --color-brand-700: #1f6320;
-  --color-brand-800: #144d1a;
-  --color-brand-900: #085c00;
-  --color-brand-950: #063d00;
+  --color-brand-25: #f2fbf9;
+  --color-brand-50: #e6f7f4;
+  --color-brand-100: #c9eee7;
+  --color-brand-200: #9ddfd5;
+  --color-brand-300: #66c8bb;
+  --color-brand-400: #32ad9f;
+  --color-brand-500: #0d9488;
+  --color-brand-600: #087c73;
+  --color-brand-700: #07645e;
+  --color-brand-800: #0a4f4b;
+  --color-brand-900: #0a1d3a;
+  --color-brand-950: #061229;
 
-  --color-blue-light-25: #f6fff3;
-  --color-blue-light-50: #efffe8;
-  --color-blue-light-100: #daf8cf;
-  --color-blue-light-200: #bfe5ad;
-  --color-blue-light-300: #95cf7a;
-  --color-blue-light-400: #6ab84f;
-  --color-blue-light-500: #449c32;
-  --color-blue-light-600: #2d7f24;
-  --color-blue-light-700: #1f6320;
-  --color-blue-light-800: #144d1a;
-  --color-blue-light-900: #085c00;
-  --color-blue-light-950: #063d00;
+  --color-blue-25: #f2fbf9;
+  --color-blue-50: #e6f7f4;
+  --color-blue-100: #c9eee7;
+  --color-blue-200: #9ddfd5;
+  --color-blue-300: #66c8bb;
+  --color-blue-400: #32ad9f;
+  --color-blue-500: #0d9488;
+  --color-blue-600: #087c73;
+  --color-blue-700: #07645e;
+  --color-blue-800: #0a4f4b;
+  --color-blue-900: #0a1d3a;
+  --color-blue-950: #061229;
 
-  --color-gray-25: #fcfcfd;
-  --color-gray-50: #f9fafb;
-  --color-gray-100: #f2f4f7;
-  --color-gray-200: #e4e7ec;
-  --color-gray-300: #d0d5dd;
-  --color-gray-400: #98a2b3;
-  --color-gray-500: #667085;
-  --color-gray-600: #475467;
-  --color-gray-700: #344054;
-  --color-gray-800: #1d2939;
-  --color-gray-900: #101828;
-  --color-gray-950: #0c111d;
-  --color-gray-dark: #1a2231;
+  --color-blue-light-25: #f2fbf9;
+  --color-blue-light-50: #e6f7f4;
+  --color-blue-light-100: #c9eee7;
+  --color-blue-light-200: #9ddfd5;
+  --color-blue-light-300: #66c8bb;
+  --color-blue-light-400: #32ad9f;
+  --color-blue-light-500: #0d9488;
+  --color-blue-light-600: #087c73;
+  --color-blue-light-700: #07645e;
+  --color-blue-light-800: #0a4f4b;
+  --color-blue-light-900: #0a1d3a;
+  --color-blue-light-950: #061229;
+
+  /* All non-semantic template accents are mapped to the Aulia Care system.
+     This keeps legacy pages coherent while their components are progressively
+     simplified. Red/orange remain reserved for clinical warning states. */
+  --color-slate-50: #f7faf9;
+  --color-slate-100: #edf3f1;
+  --color-slate-200: #dce7e4;
+  --color-slate-300: #c6d5d1;
+  --color-slate-400: #8fa39d;
+  --color-slate-500: #637771;
+  --color-slate-600: #4d625c;
+  --color-slate-700: #354b45;
+  --color-slate-800: #203630;
+  --color-slate-900: #0a1d3a;
+  --color-slate-950: #061229;
+
+  --color-sky-50: #f2fbf9;
+  --color-sky-100: #e6f7f4;
+  --color-sky-200: #c9eee7;
+  --color-sky-300: #9ddfd5;
+  --color-sky-400: #66c8bb;
+  --color-sky-500: #0d9488;
+  --color-sky-600: #087c73;
+  --color-sky-700: #07645e;
+  --color-sky-800: #0a4f4b;
+  --color-sky-900: #0a1d3a;
+  --color-sky-950: #061229;
+
+  --color-cyan-50: #f2fbf9;
+  --color-cyan-100: #e6f7f4;
+  --color-cyan-200: #c9eee7;
+  --color-cyan-300: #9ddfd5;
+  --color-cyan-400: #66c8bb;
+  --color-cyan-500: #0d9488;
+  --color-cyan-600: #087c73;
+  --color-cyan-700: #07645e;
+  --color-cyan-800: #0a4f4b;
+  --color-cyan-900: #0a1d3a;
+  --color-cyan-950: #061229;
+
+  --color-indigo-50: #f3f8fb;
+  --color-indigo-100: #dcecf3;
+  --color-indigo-200: #bedce7;
+  --color-indigo-300: #8fc2d1;
+  --color-indigo-400: #519cad;
+  --color-indigo-500: #0d7482;
+  --color-indigo-600: #0b6273;
+  --color-indigo-700: #0a4f63;
+  --color-indigo-800: #0a3b51;
+  --color-indigo-900: #0a1d3a;
+  --color-indigo-950: #061229;
+
+  --color-violet-50: #f2fbf9;
+  --color-violet-100: #e6f7f4;
+  --color-violet-200: #c9eee7;
+  --color-violet-300: #9ddfd5;
+  --color-violet-400: #32ad9f;
+  --color-violet-500: #0d9488;
+  --color-violet-600: #087c73;
+  --color-violet-700: #07645e;
+  --color-violet-800: #0a4f4b;
+  --color-violet-900: #0a1d3a;
+  --color-violet-950: #061229;
+
+  --color-purple-50: #f2fbf9;
+  --color-purple-100: #e6f7f4;
+  --color-purple-200: #c9eee7;
+  --color-purple-300: #9ddfd5;
+  --color-purple-400: #32ad9f;
+  --color-purple-500: #0d9488;
+  --color-purple-600: #087c73;
+  --color-purple-700: #07645e;
+  --color-purple-800: #0a4f4b;
+  --color-purple-900: #0a1d3a;
+  --color-purple-950: #061229;
+
+  --color-teal-50: #f2fbf9;
+  --color-teal-100: #e6f7f4;
+  --color-teal-200: #c9eee7;
+  --color-teal-300: #9ddfd5;
+  --color-teal-400: #66c8bb;
+  --color-teal-500: #0d9488;
+  --color-teal-600: #087c73;
+  --color-teal-700: #07645e;
+  --color-teal-800: #0a4f4b;
+  --color-teal-900: #0a1d3a;
+  --color-teal-950: #061229;
+
+  --color-emerald-50: #effcf4;
+  --color-emerald-100: #d9f9e5;
+  --color-emerald-200: #b8f0cc;
+  --color-emerald-300: #83e2aa;
+  --color-emerald-400: #4bd17a;
+  --color-emerald-500: #22c55e;
+  --color-emerald-600: #16a34a;
+  --color-emerald-700: #15803d;
+  --color-emerald-800: #166534;
+  --color-emerald-900: #14532d;
+  --color-emerald-950: #092f1b;
+
+  --color-green-50: #effcf4;
+  --color-green-100: #d9f9e5;
+  --color-green-200: #b8f0cc;
+  --color-green-300: #83e2aa;
+  --color-green-400: #4bd17a;
+  --color-green-500: #22c55e;
+  --color-green-600: #16a34a;
+  --color-green-700: #15803d;
+  --color-green-800: #166534;
+  --color-green-900: #14532d;
+  --color-green-950: #092f1b;
+
+  --color-gray-25: #fcfdfd;
+  --color-gray-50: #f7faf9;
+  --color-gray-100: #edf3f1;
+  --color-gray-200: #dce7e4;
+  --color-gray-300: #c6d5d1;
+  --color-gray-400: #8fa39d;
+  --color-gray-500: #637771;
+  --color-gray-600: #4d625c;
+  --color-gray-700: #354b45;
+  --color-gray-800: #203630;
+  --color-gray-900: #0a1d3a;
+  --color-gray-950: #061229;
+  --color-gray-dark: #10233c;
 
   --color-orange-25: #fffaf5;
   --color-orange-50: #fff6ed;
@@ -148,7 +272,7 @@
   --shadow-theme-xl: 0px 20px 24px -4px rgba(16, 24, 40, 0.08),
     0px 8px 8px -4px rgba(16, 24, 40, 0.03);
   --shadow-datepicker: -5px 0 0 #262d3c, 5px 0 0 #262d3c;
-  --shadow-focus-ring: 0px 0px 0px 4px rgba(70, 95, 255, 0.12);
+  --shadow-focus-ring: 0px 0px 0px 4px rgba(13, 148, 136, 0.18);
   --shadow-sm: 0px 1px 2px 0px rgba(16, 24, 40, 0.1),
     0px 1px 3px 0px rgba(16, 24, 40, 0.1);
   --shadow-tooltip: 0px 4px 6px -2px rgba(16, 24, 40, 0.05),
@@ -187,7 +311,287 @@
     cursor: pointer;
   }
   body {
-    @apply relative font-normal font-outfit z-1 bg-gray-50;
+    @apply relative font-normal font-outfit z-1 bg-gray-50 text-gray-900;
+  }
+}
+
+:root {
+  --aulia-navy: #0a1d3a;
+  --aulia-teal: #0d9488;
+  --aulia-green: #22c55e;
+  --aulia-surface: #f7faf9;
+  --aulia-surface-raised: #ffffff;
+  --aulia-ink: #0a1d3a;
+  --aulia-muted: #4d625c;
+  --aulia-border: #dce7e4;
+}
+
+.dark {
+  --aulia-surface: #061229;
+  --aulia-surface-raised: #0a1d3a;
+  --aulia-ink: #edf9f6;
+  --aulia-muted: #b9d0c9;
+  --aulia-border: #1c4648;
+  color-scheme: dark;
+}
+
+/*
+ * Compatibility layer for older screens that predate the Aulia theme system.
+ * Explicit `dark:*` utility classes remain authoritative; these fallbacks only
+ * protect components that otherwise render light text on a light surface or
+ * dark text on a dark surface after the global theme is changed.
+ */
+.dark body { color: var(--aulia-ink); background-color: var(--aulia-surface); }
+
+.dark :is(.bg-white, .bg-gray-50, .bg-slate-50):not([class*="dark:bg-"]) {
+  background-color: var(--aulia-surface-raised) !important;
+}
+
+.dark :is(.bg-gray-100, .bg-slate-100):not([class*="dark:bg-"]) {
+  background-color: #102b3c !important;
+}
+
+.dark :is(.border-gray-100, .border-gray-200, .border-slate-100, .border-slate-200):not([class*="dark:border-"]) {
+  border-color: var(--aulia-border) !important;
+}
+
+.dark :is(.text-gray-900, .text-gray-800, .text-slate-900, .text-slate-800):not([class*="dark:text-"]) {
+  color: var(--aulia-ink) !important;
+}
+
+.dark :is(.text-gray-700, .text-gray-600, .text-slate-700, .text-slate-600):not([class*="dark:text-"]) {
+  color: #c9ddd7 !important;
+}
+
+.dark :is(input, textarea, select):not([class*="dark:bg-"]) {
+  color: var(--aulia-ink);
+  background-color: #091b31;
+  border-color: var(--aulia-border);
+}
+
+.aulia-card {
+  overflow: hidden;
+  border: 1px solid var(--aulia-border);
+  border-radius: 1rem;
+  background: var(--aulia-surface-raised);
+  box-shadow: 0 0.25rem 1.25rem rgba(10, 29, 58, 0.06);
+}
+
+.dark .aulia-card {
+  box-shadow: 0 0.35rem 1.5rem rgba(0, 0, 0, 0.2);
+}
+
+.aulia-field {
+  border: 1px solid var(--aulia-border);
+  border-radius: 0.75rem;
+  color: var(--aulia-ink);
+  background: var(--aulia-surface-raised);
+  box-shadow: 0 0.0625rem 0.125rem rgba(10, 29, 58, 0.04);
+}
+
+.aulia-field:focus {
+  border-color: var(--aulia-teal);
+}
+
+.dark .aulia-notification-panel {
+  color: var(--aulia-ink);
+  background-color: #0a1d3a !important;
+  border-color: #1c4648 !important;
+}
+
+/* Global Aulia Care loading transition: navy for trust, teal for technology,
+   and green for life. It uses the official icon, never a duplicate logo. */
+.aulia-page-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  isolation: isolate;
+  color: #0a1d3a;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(13, 148, 136, 0.17), transparent 32rem),
+    linear-gradient(135deg, #ffffff 0%, #f3fbf9 54%, #e4f5f0 100%);
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 260ms ease, visibility 260ms ease;
+}
+
+.aulia-page-loader--hidden {
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.aulia-page-loader__ambient {
+  position: absolute;
+  z-index: -1;
+  width: min(52vw, 42rem);
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  filter: blur(24px);
+  opacity: 0.18;
+  animation: aulia-loader-drift 5s ease-in-out infinite alternate;
+}
+
+.aulia-page-loader__ambient--teal {
+  top: -25%;
+  right: -12%;
+  background: #0d9488;
+}
+
+.aulia-page-loader__ambient--green {
+  bottom: -31%;
+  left: -15%;
+  background: #22c55e;
+  animation-delay: -2.4s;
+}
+
+.aulia-page-loader__content {
+  display: flex;
+  width: min(88vw, 25rem);
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.aulia-page-loader__mark {
+  position: relative;
+  display: grid;
+  width: clamp(8.25rem, 23vw, 10.75rem);
+  aspect-ratio: 1;
+  place-items: center;
+}
+
+.aulia-page-loader__logo {
+  position: relative;
+  z-index: 2;
+  width: 62%;
+  height: 62%;
+  border-radius: 50%;
+  object-fit: contain;
+  filter: drop-shadow(0 0.8rem 1.4rem rgba(0, 0, 0, 0.3));
+  animation: aulia-loader-logo 2.8s ease-in-out infinite;
+}
+
+.aulia-page-loader__ring,
+.aulia-page-loader__pulse {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.aulia-page-loader__ring--outer {
+  inset: 0;
+  border: 2px solid rgba(34, 197, 94, 0.33);
+  border-top-color: #22c55e;
+  border-right-color: #0d9488;
+  animation: aulia-loader-spin 1.7s linear infinite;
+}
+
+.aulia-page-loader__ring--inner {
+  inset: 0.78rem;
+  border: 1px solid rgba(13, 148, 136, 0.22);
+  border-bottom-color: #0a1d3a;
+  animation: aulia-loader-spin 2.4s linear infinite reverse;
+}
+
+.aulia-page-loader__pulse {
+  inset: 1.55rem;
+  z-index: 1;
+  border: 1px solid rgba(13, 148, 136, 0.5);
+  animation: aulia-loader-pulse 2.2s ease-out infinite;
+}
+
+.aulia-page-loader__identity {
+  margin-top: 1.45rem;
+  display: grid;
+  gap: 0.38rem;
+}
+
+.aulia-page-loader__name {
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.aulia-page-loader__tagline {
+  color: #4d625c;
+  font-size: 0.74rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.aulia-page-loader__ecg {
+  width: min(80vw, 15.625rem);
+  margin-top: 1.15rem;
+  overflow: visible;
+}
+
+.aulia-page-loader__ecg path {
+  fill: none;
+  stroke: #22c55e;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 320;
+  stroke-dashoffset: 320;
+  filter: drop-shadow(0 0 0.35rem rgba(34, 197, 94, 0.78));
+  animation: aulia-loader-ecg 1.7s ease-in-out infinite;
+}
+
+.aulia-page-loader__progress {
+  width: min(70vw, 13.75rem);
+  height: 0.22rem;
+  margin-top: 1rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgba(13, 148, 136, 0.16);
+}
+
+.aulia-page-loader__progress span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0d9488, #22c55e, #e6fff7);
+  box-shadow: 0 0 0.7rem rgba(34, 197, 94, 0.85);
+  animation: aulia-loader-progress 1.15s ease-in-out infinite;
+}
+
+.dark .aulia-page-loader {
+  color: #f7fffc;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(13, 148, 136, 0.29), transparent 32rem),
+    linear-gradient(135deg, #061229 0%, #0a1d3a 52%, #073d45 100%);
+}
+
+.dark .aulia-page-loader__ambient { opacity: 0.28; }
+
+.dark .aulia-page-loader__ring--inner {
+  border-color: rgba(212, 255, 244, 0.34);
+  border-bottom-color: #ffffff;
+}
+
+.dark .aulia-page-loader__pulse { border-color: rgba(255, 255, 255, 0.62); }
+.dark .aulia-page-loader__tagline { color: rgba(231, 255, 248, 0.82); }
+.dark .aulia-page-loader__progress { background: rgba(232, 255, 250, 0.2); }
+
+@keyframes aulia-loader-spin { to { transform: rotate(360deg); } }
+@keyframes aulia-loader-drift { to { transform: translate3d(-2rem, 1.5rem, 0) scale(1.08); } }
+@keyframes aulia-loader-logo { 50% { transform: translateY(-0.35rem) scale(1.035); } }
+@keyframes aulia-loader-pulse { 0% { transform: scale(0.65); opacity: 0.88; } 100% { transform: scale(1.75); opacity: 0; } }
+@keyframes aulia-loader-ecg { 0%, 15% { stroke-dashoffset: 320; opacity: 0.25; } 58%, 100% { stroke-dashoffset: 0; opacity: 1; } }
+@keyframes aulia-loader-progress { 0% { transform: translateX(-115%); } 100% { transform: translateX(335%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .aulia-page-loader *,
+  .aulia-page-loader::before,
+  .aulia-page-loader::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
 
@@ -202,27 +606,42 @@
 }
 
 @media (max-width: 640px) {
-  .fixed.inset-0[class*="z-50"],
-  .fixed.inset-0[class*="z-[60]"],
-  .fixed.inset-0[class*="z-99999"] {
+  /* Covers legacy page-specific modals as well as the shared Modal. */
+  .fixed.inset-0:not(.aulia-page-loader) {
     align-items: flex-start !important;
     overflow-y: auto !important;
     overscroll-behavior: contain;
     padding: 0.75rem !important;
   }
 
-  .fixed.inset-0[class*="z-50"] > div:not([class*="fixed"]),
-  .fixed.inset-0[class*="z-[60]"] > div:not([class*="fixed"]),
-  .fixed.inset-0[class*="z-99999"] > div:not([class*="fixed"]) {
+  .fixed.inset-0:not(.aulia-page-loader) > :not([class*="fixed"]) {
     max-height: calc(100dvh - 1.5rem);
     width: 100%;
     overflow-y: auto;
   }
 
-  .fixed.inset-0[class*="z-50"] aside,
-  .fixed.inset-0[class*="z-[60]"] aside {
+  .fixed.inset-0:not(.aulia-page-loader) aside {
     max-height: 100dvh;
     overflow-y: auto;
+  }
+}
+
+/* iOS and modern Android can reserve part of the viewport for browser chrome
+   or a display cut-out. Fixed operational UI must remain reachable there. */
+@supports (padding: max(0px)) {
+  .aulia-telehealth-overlay {
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    padding-left: max(1rem, env(safe-area-inset-left));
+  }
+
+  .fixed.bottom-6 {
+    bottom: max(1.5rem, calc(env(safe-area-inset-bottom) + 0.75rem));
+  }
+
+  .fixed.right-6 {
+    right: max(1.5rem, calc(env(safe-area-inset-right) + 0.75rem));
   }
 }
 
@@ -569,13 +988,13 @@ span.flatpickr-weekday,
 .flatpickr-day.selected.nextMonthDay,
 .flatpickr-day.startRange.nextMonthDay,
 .flatpickr-day.endRange.nextMonthDay {
-  background: #465fff;
+  background: #0d9488;
   @apply !border-blue-500 !bg-blue-500 hover:!border-blue-500 hover:!bg-blue-500;
 }
 .flatpickr-day.selected.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.startRange.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.endRange.startRange + .endRange:not(:nth-child(7n + 1)) {
-  box-shadow: -10px 0 0 #465fff;
+  box-shadow: -10px 0 0 #0d9488;
 }
 
 .flatpickr-months .flatpickr-prev-month svg,

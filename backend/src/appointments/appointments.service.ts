@@ -3,6 +3,7 @@ import { AuditAction, PatientWorkflowStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
+import { CreateOwnAppointmentDto } from './dto/create-own-appointment.dto';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 
 @Injectable()
@@ -59,6 +60,41 @@ export class AppointmentsService {
       include: { department: true },
     });
     return { service, serviceUnit };
+  }
+
+  async getBookingOptions(userId?: string) {
+    if (!userId) throw new ForbiddenException('Compte patient non authentifié.');
+    return this.prisma.service.findMany({
+      where: { active: true },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, description: true, isParamedical: true },
+    });
+  }
+
+  async createOwn(dto: CreateOwnAppointmentDto, userId?: string) {
+    if (!userId) throw new ForbiddenException('Compte patient non authentifié.');
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true, phone: true, firstName: true, lastName: true } });
+    if (!user) throw new NotFoundException('Compte patient introuvable.');
+    const patient = await this.prisma.patient.findFirst({
+      where: {
+        deletedAt: null,
+        OR: [
+          user.email ? { email: user.email } : undefined,
+          user.phone ? { phone: user.phone } : undefined,
+          { firstName: { equals: user.firstName, mode: 'insensitive' }, lastName: { equals: user.lastName, mode: 'insensitive' } },
+        ].filter(Boolean) as any,
+      },
+      select: { id: true },
+    });
+    if (!patient) throw new NotFoundException('Fiche patient introuvable pour ce compte.');
+    return this.create({
+      patientId: patient.id,
+      serviceId: dto.serviceId,
+      scheduledAt: dto.scheduledAt,
+      durationMinutes: dto.durationMinutes,
+      reason: dto.reason?.trim() || 'Demande de rendez-vous patient',
+      status: 'SCHEDULED',
+    }, userId);
   }
 
   private async assertNoServiceUnitCollision(

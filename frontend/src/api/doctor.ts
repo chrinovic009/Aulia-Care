@@ -60,6 +60,14 @@ export const saveClinicalSections = (consultationId: string, payload: Record<str
     body: JSON.stringify(payload),
   });
 
+export const saveTelehealthTranscript = (
+  consultationId: string,
+  entries: Array<{ speaker: 'MEDECIN' | 'PATIENT'; text: string; at: string }>,
+) => apiFetch(`/consultations/${consultationId}/telehealth-transcript`, {
+  method: 'POST',
+  body: JSON.stringify({ entries }),
+});
+
 export const createLabRequest = (consultationId: string, payload: Record<string, unknown>) =>
   apiFetch(`/consultations/${consultationId}/lab-requests`, {
     method: "POST",

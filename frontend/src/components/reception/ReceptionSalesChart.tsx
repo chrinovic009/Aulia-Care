@@ -25,7 +25,7 @@ export default function ReceptionStatisticsChart() {
   const noChartData = !error && categories.length > 0 && !hasChartData;
 
   const options: ApexOptions = {
-    colors: ["#16a34a", "#2563eb", "#dc2626"],
+    colors: ["#22C55E", "#0D9488", "#dc2626"],
     chart: {
       fontFamily: "Outfit, sans-serif",
       type: "bar",
@@ -214,7 +214,7 @@ export default function ReceptionStatisticsChart() {
 
       {/* Chart */}
       <div className="max-w-full overflow-x-auto custom-scrollbar">
-        <div className="-ml-5 min-w-[650px] xl:min-w-full pl-2 min-h-[320px]">
+        <div className="-ml-3 min-w-[520px] pl-2 min-h-[280px] sm:-ml-5 sm:min-w-[650px] sm:min-h-[320px] xl:min-w-full">
           {error ? (
             <div className="flex h-[320px] items-center justify-center text-sm text-red-600 dark:text-red-400">
               {error}
