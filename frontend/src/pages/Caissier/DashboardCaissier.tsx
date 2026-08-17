@@ -324,7 +324,7 @@ const DashboardCaissier: React.FC = () => {
               <Metric label="Reste a payer" value={`${fmt(billingSummary.balanceDue)} CDF`} tone="red" />
             </div>
 
-            <div className="overflow-auto rounded border">
+            <div className="overflow-x-auto overscroll-x-contain rounded border">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50">
                   <tr>

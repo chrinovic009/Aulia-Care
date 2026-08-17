@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards }
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
+import { CreateOwnAppointmentDto } from './dto/create-own-appointment.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -15,6 +16,18 @@ export class AppointmentsController {
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
   findAll() {
     return this.appointmentsService.findAll();
+  }
+
+  @Get('booking-options')
+  @Roles('PATIENT')
+  bookingOptions(@Request() req: any) {
+    return this.appointmentsService.getBookingOptions(req.user?.userId);
+  }
+
+  @Post('me')
+  @Roles('PATIENT')
+  createOwn(@Body() dto: CreateOwnAppointmentDto, @Request() req: any) {
+    return this.appointmentsService.createOwn(dto, req.user?.userId);
   }
 
   @Get(':id')

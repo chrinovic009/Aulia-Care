@@ -87,6 +87,37 @@ export class WearablesService {
     return active;
   }
 
+  async listMyChildren(parentUserId?: string) {
+    if (!parentUserId) throw new ForbiddenException('Compte parent non authentifié.');
+    return this.prisma.parentChildLink.findMany({
+      where: { parentUserId, status: 'ACTIVE', revokedAt: null },
+      orderBy: { acceptedAt: 'desc' },
+      select: {
+        id: true,
+        acceptedAt: true,
+        child: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            dateOfBirth: true,
+            wearableDevices: {
+              where: { status: 'ACTIVE' },
+              orderBy: { lastSeenAt: 'desc' },
+              take: 1,
+              select: {
+                id: true,
+                displayName: true,
+                lastSeenAt: true,
+                measurements: { orderBy: { measuredAt: 'desc' }, take: 6, select: { metric: true, value: true, unit: true, measuredAt: true, quality: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
   async ingestMeasurement(deviceId: string, body: any, actorId?: string) {
     const device = await this.prisma.wearableDevice.findUnique({ where: { id: deviceId }, include: { patient: true } });
     if (!device) throw new NotFoundException('Montre introuvable.');

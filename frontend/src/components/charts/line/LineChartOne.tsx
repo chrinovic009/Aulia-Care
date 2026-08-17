@@ -8,7 +8,7 @@ export default function LineChartOne() {
       position: "top",
       horizontalAlign: "left",
     },
-    colors: ["#465FFF", "#9CB9FF"], // Define line colors
+    colors: ["#0D9488", "#22C55E"], // Aulia Care: technology and life
     chart: {
       fontFamily: "Outfit, sans-serif",
       height: 310,
@@ -112,7 +112,7 @@ export default function LineChartOne() {
   ];
   return (
     <div className="max-w-full overflow-x-auto custom-scrollbar">
-      <div id="chartEight" className="min-w-[1000px]">
+      <div id="chartEight" className="min-w-[640px] sm:min-w-[760px] xl:min-w-full">
         <Chart options={options} series={series} type="area" height={310} />
       </div>
     </div>

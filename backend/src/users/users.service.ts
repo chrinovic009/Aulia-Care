@@ -196,6 +196,9 @@ export class UsersService {
   }
 
   async findContactsForRole(role?: RoleSlug | 'PATIENT', userId?: string) {
+    if (role === 'PATIENT') {
+      return this.findPatientCareTeamContacts(userId);
+    }
     type ContactRole = RoleSlug | 'PATIENT';
     const allowedRolesByRole: Partial<Record<RoleSlug | 'PATIENT', ContactRole[]>> = {
       // Administrative accounts do not directly message patients; clinical roles
@@ -332,6 +335,78 @@ export class UsersService {
         email: patient.email,
       })),
     ];
+  }
+
+  private async findPatientCareTeamContacts(userId?: string) {
+    if (!userId) return [];
+    const account = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, phone: true, firstName: true, lastName: true },
+    });
+    if (!account) return [];
+    const patient = await this.prisma.patient.findFirst({
+      where: {
+        deletedAt: null,
+        OR: [
+          account.email ? { email: account.email } : undefined,
+          account.phone ? { phone: account.phone } : undefined,
+          { firstName: { equals: account.firstName, mode: 'insensitive' }, lastName: { equals: account.lastName, mode: 'insensitive' } },
+        ].filter(Boolean) as any,
+      },
+      select: {
+        receptionistId: true,
+        consultations: { select: { providerId: true } },
+        hospitalizations: {
+          where: { deletedAt: null },
+          select: {
+            physicianId: true,
+            nurseInChargeId: true,
+            nurseAssignments: { where: { releasedAt: null }, select: { nurseId: true } },
+          },
+        },
+        labRequests: { where: { deletedAt: null }, select: { id: true } },
+        imagingRequests: { where: { deletedAt: null }, select: { id: true } },
+        invoices: { where: { deletedAt: null }, select: { issuedById: true, payments: { select: { paidById: true } } } },
+      },
+    });
+    if (!patient) return [];
+    const contactIds = new Set<string>();
+    if (patient.receptionistId) contactIds.add(patient.receptionistId);
+    patient.consultations.forEach((item) => item.providerId && contactIds.add(item.providerId));
+    patient.hospitalizations.forEach((stay) => {
+      if (stay.physicianId) contactIds.add(stay.physicianId);
+      if (stay.nurseInChargeId) contactIds.add(stay.nurseInChargeId);
+      stay.nurseAssignments.forEach((assignment) => contactIds.add(assignment.nurseId));
+    });
+    patient.invoices.forEach((invoice) => {
+      if (invoice.issuedById) contactIds.add(invoice.issuedById);
+      invoice.payments.forEach((payment) => payment.paidById && contactIds.add(payment.paidById));
+    });
+    const conditionalRoles: RoleSlug[] = [];
+    if (patient.labRequests.length) conditionalRoles.push(RoleSlug.LAB_MANAGER);
+    if (patient.imagingRequests.length) conditionalRoles.push(RoleSlug.RADIOLOGIST);
+    const users = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        status: 'ACTIVE',
+        id: { not: userId },
+        OR: [
+          ...(contactIds.size ? [{ id: { in: [...contactIds] } }] : []),
+          ...(conditionalRoles.length ? [{ primaryRole: { in: conditionalRoles } }] : []),
+        ],
+      },
+      select: { id: true, displayName: true, firstName: true, lastName: true, primaryRole: true, specialty: true, phone: true, email: true },
+      orderBy: [{ primaryRole: 'asc' }, { displayName: 'asc' }],
+    });
+    return users.map((user) => ({
+      id: user.id,
+      type: 'USER' as const,
+      name: user.displayName || `${user.firstName} ${user.lastName}`.trim(),
+      role: user.primaryRole || 'USER',
+      subtitle: user.specialty || this.labelRole(user.primaryRole),
+      phone: user.phone,
+      email: user.email,
+    }));
   }
 
   private labelRole(role?: RoleSlug | 'PATIENT' | null) {

@@ -561,7 +561,7 @@ export default function ReceptionPatients() {
               <div className="rounded-2xl bg-slate-100 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">{filteredPatients.length} résultats</div>
             </div>
 
-            <div className="mt-6 overflow-hidden rounded-3xl border border-slate-200 dark:border-gray-800">
+            <div className="mt-6 overflow-x-auto overscroll-x-contain rounded-3xl border border-slate-200 dark:border-gray-800">
               <table className="min-w-full divide-y divide-slate-200 text-left text-sm dark:divide-gray-800">
                 <thead className="bg-slate-50 text-slate-500 dark:bg-slate-900 dark:text-slate-400">
                   <tr>
@@ -659,7 +659,7 @@ export default function ReceptionPatients() {
                 </button>
               </div>
 
-              <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200 dark:border-gray-800">
+              <div className="mt-5 overflow-x-auto overscroll-x-contain rounded-3xl border border-slate-200 dark:border-gray-800">
                 <table className="min-w-full divide-y divide-slate-200 text-left text-sm dark:divide-gray-800">
                   <thead className="bg-white text-slate-500 dark:bg-slate-950 dark:text-slate-400">
                     <tr>

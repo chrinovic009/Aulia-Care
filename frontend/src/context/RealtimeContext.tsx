@@ -18,31 +18,15 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
       return;
     }
 
-    const apiBase = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
-    const socketUrl = import.meta.env.DEV ? apiBase : window.location.origin;
-
-    const checkSocketServer = async (url: string) => {
-      try {
-        const target = new URL(url, window.location.origin);
-        await fetch(`${target.origin}/`, {
-          method: 'GET',
-          mode: 'cors',
-          credentials: 'include',
-        });
-        return true;
-      } catch {
-        return false;
-      }
-    };
+    // Always use the web application's origin. In development Vite proxies
+    // `/socket.io` to NestJS; on the LAN this keeps localhost and external
+    // users on the exact same signalling endpoint.
+    const socketUrl = window.location.origin;
 
     let isActive = true;
     let activeSocket: Socket | null = null;
     const initSocket = async () => {
-      const reachable = await checkSocketServer(socketUrl);
-      if (!isActive || !reachable) {
-        setSocket(null);
-        return;
-      }
+      if (!isActive) return;
 
       const s = io(socketUrl, {
         autoConnect: false,
@@ -78,9 +62,11 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
       s.on('message.read', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.read', { detail: payload })));
       s.on('message.typing', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.typing', { detail: payload })));
       s.on('user.presence', (payload: any) => window.dispatchEvent(new CustomEvent('d7:user.presence', { detail: payload })));
-      s.on('db.changed', (payload: any) => {
-        window.dispatchEvent(new CustomEvent('d7:db.changed', { detail: payload }));
-        if (payload?.model === 'Patient') {
+      s.on('realtime.update', (payload: any) => {
+        // Payload deliberately contains no patient, financial or clinical content.
+        // The receiving screen re-fetches only through its already-authorized API.
+        window.dispatchEvent(new CustomEvent('d7:realtime:update', { detail: payload }));
+        if (['Patient', 'PatientVisit', 'Appointment'].includes(payload?.model)) {
           window.dispatchEvent(new CustomEvent('d7:patientRecordsUpdated', { detail: payload }));
           window.dispatchEvent(new CustomEvent('d7:patient.updated', { detail: payload }));
         }
@@ -92,7 +78,7 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
           window.dispatchEvent(new CustomEvent('d7:billingDataUpdated', { detail: payload }));
           window.dispatchEvent(new CustomEvent('d7:patientRecordsUpdated', { detail: payload }));
         }
-        if (['VitalSign', 'Consultation', 'Prescription', 'LabRequest', 'LabResult', 'ImagingRequest', 'ImagingReport', 'Hospitalization', 'NursingCareTask', 'MedicationAdministration'].includes(payload?.model)) {
+        if (['VitalSign', 'Consultation', 'Prescription', 'LabRequest', 'LabResult', 'LabSample', 'LabReport', 'ImagingRequest', 'ImagingReport', 'Hospitalization', 'NursingCareTask', 'MedicationAdministration', 'Surgery'].includes(payload?.model)) {
           window.dispatchEvent(new CustomEvent('d7:clinicalDataUpdated', { detail: payload }));
           window.dispatchEvent(new CustomEvent('d7:patientRecordsUpdated', { detail: payload }));
         }

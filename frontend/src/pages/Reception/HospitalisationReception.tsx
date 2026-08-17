@@ -169,10 +169,10 @@ export default function HospitalisationReception() {
   useEffect(() => {
     const refresh = () => { void loadPageData(); };
     socket?.on('hospitalization.created', refresh);
-    socket?.on('db.changed', refresh);
+    socket?.on('realtime.update', refresh);
     return () => {
       socket?.off('hospitalization.created', refresh);
-      socket?.off('db.changed', refresh);
+      socket?.off('realtime.update', refresh);
     };
   }, [socket]);
 

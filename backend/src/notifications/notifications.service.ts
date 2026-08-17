@@ -21,7 +21,8 @@ export class NotificationsService {
   async createAndEmit(data: any) {
     const created = await this.prisma.notification.create({ data });
     try {
-      this.gateway.notify('notification.created', created);
+      if (created.recipientId) this.gateway.notifyToUser(created.recipientId, 'notification.created', created);
+      else if (created.patientId) this.gateway.notifyToPatient(created.patientId, 'notification.created', created);
     } catch (e) {
       // ignore emit errors
     }

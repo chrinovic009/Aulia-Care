@@ -27,7 +27,7 @@ const defaultMarkers = [
     latLng: [-11.672, 27.483],
     name: "Patient - Joli Site (Gouvernorat)",
     style: {
-      fill: "#2563eb",
+      fill: "#0D9488",
       r: 6,
       stroke: "#ffffff",
       strokeWidth: 2,
@@ -42,7 +42,7 @@ const CountryMap: React.FC<CountryMapProps> = ({ mapColor, markers }) => {
       backgroundColor="transparent"
       markerStyle={{
         initial: {
-          fill: "#465FFF",
+          fill: "#0D9488",
           r: 4,
         } as any,
       }}
@@ -72,11 +72,11 @@ const CountryMap: React.FC<CountryMapProps> = ({ mapColor, markers }) => {
         hover: {
           fillOpacity: 0.7,
           cursor: "pointer",
-          fill: "#465fff",
+          fill: "#0D9488",
           stroke: "none",
         },
         selected: {
-          fill: "#465FFF",
+          fill: "#0D9488",
         },
         selectedHover: {},
       }}

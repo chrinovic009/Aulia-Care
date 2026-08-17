@@ -12,6 +12,13 @@ import SuiviQuotidien from "./pages/Patient/SuiviQuotidien";
 import Messages from "./pages/Patient/Messages";
 import MesTraitements from "./pages/Patient/MesTraitements";
 import HistoriqueMedical from "./pages/Patient/HistoriqueMedical";
+import PatientDashboard from "./pages/Patient/PatientDashboard";
+import PatientAppointments from "./pages/Patient/PatientAppointments";
+import PatientResults from "./pages/Patient/PatientResults";
+import PatientHospitalization from "./pages/Patient/PatientHospitalization";
+import PatientPayments from "./pages/Patient/PatientPayments";
+import MontreConnectee from "./pages/Patient/MontreConnectee";
+import MesEnfants from "./pages/Patient/MesEnfants";
 import ReceptionDashboard from "./pages/Reception/Dashboard";
 import ReceptionPatients from "./pages/Reception/Patients";
 import ReceptionAdmission from "./pages/Reception/Admission";
@@ -41,6 +48,7 @@ import HistoriqueCaissier from "./pages/Caissier/HistoriqueCaissier";
 import ProfileCaissier from "./pages/Caissier/ProfileCaissier";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
+import AuliaPageLoader from "./components/common/AuliaPageLoader";
 import { RequireAuth, RoleGuard, HomeRedirect } from "./components/auth/RequireAuth";
 import RendezVousReception from "./pages/Reception/RendezVousReception";
 import CreateReceptionService from "./pages/Reception/CreateService";
@@ -87,6 +95,7 @@ export default function App() {
   return (
     <>
       <Router>
+        <AuliaPageLoader />
         <ScrollToTop />
         <Routes>
           {/* Dashboard Layout */}
@@ -99,14 +108,18 @@ export default function App() {
             {/* Page Patient */}
             <Route index path="/" element={<HomeRedirect />} />
             <Route path="/profile" element={<RoleGuard requiredRoles={["PATIENT"]}><UserProfiles /></RoleGuard>} />
+            <Route path="/patient" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientDashboard /></RoleGuard>} />
             <Route path="/dossier-medical" element={<RoleGuard requiredRoles={["PATIENT"]}><DossierMedical /></RoleGuard>} />
             <Route path="/traitements" element={<RoleGuard requiredRoles={["PATIENT"]}><MesTraitements /></RoleGuard>} />
-            <Route path="/rendez-vous" element={<RoleGuard requiredRoles={["PATIENT"]}><Calendar /></RoleGuard>} />
-            <Route path="/examens-resultats" element={<RoleGuard requiredRoles={["PATIENT"]}><BasicTables /></RoleGuard>} />
-            <Route path="/hospitalisation" element={<RoleGuard requiredRoles={["PATIENT"]}><Hospitalisation /></RoleGuard>} />
+            <Route path="/rendez-vous" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientAppointments /></RoleGuard>} />
+            <Route path="/examens-resultats" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientResults /></RoleGuard>} />
+            <Route path="/hospitalisation" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientHospitalization /></RoleGuard>} />
             <Route path="/suivi-quotidien" element={<RoleGuard requiredRoles={["PATIENT"]}><SuiviQuotidien /></RoleGuard>} />
+            <Route path="/montre-connectee" element={<RoleGuard requiredRoles={["PATIENT"]}><MontreConnectee /></RoleGuard>} />
+            <Route path="/enfants" element={<RoleGuard requiredRoles={["PATIENT"]}><MesEnfants /></RoleGuard>} />
             <Route path="/messages" element={<RoleGuard requiredRoles={["PATIENT"]}><Messages /></RoleGuard>} />
             <Route path="/historique-medical" element={<RoleGuard requiredRoles={["PATIENT"]}><HistoriqueMedical /></RoleGuard>} />
+            <Route path="/paiements" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientPayments /></RoleGuard>} />
             <Route path="/profil-securite" element={<RoleGuard requiredRoles={["PATIENT"]}><UserProfiles /></RoleGuard>} />
             
             {/* Page Receptioniste */}

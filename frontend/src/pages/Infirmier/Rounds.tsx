@@ -50,11 +50,11 @@ export default function Rounds() {
       if (!model || ["NursingCareTask", "Hospitalization", "MedicationAdministration"].includes(model)) void load();
     };
     window.addEventListener("d7:clinicalDataUpdated", refresh);
-    window.addEventListener("d7:db.changed", refresh);
+    window.addEventListener("d7:realtime:update", refresh);
     socket?.on("nursing-care-task.updated", load);
     return () => {
       window.removeEventListener("d7:clinicalDataUpdated", refresh);
-      window.removeEventListener("d7:db.changed", refresh);
+      window.removeEventListener("d7:realtime:update", refresh);
       socket?.off("nursing-care-task.updated", load);
     };
   }, [load, socket]);

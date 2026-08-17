@@ -162,7 +162,7 @@ export default function NotificationDropdown() {
       {toast.visible && toast.message && (
         <button
           onClick={() => openConversation(toast.message?.senderId)}
-          className="fixed bottom-6 right-6 z-50 w-[320px] rounded-lg bg-blue-600 p-4 text-left text-white shadow-2xl shadow-blue-600/20 ring-1 ring-blue-700/20"
+          className="fixed bottom-6 right-6 z-50 w-[calc(100vw-2rem)] max-w-[320px] rounded-lg bg-blue-600 p-4 text-left text-white shadow-2xl shadow-blue-600/20 ring-1 ring-blue-700/20"
         >
           <span className="block text-sm font-semibold">Nouveau message de {toast.message.senderName}</span>
           <span className="mt-1 block text-xs leading-5 text-white/85">{truncate(toast.message.text, 140)}</span>
@@ -173,7 +173,7 @@ export default function NotificationDropdown() {
       <Dropdown
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
-        className="absolute -right-[240px] mt-[17px] flex h-[420px] w-[350px] flex-col rounded-lg border border-gray-200 bg-white p-3 shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark sm:w-[361px] lg:right-0"
+        className="aulia-notification-panel !fixed !inset-x-3 !top-[4.75rem] !z-[100000] !mt-0 !flex !h-[calc(100dvh-5.5rem)] !w-auto !max-w-none flex-col rounded-2xl border border-gray-200 bg-white p-3 shadow-theme-lg dark:!border-[#1c4648] dark:!bg-[#0a1d3a] sm:!inset-x-5 lg:!absolute lg:!inset-auto lg:!right-0 lg:!top-auto lg:!mt-[17px] lg:!h-[min(420px,calc(100dvh-7rem))] lg:!w-[361px] lg:!max-w-[calc(100vw-2rem)]"
       >
         <div className="mb-3 flex items-center justify-between border-b border-gray-100 pb-3 dark:border-gray-700">
           <div>

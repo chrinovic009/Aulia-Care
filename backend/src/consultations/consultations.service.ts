@@ -8,6 +8,7 @@ import { UpdateConsultationDto } from './dto/update-consultation.dto';
 import { ClinicalSectionsDto } from './dto/clinical-sections.dto';
 import { CreateLabRequestDto } from './dto/create-lab-request.dto';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
+import { TelehealthTranscriptEntryDto } from './dto/save-telehealth-transcript.dto';
 
 @Injectable()
 export class ConsultationsService {
@@ -184,6 +185,49 @@ export class ConsultationsService {
       await this.prisma.appointment.update({ where: { id: updated.appointmentId }, data: { status: 'COMPLETED' } });
     }
     return updated;
+  }
+
+  async saveTelehealthTranscript(id: string, entries: TelehealthTranscriptEntryDto[], actorId?: string) {
+    const consultation = await this.findOne(id);
+    await this.ensureWriteAccess(consultation.providerId, actorId);
+    if (consultation.status === ConsultationStatus.FINALIZED) {
+      throw new BadRequestException('Une consultation finalisée ne peut pas recevoir de transcription sans avenant.');
+    }
+    const boundedEntries = entries.slice(-500).map((entry) => ({
+      speaker: entry.speaker,
+      text: entry.text.trim(),
+      at: entry.at,
+    })).filter((entry) => entry.text.length > 0);
+    let summary: Record<string, any> = {};
+    try {
+      summary = consultation.clinicalSummary ? JSON.parse(consultation.clinicalSummary) : {};
+    } catch {
+      summary = {};
+    }
+    const module = summary.consultationModule && typeof summary.consultationModule === 'object'
+      ? summary.consultationModule
+      : {};
+    summary.consultationModule = { ...module, telehealthTranscript: boundedEntries };
+    summary.telehealth = {
+      transcript: boundedEntries,
+      capturedAt: new Date().toISOString(),
+      disclaimer: 'Transcription automatisée à relire et valider par le médecin.',
+    };
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.consultation.update({
+        where: { id },
+        data: { clinicalSummary: JSON.stringify(summary), version: { increment: 1 } },
+      });
+      await tx.consultationNote.create({
+        data: {
+          consultationId: id,
+          authorId: actorId,
+          noteType: 'TELEHEALTH_TRANSCRIPT_DRAFT',
+          content: `Transcription de télésanté enregistrée (${boundedEntries.length} extrait(s)) — à valider par le médecin.`,
+        },
+      });
+      return updated;
+    });
   }
 
   async saveClinicalSections(id: string, dto: ClinicalSectionsDto, actorId?: string) {

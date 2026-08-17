@@ -115,11 +115,14 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('refresh')
   async refresh(
-    @Body() payload: RefreshTokenDto,
+    @Body() payload: RefreshTokenDto = {},
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const refreshToken = this.readCookie(request, 'aulia_refresh_token') || payload.refreshToken;
+    // A cookie-only refresh request legitimately has an empty body. Never
+    // dereference it: a missing/expired token must be returned as 401 by the
+    // service, not as an unhandled 500 error.
+    const refreshToken = this.readCookie(request, 'aulia_refresh_token') || payload?.refreshToken;
     const session = await this.authService.refreshAccessToken(refreshToken);
     this.setSessionCookies(response, session);
     return { ok: true };
