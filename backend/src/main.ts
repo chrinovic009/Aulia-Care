@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
+import { RedisIoAdapter } from './notifications/redis-io.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -24,6 +25,12 @@ async function bootstrap() {
   );
 
   const configService = app.get(ConfigService);
+  const redisUrl = configService.get<string>('REDIS_URL');
+  if (redisUrl) {
+    const redisAdapter = new RedisIoAdapter(app);
+    await redisAdapter.connect(redisUrl);
+    app.useWebSocketAdapter(redisAdapter);
+  }
   const corsOrigins = configService
     .getOrThrow<string>('CORS_ORIGIN')
     .split(',')

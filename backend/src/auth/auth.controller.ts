@@ -49,6 +49,9 @@ export class AuthController {
 
   private setSessionCookies(response: Response, tokens: { accessToken: string; refreshToken?: string }) {
     const options = this.cookieOptions();
+    // Remove the legacy scoped CSRF cookie before issuing the root-scoped one;
+    // otherwise browsers can send two values with the same name to /api.
+    response.clearCookie('aulia_csrf_token', { httpOnly: false, secure: options.secure, sameSite: options.sameSite, path: '/api' });
     response.cookie('aulia_access_token', tokens.accessToken, {
       ...options,
       maxAge: 15 * 60 * 1000,
@@ -63,7 +66,9 @@ export class AuthController {
       httpOnly: false,
       secure: options.secure,
       sameSite: options.sameSite,
-      path: '/api',
+      // It remains a non-secret anti-CSRF value. Root scope lets the SPA know
+      // that a cookie session exists before attempting a refresh.
+      path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
   }
@@ -72,6 +77,12 @@ export class AuthController {
     const options = this.cookieOptions();
     response.clearCookie('aulia_access_token', options);
     response.clearCookie('aulia_refresh_token', options);
+    response.clearCookie('aulia_csrf_token', {
+      httpOnly: false,
+      secure: options.secure,
+      sameSite: options.sameSite,
+      path: '/',
+    });
     response.clearCookie('aulia_csrf_token', {
       httpOnly: false,
       secure: options.secure,
