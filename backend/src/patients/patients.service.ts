@@ -117,19 +117,38 @@ export class PatientsService {
     return created;
   }
 
-  findAll(currentUser?: any) {
+  async findAll(currentUser?: any, requestedPage?: number, requestedLimit?: number) {
     const role = String(currentUser?.primaryRole || currentUser?.role || '').toUpperCase();
+    const page = Number.isFinite(requestedPage) && requestedPage! > 0 ? Math.floor(requestedPage!) : 1;
+    // A list is intentionally small by default. Larger exports must use a dedicated,
+    // audited reporting endpoint rather than loading personal data into a browser.
+    const limit = Number.isFinite(requestedLimit) && requestedLimit! > 0
+      ? Math.min(Math.floor(requestedLimit!), 50)
+      : 10;
+    const paginate = Number.isFinite(requestedPage) || Number.isFinite(requestedLimit);
+    const actorId = currentUser?.userId || currentUser?.id;
+    const actor = actorId
+      ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } })
+      : null;
+    const clinicId = actor?.clinicId || currentUser?.clinicId || undefined;
+    const where: Prisma.PatientWhereInput = { deletedAt: null, ...(clinicId ? { clinicId } : {}) };
     // Cashiers only need enough identity to identify the invoice owner; they do not need clinical/contact data.
     if (role === 'CASHIER') {
-      return this.prisma.patient.findMany({
-        where: { deletedAt: null },
+      const [items, total] = await this.prisma.$transaction([
+        this.prisma.patient.findMany({
+        where,
         select: { id: true, firstName: true, lastName: true, externalId: true, workflowStatus: true, admissionType: true, arrivalAt: true },
         orderBy: { updatedAt: 'desc' },
-        take: 250,
-      });
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+        this.prisma.patient.count({ where }),
+      ]);
+      return paginate ? { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) } : items;
     }
-    return this.prisma.patient.findMany({
-      where: { deletedAt: null },
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.patient.findMany({
+      where,
       select: {
         id: true,
         firstName: true,
@@ -194,8 +213,12 @@ export class PatientsService {
         },
       },
       orderBy: { updatedAt: 'desc' },
-      take: 500,
-    });
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+      this.prisma.patient.count({ where }),
+    ]);
+    return paginate ? { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) } : items;
   }
 
   async getReceptionVisits(actorId?: string, requestedLimit = 100) {
@@ -1296,17 +1319,23 @@ export class PatientsService {
     }));
   }
 
-  async getPatientsVisibleToDoctors(doctorId?: string) {
+  async getPatientsVisibleToDoctors(doctorId?: string, requestedPage?: number, requestedLimit?: number) {
     if (!doctorId) return [];
 
-    const patients = await this.prisma.patient.findMany({
-      where: {
-        deletedAt: null,
-        OR: [
-          { consultations: { some: { providerId: doctorId, deletedAt: null } } },
-          { hospitalizations: { some: { physicianId: doctorId, deletedAt: null } } },
-        ],
-      },
+    const page = Number.isFinite(requestedPage) && requestedPage! > 0 ? Math.floor(requestedPage!) : 1;
+    const limit = Number.isFinite(requestedLimit) && requestedLimit! > 0 ? Math.min(Math.floor(requestedLimit!), 25) : 10;
+    const paginate = Number.isFinite(requestedPage) || Number.isFinite(requestedLimit);
+    const where: Prisma.PatientWhereInput = {
+      deletedAt: null,
+      OR: [
+        { consultations: { some: { providerId: doctorId, deletedAt: null } } },
+        { hospitalizations: { some: { physicianId: doctorId, deletedAt: null } } },
+      ],
+    };
+
+    const [patients, total] = await this.prisma.$transaction([
+      this.prisma.patient.findMany({
+      where,
       include: {
         service: true,
         familyContacts: true,
@@ -1317,12 +1346,13 @@ export class PatientsService {
         },
         medicalHistories: {
           orderBy: { eventDate: 'desc' },
-          take: 100,
+          take: 20,
           include: { createdBy: { select: { id: true, displayName: true, firstName: true, lastName: true, primaryRole: true } } },
         },
         consultations: {
           where: { deletedAt: null },
           orderBy: { createdAt: 'desc' },
+          take: 10,
           include: {
             provider: { select: { id: true, displayName: true, firstName: true, lastName: true, specialty: true } },
             prescriptions: { include: { lineItems: { include: { medication: true } } } },
@@ -1337,7 +1367,11 @@ export class PatientsService {
         appointments: { where: { deletedAt: null }, orderBy: { scheduledAt: 'desc' }, take: 10 },
       },
       orderBy: { updatedAt: 'desc' },
-    });
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+      this.prisma.patient.count({ where }),
+    ]);
 
     const accessByConsultationId = await Promise.all(
       patients.map(async (patient) => {
@@ -1348,7 +1382,7 @@ export class PatientsService {
     );
     const accessMap = new Map(accessByConsultationId);
 
-    return patients.map((patient) => {
+    const items = patients.map((patient) => {
       const access = accessMap.get(patient.id);
       const latestConsultation = access?.latestConsultation || null;
       const assignedDoctor = latestConsultation?.provider || null;
@@ -1394,6 +1428,7 @@ export class PatientsService {
         },
       };
     });
+    return paginate ? { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) } : items;
   }
 
   async canDoctorWriteConsultation(assignedDoctorId?: string | null, doctorId?: string | null) {

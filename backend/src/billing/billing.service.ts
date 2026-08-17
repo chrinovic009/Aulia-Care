@@ -265,7 +265,11 @@ export class BillingService {
     if (!invoice) throw new NotFoundException('Facture introuvable.');
     if (amount > Number(invoice.balanceDue)) throw new BadRequestException('La réduction ne peut pas dépasser le solde restant.');
     const request = await this.prisma.invoiceDiscountRequest.create({ data: { invoiceId, requestedById: requesterId, amount, reason: reason.trim() } });
-    this.gateway.notify('discount.requested', request);
+    const financeRecipients = await this.prisma.user.findMany({
+      where: { status: 'ACTIVE', primaryRole: { in: ['ADMIN', 'SUPER_ADMIN', 'FINANCE'] } },
+      select: { id: true },
+    });
+    financeRecipients.forEach(({ id }) => this.gateway.notifyToUser(id, 'discount.requested', request));
     return request;
   }
 
@@ -280,7 +284,7 @@ export class BillingService {
       const invoice = await tx.invoice.update({ where: { id: request.invoiceId }, data: { totalAmount: Math.max(Number(request.invoice.totalAmount) - discount, 0), balanceDue: Math.max(Number(request.invoice.balanceDue) - discount, 0), remarks: [request.invoice.remarks, `Réduction approuvée: ${discount} FC - ${request.reason}`].filter(Boolean).join('\n') } });
       const reviewed = await tx.invoiceDiscountRequest.update({ where: { id: requestId }, data: { status: 'APPROVED', reviewedById: reviewerId, reviewedAt: new Date(), reviewNote: reviewNote || null } });
       return { request: reviewed, invoice };
-    }).then((result: any) => { this.gateway.notify('discount.reviewed', result); if (result?.request?.requestedById) this.gateway.notifyToUser(result.request.requestedById, 'discount.reviewed', result); return result; });
+    }).then((result: any) => { if (result?.request?.requestedById) this.gateway.notifyToUser(result.request.requestedById, 'discount.reviewed', result); return result; });
   }
 
   async authorizePatientDischarge(patientId: string) {

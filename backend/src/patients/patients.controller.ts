@@ -15,8 +15,8 @@ export class PatientsController {
 
   @Get()
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
-  findAll(@Request() req: any) {
-    return this.patientsService.findAll(req.user);
+  findAll(@Request() req: any, @Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.patientsService.findAll(req.user, Number(page), Number(limit));
   }
 
   @Get('search')
@@ -51,8 +51,8 @@ export class PatientsController {
 
   @Get('doctor/visible')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
-  getPatientsVisibleToDoctors(@Request() req: any) {
-    return this.patientsService.getPatientsVisibleToDoctors(req.user?.userId);
+  getPatientsVisibleToDoctors(@Request() req: any, @Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.patientsService.getPatientsVisibleToDoctors(req.user?.userId, Number(page), Number(limit));
   }
 
   @Get('reception-visits')

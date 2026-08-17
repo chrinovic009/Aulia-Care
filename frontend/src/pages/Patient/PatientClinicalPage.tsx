@@ -266,6 +266,10 @@ function ListPanel({ title, items }: { title: string; items: Array<{ title: stri
   );
 }
 
+function Empty() {
+  return <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">Aucune donnée disponible pour le moment.</p>;
+}
+
 function historyTitle(kind?: string | null) {
   return medicalHistoryKindLabel(kind);
 }

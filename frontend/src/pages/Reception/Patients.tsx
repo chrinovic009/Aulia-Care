@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { useAuth } from "../../context/AuthContext";
-import { fetchPatientsFromDatabase, updatePatientRecord, fetchServices } from "../../api/reception";
+import { fetchPatientsPage, updatePatientRecord, fetchServices } from "../../api/reception";
 import { formatPatientDossierId } from "../../utils/formatId";
 
 type FamilyContact = {
@@ -76,6 +76,9 @@ export default function ReceptionPatients() {
   const navigationState = location.state as { patientId?: string; openAppointment?: boolean } | undefined;
   const [search, setSearch] = useState("");
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPatients, setTotalPatients] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [selectedPatientId, setSelectedPatientId] = useState<string>("");
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [newContact, setNewContact] = useState<Partial<FamilyContact>>({});
@@ -342,7 +345,10 @@ export default function ReceptionPatients() {
   useEffect(() => {
     (async () => {
       try {
-        const ps = await fetchPatientsFromDatabase();
+        const result = await fetchPatientsPage(page, 10);
+        const ps = result.items;
+        setTotalPatients(result.total);
+        setTotalPages(result.totalPages);
         console.log('Raw API Response:', ps);
         
         const ensurePatientDefaults = (p: any): Patient => {
@@ -445,7 +451,7 @@ export default function ReceptionPatients() {
         setDoctors((Array.isArray(docs) ? docs : []).concat(Array.isArray(docsAlt) ? docsAlt : []));
       } catch (e) {}
     })();
-  }, [navigationState?.openAppointment, navigationState?.patientId]);
+  }, [navigationState?.openAppointment, navigationState?.patientId, page]);
 
   const handleAddContact = async (contact: FamilyContact) => {
     if (!selectedPatient?.id) return alert('Aucun patient sélectionné');
@@ -558,7 +564,7 @@ export default function ReceptionPatients() {
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Liste patients</h2>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Cliquez sur un patient pour afficher sa fiche complète à droite.</p>
               </div>
-              <div className="rounded-2xl bg-slate-100 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">{filteredPatients.length} résultats</div>
+              <div className="rounded-2xl bg-slate-100 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">{search ? `${filteredPatients.length} sur ${totalPatients}` : `${totalPatients} patients`}</div>
             </div>
 
             <div className="mt-6 overflow-x-auto overscroll-x-contain rounded-3xl border border-slate-200 dark:border-gray-800">
@@ -592,6 +598,13 @@ export default function ReceptionPatients() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600 dark:text-slate-300">
+              <span>Page {page} sur {totalPages}</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page === 1} className="rounded-xl border border-slate-200 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700">Précédent</button>
+                <button type="button" onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={page >= totalPages} className="rounded-xl border border-slate-200 px-3 py-2 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700">Suivant</button>
+              </div>
             </div>
           </section>
 

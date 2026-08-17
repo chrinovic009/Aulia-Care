@@ -91,6 +91,15 @@ const clearLegacyBrowserTokens = () => {
   }
 };
 
+// The access and refresh cookies are HttpOnly on purpose and cannot be read by
+// React. The CSRF cookie is merely a non-secret session hint: without it there
+// is no browser session to restore, so calling /me then /refresh only produces
+// avoidable 401 noise on the sign-in screen.
+const hasSessionHint = () => {
+  if (typeof document === "undefined") return false;
+  return document.cookie.split(";").some((part) => part.trim().startsWith("aulia_csrf_token="));
+};
+
 export function getRedirectPath(role: RoleSlug) {
   const rolePathMap: Record<RoleSlug, string> = {
     RECEPTIONIST: "/reception",
@@ -159,6 +168,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     setError(null);
     clearLegacyBrowserTokens();
+
+    if (!hasSessionHint()) {
+      setCurrentUser(null);
+      setIsLoading(false);
+      return;
+    }
 
     try {
       // Créer un AbortController pour cette requête

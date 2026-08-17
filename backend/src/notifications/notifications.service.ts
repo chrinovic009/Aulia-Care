@@ -6,12 +6,20 @@ import { NotificationsGateway } from './notifications.gateway';
 export class NotificationsService {
   constructor(private readonly prisma: PrismaService, private readonly gateway: NotificationsGateway) {}
 
-  findAll() {
-    return this.prisma.notification.findMany();
+  async findAll(recipientId?: string, requestedPage?: number, requestedLimit?: number) {
+    if (!recipientId) throw new NotFoundException('Utilisateur non identifié.');
+    const page = Number.isFinite(requestedPage) && requestedPage! > 0 ? Math.floor(requestedPage!) : 1;
+    const limit = Number.isFinite(requestedLimit) && requestedLimit! > 0 ? Math.min(Math.floor(requestedLimit!), 50) : 10;
+    const where = { recipientId, deletedAt: null };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.notification.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
+      this.prisma.notification.count({ where }),
+    ]);
+    return { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
   }
 
-  async findOne(id: string) {
-    const notification = await this.prisma.notification.findUnique({ where: { id } });
+  async findOne(id: string, recipientId?: string) {
+    const notification = await this.prisma.notification.findFirst({ where: { id, recipientId } });
     if (!notification) {
       throw new NotFoundException('Notification introuvable');
     }

@@ -51,7 +51,7 @@ export class WearablesService {
         esimPhoneNumber: body.esimPhoneNumber?.trim() || null,
       },
     });
-    this.gateway.notify('wearable.device.registered', { deviceId: device.id, patientId, actorId, at: new Date().toISOString() });
+    this.gateway.notifyPatientEvent(patientId, 'wearable.device.registered', { deviceId: device.id, at: new Date().toISOString() });
     return device;
   }
 
@@ -148,7 +148,7 @@ export class WearablesService {
     });
 
     const event = { patientId: device.patientId, deviceId, measurement, assessment, actorId };
-    this.gateway.notify('wearable.measurement.received', event);
+    this.gateway.notifyPatientEvent(device.patientId, 'wearable.measurement.received', { deviceId, measurement, assessment });
     if (assessment.level === 'CRITICAL') await this.createCriticalAlert(device.patientId, measurement.id, assessment.reason || 'Valeur critique');
     return { measurement, assessment, clinicalInstruction: assessment.level === 'CRITICAL' ? 'Évaluation clinique immédiate requise.' : 'Aucune décision thérapeutique automatique.' };
   }
@@ -178,7 +178,7 @@ export class WearablesService {
       },
     });
     // The production APNs/FCM adapter consumes this command. The backend never bypasses watch OS consent.
-    this.gateway.notify('wearable.location.requested', { requestId: request.id, patientId, deviceId: device.id, expiresAt: request.expiresAt });
+    this.gateway.notifyPatientEvent(patientId, 'wearable.location.requested', { requestId: request.id, deviceId: device.id, expiresAt: request.expiresAt });
     return request;
   }
 
@@ -201,7 +201,7 @@ export class WearablesService {
       if (request) await tx.emergencyLocationRequest.update({ where: { id: request.id }, data: { status: 'FULFILLED', fulfilledAt: new Date() } });
       return created;
     });
-    this.gateway.notify('wearable.location.received', { location, actorId });
+    this.gateway.notifyPatientEvent(device.patientId, 'wearable.location.received', { location });
     return location;
   }
 

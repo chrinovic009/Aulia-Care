@@ -40,6 +40,17 @@ export const fetchDoctorVisiblePatients = () => {
   return apiFetch<DoctorPatient[]>("/patients/doctor/visible");
 };
 
+export type DoctorPatientsPage = {
+  items: DoctorPatient[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
+
+export const fetchDoctorVisiblePatientsPage = (page = 1, limit = 10) =>
+  apiFetch<DoctorPatientsPage>(`/patients/doctor/visible?page=${Math.max(1, page)}&limit=${Math.min(Math.max(1, limit), 25)}`);
+
 export const formatDoctorPatientName = (patient: DoctorPatient) =>
   [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(" ");
 

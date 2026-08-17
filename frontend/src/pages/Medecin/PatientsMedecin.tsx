@@ -3,7 +3,7 @@ import PageMeta from "../../components/common/PageMeta";
 import { apiFetch } from "../../config/api";
 import {
   DoctorPatient,
-  fetchDoctorVisiblePatients,
+  fetchDoctorVisiblePatientsPage,
   formatDoctorPatientName,
 } from "../../api/doctor";
 import { fetchLaboratoryCatalogue } from "../../api/laboratory";
@@ -131,6 +131,9 @@ const latestVital = (patient: DoctorPatient, type: string) =>
 
 export default function PatientsMedecin() {
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPatients, setTotalPatients] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [labTests, setLabTests] = useState<LabTestMetadata[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState("");
@@ -143,9 +146,11 @@ export default function PatientsMedecin() {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await fetchDoctorVisiblePatients();
-      setPatients(data);
-      setSelectedPatientId((current) => current || data[0]?.id || "");
+      const data = await fetchDoctorVisiblePatientsPage(page, 10);
+      setPatients(data.items);
+      setTotalPatients(data.total);
+      setTotalPages(data.totalPages);
+      setSelectedPatientId((current) => data.items.some((patient) => patient.id === current) ? current : data.items[0]?.id || "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible de charger les dossiers patients.");
     } finally {
@@ -192,7 +197,7 @@ export default function PatientsMedecin() {
       window.removeEventListener("d7:lab.request.created", handler);
       window.removeEventListener("d7:lab.result.created", handler);
     };
-  }, []);
+  }, [page]);
 
   const filteredPatients = useMemo(() => {
     const normalized = search.trim().toLowerCase();
@@ -215,17 +220,17 @@ export default function PatientsMedecin() {
   const selectedPatientPosition = selectedPatient ? patients.findIndex((patient) => patient.id === selectedPatient.id) + 1 : undefined;
 
   const metrics = useMemo(() => ({
-    total: patients.length,
+    total: totalPatients,
     write: patients.filter((patient) => patient.access?.canWrite).length,
     readonly: patients.filter((patient) => !patient.access?.canWrite).length,
     urgent: patients.filter((patient) => ["urgent", "urgence", "prioritaire", "critical"].includes((patient.priority || "").toLowerCase())).length,
-  }), [patients]);
+  }), [patients, totalPatients]);
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       <PageMeta title="Patients medecin | D7 Clinique" description="Dossiers patients visibles par les medecins." />
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase text-slate-500">Dossiers partages</p>
@@ -249,8 +254,8 @@ export default function PatientsMedecin() {
 
       {error && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[420px_1fr]">
-        <aside className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div className="mt-6 grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 xl:sticky xl:top-5 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto">
           <div className="grid gap-3">
             <input
               value={search}
@@ -309,9 +314,16 @@ export default function PatientsMedecin() {
               </button>
             ))}
           </div>
+          <div className="mt-5 flex items-center justify-between gap-2 border-t border-slate-100 pt-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+            <span>Page {page} / {totalPages}</span>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page === 1 || isLoading} className="rounded-lg border border-slate-200 px-2.5 py-2 font-semibold transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800">Préc.</button>
+              <button type="button" onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={page >= totalPages || isLoading} className="rounded-lg border border-slate-200 px-2.5 py-2 font-semibold transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:hover:bg-slate-800">Suiv.</button>
+            </div>
+          </div>
         </aside>
 
-        <main className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+        <main className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
           {!selectedPatient ? (
             <p className="text-sm text-slate-500">Selectionnez un patient.</p>
           ) : (
@@ -324,6 +336,27 @@ export default function PatientsMedecin() {
 }
 
 function PatientRecord({ patient, position, labTests, departments }: { patient: DoctorPatient; position?: number; labTests: LabTestMetadata[]; departments: Department[] }) {
+  const [detailPage, setDetailPage] = useState(1);
+  const [consultationsPage, setConsultationsPage] = useState(1);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [labPage, setLabPage] = useState(1);
+  const [prescriptionsPage, setPrescriptionsPage] = useState(1);
+  const [hospitalizationsPage, setHospitalizationsPage] = useState(1);
+  const consultations = getPatientConsultations(patient);
+  const history = patient.medicalHistories || [];
+  const labRequests = patient.labRequests || [];
+  const prescriptions = patient.prescriptions || [];
+  const hospitalizations = patient.hospitalizations || [];
+
+  useEffect(() => {
+    setDetailPage(1);
+    setConsultationsPage(1);
+    setHistoryPage(1);
+    setLabPage(1);
+    setPrescriptionsPage(1);
+    setHospitalizationsPage(1);
+  }, [patient.id]);
+
   return (
     <div className="space-y-6">
       <div className="rounded-[32px] border border-slate-200 bg-slate-50 p-6 shadow-sm ring-1 ring-slate-200/70 dark:border-slate-800 dark:bg-slate-950 dark:ring-slate-700/60">
@@ -376,7 +409,18 @@ function PatientRecord({ patient, position, labTests, departments }: { patient: 
         </div>
       </div>
 
-      <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-aulia-teal">Lecture du dossier</p>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{detailPage === 1 ? 'Synthèse clinique et dernières consultations' : 'Parcours, examens, prescriptions et hospitalisations'}</p>
+        </div>
+        <div className="flex items-center gap-2 text-sm">
+          <button type="button" onClick={() => setDetailPage(1)} className={`rounded-xl px-3 py-2 font-semibold transition ${detailPage === 1 ? 'bg-aulia-navy text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}>1 · Synthèse</button>
+          <button type="button" onClick={() => setDetailPage(2)} className={`rounded-xl px-3 py-2 font-semibold transition ${detailPage === 2 ? 'bg-aulia-navy text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}>2 · Parcours</button>
+        </div>
+      </div>
+
+      {detailPage === 1 ? <div className="space-y-6">
         <Section title="Signes vitaux">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {[
@@ -411,32 +455,27 @@ function PatientRecord({ patient, position, labTests, departments }: { patient: 
         </Section>
 
         <Section title="Consultations récentes">
-          {getPatientConsultations(patient).length === 0 ? <Empty /> : (
+          {consultations.length === 0 ? <Empty /> : (
             <div className="space-y-3">
-              {getPatientConsultations(patient).slice(0, 2).map((consultation, index) => (
-                <ClinicalConsultation key={consultation.id} consultation={consultation} displayId={formatConsultationId(index + 1, patient)} />
+              {pageItems(consultations, consultationsPage, 3).map((consultation, index) => (
+                <ClinicalConsultation key={consultation.id} consultation={consultation} displayId={formatConsultationId((consultationsPage - 1) * 3 + index + 1, patient)} />
               ))}
+              <InlinePagination page={consultationsPage} total={consultations.length} pageSize={3} onChange={setConsultationsPage} label="consultations" />
             </div>
           )}
         </Section>
-
+      </div> : <div className="space-y-4">
         <Section title="Historique médical">
-          {(patient.medicalHistories || []).length === 0 ? <Empty /> : (
-            <div className="space-y-3">
-              {patient.medicalHistories?.slice(0, 3).map((item) => (
-                <HistoryEventCard key={item.id} item={item} patient={patient} labTests={labTests} departments={departments} />
-              ))}
-            </div>
-          )}
+          {history.length === 0 ? <Empty /> : <div className="space-y-3">
+            {pageItems(history, historyPage, 4).map((item) => <HistoryEventCard key={item.id} item={item} patient={patient} labTests={labTests} departments={departments} />)}
+            <InlinePagination page={historyPage} total={history.length} pageSize={4} onChange={setHistoryPage} label="événements" />
+          </div>}
         </Section>
-      </div>
-
-      <div className="space-y-4">
         <Section title="Examens laboratoire">
-          {(patient.labRequests || []).length === 0 ? <Empty /> : patient.labRequests?.map((request, index) => (
+          {labRequests.length === 0 ? <Empty /> : <div className="space-y-3">{pageItems(labRequests, labPage, 4).map((request, index) => (
             <TimelineCard
               key={request.id}
-              title={`${formatExamRequestId(index + 1, patient)} - ${request.specimenType || "Examen"}`}
+              title={`${formatExamRequestId((labPage - 1) * 4 + index + 1, patient)} - ${request.specimenType || "Examen"}`}
               subtitle={`${request.status} - ${formatDate(request.requestedAt)}`}
               text={
                 request.results?.length
@@ -446,39 +485,48 @@ function PatientRecord({ patient, position, labTests, departments }: { patient: 
                   : "Resultat en attente."
               }
             />
-          ))}
+          ))}<InlinePagination page={labPage} total={labRequests.length} pageSize={4} onChange={setLabPage} label="examens" /></div>}
         </Section>
 
         <Section title="Prescriptions">
-          {(patient.prescriptions || []).length === 0 ? <Empty /> : patient.prescriptions?.map((prescription, index) => (
+          {prescriptions.length === 0 ? <Empty /> : <div className="space-y-3">{pageItems(prescriptions, prescriptionsPage, 4).map((prescription, index) => (
             <TimelineCard
               key={prescription.id}
-              title={`${formatPrescriptionId(index + 1, patient)} - ${prescription.prescriber?.displayName || prescription.status}`}
+              title={`${formatPrescriptionId((prescriptionsPage - 1) * 4 + index + 1, patient)} - ${prescription.prescriber?.displayName || prescription.status}`}
               subtitle={formatDate(prescription.prescribingDate)}
               text={prescription.lineItems?.map((line) => `${line.medication?.name || "Medicament"} - ${line.dosage || ""} - ${line.frequency || ""} - qte ${line.quantity || 1}`).join(", ") || prescription.instruction || "-"}
             />
-          ))}
+          ))}<InlinePagination page={prescriptionsPage} total={prescriptions.length} pageSize={4} onChange={setPrescriptionsPage} label="prescriptions" /></div>}
         </Section>
 
         <Section title="Hospitalisations">
-          {(patient.hospitalizations || []).length === 0 ? <Empty /> : patient.hospitalizations?.map((item) => (
+          {hospitalizations.length === 0 ? <Empty /> : <div className="space-y-3">{pageItems(hospitalizations, hospitalizationsPage, 4).map((item) => (
             <TimelineCard
               key={item.id}
               title={`${item.status} ${item.bedNumber ? `- lit ${item.bedNumber}` : ""}`}
               subtitle={formatDate(item.admittedAt)}
               text={item.admissionReason || "Hospitalisation"}
             />
-          ))}
+          ))}<InlinePagination page={hospitalizationsPage} total={hospitalizations.length} pageSize={4} onChange={setHospitalizationsPage} label="hospitalisations" /></div>}
         </Section>
+      </div>}
 
-        <Section title="Historique medical">
-          {(patient.medicalHistories || []).length === 0 ? <Empty /> : patient.medicalHistories?.map((item) => (
-            <HistoryEventCard key={item.id} item={item} patient={patient} labTests={labTests} departments={departments} />
-          ))}
-        </Section>
+      <div className="flex justify-end gap-2 border-t border-slate-100 pt-5 dark:border-slate-800">
+        {detailPage === 2 ? <button type="button" onClick={() => setDetailPage(1)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold dark:border-slate-700">Précédent</button> : null}
+        {detailPage === 1 ? <button type="button" onClick={() => setDetailPage(2)} className="rounded-xl bg-aulia-navy px-4 py-2 text-sm font-semibold text-white">Suivant</button> : null}
       </div>
     </div>
   );
+}
+
+function pageItems<T>(items: T[], page: number, pageSize: number) {
+  return items.slice((page - 1) * pageSize, page * pageSize);
+}
+
+function InlinePagination({ page, total, pageSize, onChange, label }: { page: number; total: number; pageSize: number; onChange: (page: number) => void; label: string }) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (total <= pageSize) return null;
+  return <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400"><span>{total} {label} · page {page}/{totalPages}</span><div className="flex gap-2"><button type="button" disabled={page === 1} onClick={() => onChange(page - 1)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 font-semibold disabled:opacity-40 dark:border-slate-700">Préc.</button><button type="button" disabled={page === totalPages} onClick={() => onChange(page + 1)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 font-semibold disabled:opacity-40 dark:border-slate-700">Suiv.</button></div></div>;
 }
 
 function buildClinicalBulletList(lines: Array<{ label: string; value: string | null }>) {

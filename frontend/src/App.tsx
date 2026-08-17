@@ -1,95 +1,20 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import SignIn from "./pages/AuthPages/SignIn";
-import SignUp from "./pages/AuthPages/SignUp";
-import NotFound from "./pages/OtherPage/NotFound";
-import UserProfiles from "./pages/UserProfiles";
-import Calendar from "./pages/Calendar";
-import BasicTables from "./pages/Tables/BasicTables";
-import Blank from "./pages/Blank";
-import DossierMedical from "./pages/Patient/DossierMedical";
-import Hospitalisation from "./pages/Hospitalisation";
-import SuiviQuotidien from "./pages/Patient/SuiviQuotidien";
-import Messages from "./pages/Patient/Messages";
-import MesTraitements from "./pages/Patient/MesTraitements";
-import HistoriqueMedical from "./pages/Patient/HistoriqueMedical";
-import PatientDashboard from "./pages/Patient/PatientDashboard";
-import PatientAppointments from "./pages/Patient/PatientAppointments";
-import PatientResults from "./pages/Patient/PatientResults";
-import PatientHospitalization from "./pages/Patient/PatientHospitalization";
-import PatientPayments from "./pages/Patient/PatientPayments";
-import MontreConnectee from "./pages/Patient/MontreConnectee";
-import MesEnfants from "./pages/Patient/MesEnfants";
-import ReceptionDashboard from "./pages/Reception/Dashboard";
-import ReceptionPatients from "./pages/Reception/Patients";
-import ReceptionAdmission from "./pages/Reception/Admission";
-import ReceptionProfile from "./pages/Reception/ProfileReception";
-import ReceptionMessages from "./pages/Reception/MessagesReception";
-import HospitalisationReception from "./pages/Reception/HospitalisationReception";
-import HistoriqueReception from "./pages/Reception/HistoriqueReception";
-import AbonnementsReception from "./pages/Reception/AbonnementsReception";
-import DashboardInfirmier from "./pages/Infirmier/DashboardInfirmier";
-import PatientAssignes from "./pages/Infirmier/PatientAssignes";
-import MessagesInfirmier from "./pages/Infirmier/MessagesInfirmier";
-import ProfileInfirmier from "./pages/Infirmier/ProfileInfirmier";
-import RoundsInfirmier from "./pages/Infirmier/Rounds";
-import HospitalisationInfirmier from "./pages/Infirmier/HospitalisationsSuivi";
-import DashboardMedecin from "./pages/Medecin/DashboardMedecin";
-import PatientsMedecin from "./pages/Medecin/PatientsMedecin";
-import ExamensMedecin from "./pages/Medecin/ExamensMedecin";
-import PrescriptionsMedecin from "./pages/Medecin/PrescriptionsMedecin";
-import HospitalisationsMedecin from "./pages/Medecin/HospitalisationsMedecin";
-import BlocOperatoireMedecin from "./pages/Medecin/BlocOperatoireMedecin";
-import MessagesMedecin from "./pages/Medecin/MessagesMedecin";
-import ProfileMedecin from "./pages/Medecin/ProfileMedecin";
-import DashboardCaissier from "./pages/Caissier/DashboardCaissier";
-import MessagesCaissier from "./pages/Caissier/MessagesCaissier";
-import FacturationCaissier from "./pages/Caissier/FacturationCaissier";
-import HistoriqueCaissier from "./pages/Caissier/HistoriqueCaissier";
-import ProfileCaissier from "./pages/Caissier/ProfileCaissier";
 import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import AuliaPageLoader from "./components/common/AuliaPageLoader";
 import { RequireAuth, RoleGuard, HomeRedirect } from "./components/auth/RequireAuth";
-import RendezVousReception from "./pages/Reception/RendezVousReception";
-import CreateReceptionService from "./pages/Reception/CreateService";
-import DashboardAdmin from "./pages/Administration/DashboardAdmin";
-import GestionPersAdmin from "./pages/Administration/GestionPersAdmin";
-import GestionServAdmin from "./pages/Administration/GestionServAdmin";
-import GestionDepartAdmin from "./pages/Administration/GestionDepartAdmin";
-import GestionSalleAdmin from "./pages/Administration/GestionSalleAdmin";
-import RapportAdmin from "./pages/Administration/RapportAdmin";
-import GestionStockAdmin from "./pages/Administration/GestionStockAdmin";
-import ProfilAdmin from "./pages/Administration/ProfileAdmin";
-import DashboardPharmacie from "./pages/Pharmacie/DashboardPharmacie";
-import DelivrancePharmacie from "./pages/Pharmacie/DelivrancePharmacie";
-import HistoriquePharmacie from "./pages/Pharmacie/HistoriquePharmacie";
-import GestionStockPharmacie from "./pages/Pharmacie/GestionStockPharmacie";
-import MessagesPharmacie from "./pages/Pharmacie/MessagesPharmacie";
-import DashboardLaboratoire from "./pages/Laboratoire/DashboardLaboratoire";
-import CatalogueLab from "./pages/Laboratoire/CatalogueLab";
-import ActivityLab from "./pages/Laboratoire/ActivityLab";
-import ValidationsLab from "./pages/Laboratoire/ValidationsLab";
-import TechniciensLab from "./pages/Laboratoire/TechniciensLab";
-import MessagesLaboratoire from "./pages/Laboratoire/MessagesLaboratoire";
-import ProfileLaboratoire from "./pages/Laboratoire/ProfileLab";
-import DashboardSupAdmin from "./pages/SuperAdmin/DashboardSupAdmin";
-import ProfileSupAdmin from "./pages/SuperAdmin/ProfileSupAdmin";
-import ProfilePharmacie from "./pages/Pharmacie/ProfilePharmacie";
-import Guide from "./pages/Guide";
-import MessagesAdmin from "./pages/Administration/MessagesAdmin";
-import DashboardFinance from "./pages/Finance/DashboardFinance";
-import MessagesFinance from "./pages/Finance/MessagesFinance";
-import ProfileFinance from "./pages/Finance/ProfileFinance";
-import DashboardRadio from "./pages/Radiologie/DashboardRadio";
-import WaitingQueueRadio from "./pages/Radiologie/WaitingQueueRadio";
-import WorkflowRadio from "./pages/Radiologie/WorkflowRadio";
-import CatalogueRadio from "./pages/Radiologie/CatalogueRadio";
-import EquipmentRadio from "./pages/Radiologie/EquipmentRadio";
-import SchedulingRadio from "./pages/Radiologie/SchedulingRadio";
-import HistoryRadio from "./pages/Radiologie/HistoryRadio";
-import ReportsRadio from "./pages/Radiologie/ReportsRadio";
-import MessagesRadio from "./pages/Radiologie/MessagesRadio";
-import ProfileRadio from "./pages/Radiologie/ProfileRadio";
+
+const SignIn = lazy(() => import("./pages/AuthPages/SignIn")); const SignUp = lazy(() => import("./pages/AuthPages/SignUp")); const NotFound = lazy(() => import("./pages/OtherPage/NotFound")); const UserProfiles = lazy(() => import("./pages/UserProfiles")); const Blank = lazy(() => import("./pages/Blank")); const DossierMedical = lazy(() => import("./pages/Patient/DossierMedical")); const SuiviQuotidien = lazy(() => import("./pages/Patient/SuiviQuotidien")); const Messages = lazy(() => import("./pages/Patient/Messages")); const MesTraitements = lazy(() => import("./pages/Patient/MesTraitements")); const HistoriqueMedical = lazy(() => import("./pages/Patient/HistoriqueMedical")); const PatientDashboard = lazy(() => import("./pages/Patient/PatientDashboard")); const PatientAppointments = lazy(() => import("./pages/Patient/PatientAppointments")); const PatientResults = lazy(() => import("./pages/Patient/PatientResults")); const PatientHospitalization = lazy(() => import("./pages/Patient/PatientHospitalization")); const PatientPayments = lazy(() => import("./pages/Patient/PatientPayments")); const MontreConnectee = lazy(() => import("./pages/Patient/MontreConnectee")); const MesEnfants = lazy(() => import("./pages/Patient/MesEnfants"));
+const ReceptionDashboard = lazy(() => import("./pages/Reception/Dashboard")); const ReceptionPatients = lazy(() => import("./pages/Reception/Patients")); const ReceptionAdmission = lazy(() => import("./pages/Reception/Admission")); const ReceptionProfile = lazy(() => import("./pages/Reception/ProfileReception")); const ReceptionMessages = lazy(() => import("./pages/Reception/MessagesReception")); const HospitalisationReception = lazy(() => import("./pages/Reception/HospitalisationReception")); const HistoriqueReception = lazy(() => import("./pages/Reception/HistoriqueReception")); const AbonnementsReception = lazy(() => import("./pages/Reception/AbonnementsReception")); const RendezVousReception = lazy(() => import("./pages/Reception/RendezVousReception")); const CreateReceptionService = lazy(() => import("./pages/Reception/CreateService"));
+const DashboardInfirmier = lazy(() => import("./pages/Infirmier/DashboardInfirmier")); const PatientAssignes = lazy(() => import("./pages/Infirmier/PatientAssignes")); const MessagesInfirmier = lazy(() => import("./pages/Infirmier/MessagesInfirmier")); const ProfileInfirmier = lazy(() => import("./pages/Infirmier/ProfileInfirmier")); const RoundsInfirmier = lazy(() => import("./pages/Infirmier/Rounds")); const HospitalisationInfirmier = lazy(() => import("./pages/Infirmier/HospitalisationsSuivi"));
+const DashboardMedecin = lazy(() => import("./pages/Medecin/DashboardMedecin")); const PatientsMedecin = lazy(() => import("./pages/Medecin/PatientsMedecin")); const ExamensMedecin = lazy(() => import("./pages/Medecin/ExamensMedecin")); const PrescriptionsMedecin = lazy(() => import("./pages/Medecin/PrescriptionsMedecin")); const HospitalisationsMedecin = lazy(() => import("./pages/Medecin/HospitalisationsMedecin")); const BlocOperatoireMedecin = lazy(() => import("./pages/Medecin/BlocOperatoireMedecin")); const MessagesMedecin = lazy(() => import("./pages/Medecin/MessagesMedecin")); const ProfileMedecin = lazy(() => import("./pages/Medecin/ProfileMedecin"));
+const DashboardCaissier = lazy(() => import("./pages/Caissier/DashboardCaissier")); const MessagesCaissier = lazy(() => import("./pages/Caissier/MessagesCaissier")); const FacturationCaissier = lazy(() => import("./pages/Caissier/FacturationCaissier")); const HistoriqueCaissier = lazy(() => import("./pages/Caissier/HistoriqueCaissier")); const ProfileCaissier = lazy(() => import("./pages/Caissier/ProfileCaissier"));
+const DashboardAdmin = lazy(() => import("./pages/Administration/DashboardAdmin")); const GestionPersAdmin = lazy(() => import("./pages/Administration/GestionPersAdmin")); const GestionServAdmin = lazy(() => import("./pages/Administration/GestionServAdmin")); const GestionDepartAdmin = lazy(() => import("./pages/Administration/GestionDepartAdmin")); const GestionSalleAdmin = lazy(() => import("./pages/Administration/GestionSalleAdmin")); const RapportAdmin = lazy(() => import("./pages/Administration/RapportAdmin")); const GestionStockAdmin = lazy(() => import("./pages/Administration/GestionStockAdmin")); const ProfilAdmin = lazy(() => import("./pages/Administration/ProfileAdmin")); const MessagesAdmin = lazy(() => import("./pages/Administration/MessagesAdmin"));
+const DashboardPharmacie = lazy(() => import("./pages/Pharmacie/DashboardPharmacie")); const DelivrancePharmacie = lazy(() => import("./pages/Pharmacie/DelivrancePharmacie")); const HistoriquePharmacie = lazy(() => import("./pages/Pharmacie/HistoriquePharmacie")); const GestionStockPharmacie = lazy(() => import("./pages/Pharmacie/GestionStockPharmacie")); const MessagesPharmacie = lazy(() => import("./pages/Pharmacie/MessagesPharmacie")); const ProfilePharmacie = lazy(() => import("./pages/Pharmacie/ProfilePharmacie"));
+const DashboardLaboratoire = lazy(() => import("./pages/Laboratoire/DashboardLaboratoire")); const CatalogueLab = lazy(() => import("./pages/Laboratoire/CatalogueLab")); const ActivityLab = lazy(() => import("./pages/Laboratoire/ActivityLab")); const ValidationsLab = lazy(() => import("./pages/Laboratoire/ValidationsLab")); const TechniciensLab = lazy(() => import("./pages/Laboratoire/TechniciensLab")); const MessagesLaboratoire = lazy(() => import("./pages/Laboratoire/MessagesLaboratoire")); const ProfileLaboratoire = lazy(() => import("./pages/Laboratoire/ProfileLab"));
+const DashboardSupAdmin = lazy(() => import("./pages/SuperAdmin/DashboardSupAdmin")); const ProfileSupAdmin = lazy(() => import("./pages/SuperAdmin/ProfileSupAdmin")); const Guide = lazy(() => import("./pages/Guide")); const DashboardFinance = lazy(() => import("./pages/Finance/DashboardFinance")); const MessagesFinance = lazy(() => import("./pages/Finance/MessagesFinance")); const ProfileFinance = lazy(() => import("./pages/Finance/ProfileFinance"));
+const DashboardRadio = lazy(() => import("./pages/Radiologie/DashboardRadio")); const WaitingQueueRadio = lazy(() => import("./pages/Radiologie/WaitingQueueRadio")); const WorkflowRadio = lazy(() => import("./pages/Radiologie/WorkflowRadio")); const CatalogueRadio = lazy(() => import("./pages/Radiologie/CatalogueRadio")); const EquipmentRadio = lazy(() => import("./pages/Radiologie/EquipmentRadio")); const SchedulingRadio = lazy(() => import("./pages/Radiologie/SchedulingRadio")); const HistoryRadio = lazy(() => import("./pages/Radiologie/HistoryRadio")); const ReportsRadio = lazy(() => import("./pages/Radiologie/ReportsRadio")); const MessagesRadio = lazy(() => import("./pages/Radiologie/MessagesRadio")); const ProfileRadio = lazy(() => import("./pages/Radiologie/ProfileRadio"));
 
 export default function App() {
   return (
@@ -97,6 +22,7 @@ export default function App() {
       <Router>
         <AuliaPageLoader />
         <ScrollToTop />
+        <Suspense fallback={<div className="grid min-h-[45vh] place-items-center text-sm text-slate-500 dark:text-slate-300">Chargement sécurisé de l’espace Aulia Care…</div>}>
         <Routes>
           {/* Dashboard Layout */}
           <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
@@ -226,6 +152,7 @@ export default function App() {
           {/* Fallback Route */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </Suspense>
       </Router>
     </>
   );

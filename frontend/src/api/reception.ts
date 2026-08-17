@@ -26,8 +26,21 @@ const normalizePatientName = (name: string) => name.trim().replace(/\s+/g, " ").
 const normalizePhone = (phone: string) => phone.replace(/[^0-9+]/g, "");
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
+export type PaginatedResult<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
+
+export const fetchPatientsPage = async (page = 1, limit = 10): Promise<PaginatedResult<PatientRecord>> =>
+  fetchDbJson<PaginatedResult<PatientRecord>>(`/patients?page=${Math.max(1, page)}&limit=${Math.min(Math.max(1, limit), 50)}`);
+
+/** Dashboard widgets only receive the current, bounded page. Patient tables use fetchPatientsPage. */
 export const fetchPatientsFromDatabase = async (): Promise<PatientRecord[]> => {
-  return fetchDbJson<PatientRecord[]>('/patients');
+  const result = await fetchPatientsPage(1, 10);
+  return result.items;
 };
 
 export type ReceptionVisitRecord = {

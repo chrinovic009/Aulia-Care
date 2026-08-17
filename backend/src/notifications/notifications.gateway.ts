@@ -86,7 +86,9 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     sockets.delete(client.id);
     if (sockets.size === 0) {
       this.socketsByUser.delete(userId);
-      this.server.emit('user.presence', { userId, online: false });
+      // Presence is metadata. It is deliberately only visible to the user’s own
+      // authenticated sessions, never broadcast to every connected client.
+      this.server.to(this.userRoom(userId)).emit('user.presence', { online: false });
     }
   }
 
@@ -137,7 +139,7 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
       throw new WsException('Destinataire non autorise');
     }
 
-    const delivered = this.isUserOnline(payload.recipientId);
+    const delivered = await this.isUserOnline(payload.recipientId);
     const saved = await this.prisma.chatMessage.create({
       data: {
         ...(payload.id ? { id: payload.id } : {}),
@@ -314,12 +316,26 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     this.server.to(this.userRoom(call.patientUserId)).emit('telehealth.ended', payload);
   }
 
-  notify(event: string, payload: any) {
-    try {
-      if (this.server) this.server.emit(event, payload);
-    } catch (e) {
-      // best-effort emit
-    }
+  notifyPatientEvent(patientId: string, event: string, payload: unknown) {
+    this.notifyToPatient(patientId, event, payload);
+  }
+
+  /**
+   * Compatibility bridge for legacy services. Unlike the former implementation,
+   * it never broadcasts to all sockets: an explicit recipient or patient scope is
+   * required. New code must call notifyToUser/notifyToPatient directly.
+   */
+  notify(event: string, payload: Record<string, unknown> = {}) {
+    const recipientId = typeof payload.recipientId === 'string'
+      ? payload.recipientId
+      : typeof payload.userId === 'string'
+        ? payload.userId
+        : typeof payload.requestedById === 'string'
+          ? payload.requestedById
+          : undefined;
+    const patientId = typeof payload.patientId === 'string' ? payload.patientId : undefined;
+    if (recipientId) return this.notifyToUser(recipientId, event, payload);
+    if (patientId) return this.notifyToPatient(patientId, event, payload);
   }
 
   notifyToUser(userId: string, event: string, payload: any) {
@@ -379,13 +395,15 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     sockets.add(client.id);
     this.socketsByUser.set(userId, sockets);
 
-    if (wasOffline) {
-      this.server.emit('user.presence', { userId, online: true });
-    }
+    if (wasOffline) client.emit('user.presence', { online: true });
   }
 
-  private isUserOnline(userId: string) {
-    return (this.socketsByUser.get(userId)?.size || 0) > 0;
+  private async isUserOnline(userId: string) {
+    if (!this.server) return false;
+    // allSockets() is adapter-aware: with Redis it queries every backend node,
+    // so message delivery state is not incorrectly decided by one local process.
+    const sockets = await this.server.in(this.userRoom(userId)).allSockets();
+    return sockets.size > 0;
   }
 
   private async publishDatabaseChange(payload: { model?: string; action?: string; recordId?: string; at?: string }) {

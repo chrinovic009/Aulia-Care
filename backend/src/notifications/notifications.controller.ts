@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -11,13 +11,13 @@ export class NotificationsController {
 
   @Get()
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
-  findAll() {
-    return this.notificationsService.findAll();
+  findAll(@Request() req: any, @Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.notificationsService.findAll(req.user?.userId, Number(page), Number(limit));
   }
 
   @Get(':id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
-  findOne(@Param('id') id: string) {
-    return this.notificationsService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.notificationsService.findOne(id, req.user?.userId);
   }
 }
