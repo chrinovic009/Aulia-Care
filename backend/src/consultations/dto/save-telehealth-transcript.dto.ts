@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, IsIn, IsString, MaxLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsDateString, IsIn, IsString, IsUUID, MaxLength, ValidateNested } from 'class-validator';
 
 export class TelehealthTranscriptEntryDto {
   @IsIn(['MEDECIN', 'PATIENT'])
@@ -15,7 +15,11 @@ export class TelehealthTranscriptEntryDto {
 
 /** The transcript is a draft aid, never a signed medical conclusion. */
 export class SaveTelehealthTranscriptDto {
+  @IsUUID()
+  sessionId: string;
+
   @IsArray()
+  @ArrayMaxSize(500)
   @ValidateNested({ each: true })
   @Type(() => TelehealthTranscriptEntryDto)
   entries: TelehealthTranscriptEntryDto[];

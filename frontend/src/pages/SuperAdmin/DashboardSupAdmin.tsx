@@ -313,7 +313,7 @@ function LineChart({ series, width = 600, height = 160 }: { series: Array<{ name
       <rect x={0} y={0} width={width} height={height} fill="#fff0" />
       {series.map((s, idx) => {
         const pts = pointsFor(s.data);
-        const colors = ['#0A1D3A','#0D9488','#22C55E','#ef4444'];
+        const colors = ['#0A1D3A','#0D9488','#0D9488','#ef4444'];
         return <path key={s.name} d={pathFor(pts)} fill="none" stroke={colors[idx % colors.length]} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />;
       })}
     </svg>
@@ -356,7 +356,7 @@ function PieChart({ data }: { data: Array<{ label: string; value: number }> }) {
     const y2 = cy + r * Math.sin(end);
     const large = end - start > Math.PI ? 1 : 0;
     const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-    const colors = ['#ef4444','#f59e0b','#22C55E','#0A1D3A','#0D9488','#637771'];
+    const colors = ['#ef4444','#f59e0b','#0D9488','#0A1D3A','#0D9488','#637771'];
     return <path key={d.label} d={path} fill={colors[i % colors.length]} stroke="#fff" strokeWidth={0.5} />;
   });
   return (

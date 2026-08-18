@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ChevronLeftIcon, EyeCloseIcon, EyeIcon } from "../../icons";
 import { useAuth, getRedirectPath } from "../../context/AuthContext";
 import Label from "../form/Label";
@@ -10,6 +10,11 @@ import Button from "../ui/button/Button";
 export default function SignInForm() {
   const { currentUser, login, logout, isLoading, error: contextError, restrictedAccount, clearRestrictedAccount } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const requestedPath = (location.state as { from?: { pathname?: string; search?: string; hash?: string } } | null)?.from;
+  const returnPath = requestedPath?.pathname
+    ? `${requestedPath.pathname}${requestedPath.search || ""}${requestedPath.hash || ""}`
+    : null;
   const [showPassword, setShowPassword] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
   const [identifier, setIdentifier] = useState("");
@@ -20,9 +25,9 @@ export default function SignInForm() {
   // Redirection si déjà authentifié
   useEffect(() => {
     if (currentUser) {
-      navigate(getRedirectPath(currentUser.primaryRole), { replace: true });
+      navigate(returnPath || getRedirectPath(currentUser.primaryRole), { replace: true });
     }
-  }, [currentUser, navigate]);
+  }, [currentUser, navigate, returnPath]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -50,7 +55,7 @@ export default function SignInForm() {
       }
 
       console.log("✓ Connecté avec le rôle:", user.primaryRole);
-      navigate(getRedirectPath(user.primaryRole), { replace: true });
+      navigate(returnPath || getRedirectPath(user.primaryRole), { replace: true });
     } catch (err) {
       console.error(err);
       setError("Une erreur est survenue lors de la connexion.");

@@ -4,6 +4,7 @@ import PageMeta from "../../components/common/PageMeta";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { fetchNurseHospitalizations, recordNurseRound } from "../../api/nurse";
+import { ClientPagination, useClientPagination } from "../../components/common/ClientPagination";
 
 type ClinicalState = "Stable" | "Surveillance" | "Critique" | "Isolement";
 
@@ -130,6 +131,7 @@ export default function HospitalisationsSuivi() {
       return [i.patientName, i.room, i.service, i.nurseInCharge].some((s) => (s || "").toLowerCase().includes(q));
     });
   }, [items, filterState, query]);
+  const hospitalizationPagination = useClientPagination(filtered, 10);
 
   const byRooms = useMemo(() => {
     const map = new Map<string, Hospitalisation[]>();
@@ -274,7 +276,7 @@ export default function HospitalisationsSuivi() {
               {filtered.length === 0 ? (
                 <div className="rounded-2xl p-6 bg-white">Aucune hospitalisation trouvée.</div>
               ) : (
-                filtered.map((h) => (
+                hospitalizationPagination.pageItems.map((h) => (
                   <div key={h.id} className="rounded-2xl border bg-white p-4 flex flex-col gap-4 sm:flex-row sm:items-start">
                     <div className="flex items-center gap-4">
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-lg font-semibold text-slate-800">{getInitials(h.patientName)}</div>
@@ -327,6 +329,13 @@ export default function HospitalisationsSuivi() {
                   </div>
                 ))
               )}
+              <ClientPagination
+                page={hospitalizationPagination.page}
+                totalItems={filtered.length}
+                totalPages={hospitalizationPagination.totalPages}
+                onPageChange={hospitalizationPagination.setPage}
+                label="hospitalisations"
+              />
             </div>
           ) : (
             <div className="space-y-4">

@@ -11,6 +11,9 @@ export type MessageContact = {
   subtitle?: string | null;
   phone?: string | null;
   email?: string | null;
+  lastMessageAt?: string | null;
+  lastMessagePreview?: string | null;
+  unreadCount?: number;
 };
 
 export type StoredMessage = {

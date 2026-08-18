@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Patch, Query, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -10,9 +10,39 @@ export class WearablesController {
   constructor(private readonly wearables: WearablesService) {}
 
   @Post('devices')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
+  @Roles('SUPER_ADMIN', 'ADMIN')
   registerDevice(@Body() body: any, @Request() req: any) {
     return this.wearables.registerDevice(body, req.user?.userId);
+  }
+
+  @Get('reception/dashboard')
+  @Roles('RECEPTIONIST')
+  receptionDashboard(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.wearables.getReceptionDashboard(Number(page || 1), Number(limit || 10));
+  }
+
+  @Post('reception/pair')
+  @Roles('RECEPTIONIST')
+  pairAtReception(@Body() body: any, @Request() req: any) {
+    return this.wearables.pairDeviceAtReception(body, req.user?.userId);
+  }
+
+  @Get('admin/inventory')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  inventory(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.wearables.getInventoryDashboard(Number(page || 1), Number(limit || 10));
+  }
+
+  @Patch('admin/plans/:manufacturer')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  savePlan(@Param('manufacturer') manufacturer: string, @Body() body: any) {
+    return this.wearables.savePlan(manufacturer, body);
+  }
+
+  @Post('admin/lots')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  receiveLot(@Body() body: any, @Request() req: any) {
+    return this.wearables.receiveLot(body, req.user?.userId);
   }
 
   @Post('parent-child-links')

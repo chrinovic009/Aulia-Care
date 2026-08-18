@@ -43,6 +43,15 @@ export type WearableDashboard = {
     displayName?: string | null;
     status: string;
     lastSeenAt?: string | null;
+    subscriptions?: Array<{
+      status: "PENDING_PAYMENT" | "ACTIVE" | "OVERDUE" | "CANCELLED";
+      periodStartAt: string;
+      periodEndAt: string;
+      amount: string | number;
+      currency: string;
+      paidAt?: string | null;
+      invoice?: { status: string; balanceDue: string | number; dueDate?: string | null } | null;
+    }>;
     measurements: Array<{ id: string; metric: string; value: string | number; unit: string; measuredAt: string; quality: string }>;
     emergencyLocations: Array<{ latitude: string | number; longitude: string | number; accuracyMeters?: string | number | null; capturedAt: string }>;
   }>;
@@ -58,7 +67,7 @@ export type ChildLink = {
     firstName: string;
     lastName: string;
     dateOfBirth?: string | null;
-    wearableDevices: Array<{ id: string; displayName?: string | null; lastSeenAt?: string | null; measurements: Array<{ metric: string; value: string | number; unit: string; measuredAt: string; quality: string }> }>;
+    wearableDevices: Array<{ id: string; displayName?: string | null; status: string; lastSeenAt?: string | null; subscriptions?: Array<{ status: string; periodEndAt: string; amount: string | number; currency: string; invoice?: { status: string; balanceDue: string | number } | null }>; measurements: Array<{ metric: string; value: string | number; unit: string; measuredAt: string; quality: string }> }>;
   };
 };
 

@@ -20,6 +20,7 @@ import {
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 import { useAuth } from "../context/AuthContext";
+import { apiFetch } from "../config/api";
 import SidebarWidget from "./SidebarWidget";
 
 type NavItem = {
@@ -127,6 +128,11 @@ const receptionNavItems: NavItem[] = [
     icon: <DocsIcon />,
     name: "Abonnements",
     path: "/reception/abonnements",
+  },
+  {
+    icon: <BoxCubeIcon />,
+    name: "Montres connectées",
+    path: "/reception/montres",
   },
   {
     icon: <BoxCubeIcon />,
@@ -287,6 +293,8 @@ const administrationNavItems: NavItem[] = [
   { icon: <ChatIcon />, name: "Messages admin", path: "/administration/messages" },
   { icon: <DocsIcon />, name: "Rapports", path: "/administration/rapports" },
   { icon: <TaskIcon />, name: "Stock pharmacie", path: "/administration/stock" },
+  { icon: <DocsIcon />, name: "Identité de l'hôpital", path: "/administration/identite" },
+  { icon: <BoxCubeIcon />, name: "Montres Aulia", path: "/administration/montres" },
   { icon: <LockIcon />, name: "Profil admin", path: "/administration/profile" },
 ];
 
@@ -311,6 +319,7 @@ const laboratoryNavItemsFactory = (isLabManager: boolean): NavItem[] => [
 
 const superAdminNavItems: NavItem[] = [
   { icon: <GridIcon />, name: "Dashboard DG", path: "/admin" },
+  { icon: <DocsIcon />, name: "Identité de l'hôpital", path: "/admin/identite" },
   { icon: <LockIcon />, name: "Profil super admin", path: "/admin/profile" },
 ];
 
@@ -321,6 +330,7 @@ const AppSidebar: React.FC = () => {
   const location = useLocation();
 
   const { currentUser } = useAuth();
+  const [clinicBrand, setClinicBrand] = useState<{ name?: string; brandDisplayName?: string | null }>({});
   const isLabManager = Boolean(
     currentUser?.primaryRole === "LAB_MANAGER" ||
     currentUser?.role === "LAB_MANAGER" ||
@@ -333,6 +343,13 @@ const AppSidebar: React.FC = () => {
     type: "main" | "others";
     index: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    apiFetch<{ name?: string; brandDisplayName?: string | null }>("/administration/clinic-branding")
+      .then(setClinicBrand)
+      .catch(() => setClinicBrand({}));
+  }, [currentUser?.id]);
   const isReceptionSection = location.pathname.startsWith("/reception");
   const isNurseSection = location.pathname.startsWith("/nurse");
   const isDoctorSection = location.pathname.startsWith("/doctor");
@@ -562,7 +579,7 @@ const AppSidebar: React.FC = () => {
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="flex w-full justify-center py-8">
+      <div className="flex w-full flex-col items-center justify-center gap-2 py-8 text-center">
         <Link to="/" className="flex items-center justify-center" aria-label="Accueil Aulia Care">
           {isExpanded || isHovered || isMobileOpen ? (
             <>
@@ -588,6 +605,11 @@ const AppSidebar: React.FC = () => {
             />
           )}
         </Link>
+        {(isExpanded || isHovered || isMobileOpen) && (
+          <p className="max-w-[220px] text-[11px] font-medium tracking-wide text-slate-500 dark:text-slate-400">
+            Géré par {clinicBrand.brandDisplayName || clinicBrand.name || "votre établissement"}
+          </p>
+        )}
       </div>
       <div className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
         <nav className="mb-6">

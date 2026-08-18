@@ -3,6 +3,7 @@ import { Building2, FileText, Plus, RefreshCw, ShieldCheck, Users } from "lucide
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { AdminPageShell, DataTable, Panel, StatCard, StatusBadge, formatDate, formatMoney } from "../Administration/adminUi";
+import { ClientPagination, useClientPagination } from "../../components/common/ClientPagination";
 import {
   SubscriptionCompany,
   SubscriptionEmployee,
@@ -46,6 +47,7 @@ export default function AbonnementsReception() {
   const [admissibleEmployees, setAdmissibleEmployees] = useState<SubscriptionEmployee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const companyPagination = useClientPagination(companies, 10);
   const [companyForm, setCompanyForm] = useState({ name: "", legalName: "", contractNumber: "", phone: "", email: "", contactName: "", billingDay: "30" });
   const [employeeForm, setEmployeeForm] = useState({ firstName: "", lastName: "", middleName: "", gender: "", profession: "", dateOfBirth: "", age: "", policyNumber: "", employeeNumber: "", phone: "", email: "" });
   const [admissionForm, setAdmissionForm] = useState({ consultationKind: "CONSULTATION_GENERALE", gender: "", dateOfBirth: "", phone: "", email: "", address: "", nationality: "", priority: "normal" });
@@ -181,7 +183,7 @@ export default function AbonnementsReception() {
 
             <Panel title="Entreprises enregistrées">
               <div className="space-y-2">
-                {companies.map((company) => (
+                {companyPagination.pageItems.map((company) => (
                   <button key={company.id} onClick={() => load(company.id)} className={`w-full rounded-lg border p-3 text-left transition ${selectedCompanyId === company.id ? "border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30" : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950"}`}>
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-semibold text-slate-900 dark:text-white">{company.name}</p>
@@ -191,6 +193,13 @@ export default function AbonnementsReception() {
                   </button>
                 ))}
               </div>
+              <ClientPagination
+                page={companyPagination.page}
+                totalItems={companies.length}
+                totalPages={companyPagination.totalPages}
+                onPageChange={companyPagination.setPage}
+                label="entreprises"
+              />
             </Panel>
           </div>
 

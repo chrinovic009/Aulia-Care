@@ -197,23 +197,23 @@ export class UsersService {
 
   async findContactsForRole(role?: RoleSlug | 'PATIENT', userId?: string) {
     if (role === 'PATIENT') {
-      return this.findPatientCareTeamContacts(userId);
+      return this.decorateContactsByActivity(userId, await this.findPatientCareTeamContacts(userId));
     }
     type ContactRole = RoleSlug | 'PATIENT';
+    const staffRoles: RoleSlug[] = [
+      RoleSlug.RECEPTIONIST,
+      RoleSlug.NURSE,
+      RoleSlug.PHYSICIAN,
+      RoleSlug.LAB_MANAGER,
+      RoleSlug.LAB_TECHNICIAN,
+      RoleSlug.RADIOLOGIST,
+      RoleSlug.PHARMACIST,
+      RoleSlug.CASHIER,
+    ];
     const allowedRolesByRole: Partial<Record<RoleSlug | 'PATIENT', ContactRole[]>> = {
       // Administrative accounts do not directly message patients; clinical roles
       // remain the designated communication channel.
-      SUPER_ADMIN: [
-        'ADMIN',
-        'RECEPTIONIST',
-        'NURSE',
-        'PHYSICIAN',
-        'LAB_MANAGER',
-        'LAB_TECHNICIAN',
-        'RADIOLOGIST',
-        'PHARMACIST',
-        'CASHIER',
-      ],
+      SUPER_ADMIN: ['ADMIN'],
 
       // Admin can contact staff, but not patients.
       ADMIN: [
@@ -227,27 +227,28 @@ export class UsersService {
         'PHARMACIST',
         'CASHIER',
       ],
-      RECEPTIONIST: ['RECEPTIONIST', 'PATIENT', 'CASHIER'],
-      NURSE: ['NURSE', 'PHYSICIAN', 'PATIENT', 'CASHIER'],
-      PHYSICIAN: ['PHYSICIAN', 'NURSE', 'LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'PHARMACIST', 'CASHIER'],
-      LAB_TECHNICIAN: ['LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN', 'CASHIER'],
-      LAB_MANAGER: ['LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN', 'CASHIER'],
-      RADIOLOGIST: ['LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN', 'CASHIER'],
-      PHARMACIST: ['LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'PHARMACIST', 'PHYSICIAN', 'CASHIER'],
-      CASHIER: ['RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'PHARMACIST', 'CASHIER', 'PATIENT'],
+      // All operational staff can collaborate with every other operational staff.
+      RECEPTIONIST: staffRoles,
+      NURSE: staffRoles,
+      PHYSICIAN: staffRoles,
+      LAB_TECHNICIAN: staffRoles,
+      LAB_MANAGER: staffRoles,
+      RADIOLOGIST: staffRoles,
+      PHARMACIST: staffRoles,
+      CASHIER: staffRoles,
       PATIENT: ['RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER'],
     };
 
     const allowedRoles = role ? allowedRolesByRole[role] || [] : [];
-    const staffRoles = allowedRoles.filter((allowedRole): allowedRole is RoleSlug => allowedRole !== 'PATIENT');
+    const permittedStaffRoles = allowedRoles.filter((allowedRole): allowedRole is RoleSlug => allowedRole !== 'PATIENT');
     const includePatients = allowedRoles.includes('PATIENT');
 
-    const staff = staffRoles.length
+    const staff = permittedStaffRoles.length
       ? await this.prisma.user.findMany({
           where: {
             deletedAt: null,
             status: 'ACTIVE',
-            primaryRole: { in: staffRoles },
+            primaryRole: { in: permittedStaffRoles },
             ...(userId ? { id: { not: userId } } : {}),
           },
           select: {
@@ -314,7 +315,7 @@ export class UsersService {
         : [],
     );
 
-    return [
+    let contacts = [
       ...staff.map((user) => ({
         id: user.id,
         type: 'USER',
@@ -324,8 +325,8 @@ export class UsersService {
         phone: user.phone,
         email: user.email,
       })),
-      ...patients.map((patient) => ({
-        id: patient.email ? patientUsersByEmail.get(patient.email.toLowerCase()) || patient.id : patient.id,
+      ...patients.filter((patient) => Boolean(patient.email && patientUsersByEmail.get(patient.email.toLowerCase()))).map((patient) => ({
+        id: patientUsersByEmail.get(patient.email!.toLowerCase())!,
         patientId: patient.id,
         type: 'PATIENT',
         name: [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(' '),
@@ -335,6 +336,108 @@ export class UsersService {
         email: patient.email,
       })),
     ];
+    if (userId && role && !['ADMIN', 'SUPER_ADMIN'].includes(String(role))) {
+      const carePatients = await this.findPatientsForStaffContact(userId, role);
+      contacts = [...contacts, ...carePatients.filter((candidate) => !contacts.some((contact) => contact.id === candidate.id))];
+    }
+    return this.decorateContactsByActivity(userId, contacts);
+  }
+
+  private async findPatientsForStaffContact(userId: string, role: RoleSlug) {
+    const whereByRole: Record<string, any> = {
+      RECEPTIONIST: { receptionistId: userId },
+      PHYSICIAN: { OR: [{ consultations: { some: { providerId: userId } } }, { hospitalizations: { some: { physicianId: userId } } }] },
+      NURSE: { OR: [{ hospitalizations: { some: { nurseInChargeId: userId } } }, { hospitalizations: { some: { nurseAssignments: { some: { nurseId: userId, releasedAt: null } } } } }] },
+      CASHIER: { invoices: { some: { payments: { some: { paidById: userId } } } } },
+      LAB_MANAGER: { labRequests: { some: {} } },
+      LAB_TECHNICIAN: { labRequests: { some: { items: { some: { assignedToId: userId } } } } },
+      RADIOLOGIST: { imagingRequests: { some: {} } },
+    };
+    const relation = whereByRole[String(role)];
+    if (!relation) return [];
+    const patients = await this.prisma.patient.findMany({
+      where: { deletedAt: null, ...relation },
+      select: { id: true, firstName: true, middleName: true, lastName: true, email: true, phone: true, workflowStatus: true, priority: true },
+      orderBy: { updatedAt: 'desc' },
+      take: 100,
+    });
+    const emails = patients.map((patient) => patient.email).filter((email): email is string => Boolean(email));
+    if (!emails.length) return [];
+    const patientUsers = await this.prisma.user.findMany({
+      where: { deletedAt: null, status: 'ACTIVE', primaryRole: RoleSlug.PATIENT, email: { in: emails } },
+      select: { id: true, email: true },
+    });
+    const accountByEmail = new Map(patientUsers.map((account) => [account.email.toLowerCase(), account.id]));
+    return patients
+      .filter((patient) => Boolean(patient.email && accountByEmail.get(patient.email.toLowerCase())))
+      .map((patient) => ({
+        id: accountByEmail.get(patient.email!.toLowerCase())!,
+        patientId: patient.id,
+        type: 'PATIENT' as const,
+        name: [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(' '),
+        role: 'PATIENT',
+        subtitle: patient.priority ? `Suivi ${patient.priority}` : 'Patient suivi',
+        phone: patient.phone,
+        email: patient.email,
+      }));
+  }
+
+  async isDirectMessagingAllowed(senderId: string, recipientId: string) {
+    const [sender, recipient] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: senderId }, select: { primaryRole: true } }),
+      this.prisma.user.findUnique({ where: { id: recipientId }, select: { primaryRole: true } }),
+    ]);
+    if (!sender || !recipient || senderId === recipientId) return false;
+    const senderRole = String(sender.primaryRole || '');
+    const recipientRole = String(recipient.primaryRole || '');
+
+    // The platform owner has a deliberately narrow channel: only the local admin.
+    if (senderRole === 'SUPER_ADMIN') return recipientRole === 'ADMIN';
+    if (recipientRole === 'SUPER_ADMIN') return senderRole === 'ADMIN';
+    // Local administration may collaborate with staff but never with patient accounts.
+    if (senderRole === 'ADMIN') return recipientRole !== 'PATIENT';
+    if (recipientRole === 'ADMIN') return senderRole !== 'PATIENT';
+
+    if (senderRole === 'PATIENT' || recipientRole === 'PATIENT') {
+      const patientUserId = senderRole === 'PATIENT' ? senderId : recipientId;
+      const staffUserId = senderRole === 'PATIENT' ? recipientId : senderId;
+      const careTeam = await this.findPatientCareTeamContacts(patientUserId);
+      return careTeam.some((contact) => contact.id === staffUserId);
+    }
+    // Operational staff may coordinate directly with any other operational staff.
+    return true;
+  }
+
+  private async decorateContactsByActivity<T extends { id: string }>(userId: string | undefined, contacts: T[]) {
+    if (!userId || contacts.length === 0) return contacts;
+    const contactIds = [...new Set(contacts.map((contact) => contact.id).filter((id) => id !== userId))];
+    if (!contactIds.length) return contacts;
+    const messages = await this.prisma.chatMessage.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          { senderId: userId, recipientId: { in: contactIds } },
+          { senderId: { in: contactIds }, recipientId: userId },
+        ],
+      },
+      select: { senderId: true, recipientId: true, text: true, createdAt: true, status: true },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+    });
+    const summaries = new Map<string, { lastMessageAt?: Date; lastMessagePreview?: string; unreadCount: number }>();
+    for (const message of messages) {
+      const contactId = message.senderId === userId ? message.recipientId : message.senderId;
+      const summary = summaries.get(contactId) || { unreadCount: 0 };
+      if (!summary.lastMessageAt) {
+        summary.lastMessageAt = message.createdAt;
+        summary.lastMessagePreview = message.text.slice(0, 120);
+      }
+      if (message.recipientId === userId && message.status !== 'READ') summary.unreadCount += 1;
+      summaries.set(contactId, summary);
+    }
+    return contacts
+      .map((contact) => ({ ...contact, ...(summaries.get(contact.id) || { unreadCount: 0 }) }))
+      .sort((left, right) => Number(new Date((right as any).lastMessageAt || 0)) - Number(new Date((left as any).lastMessageAt || 0)) || 0);
   }
 
   private async findPatientCareTeamContacts(userId?: string) {

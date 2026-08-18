@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, PackageCheck, RefreshCw } from "lucide-react";
 import { apiFetch } from "../../config/api";
+import { ClientPagination, useClientPagination } from "../../components/common/ClientPagination";
 import { AdminPageShell, DataTable, Panel, StatCard, formatDate, formatMoney } from "../Administration/adminUi";
 
 type Prescription = {
@@ -77,6 +78,7 @@ export default function DelivrancePharmacie() {
     lines: prescriptions.reduce((sum, prescription) => sum + (prescription.lineItems?.length || 0), 0),
     urgent: prescriptions.filter((prescription) => prescription.instruction?.toLowerCase().includes("urgent")).length,
   }), [prescriptions]);
+  const prescriptionPagination = useClientPagination(prescriptions, 10);
 
   const dispense = async () => {
     if (!selected) return;
@@ -127,7 +129,7 @@ export default function DelivrancePharmacie() {
           <div className="space-y-3">
             {isLoading ? <p className="text-sm text-slate-500">Chargement...</p> : null}
             {!isLoading && prescriptions.length === 0 ? <p className="text-sm text-slate-500">Aucune prescription payee en attente.</p> : null}
-            {prescriptions.map((prescription) => (
+            {prescriptionPagination.pageItems.map((prescription) => (
               <button
                 key={prescription.id}
                 onClick={() => setSelected(prescription)}
@@ -139,6 +141,13 @@ export default function DelivrancePharmacie() {
               </button>
             ))}
           </div>
+          <ClientPagination
+            page={prescriptionPagination.page}
+            totalItems={prescriptions.length}
+            totalPages={prescriptionPagination.totalPages}
+            onPageChange={prescriptionPagination.setPage}
+            label="prescriptions"
+          />
         </Panel>
 
         <Panel title="Details de l'ordonnance">

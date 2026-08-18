@@ -8,7 +8,7 @@ export default function LineChartOne() {
       position: "top",
       horizontalAlign: "left",
     },
-    colors: ["#0D9488", "#22C55E"], // Aulia Care: technology and life
+    colors: ["#0D9488", "#0D9488"], // Aulia Care unified turquoise
     chart: {
       fontFamily: "Outfit, sans-serif",
       height: 310,

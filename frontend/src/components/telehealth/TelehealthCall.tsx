@@ -24,16 +24,23 @@ type SpeechRecognitionLike = {
 };
 type SpeechRecognitionEventLike = { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> };
 
+const readHospitalIceServers = (): RTCIceServer[] => {
+  try {
+    const parsed = JSON.parse(import.meta.env.VITE_WEBRTC_ICE_SERVERS || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+};
 const iceServers: RTCConfiguration = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+  // Production must set hospital-controlled TURN credentials. A public STUN
+  // server is deliberately not a default for clinical calls.
+  iceServers: readHospitalIceServers(),
+  iceTransportPolicy: import.meta.env.PROD ? 'relay' : 'all',
 };
 
 const preferredVideoConstraints: MediaStreamConstraints = {
   audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   video: { facingMode: { ideal: 'user' }, width: { ideal: 1280 }, height: { ideal: 720 } },
 };
-
-const isDoctorQuestion = (text: string) => /^(ou|où|comment|depuis|quel|quelle|combien|avez|as-tu|est-ce|pourquoi|qu['’]est-ce)/i.test(text.trim());
 
 /** Best-effort ringtone. Browsers may require an earlier user gesture to play it. */
 const startIncomingRingtone = () => {
@@ -79,6 +86,7 @@ function useWebRtcCall(role: 'PHYSICIAN' | 'PATIENT', onTranscript?: (entries: T
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [completedCallId, setCompletedCallId] = useState<string | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const activeCallRef = useRef<string | null>(null);
@@ -100,7 +108,9 @@ function useWebRtcCall(role: 'PHYSICIAN' | 'PATIENT', onTranscript?: (entries: T
     const clean = text.replace(/\s+/g, ' ').trim();
     if (!clean) return;
     setTranscript((current) => {
-      const next = [...current, { id: crypto.randomUUID(), speaker: isDoctorQuestion(clean) ? 'MEDECIN' : 'PATIENT', text: clean, at: new Date().toISOString() }];
+      // Browser recognition receives the local physician microphone only; it
+      // must never pretend to have identified the remote patient speaker.
+      const next = [...current, { id: crypto.randomUUID(), speaker: 'MEDECIN', text: clean, at: new Date().toISOString() }];
       onTranscript?.(next);
       return next;
     });
@@ -237,6 +247,7 @@ function useWebRtcCall(role: 'PHYSICIAN' | 'PATIENT', onTranscript?: (entries: T
     };
     const onEnded = ({ callId: endedCallId, status: endStatus }: { callId: string; status: string }) => {
       if (endedCallId !== activeCallRef.current) return;
+      setCompletedCallId(endedCallId);
       cleanUp();
       setStatus('ENDED');
       setMessage(endStatus === 'declined' ? "Le patient a refusé l'appel vidéo." : endStatus === 'expired' ? "L'appel a expiré sans réponse." : "Téléconsultation terminée. La transcription reste dans le brouillon à vérifier.");
@@ -257,6 +268,7 @@ function useWebRtcCall(role: 'PHYSICIAN' | 'PATIENT', onTranscript?: (entries: T
 
   const begin = async (consultationId: string) => {
     if (!socket) return setMessage('Connexion temps réel indisponible. Réessayez après reconnexion.');
+    if (import.meta.env.PROD && !iceServers.iceServers?.length) return setMessage('Télésanté indisponible : le relais vidéo sécurisé de l’établissement n’est pas configuré.');
     setMessage(null);
     socket.timeout(10_000).emit('telehealth.start', { consultationId }, (error: Error | null, response?: { callId?: string }) => {
       if (error || !response?.callId) return setMessage("Impossible de joindre le patient. Vérifiez que son compte patient est actif.");
@@ -268,7 +280,7 @@ function useWebRtcCall(role: 'PHYSICIAN' | 'PATIENT', onTranscript?: (entries: T
     });
   };
 
-  const accept = async (incomingCallId: string) => {
+  const accept = async (incomingCallId: string, transcriptionConsent: boolean) => {
     if (!socket) return setMessage('Connexion temps réel indisponible.');
     try {
       setStatus('CONNECTING');
@@ -279,7 +291,7 @@ function useWebRtcCall(role: 'PHYSICIAN' | 'PATIENT', onTranscript?: (entries: T
       setCallId(incomingCallId);
       const stream = await requestMedia();
       preparePeer(stream);
-      socket.timeout(10_000).emit('telehealth.accept', { callId: incomingCallId }, (error: Error | null) => {
+      socket.timeout(10_000).emit('telehealth.accept', { callId: incomingCallId, transcriptionConsent }, (error: Error | null) => {
         if (error) {
           cleanUp();
           activeCallRef.current = null;
@@ -295,11 +307,11 @@ function useWebRtcCall(role: 'PHYSICIAN' | 'PATIENT', onTranscript?: (entries: T
   };
 
   const decline = (incomingCallId: string) => socket?.emit('telehealth.decline', { callId: incomingCallId, reason: 'PATIENT_DECLINED' });
-  const end = () => { if (activeCallRef.current) socket?.emit('telehealth.end', { callId: activeCallRef.current }); cleanUp(); setStatus('ENDED'); };
+  const end = () => { const endingCallId = activeCallRef.current; if (endingCallId) socket?.emit('telehealth.end', { callId: endingCallId }); setCompletedCallId(endingCallId); cleanUp(); setStatus('ENDED'); };
   const retryMedia = () => {
     if (role === 'PHYSICIAN' && activeCallRef.current) void connectDoctorMedia(activeCallRef.current);
   };
-  return { callId, status, localStream, remoteStream, message, transcript, begin, accept, decline, end, retryMedia, setMessage };
+  return { callId, completedCallId, status, localStream, remoteStream, message, transcript, begin, accept, decline, end, retryMedia, setMessage };
 }
 
 export function DoctorTelehealthCall({ consultationId, patientName, onTranscript, autoStart }: { consultationId: string; patientName: string; onTranscript: (entries: TranscriptEntry[]) => void; autoStart?: boolean }) {
@@ -310,23 +322,24 @@ export function DoctorTelehealthCall({ consultationId, patientName, onTranscript
     if (autoStart && consultationId && call.status === 'IDLE') void call.begin(consultationId);
   }, [autoStart, consultationId, call.status]);
   useEffect(() => {
-    if (call.status !== 'ENDED' || !consultationId || !call.transcript.length) return;
+    if (call.status !== 'ENDED' || !consultationId || !call.completedCallId || !call.transcript.length) return;
     const signature = JSON.stringify(call.transcript);
     if (persistedTranscriptRef.current === signature) return;
     persistedTranscriptRef.current = signature;
-    void saveTelehealthTranscript(consultationId, call.transcript)
+    void saveTelehealthTranscript(consultationId, call.completedCallId, call.transcript)
       .catch(() => call.setMessage("La transcription reste dans ce brouillon local. Enregistrez la consultation dès que la connexion est rétablie."));
-  }, [call.status, call.transcript, consultationId]);
-  return <section className="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-900/70 dark:bg-violet-950/20"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-violet-950 dark:text-violet-100">Téléconsultation sécurisée</p><p className="text-xs text-violet-800 dark:text-violet-200">WebRTC direct entre vous et {patientName}. La vidéo n’est pas enregistrée par Aulia Care.</p></div>{!active ? <button type="button" disabled={!consultationId} onClick={() => call.begin(consultationId)} className="inline-flex items-center gap-2 rounded-lg bg-violet-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"><Video size={16} /> Lancer l’appel vidéo</button> : <button type="button" onClick={call.end} className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white"><PhoneOff size={16} /> Terminer</button>}</div>{call.message && <div className="mt-3 flex flex-wrap items-center gap-3"><p className="text-xs font-medium text-violet-800 dark:text-violet-100">{call.message}</p>{call.status === 'MEDIA_ERROR' && <button type="button" onClick={call.retryMedia} className="rounded-md border border-violet-300 bg-white px-2 py-1 text-xs font-semibold text-violet-800">Réessayer caméra / micro</button>}</div>}{active && <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="grid gap-3 md:grid-cols-2"><VideoSurface stream={call.localStream} muted title="Vous — médecin" /><VideoSurface stream={call.remoteStream} title={patientName} /></div><div className="rounded-xl border border-violet-100 bg-white p-3 dark:border-violet-900/70 dark:bg-slate-950"><p className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white"><Mic size={16} /> Transcription à vérifier</p><p className="mt-1 text-xs text-slate-500">Chaque extrait reste un brouillon clinique : le médecin doit le relire avant validation.</p><div className="mt-3 max-h-72 space-y-2 overflow-y-auto">{call.transcript.length ? call.transcript.map((entry) => <div key={entry.id} className={entry.speaker === 'MEDECIN' ? 'mr-7 rounded-lg bg-violet-100 p-2 text-xs text-violet-950 dark:bg-violet-950/70 dark:text-violet-100' : 'ml-7 rounded-lg bg-slate-100 p-2 text-xs text-slate-800 dark:bg-slate-800 dark:text-slate-100'}><b>{entry.speaker === 'MEDECIN' ? 'Médecin' : 'Patient'}</b><p className="mt-1">{entry.text}</p></div>) : <p className="text-xs text-slate-500">En attente de parole…</p>}</div></div></div>}</section>;
+  }, [call.status, call.transcript, call.completedCallId, consultationId]);
+  return <section className="mt-4 rounded-xl border border-aulia-teal/30 bg-aulia-mist p-4 dark:bg-aulia-teal/10"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-aulia-navy dark:text-aulia-mist">Téléconsultation sécurisée</p><p className="text-xs text-slate-600 dark:text-slate-300">WebRTC entre vous et {patientName}. La vidéo n’est pas enregistrée par Aulia Care.</p></div>{!active ? <button type="button" disabled={!consultationId} onClick={() => call.begin(consultationId)} className="inline-flex items-center gap-2 rounded-lg bg-aulia-teal px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"><Video size={16} /> Lancer l’appel vidéo</button> : <button type="button" onClick={call.end} className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white"><PhoneOff size={16} /> Terminer</button>}</div>{call.message && <div className="mt-3 flex flex-wrap items-center gap-3"><p className="text-xs font-medium text-aulia-navy dark:text-aulia-mist">{call.message}</p>{call.status === 'MEDIA_ERROR' && <button type="button" onClick={call.retryMedia} className="rounded-md border border-aulia-teal/30 bg-white px-2 py-1 text-xs font-semibold text-aulia-teal">Réessayer caméra / micro</button>}</div>}{active && <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="grid gap-3 md:grid-cols-2"><VideoSurface stream={call.localStream} muted title="Vous — médecin" /><VideoSurface stream={call.remoteStream} title={patientName} /></div><div className="rounded-xl border border-aulia-teal/20 bg-white p-3 dark:bg-slate-950"><p className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white"><Mic size={16} /> Transcription du médecin à vérifier</p><p className="mt-1 text-xs text-slate-500">Le navigateur transcrit uniquement le microphone du médecin. Les propos du patient ne sont jamais devinés.</p><div className="mt-3 max-h-72 space-y-2 overflow-y-auto">{call.transcript.length ? call.transcript.map((entry) => <div key={entry.id} className="mr-7 rounded-lg bg-aulia-mist p-2 text-xs text-aulia-navy dark:bg-aulia-teal/20 dark:text-aulia-mist"><b>Médecin</b><p className="mt-1">{entry.text}</p></div>) : <p className="text-xs text-slate-500">En attente de parole…</p>}</div></div></div>}</section>;
 }
 
 export function PatientTelehealthOverlay() {
   const { socket } = useRealtime();
-  const [incoming, setIncoming] = useState<{ callId: string; doctorName: string } | null>(null);
+  const [incoming, setIncoming] = useState<{ callId: string; doctorName: string; expiresAt: string } | null>(null);
+  const [transcriptionConsent, setTranscriptionConsent] = useState(false);
   const call = useWebRtcCall('PATIENT');
   useEffect(() => {
     if (!socket) return;
-    const onIncoming = (payload: { callId: string; doctorName: string }) => { setIncoming(payload); call.setMessage(null); };
+    const onIncoming = (payload: { callId: string; doctorName: string; expiresAt: string }) => { setIncoming(payload); setTranscriptionConsent(false); call.setMessage(null); };
     const onEnded = ({ callId }: { callId: string }) => { if (incoming?.callId === callId) setIncoming(null); };
     socket.on('telehealth.incoming', onIncoming);
     socket.on('telehealth.ended', onEnded);
@@ -336,6 +349,16 @@ export function PatientTelehealthOverlay() {
     if (!incoming || call.status !== 'IDLE') return;
     return startIncomingRingtone();
   }, [incoming, call.status]);
+  useEffect(() => {
+    if (!incoming || call.status !== 'IDLE') return;
+    const delay = Math.max(0, new Date(incoming.expiresAt).getTime() - Date.now());
+    const timer = window.setTimeout(() => {
+      call.decline(incoming.callId);
+      setIncoming(null);
+      call.setMessage("L’appel vidéo a expiré sans réponse.");
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [incoming, call.status]);
   if (!incoming && call.status !== 'ACTIVE' && call.status !== 'CONNECTING') return null;
-  return <div className="aulia-telehealth-overlay fixed inset-0 z-[1000000] grid place-items-center overflow-y-auto bg-slate-950/80 p-4"><section className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900"><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-bold text-slate-900 dark:text-white">Consultation vidéo</p><p className="mt-1 text-sm text-slate-500">{incoming ? `${incoming.doctorName} souhaite démarrer une téléconsultation.` : 'Téléconsultation en cours.'}</p>{incoming && call.status === 'IDLE' && <p className="mt-2 animate-pulse text-xs font-semibold text-violet-700">● Appel entrant — sonnerie en cours</p>}</div><Video className="text-violet-700" /></div>{call.message && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{call.message}</p>}{call.status === 'ACTIVE' || call.status === 'CONNECTING' ? <div className="mt-5"><VideoSurface stream={call.remoteStream} title="Médecin" /><button type="button" onClick={() => { call.end(); setIncoming(null); }} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 py-3 font-semibold text-white"><PhoneOff size={18} /> Terminer l’appel</button></div> : <div className="mt-5 flex flex-col gap-3 sm:flex-row"><button type="button" onClick={() => incoming && call.accept(incoming.callId)} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 font-semibold text-white"><Phone size={18} /> Accepter et activer caméra/micro</button><button type="button" onClick={() => { if (incoming) call.decline(incoming.callId); setIncoming(null); }} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-3 font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"><PhoneOff size={18} /> Refuser</button></div>}</section></div>;
+  return <div className="aulia-telehealth-overlay fixed inset-0 z-[1000000] grid place-items-center overflow-y-auto bg-slate-950/80 p-4"><section className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900"><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-bold text-slate-900 dark:text-white">Consultation vidéo</p><p className="mt-1 text-sm text-slate-500">{incoming ? `${incoming.doctorName} souhaite démarrer une téléconsultation.` : 'Téléconsultation en cours.'}</p>{incoming && call.status === 'IDLE' && <p className="mt-2 animate-pulse text-xs font-semibold text-aulia-teal">● Appel entrant — sonnerie en cours</p>}</div><Video className="text-aulia-teal" /></div>{call.message && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{call.message}</p>}{call.status === 'ACTIVE' || call.status === 'CONNECTING' ? <div className="mt-5"><VideoSurface stream={call.remoteStream} title="Médecin" /><button type="button" onClick={() => { call.end(); setIncoming(null); }} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 py-3 font-semibold text-white"><PhoneOff size={18} /> Terminer l’appel</button></div> : <div className="mt-5"><label className="flex items-start gap-3 rounded-xl bg-aulia-mist p-3 text-xs leading-5 text-aulia-navy dark:bg-aulia-teal/10 dark:text-aulia-mist"><input type="checkbox" checked={transcriptionConsent} onChange={(event) => setTranscriptionConsent(event.target.checked)} className="mt-1 accent-[var(--aulia-teal)]" />J’accepte que les paroles du médecin soient transcrites temporairement comme brouillon clinique. Mes propres paroles ne sont pas transcrites automatiquement.</label><div className="mt-3 flex flex-col gap-3 sm:flex-row"><button type="button" onClick={() => incoming && call.accept(incoming.callId, transcriptionConsent)} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-aulia-teal px-4 py-3 font-semibold text-white"><Phone size={18} /> Accepter et activer caméra/micro</button><button type="button" onClick={() => { if (incoming) call.decline(incoming.callId); setIncoming(null); }} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-3 font-semibold text-slate-700 dark:border-slate-700 dark:text-slate-200"><PhoneOff size={18} /> Refuser</button></div></div>}</section></div>;
 }

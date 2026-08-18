@@ -100,6 +100,13 @@ const hasSessionHint = () => {
   return document.cookie.split(";").some((part) => part.trim().startsWith("aulia_csrf_token="));
 };
 
+const knownRoles = new Set<RoleSlug>(['SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'SURGEON', 'ANESTHESIOLOGIST', 'PHARMACIST', 'FINANCE', 'PATIENT', 'CASHIER']);
+const normalizeAuthenticatedUser = (raw: AuthUser): AuthUser | null => {
+  const primaryRole = String(raw.primaryRole || raw.role || '').toUpperCase() as RoleSlug;
+  if (!knownRoles.has(primaryRole)) return null;
+  return { ...raw, primaryRole, role: primaryRole };
+};
+
 export function getRedirectPath(role: RoleSlug) {
   const rolePathMap: Record<RoleSlug, string> = {
     RECEPTIONIST: "/reception",
@@ -204,13 +211,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!res.ok) {
         if (res.status === 401) {
+          // A stale CSRF hint must not make every later page load retry an
+          // already-expired session. Ask the server to clear all cookie scopes.
+          await fetch(`${API_BASE_URL}/auth/logout`, {
+            method: "POST",
+            credentials: "include",
+            headers: getAuthHeaders(),
+          }).catch(() => undefined);
           setCurrentUser(null);
         }
         setIsLoading(false);
         return;
       }
 
-      const profile = await res.json() as AuthUser;
+      const profile = normalizeAuthenticatedUser(await res.json() as AuthUser);
+      if (!profile) {
+        setCurrentUser(null);
+        setError('Session invalide : rôle utilisateur inconnu.');
+        return;
+      }
       if (profile.status && profile.status !== "ACTIVE") {
         setRestrictedAccount(profile);
         setCurrentUser(null);
@@ -289,7 +308,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return null;
       }
 
-      const profile = await meRes.json() as AuthUser;
+      const profile = normalizeAuthenticatedUser(await meRes.json() as AuthUser);
+      if (!profile) {
+        setError("Profil utilisateur invalide");
+        setCurrentUser(null);
+        return null;
+      }
       if (profile.status && profile.status !== "ACTIVE") {
         setCurrentUser(null);
         setRestrictedAccount(profile);

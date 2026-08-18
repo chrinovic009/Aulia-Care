@@ -56,7 +56,7 @@
   --color-brand-950: #061229;
   --color-aulia-navy: #0a1d3a;
   --color-aulia-teal: #0d9488;
-  --color-aulia-green: #22c55e;
+  --color-aulia-green: #0d9488;
   --color-aulia-mist: #e6f7f4;
 
   --color-blue-25: #f2fbf9;
@@ -172,29 +172,32 @@
   --color-teal-900: #0a1d3a;
   --color-teal-950: #061229;
 
-  --color-emerald-50: #effcf4;
-  --color-emerald-100: #d9f9e5;
-  --color-emerald-200: #b8f0cc;
-  --color-emerald-300: #83e2aa;
-  --color-emerald-400: #4bd17a;
-  --color-emerald-500: #22c55e;
-  --color-emerald-600: #16a34a;
-  --color-emerald-700: #15803d;
-  --color-emerald-800: #166534;
-  --color-emerald-900: #14532d;
-  --color-emerald-950: #092f1b;
+  /* Legacy green/emerald utilities are intentionally one Aulia turquoise.
+     Status contrast is carried by borders, opacity and iconography, not a
+     second brand green. */
+  --color-emerald-50: #f2fbf9;
+  --color-emerald-100: #e6f7f4;
+  --color-emerald-200: #c9eee7;
+  --color-emerald-300: #9ddfd5;
+  --color-emerald-400: #66c8bb;
+  --color-emerald-500: #0d9488;
+  --color-emerald-600: #087c73;
+  --color-emerald-700: #07645e;
+  --color-emerald-800: #0a4f4b;
+  --color-emerald-900: #0a1d3a;
+  --color-emerald-950: #061229;
 
-  --color-green-50: #effcf4;
-  --color-green-100: #d9f9e5;
-  --color-green-200: #b8f0cc;
-  --color-green-300: #83e2aa;
-  --color-green-400: #4bd17a;
-  --color-green-500: #22c55e;
-  --color-green-600: #16a34a;
-  --color-green-700: #15803d;
-  --color-green-800: #166534;
-  --color-green-900: #14532d;
-  --color-green-950: #092f1b;
+  --color-green-50: #f2fbf9;
+  --color-green-100: #e6f7f4;
+  --color-green-200: #c9eee7;
+  --color-green-300: #9ddfd5;
+  --color-green-400: #66c8bb;
+  --color-green-500: #0d9488;
+  --color-green-600: #087c73;
+  --color-green-700: #07645e;
+  --color-green-800: #0a4f4b;
+  --color-green-900: #0a1d3a;
+  --color-green-950: #061229;
 
   --color-gray-25: #fcfdfd;
   --color-gray-50: #f7faf9;
@@ -322,7 +325,7 @@
 :root {
   --aulia-navy: #0a1d3a;
   --aulia-teal: #0d9488;
-  --aulia-green: #22c55e;
+  --aulia-green: #0d9488;
   --aulia-surface: #f7faf9;
   --aulia-surface-raised: #ffffff;
   --aulia-ink: #0a1d3a;
@@ -448,7 +451,7 @@
 .aulia-page-loader__ambient--green {
   bottom: -31%;
   left: -15%;
-  background: #22c55e;
+  background: #0d9488;
   animation-delay: -2.4s;
 }
 
@@ -488,8 +491,8 @@
 
 .aulia-page-loader__ring--outer {
   inset: 0;
-  border: 2px solid rgba(34, 197, 94, 0.33);
-  border-top-color: #22c55e;
+  border: 2px solid rgba(13, 148, 136, 0.33);
+  border-top-color: #0d9488;
   border-right-color: #0d9488;
   animation: aulia-loader-spin 1.7s linear infinite;
 }
@@ -536,13 +539,13 @@
 
 .aulia-page-loader__ecg path {
   fill: none;
-  stroke: #22c55e;
+  stroke: #0d9488;
   stroke-width: 2.1;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-dasharray: 320;
   stroke-dashoffset: 320;
-  filter: drop-shadow(0 0 0.35rem rgba(34, 197, 94, 0.78));
+  filter: drop-shadow(0 0 0.35rem rgba(13, 148, 136, 0.78));
   animation: aulia-loader-ecg 1.7s ease-in-out infinite;
 }
 
@@ -560,8 +563,8 @@
   width: 42%;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #0d9488, #22c55e, #e6fff7);
-  box-shadow: 0 0 0.7rem rgba(34, 197, 94, 0.85);
+  background: linear-gradient(90deg, #0d9488, #0d9488, #e6fff7);
+  box-shadow: 0 0 0.7rem rgba(13, 148, 136, 0.85);
   animation: aulia-loader-progress 1.15s ease-in-out infinite;
 }
 

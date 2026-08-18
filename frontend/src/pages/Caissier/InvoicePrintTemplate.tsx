@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { formatInvoiceId } from "../../utils/formatId";
+import { apiFetch } from "../../config/api";
 
 interface InvoicePrintProps {
   patientName: string;
@@ -116,6 +117,12 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   visitBalanceDue,
   visitWorkflowStatus,
 }) => {
+  const [clinicBranding, setClinicBranding] = useState<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null }>({});
+  useEffect(() => {
+    apiFetch<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null }>("/administration/clinic-branding")
+      .then(setClinicBranding)
+      .catch(() => undefined);
+  }, []);
   const [firstName, ...restNames] = patientName.trim().split(/\s+/);
   const displayInvoiceId = invoiceNumber || formatInvoiceId(invoicePosition || 1, {
     firstName,
@@ -124,7 +131,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   const defaultDescription = buildFrenchDescription(invoiceType, remarks);
   const headlineType = visitItems ? "FACTURE TOTALE" : "FACTURE";
   const invoiceTypeLabel = invoiceType === "ADMISSION_FEE" ? "Frais d'Admission" : invoiceType;
-  const clinicDisplayName = clinicName || "D7 Clinique";
+  const clinicDisplayName = clinicName || clinicBranding.brandDisplayName || clinicBranding.name || "Aulia Care";
   const clinicDisplayAddress = clinicAddress || "Zone de santé, Dilala";
   const clinicDisplayPhone = clinicPhone || "+243 987 299 227";
   const clinicDisplayEmail = clinicEmail || "fondationd7clinic@gmail.com";
@@ -147,7 +154,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8mm" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <div style={{ width: 72, height: 72, background: "#0f172a", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6 }}>
-            <img src="/images/favicon.png" alt="logo" style={{ width: 40, height: 40 }} />
+            <img src={clinicBranding.documentLogoUrl || "/images/favicon.png"} alt="logo de l'établissement" style={{ width: 54, height: 54, objectFit: "contain" }} />
           </div>
           <div>
             <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a" }}>{clinicDisplayName}</div>
