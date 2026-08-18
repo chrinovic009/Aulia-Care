@@ -1,18 +1,14 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class MessagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly usersService: UsersService) {}
 
   private async assertConversationAllowed(userId: string, contactId: string) {
-    const [user, contact] = await Promise.all([
-      this.prisma.user.findUnique({ where: { id: userId }, select: { primaryRole: true } }),
-      this.prisma.user.findUnique({ where: { id: contactId }, select: { primaryRole: true } }),
-    ]);
-    const roles = [String(user?.primaryRole || '').toUpperCase(), String(contact?.primaryRole || '').toUpperCase()];
-    if (roles.includes('PATIENT') && roles.some((role) => role === 'ADMIN' || role === 'SUPER_ADMIN')) {
-      throw new ForbiddenException('La messagerie directe entre administration et patient est interdite.');
+    if (!await this.usersService.isDirectMessagingAllowed(userId, contactId)) {
+      throw new ForbiddenException('Cette conversation n’est pas autorisée pour votre rôle et votre parcours de soins.');
     }
   }
 

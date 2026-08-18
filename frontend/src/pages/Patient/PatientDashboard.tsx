@@ -11,6 +11,7 @@ export default function PatientDashboard() {
   const [profile, setProfile] = useState<PatientProfile | null>(null);
   const [wearable, setWearable] = useState<WearableDashboard | null>(null);
   const [error, setError] = useState("");
+  const [carePage, setCarePage] = useState(0);
 
   const load = async () => {
     try {
@@ -40,14 +41,17 @@ export default function PatientDashboard() {
   const nextAppointment = profile?.appointments?.filter((item) => new Date(item.scheduledAt) >= new Date() && ["SCHEDULED", "CONFIRMED"].includes(item.status)).sort((a, b) => +new Date(a.scheduledAt) - +new Date(b.scheduledAt))[0];
   const openInvoice = profile?.invoices?.filter((item) => Number(item.balanceDue) > 0).reduce((sum, item) => sum + Number(item.balanceDue), 0) || 0;
   const currentStay = profile?.hospitalizations?.find((item) => item.status === "ADMITTED" || !item.dischargedAt);
+  const recentCare = profile?.consultations || [];
+  const visibleCare = recentCare.slice(carePage * 2, carePage * 2 + 2);
+  const greeting = greetingForHour(new Date().getHours());
 
   return <div className="space-y-6">
     <PageMeta title="Mon espace santé | Aulia Care" description="Tableau de bord personnel et sécurisé Aulia Care." />
-    <section className="relative overflow-hidden rounded-3xl border border-aulia-teal/20 bg-gradient-to-br from-aulia-navy via-aulia-navy to-aulia-teal p-5 text-white shadow-xl sm:p-8">
+    <section className="relative overflow-hidden rounded-3xl border border-aulia-teal/25 bg-gradient-to-br from-aulia-mist via-white to-brand-100 p-5 text-aulia-navy shadow-sm dark:from-aulia-navy dark:via-aulia-navy dark:to-aulia-teal dark:text-white dark:shadow-xl sm:p-8">
       <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-aulia-green/20 blur-2xl" />
-      <p className="text-sm font-medium text-white/75">Aulia Care · Votre espace santé sécurisé</p>
+      <p className="text-sm font-medium text-aulia-teal dark:text-white/75">Aulia Care · Votre espace santé sécurisé</p>
       <div className="relative mt-3 flex flex-col justify-between gap-5 md:flex-row md:items-end">
-        <div><h1 className="text-2xl font-semibold sm:text-3xl">Bonjour {profile?.firstName || ""}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">Retrouvez vos soins, résultats, rendez-vous et informations de suivi. Les données affichées proviennent de votre dossier Aulia Care.</p></div>
+        <div><h1 className="text-2xl font-semibold sm:text-3xl">{greeting} {profile?.firstName || ""} !</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-white/80">Retrouvez vos soins, résultats, rendez-vous et informations de suivi. Les données affichées proviennent de votre dossier Aulia Care.</p></div>
         <Link to="/suivi-quotidien" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-aulia-navy transition hover:bg-aulia-mist">Faire mon suivi du jour</Link>
       </div>
     </section>
@@ -69,7 +73,7 @@ export default function PatientDashboard() {
         ["Mes enfants", "/enfants", "Suivi parental sécurisé et limité."],
       ].map(([title, to, description]) => <Link key={to} to={to} className="rounded-xl border border-slate-200 p-3 transition hover:border-aulia-teal hover:bg-aulia-mist/60 dark:border-white/10 dark:hover:bg-white/5"><p className="font-semibold text-slate-800 dark:text-white">{title}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{description}</p></Link>)}</div></article>
     </section>
-    <section className="grid gap-5 xl:grid-cols-2"><article className="aulia-card p-5 sm:p-6"><h2 className="text-lg font-semibold text-slate-900 dark:text-white">Mes soins récents</h2>{profile?.consultations?.length ? <div className="mt-4 space-y-3">{profile.consultations.slice(0, 4).map((consultation, index) => <div key={consultation.id || index} className="border-l-2 border-aulia-teal pl-4"><p className="font-medium text-slate-800 dark:text-white">{consultation.diagnosis || consultation.clinicalSummary || "Consultation médicale"}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{dateTime(consultation.createdAt)} · {nameOf(consultation.provider)}</p></div>)}</div> : <Empty text="Aucune consultation disponible dans votre dossier." />}</article>
+    <section className="grid gap-5 xl:grid-cols-2"><article className="aulia-card p-5 sm:p-6"><h2 className="text-lg font-semibold text-slate-900 dark:text-white">Mes soins récents</h2>{recentCare.length ? <><div className="mt-4 space-y-3">{visibleCare.map((consultation, index) => <div key={consultation.id || index} className="border-l-2 border-aulia-teal pl-4"><p className="font-medium text-slate-800 dark:text-white">{patientFriendlyConsultation(consultation)}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{dateTime(consultation.createdAt)} · {nameOf(consultation.provider)}</p></div>)}</div>{recentCare.length > 2 && <div className="mt-4 flex justify-between"><button disabled={carePage === 0} onClick={() => setCarePage((value) => Math.max(0, value - 1))} className="text-xs font-semibold text-aulia-teal disabled:opacity-40">Précédent</button><span className="text-xs text-slate-500">{carePage + 1} / {Math.ceil(recentCare.length / 2)}</span><button disabled={(carePage + 1) * 2 >= recentCare.length} onClick={() => setCarePage((value) => value + 1)} className="text-xs font-semibold text-aulia-teal disabled:opacity-40">Suivant</button></div>}</> : <Empty text="Aucune consultation disponible dans votre dossier." />}</article>
       <article className="aulia-card p-5 sm:p-6"><h2 className="text-lg font-semibold text-slate-900 dark:text-white">Mon équipe pendant le séjour</h2>{currentStay ? <div className="mt-4 space-y-3 text-sm"><Info label="Médecin référent" value={nameOf(currentStay.physician)} /><Info label="Infirmier·ère référent·e" value={nameOf(currentStay.nurseInCharge)} />{currentStay.nurseAssignments?.map((assignment, index) => <Info key={`${assignment.coverage}-${index}`} label={`Relais ${assignment.coverage === "DAY" ? "de jour" : "de nuit"}`} value={nameOf(assignment.nurse)} />)}</div> : <Empty text="Aucun séjour hospitalier actif." />}</article></section>
   </div>;
 }
@@ -78,3 +82,5 @@ function Metric({ label, value, detail, to, tone = "teal" }: { label: string; va
 function Info({ label, value }: { label: string; value: string }) { return <div className="flex items-center justify-between gap-3 rounded-xl bg-aulia-mist/60 px-3 py-2 dark:bg-white/5"><span className="text-slate-500 dark:text-slate-400">{label}</span><span className="text-right font-medium text-slate-800 dark:text-white">{value}</span></div>; }
 function Empty({ text }: { text: string }) { return <p className="mt-4 rounded-xl border border-dashed border-slate-300 p-4 text-sm leading-6 text-slate-500 dark:border-white/15 dark:text-slate-400">{text}</p>; }
 function humanMetric(metric: string) { return ({ HEART_RATE_BPM: "Fréquence cardiaque", BLOOD_PRESSURE_SYSTOLIC_MMHG: "Tension systolique", BLOOD_PRESSURE_DIASTOLIC_MMHG: "Tension diastolique", BLOOD_GLUCOSE_MG_DL: "Glycémie", SPO2_PERCENT: "Saturation en oxygène", WEIGHT_KG: "Poids", BODY_FAT_PERCENT: "Masse grasse" } as Record<string, string>)[metric] || metric; }
+function greetingForHour(hour: number) { if (hour < 12) return "Bonjour"; if (hour < 18) return "Bon après-midi"; return "Bonsoir"; }
+function patientFriendlyConsultation(consultation: NonNullable<PatientProfile["consultations"]>[number]) { if (consultation.diagnosis?.trim()) return consultation.diagnosis; const summary = consultation.clinicalSummary?.trim(); if (!summary) return "Consultation médicale"; try { const parsed = JSON.parse(summary) as Record<string, unknown>; return String(parsed.chiefComplaint || parsed.motif || parsed.assessment || parsed.summary || "Consultation médicale"); } catch { return summary.length > 160 ? `${summary.slice(0, 157)}…` : summary; } }

@@ -34,8 +34,8 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   server: Server;
 
   private readonly socketsByUser = new Map<string, Set<string>>();
-  /** Ephemeral signalling state only. Audio/video never reaches this server. */
-  private readonly telehealthCalls = new Map<string, TelehealthCall>();
+  /** Audio/video never reaches this server. Lifecycle state is persisted in
+   * PostgreSQL so a Redis-adapted Socket.IO cluster can handle either endpoint. */
 
   constructor(
     private readonly usersService: UsersService,
@@ -130,12 +130,7 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     if (isAdminPatientConversation) {
       throw new WsException('La messagerie directe entre administration et patient est interdite. Utilisez le canal clinique approprié.');
     }
-    const contacts = await this.usersService.findContactsForRole(sender.primaryRole, sender.id);
-    const isAllowedRecipient = contacts.some(
-      (contact) => contact.id === payload.recipientId && contact.type === (payload.recipientType || 'USER'),
-    );
-
-    if (!isAllowedRecipient) {
+    if (!await this.usersService.isDirectMessagingAllowed(sender.id, payload.recipientId)) {
       throw new WsException('Destinataire non autorise');
     }
 
@@ -226,94 +221,120 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   ) {
     const doctorId = client.data.userId as string | undefined;
     if (!doctorId || !payload?.consultationId) throw new WsException('Consultation requise.');
-    const consultation = await this.prisma.consultation.findUnique({
+    const consultation: any = await (this.prisma as any).consultation.findUnique({
       where: { id: payload.consultationId },
       select: {
         id: true,
         providerId: true,
-        patient: { select: { id: true, email: true, firstName: true, lastName: true } },
+        status: true,
+        encounterType: true,
+        deletedAt: true,
+        patient: { select: { id: true, portalUserId: true, firstName: true, lastName: true } },
         provider: { select: { displayName: true } },
       },
     });
-    if (!consultation || consultation.providerId !== doctorId) {
+    const doctor = await this.prisma.user.findUnique({ where: { id: doctorId }, select: { primaryRole: true, status: true, deletedAt: true } });
+    if (!doctor || doctor.primaryRole !== 'PHYSICIAN' || doctor.status !== 'ACTIVE' || doctor.deletedAt) {
+      throw new WsException('Seul le médecin connecté et actif peut lancer une téléconsultation.');
+    }
+    if (!consultation || consultation.deletedAt || consultation.providerId !== doctorId) {
       throw new WsException('Cette consultation ne vous appartient pas.');
     }
-    const patientEmail = consultation.patient.email?.trim().toLowerCase();
-    if (!patientEmail) throw new WsException('Le patient ne possède pas de compte de télésanté lié.');
-    const patientUser = await this.prisma.user.findFirst({
-      where: { email: patientEmail, primaryRole: 'PATIENT', status: 'ACTIVE', deletedAt: null },
-      select: { id: true },
-    });
-    if (!patientUser) throw new WsException('Le patient ne possède pas de compte de télésanté actif.');
+    if (consultation.status === 'FINALIZED' || consultation.status === 'CANCELLED' || consultation.encounterType !== 'TELEHEALTH') {
+      throw new WsException('Cette consultation n’est pas une télésanté active.');
+    }
+    if (!consultation.patient.portalUserId) throw new WsException('Le patient ne possède pas de compte de télésanté explicitement lié.');
+    const patientUser = await this.prisma.user.findUnique({ where: { id: consultation.patient.portalUserId }, select: { id: true, primaryRole: true, status: true, deletedAt: true } });
+    if (!patientUser || patientUser.primaryRole !== 'PATIENT' || patientUser.status !== 'ACTIVE' || patientUser.deletedAt) throw new WsException('Le compte patient lié n’est pas actif.');
 
-    const call: TelehealthCall = {
-      id: randomUUID(),
-      consultationId: consultation.id,
-      doctorId,
-      patientId: consultation.patient.id,
-      patientUserId: patientUser.id,
-      status: 'RINGING',
-      expiresAt: Date.now() + 90_000,
-    };
-    this.telehealthCalls.set(call.id, call);
+    const now = new Date();
+    const call = await (this.prisma as any).telehealthSession.create({
+      data: {
+        id: randomUUID(), consultationId: consultation.id, doctorId, patientId: consultation.patient.id,
+        patientUserId: patientUser.id, status: 'RINGING', expiresAt: new Date(now.getTime() + 90_000),
+      },
+    });
+    this.scheduleTelehealthExpiry(call.id, call.expiresAt);
     this.server.to(this.userRoom(patientUser.id)).emit('telehealth.incoming', {
       callId: call.id,
       consultationId: call.consultationId,
       doctorName: consultation.provider?.displayName || 'Votre médecin',
-      expiresAt: new Date(call.expiresAt).toISOString(),
+      expiresAt: call.expiresAt.toISOString(),
     });
-    client.emit('telehealth.ringing', { callId: call.id, expiresAt: new Date(call.expiresAt).toISOString() });
-    return { callId: call.id, expiresAt: new Date(call.expiresAt).toISOString() };
+    client.emit('telehealth.ringing', { callId: call.id, expiresAt: call.expiresAt.toISOString() });
+    return { callId: call.id, expiresAt: call.expiresAt.toISOString() };
   }
 
   @SubscribeMessage('telehealth.accept')
-  acceptTelehealthCall(@MessageBody() payload: { callId?: string }, @ConnectedSocket() client: Socket) {
-    const call = this.getTelehealthCall(payload?.callId, client.data.userId);
+  async acceptTelehealthCall(@MessageBody() payload: { callId?: string; transcriptionConsent?: boolean }, @ConnectedSocket() client: Socket) {
+    const call = await this.getTelehealthCall(payload?.callId, client.data.userId);
     if (call.patientUserId !== client.data.userId) throw new WsException('Acceptation non autorisée.');
-    call.status = 'ACTIVE';
-    call.expiresAt = Date.now() + 60 * 60_000;
+    const updated = await (this.prisma as any).telehealthSession.updateMany({
+      where: { id: call.id, patientUserId: client.data.userId, status: 'RINGING', expiresAt: { gt: new Date() } },
+      data: { status: 'ACTIVE', acceptedAt: new Date(), patientConsentAt: new Date(), transcriptionConsentAt: payload?.transcriptionConsent ? new Date() : null, expiresAt: new Date(Date.now() + 60 * 60_000) },
+    });
+    if (updated.count !== 1) throw new WsException('Appel expiré ou déjà traité.');
+    this.scheduleTelehealthExpiry(call.id, new Date(Date.now() + 60 * 60_000));
     this.server.to(this.userRoom(call.doctorId)).emit('telehealth.accepted', { callId: call.id });
     return { callId: call.id };
   }
 
   @SubscribeMessage('telehealth.decline')
-  declineTelehealthCall(@MessageBody() payload: { callId?: string; reason?: string }, @ConnectedSocket() client: Socket) {
-    const call = this.getTelehealthCall(payload?.callId, client.data.userId);
+  async declineTelehealthCall(@MessageBody() payload: { callId?: string; reason?: string }, @ConnectedSocket() client: Socket) {
+    const call = await this.getTelehealthCall(payload?.callId, client.data.userId);
     if (call.patientUserId !== client.data.userId) throw new WsException('Refus non autorisé.');
-    this.closeTelehealthCall(call, 'declined', payload.reason);
+    await this.closeTelehealthCall(call, 'DECLINED', payload.reason, client.data.userId);
   }
 
   @SubscribeMessage('telehealth.signal')
-  relayTelehealthSignal(@MessageBody() payload: { callId?: string; signal?: unknown }, @ConnectedSocket() client: Socket) {
+  async relayTelehealthSignal(@MessageBody() payload: { callId?: string; signal?: unknown }, @ConnectedSocket() client: Socket) {
     const senderId = client.data.userId as string | undefined;
-    const call = this.getTelehealthCall(payload?.callId, senderId);
+    const call = await this.getTelehealthCall(payload?.callId, senderId);
     if (!senderId || call.status !== 'ACTIVE' || !payload.signal || (senderId !== call.doctorId && senderId !== call.patientUserId)) {
       throw new WsException('Signal de télésanté non autorisé.');
     }
+    const signal = normalizeTelehealthSignal(payload.signal);
+    if (!signal) throw new WsException('Signal WebRTC invalide ou trop volumineux.');
     const recipientId = senderId === call.doctorId ? call.patientUserId : call.doctorId;
-    this.server.to(this.userRoom(recipientId)).emit('telehealth.signal', { callId: call.id, signal: payload.signal });
+    this.server.to(this.userRoom(recipientId)).emit('telehealth.signal', { callId: call.id, signal });
   }
 
   @SubscribeMessage('telehealth.end')
-  endTelehealthCall(@MessageBody() payload: { callId?: string }, @ConnectedSocket() client: Socket) {
-    const call = this.getTelehealthCall(payload?.callId, client.data.userId);
-    this.closeTelehealthCall(call, 'ended');
+  async endTelehealthCall(@MessageBody() payload: { callId?: string }, @ConnectedSocket() client: Socket) {
+    const call = await this.getTelehealthCall(payload?.callId, client.data.userId);
+    const actorId = client.data.userId as string | undefined;
+    if (!actorId || (actorId !== call.doctorId && actorId !== call.patientUserId)) throw new WsException('Fin d’appel non autorisée.');
+    await this.closeTelehealthCall(call, 'ENDED', undefined, actorId);
   }
 
-  private getTelehealthCall(callId?: string, userId?: string): TelehealthCall {
-    const call = callId ? this.telehealthCalls.get(callId) : null;
-    if (!call || !userId || call.expiresAt < Date.now()) {
-      if (call) this.closeTelehealthCall(call, 'expired');
+  private async getTelehealthCall(callId?: string, userId?: string): Promise<TelehealthCall> {
+    const call = callId ? await (this.prisma as any).telehealthSession.findUnique({ where: { id: callId } }) : null;
+    if (!call || !userId || new Date(call.expiresAt).getTime() < Date.now()) {
+      if (call) await this.closeTelehealthCall(call, 'EXPIRED', 'TIMEOUT');
       throw new WsException('Appel de télésanté expiré ou introuvable.');
     }
+    if (call.status !== 'RINGING' && call.status !== 'ACTIVE') throw new WsException('Cet appel est déjà terminé.');
     return call;
   }
 
-  private closeTelehealthCall(call: TelehealthCall, status: 'declined' | 'ended' | 'expired', reason?: string) {
-    this.telehealthCalls.delete(call.id);
-    const payload = { callId: call.id, status, reason: reason || undefined };
+  private async closeTelehealthCall(call: TelehealthCall, status: 'DECLINED' | 'ENDED' | 'EXPIRED' | 'FAILED', reason?: string, endedById?: string) {
+    const result = await (this.prisma as any).telehealthSession.updateMany({
+      where: { id: call.id, status: { in: ['RINGING', 'ACTIVE'] } },
+      data: { status, endedAt: new Date(), endedById: endedById || null, endReason: reason || status },
+    });
+    if (!result.count) return;
+    const payload = { callId: call.id, status: status.toLowerCase(), reason: reason || undefined };
     this.server.to(this.userRoom(call.doctorId)).emit('telehealth.ended', payload);
     this.server.to(this.userRoom(call.patientUserId)).emit('telehealth.ended', payload);
+  }
+
+  private scheduleTelehealthExpiry(callId: string, expiresAt: Date) {
+    const delay = Math.max(0, Math.min(expiresAt.getTime() - Date.now(), 2_147_000_000));
+    setTimeout(() => {
+      void (this.prisma as any).telehealthSession.findUnique({ where: { id: callId } })
+        .then((call: TelehealthCall | null) => call && this.closeTelehealthCall(call, 'EXPIRED', 'TIMEOUT'))
+        .catch(() => undefined);
+    }, delay);
   }
 
   notifyPatientEvent(patientId: string, event: string, payload: unknown) {
@@ -555,9 +576,34 @@ type TelehealthCall = {
   doctorId: string;
   patientId: string;
   patientUserId: string;
-  status: 'RINGING' | 'ACTIVE';
-  expiresAt: number;
+  status: 'RINGING' | 'ACTIVE' | 'DECLINED' | 'ENDED' | 'EXPIRED' | 'FAILED';
+  expiresAt: Date;
 };
+
+type SafeTelehealthSignal =
+  | { type: 'offer' | 'answer'; sdp: string }
+  | { type: 'candidate'; candidate: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null; usernameFragment?: string | null } };
+
+/** Signals are opaque to business logic, but not unbounded or arbitrary JSON. */
+function normalizeTelehealthSignal(value: unknown): SafeTelehealthSignal | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const signal = value as Record<string, unknown>;
+  if ((signal.type === 'offer' || signal.type === 'answer') && typeof signal.sdp === 'string' && signal.sdp.length > 0 && signal.sdp.length <= 100_000) {
+    return { type: signal.type, sdp: signal.sdp };
+  }
+  if (signal.type === 'candidate' && signal.candidate && typeof signal.candidate === 'object' && !Array.isArray(signal.candidate)) {
+    const candidate = signal.candidate as Record<string, unknown>;
+    if (typeof candidate.candidate !== 'string' || candidate.candidate.length === 0 || candidate.candidate.length > 4_000) return null;
+    const optionalString = (key: string) => typeof candidate[key] === 'string' ? candidate[key] : candidate[key] == null ? null : undefined;
+    const optionalNumber = (key: string) => typeof candidate[key] === 'number' && Number.isInteger(candidate[key]) ? candidate[key] : candidate[key] == null ? null : undefined;
+    const sdpMid = optionalString('sdpMid');
+    const sdpMLineIndex = optionalNumber('sdpMLineIndex');
+    const usernameFragment = optionalString('usernameFragment');
+    if (sdpMid === undefined || sdpMLineIndex === undefined || usernameFragment === undefined) return null;
+    return { type: 'candidate', candidate: { candidate: candidate.candidate, sdpMid, sdpMLineIndex, usernameFragment } };
+  }
+  return null;
+}
 
 const domainForModel = (model: string): RealtimeDomain => {
   if (['LabRequest', 'LabRequestItem', 'LabResult', 'LabSample', 'LabReport'].includes(model)) return 'laboratory';

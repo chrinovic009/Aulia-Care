@@ -71,12 +71,16 @@ export const saveClinicalSections = (consultationId: string, payload: Record<str
     body: JSON.stringify(payload),
   });
 
+export const updateConsultation = (consultationId: string, payload: Record<string, unknown>) =>
+  apiFetch(`/consultations/${consultationId}`, { method: "PATCH", body: JSON.stringify(payload) });
+
 export const saveTelehealthTranscript = (
   consultationId: string,
+  sessionId: string,
   entries: Array<{ speaker: 'MEDECIN' | 'PATIENT'; text: string; at: string }>,
 ) => apiFetch(`/consultations/${consultationId}/telehealth-transcript`, {
   method: 'POST',
-  body: JSON.stringify({ entries }),
+  body: JSON.stringify({ sessionId, entries }),
 });
 
 export const createLabRequest = (consultationId: string, payload: Record<string, unknown>) =>

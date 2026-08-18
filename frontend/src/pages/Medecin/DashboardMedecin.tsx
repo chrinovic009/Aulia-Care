@@ -7,6 +7,7 @@ import {
   fetchDoctorAssignedPatients,
   formatDoctorPatientName,
   saveClinicalSections,
+  updateConsultation,
 } from "../../api/doctor";
 import { useAuth } from "../../context/AuthContext";
 import { DoctorTelehealthCall } from "../../components/telehealth/TelehealthCall";
@@ -274,6 +275,7 @@ export default function DashboardMedecin() {
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [isConsultationOpen, setIsConsultationOpen] = useState(false);
+  const [telehealthReady, setTelehealthReady] = useState(false);
   
   const speechRecognitionRef = useRef<any>(null);
   const speechFinalTextRef = useRef("");
@@ -451,6 +453,28 @@ export default function DashboardMedecin() {
   const consultationDraftKey = currentConsultationId && currentUser?.id
     ? `aulia:consultation-draft:${currentUser.id}:${currentConsultationId}`
     : "";
+
+  const changeConsultationMode = async (value: string) => {
+    if (value !== "TELECONSULTATION") {
+      setTelehealthReady(false);
+      setConsultationModule((current) => ({ ...current, consultationMode: value }));
+      return;
+    }
+    if (!currentConsultationId) {
+      setActionMessage("Ouvrez d’abord une consultation active avant de lancer la télésanté.");
+      return;
+    }
+    setActionMessage("Vérification sécurisée de la consultation de télésanté…");
+    try {
+      await updateConsultation(currentConsultationId, { encounterType: "TELEHEALTH", status: "IN_PROGRESS" });
+      setConsultationModule((current) => ({ ...current, consultationMode: value }));
+      setTelehealthReady(true);
+      setActionMessage(null);
+    } catch (error) {
+      setTelehealthReady(false);
+      setActionMessage(error instanceof Error ? error.message : "Impossible d’activer la télésanté.");
+    }
+  };
 
   // Short-lived recovery copy only: it stays in the browser session and is
   // removed after a successful server save or clinical finalisation.
@@ -1083,11 +1107,11 @@ export default function DashboardMedecin() {
 
                   <SectionBox title="Mode de consultation">
                     <div className="grid gap-3 md:grid-cols-3">
-                      <FormSelect label="Mode" value={consultationModule.consultationMode} onChange={(value) => setConsultationModule((current) => ({ ...current, consultationMode: value }))} options={[['PRESENTIAL','Présentiel'], ['TELECONSULTATION','Télésanté'], ['HOME_VISIT','Visite à domicile'], ['EMERGENCY','Urgence']]} />
+                      <FormSelect label="Mode" value={consultationModule.consultationMode} onChange={(value) => void changeConsultationMode(value)} options={[['PRESENTIAL','Présentiel'], ['TELECONSULTATION','Télésanté'], ['HOME_VISIT','Visite à domicile'], ['EMERGENCY','Urgence']]} />
                       <FormSelect label="Mode d'arrivée" value={consultationModule.arrivalMode} onChange={(value) => setConsultationModule((current) => ({ ...current, arrivalMode: value }))} options={[['SPONTANEOUS','Spontané'], ['AMBULATORY','Ambulatoire'], ['REFERRED','Orienté'], ['EMERGENCY_TRANSFER','Transfert urgence']]} />
                       <FormSelect label="Priorité de triage" value={consultationModule.triagePriority} onChange={(value) => setConsultationModule((current) => ({ ...current, triagePriority: value }))} options={[['GREEN','Normal'], ['YELLOW','Prioritaire'], ['RED','Urgent']]} />
                     </div>
-                    {consultationModule.consultationMode === "TELECONSULTATION" && (
+                    {consultationModule.consultationMode === "TELECONSULTATION" && telehealthReady && (
                       <DoctorTelehealthCall
                         consultationId={currentConsultationId}
                         patientName={formatDoctorPatientName(selectedPatient)}

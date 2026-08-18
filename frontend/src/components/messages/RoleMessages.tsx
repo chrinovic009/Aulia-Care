@@ -59,6 +59,12 @@ const mapStoredMessage = (stored: StoredMessage, currentUserId: string): ChatMes
   status: stored.status.toLowerCase() as ChatMessage["status"],
 });
 
+const orderContactsByActivity = (items: MessageContact[]) => [...items].sort((left, right) => {
+  const rightAt = right.lastMessageAt ? new Date(right.lastMessageAt).getTime() : 0;
+  const leftAt = left.lastMessageAt ? new Date(left.lastMessageAt).getTime() : 0;
+  return rightAt - leftAt || (right.unreadCount || 0) - (left.unreadCount || 0) || left.name.localeCompare(right.name, "fr");
+});
+
 export default function RoleMessages({ title, description }: RoleMessagesProps) {
   const location = useLocation();
   const state = location.state as { patientInfo?: string; patientId?: string; contactId?: string } | undefined;
@@ -81,7 +87,7 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
       setError(null);
       try {
         const data = await fetchMessageContacts();
-        setContacts(data);
+        setContacts(orderContactsByActivity(data));
         const preferredId = state?.contactId || state?.patientId;
         const preferred = preferredId
           ? data.find((contact) => contact.id === preferredId || contact.patientId === preferredId)
@@ -119,6 +125,25 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
         ];
       });
 
+      setContacts((current) => {
+        const known = current.find((contact) => contact.id === incoming.senderId);
+        const contact: MessageContact = known || {
+          id: incoming.senderId,
+          type: "USER",
+          name: incoming.senderName || "Nouveau contact",
+          role: "CONTACT",
+        };
+        return orderContactsByActivity([
+          {
+            ...contact,
+            lastMessageAt: incoming.sentAt,
+            lastMessagePreview: incoming.text,
+            unreadCount: selectedContact?.id === incoming.senderId ? 0 : (contact.unreadCount || 0) + 1,
+          },
+          ...current.filter((item) => item.id !== incoming.senderId),
+        ]);
+      });
+
       if (selectedContact?.id === incoming.senderId && currentUser?.id) {
         socket?.emit("message.read", {
           readerId: currentUser.id,
@@ -146,6 +171,7 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
       });
       markMessagesRead(selectedContact.id, unreadIds).catch(() => undefined);
     }
+    setContacts((current) => current.map((contact) => contact.id === selectedContact.id ? { ...contact, unreadCount: 0 } : contact));
   }, [currentUser?.id, messages, selectedContact, socket]);
 
   useEffect(() => {
@@ -219,14 +245,14 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
 
   const filteredContacts = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return contacts;
-    return contacts.filter((contact) =>
+    if (!query) return orderContactsByActivity(contacts);
+    return orderContactsByActivity(contacts.filter((contact) =>
       [contact.name, contact.role, contact.subtitle, contact.phone, contact.email]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
         .includes(query),
-    );
+    ));
   }, [contacts, searchTerm]);
 
   const selectedMessages = selectedContact
@@ -250,6 +276,10 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
         status: onlineUsers[selectedContact.id] ? "delivered" : "sent",
       },
     ]);
+    setContacts((current) => orderContactsByActivity(current.map((contact) => contact.id === selectedContact.id
+      ? { ...contact, lastMessageAt: sentAt, lastMessagePreview: text, unreadCount: 0 }
+      : contact,
+    )));
     socket?.emit(
       "message.send",
       {
@@ -301,31 +331,37 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
   };
 
   return (
-    <div>
+    <div className="flex min-h-0 flex-col px-4 py-4 sm:px-6 lg:px-8">
       <PageMeta title={title} description={description} />
       <PageBreadcrumb pageTitle="Messages" />
 
-      <div className="min-h-screen rounded-lg border border-gray-200 bg-white px-5 py-7 dark:border-gray-800 dark:bg-white/[0.03] xl:px-10 xl:py-12">
-        <div className="grid gap-6 xl:grid-cols-[340px_1fr]">
-          <aside className="rounded-lg border border-gray-200 bg-slate-50 p-5 dark:border-gray-800 dark:bg-slate-900/70">
-            <div className="mb-5 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-slate-950">
+      <div className="min-h-[calc(100dvh-9.5rem)] flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950 xl:min-h-[calc(100dvh-10rem)]">
+        <div className="grid h-full min-h-0 xl:grid-cols-[340px_minmax(0,1fr)]">
+          <aside
+            className={`min-h-0 flex-col border-slate-200 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/45 ${
+              selectedContact ? "hidden xl:flex xl:border-r" : "flex"
+            }`}
+          >
+            <div className="shrink-0 border-b border-slate-200 p-4 dark:border-slate-800 sm:p-5">
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
               <h3 className="mb-2 text-sm font-semibold uppercase text-gray-500 dark:text-gray-400">Contacts autorises</h3>
               <p className="text-sm text-gray-600 dark:text-gray-300">
                 La liste vient de la base et depend de votre role.
               </p>
+              </div>
+
+              <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                type="text"
+                placeholder="Rechercher un contact..."
+                className="mt-4 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              />
+
+              {error && <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700 dark:bg-red-950/30 dark:text-red-200">{error}</p>}
             </div>
 
-            <input
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              type="text"
-              placeholder="Rechercher un contact..."
-              className="mb-4 w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none focus:border-blue-500 dark:border-gray-800 dark:bg-slate-950 dark:text-gray-200"
-            />
-
-            {error && <p className="mb-3 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
-
-            <div className="space-y-3">
+            <div className="h-[390px] min-h-0 space-y-2 overflow-y-auto overscroll-contain p-3 sm:p-4">
               {isLoading ? (
                 <p className="text-sm text-gray-500">Chargement des contacts...</p>
               ) : filteredContacts.length === 0 ? (
@@ -335,13 +371,13 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
                   <button
                     key={`${contact.type}-${contact.id}`}
                     onClick={() => setSelectedContact(contact)}
-                    className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition hover:border-blue-200 hover:bg-blue-50 dark:bg-slate-950 dark:hover:border-blue-500/40 dark:hover:bg-slate-900 ${
+                    className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50 hover:border-teal-300 hover:bg-teal-50/70 dark:bg-slate-950 dark:hover:border-teal-500/50 dark:hover:bg-teal-950/25 ${
                       selectedContact?.id === contact.id && selectedContact?.type === contact.type
-                        ? "border-blue-200 bg-blue-50 dark:border-blue-500/40 dark:bg-slate-900"
+                        ? "border-teal-300 bg-teal-50 dark:border-teal-500/50 dark:bg-teal-950/25"
                         : "border-transparent bg-white"
                     }`}
                   >
-                    <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-blue-500 text-sm font-semibold text-white">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#009488] to-[#0a1d3a] text-sm font-semibold text-white shadow-sm">
                       {contact.name
                         .split(" ")
                         .map((part) => part[0])
@@ -350,9 +386,12 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
                         .toUpperCase()}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-gray-900 dark:text-white">{contact.name}</span>
-                      <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
-                        {roleLabels[contact.role] || contact.role} - {contact.subtitle || "Disponible"}
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-semibold text-gray-900 dark:text-white">{contact.name}</span>
+                        {(contact.unreadCount || 0) > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[#009488] px-1 text-[10px] font-bold text-white">{contact.unreadCount! > 99 ? "99+" : contact.unreadCount}</span>}
+                      </span>
+                      <span className={`block truncate text-xs ${contact.unreadCount ? "font-semibold text-slate-700 dark:text-slate-200" : "text-gray-500 dark:text-gray-400"}`}>
+                        {contact.lastMessagePreview || `${roleLabels[contact.role] || contact.role} · ${contact.subtitle || "Disponible"}`}
                       </span>
                     </span>
                   </button>
@@ -361,10 +400,24 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
             </div>
           </aside>
 
-          <section className="flex min-h-[640px] flex-col rounded-lg border border-gray-200 bg-slate-50 dark:border-gray-800 dark:bg-slate-950">
-            <div className="border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+          <section
+            className={`min-h-0 flex-col bg-slate-50/50 dark:bg-slate-950 ${
+              selectedContact ? "flex" : "hidden xl:flex"
+            }`}
+          >
+            <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-950 sm:px-5 sm:py-4">
+              {selectedContact && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedContact(null)}
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50 dark:text-slate-300 dark:hover:bg-slate-800 xl:hidden"
+                  aria-label="Retour aux contacts"
+                >
+                  <span aria-hidden="true" className="text-2xl leading-none">‹</span>
+                </button>
+              )}
               {selectedContact ? (
-                <>
+                <div className="min-w-0">
                   <h2 className="text-base font-semibold text-gray-900 dark:text-white">{selectedContact.name}</h2>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     {roleLabels[selectedContact.role] || selectedContact.role} - {selectedContact.subtitle || "Contact autorise"}
@@ -372,13 +425,13 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
                   {typingUsers[selectedContact.id] && (
                     <p className="mt-1 text-xs font-medium text-blue-600 dark:text-blue-300">est en train d'ecrire...</p>
                   )}
-                </>
+                </div>
               ) : (
                 <h2 className="text-base font-semibold text-gray-900 dark:text-white">Choisir un contact</h2>
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto px-5 py-6">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-5 sm:py-6">
               {state?.patientInfo && selectedContact?.id === state.patientId && (
                 <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                   <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Infos patient</p>
@@ -393,15 +446,15 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
               ) : (
                 <div className="space-y-4">
                   {selectedMessages.map((chatMessage) => (
-                    <div
+                  <div
                       key={chatMessage.id}
                       className={`flex ${chatMessage.from === "me" ? "justify-end" : "justify-start"}`}
                     >
                       <div
                         className={`max-w-[75%] rounded-lg px-4 py-3 text-sm ${
                           chatMessage.from === "me"
-                            ? "bg-blue-600 text-white"
-                            : "border border-gray-200 bg-white text-gray-700"
+                            ? "bg-gradient-to-br from-[#0a1d3a] to-[#009488] text-white"
+                            : "border border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                         }`}
                         >
                         {chatMessage.text}
@@ -416,7 +469,7 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
               )}
             </div>
 
-            <div className="border-t border-gray-200 px-5 py-4 dark:border-gray-800">
+            <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-slate-800 dark:bg-slate-950 sm:px-5 sm:py-4">
               <div className="flex items-center gap-3">
                 <input
                   value={message}
@@ -426,12 +479,12 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
                   }}
                   disabled={!selectedContact}
                   placeholder={selectedContact ? "Tapez un message..." : "Choisissez d'abord un contact"}
-                  className="min-h-[52px] flex-1 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-800 dark:bg-slate-900 dark:text-gray-200"
+                  className="min-h-[52px] min-w-0 flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                 />
                 <button
                   onClick={sendMessage}
                   disabled={!selectedContact || !message.trim()}
-                  className="inline-flex h-12 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex h-12 shrink-0 items-center justify-center rounded-2xl bg-[#009488] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#007c73] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <PaperPlaneIcon className="h-4 w-4" />
                 </button>

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { Roles } from '../auth/roles.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -8,6 +8,18 @@ import { AdministrationService } from './administration.service';
 @Controller('administration')
 export class AdministrationController {
   constructor(private readonly administrationService: AdministrationService) {}
+
+  @Get('clinic-branding')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'FINANCE', 'LAB_MANAGER', 'LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST', 'PATIENT')
+  clinicBranding(@Request() req: any) {
+    return this.administrationService.getClinicBranding(req.user?.userId);
+  }
+
+  @Patch('clinic-branding')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  updateClinicBranding(@Request() req: any, @Body() body: { brandDisplayName?: string; documentLogoUrl?: string | null }) {
+    return this.administrationService.updateClinicBranding(req.user?.userId, body);
+  }
 
   @Get('departments')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN', 'RECEPTIONIST')

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
+import { ClientPagination, useClientPagination } from "../../components/common/ClientPagination";
 import { fetchReceptionVisits, type ReceptionVisitRecord } from "../../api/reception";
 import { formatPatientDossierId } from "../../utils/formatId";
 
@@ -127,6 +128,7 @@ export default function HistoriqueReception() {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
   }, [records]);
+  const admissionPagination = useClientPagination(filteredRecords, 10);
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
@@ -184,7 +186,7 @@ export default function HistoriqueReception() {
                   <tr><td colSpan={7} className="py-8 text-center text-slate-500">Chargement...</td></tr>
                 ) : filteredRecords.length === 0 ? (
                   <tr><td colSpan={7} className="py-8 text-center text-slate-500">Aucune admission trouvee.</td></tr>
-                ) : filteredRecords.map((record) => (
+                ) : admissionPagination.pageItems.map((record) => (
                   <tr key={record.id} onClick={() => setSelectedRecord(record)} className="cursor-pointer border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-950">
                     <td className="py-3 pr-4 font-medium text-slate-900 dark:text-white">{record.id}</td>
                     <td className="py-3 pr-4">{record.patient}</td>
@@ -198,6 +200,13 @@ export default function HistoriqueReception() {
               </tbody>
             </table>
           </div>
+          <ClientPagination
+            page={admissionPagination.page}
+            totalItems={filteredRecords.length}
+            totalPages={admissionPagination.totalPages}
+            onPageChange={admissionPagination.setPage}
+            label="admissions"
+          />
         </section>
 
         <aside className="space-y-6">

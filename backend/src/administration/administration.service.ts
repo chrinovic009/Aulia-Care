@@ -5,6 +5,61 @@ import { PrismaService } from '../prisma/prisma.service';
 export class AdministrationService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async getClinicBranding(userId?: string) {
+    const user = userId ? await this.prisma.user.findUnique({ where: { id: userId }, select: { clinicId: true } }) : null;
+    if (!user?.clinicId) return { name: 'Aulia Care', brandDisplayName: null, documentLogoUrl: null };
+    const clinic = await (this.prisma as any).clinic.findUnique({
+      where: { id: user.clinicId },
+      select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true },
+    });
+    return clinic || { name: 'Aulia Care', brandDisplayName: null, documentLogoUrl: null };
+  }
+
+  async updateClinicBranding(userId: string | undefined, data: { brandDisplayName?: string; documentLogoUrl?: string | null }) {
+    const user = userId
+      ? await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, clinicId: true, primaryRole: true } })
+      : null;
+    if (!user) throw new BadRequestException('Session administrateur introuvable. Reconnectez-vous puis réessayez.');
+    const brandDisplayName = data.brandDisplayName?.trim();
+    if (brandDisplayName !== undefined && (brandDisplayName.length < 2 || brandDisplayName.length > 100)) {
+      throw new BadRequestException('Le nom affiché doit contenir entre 2 et 100 caractères.');
+    }
+    const documentLogoUrl = data.documentLogoUrl === null ? null : data.documentLogoUrl?.trim();
+    if (documentLogoUrl && documentLogoUrl.length > 700_000) {
+      throw new BadRequestException('Le logo est trop volumineux. Utilisez une image optimisée de moins de 500 Ko.');
+    }
+    // First setup: an ADMIN owns the initial clinic record and is attached to it
+    // atomically. The browser never supplies a clinic id, preventing an admin
+    // from attaching their account to another establishment.
+    if (!user.clinicId) {
+      if (!['ADMIN', 'SUPER_ADMIN'].includes(String(user.primaryRole || ''))) {
+        throw new BadRequestException('Seul un administrateur peut initialiser un établissement.');
+      }
+      const clinicName = brandDisplayName || 'Établissement Aulia Care';
+      return this.prisma.$transaction(async (tx) => {
+        const clinic = await (tx as any).clinic.create({
+          data: {
+            name: clinicName,
+            brandDisplayName: brandDisplayName || clinicName,
+            ...(data.documentLogoUrl !== undefined ? { documentLogoUrl, documentLogoUpdatedAt: new Date() } : {}),
+          },
+          select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true },
+        });
+        await tx.user.update({ where: { id: user.id }, data: { clinicId: clinic.id } });
+        return clinic;
+      });
+    }
+
+    return (this.prisma as any).clinic.update({
+      where: { id: user.clinicId },
+      data: {
+        ...(brandDisplayName !== undefined ? { brandDisplayName } : {}),
+        ...(data.documentLogoUrl !== undefined ? { documentLogoUrl, documentLogoUpdatedAt: new Date() } : {}),
+      },
+      select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true },
+    });
+  }
+
   async addDepartmentResponsables(
     items: {
       departmentId: string;

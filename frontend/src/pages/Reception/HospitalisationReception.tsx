@@ -15,6 +15,7 @@ import {
 
 import { formatPatientDossierId } from "../../utils/formatId";
 import { useRealtime } from "../../context/RealtimeContext";
+import { ClientPagination, useClientPagination } from "../../components/common/ClientPagination";
 
 const statusStyles: Record<string, string> = {
   ADMITTED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
@@ -210,6 +211,8 @@ export default function HospitalisationReception() {
       return true;
     });
   }, [hospitalizations, searchQuery, viewFilter]);
+  const hospitalizationPagination = useClientPagination(filteredHospitalizations, 10);
+  const roomPagination = useClientPagination(filteredRooms, 10);
 
   const alerts = useMemo(() => {
     if (!stats) return ['Données de capacité indisponibles'];
@@ -324,7 +327,7 @@ export default function HospitalisationReception() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredHospitalizations.map((item) => (
+                  {hospitalizationPagination.pageItems.map((item) => (
                     <tr key={item.id} className="border-b border-slate-200 dark:border-slate-700">
                       <td className="py-3 px-3 text-slate-900 dark:text-white">{formatPatientName(item.patient)}</td>
                       <td className="py-3 px-3 text-slate-600 dark:text-slate-300">{getRoomLabel(item)}</td>
@@ -347,13 +350,20 @@ export default function HospitalisationReception() {
                 </tbody>
               </table>
             </div>
+            <ClientPagination
+              page={hospitalizationPagination.page}
+              totalItems={filteredHospitalizations.length}
+              totalPages={hospitalizationPagination.totalPages}
+              onPageChange={hospitalizationPagination.setPage}
+              label="hospitalisations"
+            />
           </div>
 
           <aside className="space-y-6">
             <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-900">
               <h4 className="text-base font-semibold text-slate-900 dark:text-white">Gestion des chambres</h4>
               <div className="mt-4 space-y-3">
-                {filteredRooms.map((room) => (
+                {roomPagination.pageItems.map((room) => (
                   <div key={room.id} className="flex items-center justify-between rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
                     <div>
                       <p className="font-semibold text-slate-900 dark:text-white">{room.number}</p>
@@ -366,6 +376,13 @@ export default function HospitalisationReception() {
                   </div>
                 ))}
               </div>
+              <ClientPagination
+                page={roomPagination.page}
+                totalItems={filteredRooms.length}
+                totalPages={roomPagination.totalPages}
+                onPageChange={roomPagination.setPage}
+                label="chambres"
+              />
             </div>
 
             <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-slate-900">

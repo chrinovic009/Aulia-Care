@@ -17,6 +17,7 @@ import {
 import { apiFetch } from "../../config/api";
 import { fetchServices } from "../../api/reception";
 import { callPatientToWaitingRoom } from "../../utils/patientCall";
+import { ClientPagination, useClientPagination } from "../../components/common/ClientPagination";
 
 type VitalsForm = RecordVitalSignsPayload;
 
@@ -152,6 +153,8 @@ export default function PatientAssignes() {
         return new Date(a.arrivalAt || a.createdAt).getTime() - new Date(b.arrivalAt || b.createdAt).getTime();
       });
   }, [patients, searchQuery, serviceFilter]);
+  const patientPagination = useClientPagination(filteredPatients, 10);
+  const historyPagination = useClientPagination(historyItems, 10);
 
   const openVitalsModal = (patient: NursePatient) => {
     // Trigger audio announcement when opening vitals modal
@@ -390,7 +393,7 @@ export default function PatientAssignes() {
             Aucun patient ne correspond actuellement a la file infirmier.
           </div>
         ) : (
-          filteredPatients.map((patient) => {
+          patientPagination.pageItems.map((patient) => {
             const urgent = isUrgentPatient(patient);
             const name = formatPatientName(patient);
             const initials = [patient.firstName?.[0], patient.lastName?.[0]].filter(Boolean).join("").toUpperCase();
@@ -466,6 +469,13 @@ export default function PatientAssignes() {
             );
           })
         )}
+        <ClientPagination
+          page={patientPagination.page}
+          totalItems={filteredPatients.length}
+          totalPages={patientPagination.totalPages}
+          onPageChange={patientPagination.setPage}
+          label="patients"
+        />
       </section>
 
       <section className="mt-8 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -515,7 +525,7 @@ export default function PatientAssignes() {
           </div>
         ) : (
           <div className="mt-6 space-y-3">
-            {historyItems.map((item) => (
+            {historyPagination.pageItems.map((item) => (
               <article key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -541,6 +551,13 @@ export default function PatientAssignes() {
                 )}
               </article>
             ))}
+            <ClientPagination
+              page={historyPagination.page}
+              totalItems={historyItems.length}
+              totalPages={historyPagination.totalPages}
+              onPageChange={historyPagination.setPage}
+              label="orientations"
+            />
           </div>
         )}
       </section>

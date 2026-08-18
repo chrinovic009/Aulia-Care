@@ -253,10 +253,18 @@ export class PatientsService {
 
   async search(params: PatientSearchParams, currentUser?: any) {
     const role = String(currentUser?.primaryRole || currentUser?.role || '').toUpperCase();
+    if (!['SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER'].includes(role)) {
+      throw new ForbiddenException('Votre rôle ne peut pas rechercher des dossiers patients.');
+    }
     if (!params.email && !params.phone && !params.name) {
       throw new BadRequestException('Un critère de recherche patient est obligatoire.');
     }
     const conditions: Prisma.PatientWhereInput[] = [];
+    const actorId = currentUser?.userId || currentUser?.id;
+    const actor = actorId
+      ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } })
+      : null;
+    const clinicScope: Prisma.PatientWhereInput = actor?.clinicId ? { clinicId: actor.clinicId } : {};
 
     if (params.email) {
       const email = normalizeEmail(params.email);
@@ -272,10 +280,6 @@ export class PatientsService {
 
     if (params.name) {
       const name = params.name.trim();
-      const actorId = currentUser?.userId || currentUser?.id;
-      const actor = actorId
-        ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } })
-        : null;
       // PostgreSQL unaccent search, fully parameterized and scoped to the clinic.
       try {
         const pattern = `%${name.replace(/%/g, '\\%')}%`;
@@ -311,7 +315,7 @@ export class PatientsService {
 
     if (conditions.length === 0) return [];
     return this.prisma.patient.findMany({
-      where: { OR: conditions, deletedAt: null },
+      where: { OR: conditions, deletedAt: null, ...clinicScope },
       select: role === 'CASHIER'
         ? { id: true, firstName: true, lastName: true, dateOfBirth: true, externalId: true }
         : { id: true, firstName: true, lastName: true, middleName: true, dateOfBirth: true, phone: true, email: true, externalId: true, workflowStatus: true },

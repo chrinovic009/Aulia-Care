@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 export type Tone = "slate" | "blue" | "green" | "amber" | "red" | "violet";
 
@@ -90,14 +90,30 @@ export function DataTable({
   headers,
   rows,
   empty = "Aucune donnee disponible.",
+  pageSize = 10,
 }: {
   headers: string[];
   rows: Array<Array<ReactNode>>;
   empty?: string;
+  /** Les grandes listes restent consultables sans alourdir visuellement la page. */
+  pageSize?: number;
 }) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginatedRows = useMemo(
+    () => rows.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [pageSize, rows, safePage],
+  );
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[760px] text-sm">
+    <div>
+      <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
+      <table className="w-full min-w-[720px] text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
           <tr>{headers.map((header) => <th key={header} className="px-4 py-3 font-semibold">{header}</th>)}</tr>
         </thead>
@@ -106,13 +122,40 @@ export function DataTable({
             <tr>
               <td colSpan={headers.length} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">{empty}</td>
             </tr>
-          ) : rows.map((row, index) => (
+          ) : paginatedRows.map((row, index) => (
             <tr key={index} className="transition hover:bg-slate-50/80 dark:hover:bg-white/[0.04]">
               {row.map((cell, cellIndex) => <td key={cellIndex} className="px-4 py-3 align-middle text-slate-700 dark:text-slate-200">{cell}</td>)}
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
+      {rows.length > pageSize && (
+        <div className="mt-3 flex flex-col gap-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:text-slate-400">
+          <p>
+            {Math.min((safePage - 1) * pageSize + 1, rows.length)}–{Math.min(safePage * pageSize, rows.length)} sur {rows.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={safePage === 1}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-700 transition hover:border-teal-500 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:border-teal-500 dark:hover:text-teal-300"
+            >
+              Précédent
+            </button>
+            <span className="min-w-16 text-center font-medium text-slate-700 dark:text-slate-200">{safePage} / {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              disabled={safePage === totalPages}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-700 transition hover:border-teal-500 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:border-teal-500 dark:hover:text-teal-300"
+            >
+              Suivant
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

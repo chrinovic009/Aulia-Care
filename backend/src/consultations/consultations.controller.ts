@@ -17,13 +17,13 @@ export class ConsultationsController {
   constructor(private readonly consultationsService: ConsultationsService) {}
 
   @Get()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
   findAll(@Request() req: any) {
     return this.consultationsService.findAll(req.user?.userId, req.user?.role);
   }
 
   @Get(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
   findOne(@Param('id') id: string, @Request() req: any) {
     return this.consultationsService.findOne(id, req.user?.userId, req.user?.role);
   }
@@ -49,7 +49,7 @@ export class ConsultationsController {
   @Post(':id/telehealth-transcript')
   @Roles('PHYSICIAN')
   saveTelehealthTranscript(@Param('id') id: string, @Body() body: SaveTelehealthTranscriptDto, @Request() req: any) {
-    return this.consultationsService.saveTelehealthTranscript(id, body.entries, req.user?.userId);
+    return this.consultationsService.saveTelehealthTranscript(id, body.sessionId, body.entries, req.user?.userId);
   }
 
   @Post(':id/lab-requests')
@@ -83,7 +83,7 @@ export class ConsultationsController {
 
   @Delete(':id')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  remove(@Param('id') id: string) {
-    return this.consultationsService.remove(id);
+  remove(@Param('id') id: string, @Request() req: any) {
+    return this.consultationsService.remove(id, req.user?.userId);
   }
 }

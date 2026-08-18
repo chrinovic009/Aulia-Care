@@ -187,11 +187,18 @@ export class ConsultationsService {
     return updated;
   }
 
-  async saveTelehealthTranscript(id: string, entries: TelehealthTranscriptEntryDto[], actorId?: string) {
+  async saveTelehealthTranscript(id: string, sessionId: string, entries: TelehealthTranscriptEntryDto[], actorId?: string) {
     const consultation = await this.findOne(id);
     await this.ensureWriteAccess(consultation.providerId, actorId);
     if (consultation.status === ConsultationStatus.FINALIZED) {
       throw new BadRequestException('Une consultation finalisée ne peut pas recevoir de transcription sans avenant.');
+    }
+    const session = await (this.prisma as any).telehealthSession.findFirst({
+      where: { id: sessionId, consultationId: id, doctorId: actorId, status: { in: ['ACTIVE', 'ENDED'] } },
+      select: { id: true, transcriptionConsentAt: true, patientConsentAt: true },
+    });
+    if (!session?.patientConsentAt || !session.transcriptionConsentAt) {
+      throw new ForbiddenException('La transcription exige le consentement explicite du patient pour cette session.');
     }
     const boundedEntries = entries.slice(-500).map((entry) => ({
       speaker: entry.speaker,
@@ -209,6 +216,7 @@ export class ConsultationsService {
       : {};
     summary.consultationModule = { ...module, telehealthTranscript: boundedEntries };
     summary.telehealth = {
+      sessionId,
       transcript: boundedEntries,
       capturedAt: new Date().toISOString(),
       disclaimer: 'Transcription automatisée à relire et valider par le médecin.',
@@ -1006,10 +1014,21 @@ export class ConsultationsService {
     });
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
-    await this.prisma.consultation.delete({ where: { id } });
-    return { deleted: true };
+  async remove(id: string, actorId?: string) {
+    const consultation = await this.findOne(id);
+    if (consultation.status === ConsultationStatus.FINALIZED) {
+      throw new BadRequestException('Une consultation finalisée est un document médical : elle ne peut pas être supprimée. Créez un avenant ou une annulation motivée.');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.consultation.update({
+        where: { id },
+        data: { status: ConsultationStatus.CANCELLED, deletedAt: new Date(), version: { increment: 1 } },
+      });
+      await tx.consultationNote.create({
+        data: { consultationId: id, authorId: actorId || null, noteType: 'ARCHIVED_BY_ADMIN', content: 'Consultation annulée et archivée administrativement ; aucune donnée clinique n’a été effacée.' },
+      });
+    });
+    return { archived: true };
   }
 
   private async ensureWriteAccess(assignedDoctorId?: string | null, actorId?: string | null) {

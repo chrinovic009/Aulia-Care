@@ -25,7 +25,7 @@ export default function ReceptionStatisticsChart() {
   const noChartData = !error && categories.length > 0 && !hasChartData;
 
   const options: ApexOptions = {
-    colors: ["#22C55E", "#0D9488", "#dc2626"],
+    colors: ["#0D9488", "#0D9488", "#dc2626"],
     chart: {
       fontFamily: "Outfit, sans-serif",
       type: "bar",
