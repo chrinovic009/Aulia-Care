@@ -594,13 +594,16 @@ function normalizeTelehealthSignal(value: unknown): SafeTelehealthSignal | null 
   if (signal.type === 'candidate' && signal.candidate && typeof signal.candidate === 'object' && !Array.isArray(signal.candidate)) {
     const candidate = signal.candidate as Record<string, unknown>;
     if (typeof candidate.candidate !== 'string' || candidate.candidate.length === 0 || candidate.candidate.length > 4_000) return null;
-    const optionalString = (key: string) => typeof candidate[key] === 'string' ? candidate[key] : candidate[key] == null ? null : undefined;
-    const optionalNumber = (key: string) => typeof candidate[key] === 'number' && Number.isInteger(candidate[key]) ? candidate[key] : candidate[key] == null ? null : undefined;
+    const candidateValue = candidate.candidate as string;
+    const optionalString = (key: string): string | null | undefined =>
+      typeof candidate[key] === 'string' ? candidate[key] as string : candidate[key] == null ? null : undefined;
+    const optionalNumber = (key: string): number | null | undefined =>
+      typeof candidate[key] === 'number' && Number.isInteger(candidate[key]) ? candidate[key] as number : candidate[key] == null ? null : undefined;
     const sdpMid = optionalString('sdpMid');
     const sdpMLineIndex = optionalNumber('sdpMLineIndex');
     const usernameFragment = optionalString('usernameFragment');
     if (sdpMid === undefined || sdpMLineIndex === undefined || usernameFragment === undefined) return null;
-    return { type: 'candidate', candidate: { candidate: candidate.candidate, sdpMid, sdpMLineIndex, usernameFragment } };
+    return { type: 'candidate', candidate: { candidate: candidateValue, sdpMid, sdpMLineIndex, usernameFragment } };
   }
   return null;
 }

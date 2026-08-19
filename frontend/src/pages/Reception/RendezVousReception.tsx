@@ -328,7 +328,7 @@ export default function RendezVousReception() {
   return (
     <div className="p-4 sm:p-6 bg-slate-50 dark:bg-slate-950 min-h-screen">
       <PageMeta
-        title="Rendez-vous Réception | D7 Clinique"
+        title="Rendez-vous Réception | Aulia Care"
         description="Tableau de bord de gestion des demandes de rendez-vous pour la réception."
       />
       <PageBreadcrumb pageTitle="Rendez-vous" />

@@ -6,8 +6,8 @@ export default function FormElements() {
   return (
     <div>
       <PageMeta
-        title="Paiement - D7 Clinique"
-        description="Effectuez le paiement de votre facture sanitaire en toute simplicité avec D7 Clinique. Choisissez votre traitement, saisissez votre numéro de téléphone et sélectionnez votre réseau pour un paiement rapide et sécurisé."
+        title="Paiement - Aulia Care"
+        description="Effectuez le paiement de votre facture sanitaire en toute simplicité avec Aulia Care. Choisissez votre traitement, saisissez votre numéro de téléphone et sélectionnez votre réseau pour un paiement rapide et sécurisé."
       />
       <PageBreadcrumb pageTitle="Paiement" />
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">

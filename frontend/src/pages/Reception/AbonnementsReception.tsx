@@ -148,7 +148,7 @@ export default function AbonnementsReception() {
 
   return (
     <div>
-      <PageMeta title="Abonnements entreprises | D7 Clinic" description="Gestion des entreprises abonnées, employés et factures mensuelles." />
+      <PageMeta title="Abonnements entreprises | Aulia Care" description="Gestion des entreprises abonnées, employés et factures mensuelles." />
       <PageBreadcrumb pageTitle="Abonnements entreprises" />
       <AdminPageShell
         title="Abonnements entreprises"

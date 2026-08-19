@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateClinicBrandingDto } from './dto/update-clinic-branding.dto';
 
 @Injectable()
 export class AdministrationService {
@@ -10,12 +11,12 @@ export class AdministrationService {
     if (!user?.clinicId) return { name: 'Aulia Care', brandDisplayName: null, documentLogoUrl: null };
     const clinic = await (this.prisma as any).clinic.findUnique({
       where: { id: user.clinicId },
-      select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true },
+      select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true, legalName: true, registrationNumber: true, rccmNumber: true, taxNumber: true, nationalIdNumber: true, phone: true, email: true, address: true, city: true, country: true, documentFooter: true },
     });
     return clinic || { name: 'Aulia Care', brandDisplayName: null, documentLogoUrl: null };
   }
 
-  async updateClinicBranding(userId: string | undefined, data: { brandDisplayName?: string; documentLogoUrl?: string | null }) {
+  async updateClinicBranding(userId: string | undefined, data: UpdateClinicBrandingDto) {
     const user = userId
       ? await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, clinicId: true, primaryRole: true } })
       : null;
@@ -42,8 +43,19 @@ export class AdministrationService {
             name: clinicName,
             brandDisplayName: brandDisplayName || clinicName,
             ...(data.documentLogoUrl !== undefined ? { documentLogoUrl, documentLogoUpdatedAt: new Date() } : {}),
+            ...(data.legalName !== undefined ? { legalName: data.legalName.trim() || null } : {}),
+            ...(data.registrationNumber !== undefined ? { registrationNumber: data.registrationNumber.trim() || null } : {}),
+            ...(data.rccmNumber !== undefined ? { rccmNumber: data.rccmNumber.trim() || null } : {}),
+            ...(data.taxNumber !== undefined ? { taxNumber: data.taxNumber.trim() || null } : {}),
+            ...(data.nationalIdNumber !== undefined ? { nationalIdNumber: data.nationalIdNumber.trim() || null } : {}),
+            ...(data.phone !== undefined ? { phone: data.phone.trim() || null } : {}),
+            ...(data.email !== undefined ? { email: data.email.trim().toLowerCase() || null } : {}),
+            ...(data.address !== undefined ? { address: data.address.trim() || null } : {}),
+            ...(data.city !== undefined ? { city: data.city.trim() || null } : {}),
+            ...(data.country !== undefined ? { country: data.country.trim() || null } : {}),
+            ...(data.documentFooter !== undefined ? { documentFooter: data.documentFooter.trim() || null } : {}),
           },
-          select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true },
+          select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true, legalName: true, registrationNumber: true, rccmNumber: true, taxNumber: true, nationalIdNumber: true, phone: true, email: true, address: true, city: true, country: true, documentFooter: true },
         });
         await tx.user.update({ where: { id: user.id }, data: { clinicId: clinic.id } });
         return clinic;
@@ -55,8 +67,19 @@ export class AdministrationService {
       data: {
         ...(brandDisplayName !== undefined ? { brandDisplayName } : {}),
         ...(data.documentLogoUrl !== undefined ? { documentLogoUrl, documentLogoUpdatedAt: new Date() } : {}),
+        ...(data.legalName !== undefined ? { legalName: data.legalName.trim() || null } : {}),
+        ...(data.registrationNumber !== undefined ? { registrationNumber: data.registrationNumber.trim() || null } : {}),
+        ...(data.rccmNumber !== undefined ? { rccmNumber: data.rccmNumber.trim() || null } : {}),
+        ...(data.taxNumber !== undefined ? { taxNumber: data.taxNumber.trim() || null } : {}),
+        ...(data.nationalIdNumber !== undefined ? { nationalIdNumber: data.nationalIdNumber.trim() || null } : {}),
+        ...(data.phone !== undefined ? { phone: data.phone.trim() || null } : {}),
+        ...(data.email !== undefined ? { email: data.email.trim().toLowerCase() || null } : {}),
+        ...(data.address !== undefined ? { address: data.address.trim() || null } : {}),
+        ...(data.city !== undefined ? { city: data.city.trim() || null } : {}),
+        ...(data.country !== undefined ? { country: data.country.trim() || null } : {}),
+        ...(data.documentFooter !== undefined ? { documentFooter: data.documentFooter.trim() || null } : {}),
       },
-      select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true },
+      select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true, legalName: true, registrationNumber: true, rccmNumber: true, taxNumber: true, nationalIdNumber: true, phone: true, email: true, address: true, city: true, country: true, documentFooter: true },
     });
   }
 

@@ -83,13 +83,13 @@ export default function HistoriqueReception() {
   useEffect(() => {
     loadHistory();
     const handler = () => loadHistory();
-    window.addEventListener("d7:patient.created", handler);
-    window.addEventListener("d7:patient.updated", handler);
-    window.addEventListener("d7:patientRecordsUpdated", handler);
+    window.addEventListener("aulia:patient.created", handler);
+    window.addEventListener("aulia:patient.updated", handler);
+    window.addEventListener("aulia:patientRecordsUpdated", handler);
     return () => {
-      window.removeEventListener("d7:patient.created", handler);
-      window.removeEventListener("d7:patient.updated", handler);
-      window.removeEventListener("d7:patientRecordsUpdated", handler);
+      window.removeEventListener("aulia:patient.created", handler);
+      window.removeEventListener("aulia:patient.updated", handler);
+      window.removeEventListener("aulia:patientRecordsUpdated", handler);
     };
   }, []);
 
@@ -132,7 +132,7 @@ export default function HistoriqueReception() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
-      <PageMeta title="Historique reception | D7 Clinique" description="Historique reception alimente par PostgreSQL." />
+      <PageMeta title="Historique reception | Aulia Care" description="Historique reception alimente par PostgreSQL." />
       <PageBreadcrumb pageTitle="Historique reception" />
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">

@@ -46,7 +46,12 @@ async function bootstrap() {
   // must also carry the non-HttpOnly per-session CSRF value.
   app.use((req, res, next) => {
     const unsafeMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
-    const hasSessionCookie = String(req.headers.cookie || '').includes('aulia_access_token=');
+    // Protect refreshes too: otherwise an expired access cookie would make the
+    // browser's refresh operation the only state-changing cookie request that
+    // bypasses CSRF verification.
+    const cookieHeader = String(req.headers.cookie || '');
+    const hasSessionCookie = cookieHeader.includes('aulia_access_token=')
+      || cookieHeader.includes('aulia_refresh_token=');
     const exemptPath = ['/api/auth/login'].includes(req.path);
     if (!unsafeMethod || !hasSessionCookie || exemptPath) {
       return next();
@@ -54,7 +59,7 @@ async function bootstrap() {
 
     const origin = req.headers.origin;
     const hostOrigin = `${req.protocol}://${req.get('host')}`;
-    const csrfCookie = String(req.headers.cookie || '')
+    const csrfCookie = cookieHeader
       .split(';')
       .map((part) => part.trim())
       .find((part) => part.startsWith('aulia_csrf_token='))

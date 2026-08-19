@@ -153,13 +153,13 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
       }
     };
 
-    window.addEventListener("d7:message.received", handleIncoming);
-    return () => window.removeEventListener("d7:message.received", handleIncoming);
+    window.addEventListener("aulia:message.received", handleIncoming);
+    return () => window.removeEventListener("aulia:message.received", handleIncoming);
   }, [currentUser?.id, selectedContact?.id, socket]);
 
   useEffect(() => {
     if (!selectedContact || !currentUser?.id) return;
-    window.dispatchEvent(new CustomEvent("d7:messages.read", { detail: { contactId: selectedContact.id } }));
+    window.dispatchEvent(new CustomEvent("aulia:messages.read", { detail: { contactId: selectedContact.id } }));
     const unreadIds = messages
       .filter((chatMessage) => chatMessage.contactId === selectedContact.id && chatMessage.from === "contact")
       .map((chatMessage) => chatMessage.id);
@@ -231,15 +231,15 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
       setTypingUsers((current) => ({ ...current, [detail.senderId as string]: Boolean(detail.isTyping) }));
     };
 
-    window.addEventListener("d7:message.status", handleStatus);
-    window.addEventListener("d7:message.read", handleRead);
-    window.addEventListener("d7:user.presence", handlePresence);
-    window.addEventListener("d7:message.typing", handleTyping);
+    window.addEventListener("aulia:message.status", handleStatus);
+    window.addEventListener("aulia:message.read", handleRead);
+    window.addEventListener("aulia:user.presence", handlePresence);
+    window.addEventListener("aulia:message.typing", handleTyping);
     return () => {
-      window.removeEventListener("d7:message.status", handleStatus);
-      window.removeEventListener("d7:message.read", handleRead);
-      window.removeEventListener("d7:user.presence", handlePresence);
-      window.removeEventListener("d7:message.typing", handleTyping);
+      window.removeEventListener("aulia:message.status", handleStatus);
+      window.removeEventListener("aulia:message.read", handleRead);
+      window.removeEventListener("aulia:user.presence", handlePresence);
+      window.removeEventListener("aulia:message.typing", handleTyping);
     };
   }, []);
 

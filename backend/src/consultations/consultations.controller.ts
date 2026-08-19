@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { ConsultationsService } from './consultations.service';
 import { CreateConsultationDto } from './dto/create-consultation.dto';
+import { OpenPatientConsultationDto } from './dto/open-patient-consultation.dto';
 import { CreateImagingRequestDto } from './dto/create-imaging-request.dto';
 import { ClinicalSectionsDto } from './dto/clinical-sections.dto';
 import { CreateLabRequestDto } from './dto/create-lab-request.dto';
@@ -32,6 +33,12 @@ export class ConsultationsController {
   @Roles('PHYSICIAN')
   create(@Body() dto: CreateConsultationDto, @Request() req: any) {
     return this.consultationsService.create(dto, req.user?.userId);
+  }
+
+  @Post('open-for-patient')
+  @Roles('PHYSICIAN')
+  openForPatient(@Body() dto: OpenPatientConsultationDto, @Request() req: any) {
+    return this.consultationsService.openForPatient(dto, req.user?.userId);
   }
 
   @Patch(':id')

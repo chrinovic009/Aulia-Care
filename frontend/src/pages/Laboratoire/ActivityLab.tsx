@@ -13,6 +13,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useRealtime } from "../../context/RealtimeContext";
 import type { LabRequestDetail, LabRequestDetailItem, LabRequestResult } from "./activityLab.types";
 import { buildLabRequestDisplayId, formatNfsParameterReference, getLabStatusLabel, normalizeInitial } from "./activityLab.utils";
+import { documentIdentityLine, documentLegalLine, documentLogoUrl, getClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
 
 export default function ActivityLab() {
   const { currentUser } = useAuth();
@@ -360,8 +361,10 @@ export default function ActivityLab() {
     return Array.from(grouped.entries()).map(([sectionName, items]) => ({ sectionName, items }));
   }, [requestDetail?.items]);
 
-  const printLaboratoryResultDocument = () => {
+  const printLaboratoryResultDocument = async () => {
     if (!requestDetail) return;
+
+    const clinic = await getClinicDocumentBranding();
 
     const patientName = [requestDetail.patient?.firstName, requestDetail.patient?.lastName].filter(Boolean).join(" ") || "Patient inconnu";
     const examName = currentItem?.labTest?.name || requestDetail.items?.[0]?.labTest?.name || "Analyse laboratoire";
@@ -383,7 +386,9 @@ export default function ActivityLab() {
       }
       return normalizedRange;
     })();
-    const logoSrc = `${window.location.origin}/images/favicon.png`;
+    const logoSrc = documentLogoUrl(clinic);
+    const clinicContact = documentIdentityLine(clinic);
+    const clinicLegal = documentLegalLine(clinic);
 
     const selectedResult = (latestResult as LabRequestResult) || currentItem?.results?.[0];
     const isNfsPrint = Boolean(/(^|\s)(nfs|h[eé]mogramme|num[eé]ration formule sanguine)(\s|$)/i.test(examName));
@@ -456,7 +461,8 @@ export default function ActivityLab() {
                 <img class="logo" src="${logoSrc}" alt="Logo clinique" />
                 <div>
                   <div class="document-title">Bon de rendu des résultats biomédicaux</div>
-                  <div class="document-subtitle">D7 Clinique - Service de laboratoire</div>
+                  <div class="document-subtitle"><span style="color:#0D9488;font-weight:800">${clinic.name}</span> - Service de laboratoire</div>
+                  ${clinicContact ? `<div class="document-subtitle">${clinicContact}</div>` : ""}
                 </div>
               </div>
               <div class="meta-block">
@@ -535,8 +541,9 @@ export default function ActivityLab() {
             </div>
 
             <div class="footer">
-              <div class="responsible">Responsable laboratoire</div>
+              <div class="responsible">Service Laboratoire — signature et cachet</div>
             </div>
+            <div style="font-size:10px;color:#6b7280;margin-top:8px;text-align:center;">${clinic.documentFooter || clinicLegal || "Document officiel généré par Aulia Care"}</div>
           </div>
         </body>
       </html>

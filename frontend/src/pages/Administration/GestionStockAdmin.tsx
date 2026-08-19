@@ -25,8 +25,8 @@ export default function GestionStockAdmin() {
       .finally(() => setIsLoading(false));
   useEffect(() => {
     load();
-    window.addEventListener("d7:administrationUpdated", load);
-    return () => window.removeEventListener("d7:administrationUpdated", load);
+    window.addEventListener("aulia:administrationUpdated", load);
+    return () => window.removeEventListener("aulia:administrationUpdated", load);
   }, []);
 
   const medications = payload.medications || [];

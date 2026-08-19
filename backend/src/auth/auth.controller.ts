@@ -62,6 +62,11 @@ export class AuthController {
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
     }
+    this.setCsrfCookie(response);
+  }
+
+  private setCsrfCookie(response: Response) {
+    const options = this.cookieOptions();
     response.cookie('aulia_csrf_token', randomBytes(32).toString('hex'), {
       httpOnly: false,
       secure: options.secure,
@@ -144,6 +149,15 @@ export class AuthController {
   @Post('logout')
   logout(@Res({ passthrough: true }) response: Response) {
     this.clearSessionCookies(response);
+  }
+
+  /** Restores a missing non-secret double-submit value without weakening CSRF. */
+  @Public()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Get('csrf')
+  csrf(@Res({ passthrough: true }) response: Response) {
+    response.setHeader('Cache-Control', 'no-store');
+    this.setCsrfCookie(response);
   }
 
   // 🔒 PROTÉGÉ - Récupérer le profil actuel (user complet)

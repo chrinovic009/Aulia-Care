@@ -333,7 +333,7 @@ const fetchDbJson = async <T>(path: string): Promise<T> => {
 
 const dispatchPatientRecordsUpdated = () => {
   try {
-    window.dispatchEvent(new CustomEvent("d7:patientRecordsUpdated"));
+    window.dispatchEvent(new CustomEvent("aulia:patientRecordsUpdated"));
   } catch {
     // ignore browser dispatch errors
   }

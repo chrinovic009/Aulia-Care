@@ -6,8 +6,8 @@ export default function SignIn() {
   return (
     <>
       <PageMeta
-        title="Connexion | D7 Clinique"
-        description="Page de connexion pour D7 Clinique, votre plateforme de gestion de clinique en ligne."
+        title="Aulia Care | Connexion"
+        description="Page de connexion pour Aulia Care, votre plateforme de gestion de clinique en ligne."
       />
       <AuthLayout>
         <SignInForm />

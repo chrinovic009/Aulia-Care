@@ -27,13 +27,13 @@ export default function PatientDashboard() {
   useEffect(() => {
     void load();
     const refresh = () => void load();
-    window.addEventListener("d7:patient.updated", refresh);
-    window.addEventListener("d7:wearable.measurement", refresh);
-    window.addEventListener("d7:invoice.updated", refresh);
+    window.addEventListener("aulia:patient.updated", refresh);
+    window.addEventListener("aulia:wearable.measurement", refresh);
+    window.addEventListener("aulia:invoice.updated", refresh);
     return () => {
-      window.removeEventListener("d7:patient.updated", refresh);
-      window.removeEventListener("d7:wearable.measurement", refresh);
-      window.removeEventListener("d7:invoice.updated", refresh);
+      window.removeEventListener("aulia:patient.updated", refresh);
+      window.removeEventListener("aulia:wearable.measurement", refresh);
+      window.removeEventListener("aulia:invoice.updated", refresh);
     };
   }, []);
 

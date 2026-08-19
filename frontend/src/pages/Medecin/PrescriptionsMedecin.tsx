@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { AvailableMedication, DoctorPatient, createPrescription, fetchAvailableMedications, fetchDoctorVisiblePatients, formatDoctorPatientName, updatePrescription } from "../../api/doctor";
@@ -57,11 +57,11 @@ export default function PrescriptionsMedecin() {
   useEffect(() => {
     load();
     const handler = () => load();
-    window.addEventListener("d7:clinicalDataUpdated", handler);
-    window.addEventListener("d7:billingDataUpdated", handler);
+    window.addEventListener("aulia:clinicalDataUpdated", handler);
+    window.addEventListener("aulia:billingDataUpdated", handler);
     return () => {
-      window.removeEventListener("d7:clinicalDataUpdated", handler);
-      window.removeEventListener("d7:billingDataUpdated", handler);
+      window.removeEventListener("aulia:clinicalDataUpdated", handler);
+      window.removeEventListener("aulia:billingDataUpdated", handler);
     };
   }, []);
 
@@ -175,7 +175,6 @@ export default function PrescriptionsMedecin() {
     }
 
     const lines = selectedMedicationIds.map((medicationId) => {
-      const medication = medications.find((item) => item.id === medicationId);
       const detail = selectedMedicationDetails[medicationId] || {
         quantity: form.quantity,
         dosage: form.dosage,
@@ -192,7 +191,6 @@ export default function PrescriptionsMedecin() {
         frequency: detail.frequency,
         durationDays: detail.durationDays ? Number(detail.durationDays) : undefined,
         notes: detail.notes,
-        unitPrice: medication?.unitPrice ? Number(medication.unitPrice) : undefined,
       };
     });
 
@@ -256,7 +254,6 @@ export default function PrescriptionsMedecin() {
       return;
     }
 
-    const medication = medications.find((item) => item.id === editForm.medicationId);
     await updatePrescription(selectedConsultation.id, editingPrescriptionId, {
       instruction: editForm.instruction,
       lines: [
@@ -268,7 +265,6 @@ export default function PrescriptionsMedecin() {
           frequency: editForm.frequency,
           durationDays: editForm.durationDays ? Number(editForm.durationDays) : undefined,
           notes: editForm.notes,
-          unitPrice: medication?.unitPrice ? Number(medication.unitPrice) : undefined,
         },
       ],
     });
@@ -280,7 +276,7 @@ export default function PrescriptionsMedecin() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
-      <PageMeta title="Prescriptions medecin | D7 Clinique" description="Prescriptions depuis le stock pharmaceutique." />
+      <PageMeta title="Prescriptions medecin | Aulia Care" description="Prescriptions depuis le stock pharmaceutique." />
       <PageBreadcrumb pageTitle="Prescriptions" />
       <Header title="Prescriptions" subtitle="Prescrire depuis les medicaments disponibles au stock, apres resultats d'examens si necessaire." />
       {patients.length === 0 ? <EmptyState /> : (
@@ -305,7 +301,8 @@ export default function PrescriptionsMedecin() {
                     <Select label="Consultation" value={selectedConsultation.id} onChange={setSelectedConsultationId} options={(selectedPatient.consultations || []).map((consultation) => [consultation.id, consultationLabel(consultation)] as [string, string])} />
                     <Select label="Section" value={sectionId} onChange={(value) => { setSectionId(value); setCategoryId(""); setForm((current) => ({ ...current, medicationId: "" })); }} options={[['', 'Toutes les sections'], ...sections.map((section) => [section.id, section.name] as [string, string])]} />
                     <Select label="Catégorie" value={categoryId} onChange={(value) => { setCategoryId(value); setForm((current) => ({ ...current, medicationId: "" })); }} options={sectionId ? [['', 'Choisir une catégorie'], ...categories.map((category) => [category.id, category.name] as [string, string])] : [['', 'Choisir une section d\'abord']]} />
-                    <Input label="Rechercher un médicament" value={searchTerm} onChange={setSearchTerm} />
+                     <Input label="Rechercher un médicament" value={searchTerm} onChange={setSearchTerm} placeholder="Tapez un nom, une dose ou un code…" />
+                     {searchTerm.trim() ? <div className="max-h-52 overflow-y-auto rounded-xl border border-aulia-teal/25 bg-white p-1 shadow-sm dark:bg-slate-950">{selectableMedications.length ? selectableMedications.slice(0, 10).map((medication) => <button type="button" key={medication.id} onClick={() => addMedicationSelection(medication.id)} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-aulia-mist dark:hover:bg-aulia-teal/10"><span><span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">{medication.name}{medication.strength ? ` ${medication.strength}` : ""}</span><span className="block text-xs text-slate-500">{medication.category?.section?.name || "Sans section"} · {medication.category?.name || "Sans catégorie"}</span></span><span className="shrink-0 text-xs font-medium text-aulia-teal">Stock {medication.availableQuantity}</span></button>) : <p className="px-3 py-3 text-sm text-slate-500">Aucun médicament correspondant.</p>}</div> : null}
                     <div className="space-y-2">
                       <label className="block text-sm font-medium text-slate-600 dark:text-slate-300">Médicaments disponibles</label>
                       <select
@@ -457,7 +454,7 @@ function PatientHeader({ patient, pendingExam }: { patient: DoctorPatient; pendi
   return <div className="flex flex-col gap-2 border-b border-slate-200 pb-4 dark:border-slate-800"><h2 className="text-xl font-semibold text-slate-900 dark:text-white">{formatDoctorPatientName(patient)}</h2><p className="text-sm text-slate-500">{serviceLabel(patient)} - {patient.workflowStatus}</p>{pendingExam && <span className="w-fit rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">Examen en attente: prescription bloquee</span>}</div>;
 }
 function Panel({ title, children }: { title: string; children: ReactNode }) { return <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800"><h3 className="font-semibold text-slate-900 dark:text-white">{title}</h3><div className="mt-3 space-y-3">{children}</div></div>; }
-function Input({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) { return <label className="block text-sm"><span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">{label}</span><input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>; }
+function Input({ label, value, onChange, type = "text", placeholder }: { label: string; value: string; onChange: (value: string) => void; type?: string; placeholder?: string }) { return <label className="block text-sm"><span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">{label}</span><input type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>; }
 function Textarea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="block text-sm"><span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">{label}</span><textarea value={value} onChange={(event) => onChange(event.target.value)} rows={3} className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>; }
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<[string, string]> }) { return <label className="block text-sm"><span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">{label}</span><select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white">{options.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>; }
 function EmptyState() { return <div className="mt-6 rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Aucune consultation disponible.</div>; }

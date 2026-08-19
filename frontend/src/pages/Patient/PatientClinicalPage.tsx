@@ -40,6 +40,22 @@ const workflowStatusLabel = (status?: string | null) => {
   }[status] || status.split("_").map((word) => word.charAt(0) + word.slice(1).toLowerCase()).join(" ");
 };
 
+const consultationLabel = (consultation: NonNullable<PatientProfile["consultations"]>[number]) => {
+  if (consultation.diagnosis?.trim()) return consultation.diagnosis;
+  const raw = consultation.clinicalSummary?.trim();
+  if (!raw) return "Consultation médicale";
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const module = parsed.consultationModule as Record<string, unknown> | undefined;
+    const structured = module?.structured as Record<string, unknown> | undefined;
+    const illness = structured?.illness as Record<string, unknown> | undefined;
+    const orientation = structured?.orientation as Record<string, unknown> | undefined;
+    return String(parsed.chiefComplaint || illness?.chiefComplaint || orientation?.diagnosisLabel || parsed.assessment || "Consultation médicale");
+  } catch {
+    return raw.length > 160 ? `${raw.slice(0, 157)}…` : raw;
+  }
+};
+
 export default function PatientClinicalPage({ mode }: PatientClinicalPageProps) {
   const [profile, setProfile] = useState<PatientProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,13 +76,13 @@ export default function PatientClinicalPage({ mode }: PatientClinicalPageProps) 
   useEffect(() => {
     loadProfile();
     const handler = () => loadProfile();
-    window.addEventListener("d7:patient.updated", handler);
-    window.addEventListener("d7:consultation.created", handler);
-    window.addEventListener("d7:notification.created", handler);
+    window.addEventListener("aulia:patient.updated", handler);
+    window.addEventListener("aulia:consultation.created", handler);
+    window.addEventListener("aulia:notification.created", handler);
     return () => {
-      window.removeEventListener("d7:patient.updated", handler);
-      window.removeEventListener("d7:consultation.created", handler);
-      window.removeEventListener("d7:notification.created", handler);
+      window.removeEventListener("aulia:patient.updated", handler);
+      window.removeEventListener("aulia:consultation.created", handler);
+      window.removeEventListener("aulia:notification.created", handler);
     };
   }, []);
 
@@ -80,7 +96,7 @@ export default function PatientClinicalPage({ mode }: PatientClinicalPageProps) 
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
-      <PageMeta title={`${pageTitles[mode]} | D7 Clinique`} description="Espace patient alimente par PostgreSQL." />
+      <PageMeta title={`${pageTitles[mode]} | Aulia Care`} description="Espace patient alimenté par PostgreSQL." />
       <PageBreadcrumb pageTitle={pageTitles[mode]} />
 
       {isLoading ? (
@@ -162,7 +178,7 @@ export default function PatientClinicalPage({ mode }: PatientClinicalPageProps) 
                 <Info label="Perimetre brachial" value={latestVitals.ARM_CIRCUMFERENCE || "-"} />
               </Panel>
               <ListPanel title="Consultations" items={(profile.consultations || []).map((item) => ({
-                title: item.diagnosis || item.clinicalSummary || "Consultation",
+                title: consultationLabel(item),
                 subtitle: `${formatDate(item.createdAt)} - ${item.provider?.displayName || "Medecin"}`,
               }))} />
               <ListPanel title="Rendez-vous" items={(profile.appointments || []).map((item) => ({

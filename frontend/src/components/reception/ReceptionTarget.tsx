@@ -34,9 +34,9 @@ export default function ReceptionAssistantIA() {
     const handler = () => {
       refresh();
     };
-    window.addEventListener("d7:patientRecordsUpdated", handler as EventListener);
+    window.addEventListener("aulia:patientRecordsUpdated", handler as EventListener);
     return () => {
-      window.removeEventListener("d7:patientRecordsUpdated", handler as EventListener);
+      window.removeEventListener("aulia:patientRecordsUpdated", handler as EventListener);
     };
   }, []);
 

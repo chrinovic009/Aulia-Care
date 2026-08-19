@@ -1,8 +1,9 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus } from '@prisma/client';
+import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreateConsultationDto } from './dto/create-consultation.dto';
+import { OpenPatientConsultationDto } from './dto/open-patient-consultation.dto';
 import { CreateImagingRequestDto } from './dto/create-imaging-request.dto';
 import { UpdateConsultationDto } from './dto/update-consultation.dto';
 import { ClinicalSectionsDto } from './dto/clinical-sections.dto';
@@ -110,6 +111,59 @@ export class ConsultationsService {
       workflowStatus: PatientWorkflowStatus.EN_CONSULTATION,
     });
 
+    return consultation;
+  }
+
+  /**
+   * Opens a fresh encounter for a returning patient. The browser never chooses
+   * the physician, appointment or status: all three are established here.
+   */
+  async openForPatient(dto: OpenPatientConsultationDto, actorId?: string) {
+    if (!actorId) throw new ForbiddenException('Médecin authentifié requis.');
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { primaryRole: true } });
+    if (actor?.primaryRole !== 'PHYSICIAN') throw new ForbiddenException('Seul un médecin peut ouvrir une consultation.');
+
+    const patient = await this.prisma.patient.findFirst({
+      where: { id: dto.patientId, deletedAt: null, consultations: { some: { providerId: actorId } } },
+      select: { id: true },
+    });
+    if (!patient) throw new ForbiddenException('Ce patient n’est pas visible par ce médecin.');
+
+    const consultation = await this.prisma.$transaction(async (tx) => {
+      // Serialize opening an encounter for one doctor/patient pair. This avoids
+      // duplicate drafts when two clicks or two browser tabs arrive together.
+      await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`consultation:${dto.patientId}:${actorId}`}))`);
+      const current = await tx.consultation.findFirst({
+        where: { patientId: dto.patientId, providerId: actorId, status: { in: [ConsultationStatus.DRAFT, ConsultationStatus.IN_PROGRESS] }, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (current) return current;
+
+      const appointment = await tx.appointment.create({
+        data: {
+          patientId: dto.patientId,
+          requestedById: actorId,
+          scheduledAt: new Date(),
+          durationMinutes: 30,
+          reason: 'Nouvelle consultation clinique ouverte par le médecin',
+          status: 'CHECKED_IN',
+        },
+      });
+      const created = await tx.consultation.create({
+        data: {
+          patientId: dto.patientId,
+          appointmentId: appointment.id,
+          providerId: actorId,
+          status: ConsultationStatus.DRAFT,
+          chiefComplaint: dto.chiefComplaint?.trim() || null,
+        },
+      });
+      await tx.patient.update({ where: { id: dto.patientId }, data: { workflowStatus: PatientWorkflowStatus.EN_CONSULTATION } });
+      return created;
+    });
+
+    this.notificationsGateway.notify('consultation.created', consultation);
+    this.notificationsGateway.notify('patient.updated', { id: dto.patientId, workflowStatus: PatientWorkflowStatus.EN_CONSULTATION });
     return consultation;
   }
 

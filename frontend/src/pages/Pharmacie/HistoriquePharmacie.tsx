@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { fetchPharmacyHistory, PharmacyHistoryRecord } from "../../api/pharmacy";
+import { apiFetch } from "../../config/api";
 
 function formatDateTime(value?: string | null) {
   if (!value) return "-";
@@ -20,6 +21,7 @@ export default function HistoriquePharmacie() {
   const [filterType, setFilterType] = useState<"ALL" | "DISPENSE" | "SALE">("ALL");
   const [dateRange, setDateRange] = useState<"ALL" | "TODAY" | "WEEK" | "MONTH">("ALL");
   const [printingData, setPrintingData] = useState<PharmacyHistoryRecord[] | null>(null);
+  const [clinicIdentity, setClinicIdentity] = useState<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null; address?: string | null; city?: string | null; phone?: string | null }>({});
 
   const loadHistory = async () => {
     try {
@@ -38,6 +40,7 @@ export default function HistoriquePharmacie() {
 
   useEffect(() => {
     loadHistory();
+    void apiFetch<typeof clinicIdentity>("/administration/clinic-branding").then(setClinicIdentity).catch(() => undefined);
     const interval = window.setInterval(loadHistory, 30000);
     return () => window.clearInterval(interval);
   }, []);
@@ -111,7 +114,7 @@ export default function HistoriquePharmacie() {
       `}</style>
 
       <div id="main-content" className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
-        <PageMeta title="Historique pharmacie | D7 Clinique" description="Historique complet des délivrances et ventes de la pharmacie." />
+        <PageMeta title="Historique pharmacie | Aulia Care" description="Historique complet des délivrances et ventes de la pharmacie." />
         <PageBreadcrumb pageTitle="Historique pharmacie" />
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -225,13 +228,13 @@ export default function HistoriquePharmacie() {
       </div>
 
       <div id="pharmacy-history-print-area" className="p-6">
-        {printingData ? <HistoryPrintTemplate records={printingData} /> : null}
+        {printingData ? <HistoryPrintTemplate records={printingData} clinic={clinicIdentity} /> : null}
       </div>
     </>
   );
 }
 
-function HistoryPrintTemplate({ records }: { records: PharmacyHistoryRecord[] }) {
+function HistoryPrintTemplate({ records, clinic }: { records: PharmacyHistoryRecord[]; clinic: { name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null; address?: string | null; city?: string | null; phone?: string | null } }) {
   const printableRecords = records.filter((record) => record.typeLabel !== "Sortie stock");
 
   const totals = printableRecords.reduce(
@@ -248,8 +251,10 @@ function HistoryPrintTemplate({ records }: { records: PharmacyHistoryRecord[] })
     <div style={{ fontFamily: "Arial, sans-serif", color: "#111827", padding: "24px", lineHeight: 1.4 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #0f172a", paddingBottom: "12px" }}>
         <div>
-          <div style={{ fontSize: "20px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>D7 CLINIQUE</div>
-          <div style={{ fontSize: "13px", color: "#475569", marginTop: "4px" }}>Pharmacie • Historique des activités</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <img src={clinic.documentLogoUrl || "/images/logo/icone.png"} alt="Logo" style={{ width: 44, height: 44, objectFit: "contain" }} />
+            <div><div style={{ fontSize: "20px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#0D9488" }}>{clinic.brandDisplayName || clinic.name || "AULIA CARE"}</div><div style={{ fontSize: "13px", color: "#475569", marginTop: "4px" }}>Pharmacie • Historique des activités</div><div style={{ fontSize: "10px", color: "#64748b" }}>{[clinic.address, clinic.city, clinic.phone].filter(Boolean).join(" · ")}</div></div>
+          </div>
         </div>
         <div style={{ textAlign: "right", fontSize: "12px", color: "#475569" }}>
           <div><strong>Document administratif</strong></div>

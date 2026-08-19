@@ -38,9 +38,9 @@ export default function ReceptionMetrics() {
   useEffect(() => {
     refreshMetrics();
     const handleUpdate = () => refreshMetrics();
-    window.addEventListener("d7:patientRecordsUpdated", handleUpdate as EventListener);
+    window.addEventListener("aulia:patientRecordsUpdated", handleUpdate as EventListener);
     return () => {
-      window.removeEventListener("d7:patientRecordsUpdated", handleUpdate as EventListener);
+      window.removeEventListener("aulia:patientRecordsUpdated", handleUpdate as EventListener);
     };
   }, []);
 

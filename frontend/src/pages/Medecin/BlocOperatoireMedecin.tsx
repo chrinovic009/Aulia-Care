@@ -56,11 +56,11 @@ export default function BlocOperatoireMedecin() {
   useEffect(() => {
     load();
     const handler = () => load();
-    window.addEventListener("d7:surgery.updated", handler);
-    window.addEventListener("d7:clinicalDataUpdated", handler);
+    window.addEventListener("aulia:surgery.updated", handler);
+    window.addEventListener("aulia:clinicalDataUpdated", handler);
     return () => {
-      window.removeEventListener("d7:surgery.updated", handler);
-      window.removeEventListener("d7:clinicalDataUpdated", handler);
+      window.removeEventListener("aulia:surgery.updated", handler);
+      window.removeEventListener("aulia:clinicalDataUpdated", handler);
     };
   }, []);
 
@@ -101,7 +101,7 @@ export default function BlocOperatoireMedecin() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
-      <PageMeta title="Bloc operatoire medecin | D7 Clinique" description="Planification des interventions chirurgicales." />
+      <PageMeta title="Bloc operatoire medecin | Aulia Care" description="Planification des interventions chirurgicales." />
       <PageBreadcrumb pageTitle="Bloc operatoire" />
       <Header title="Bloc operatoire" subtitle="Planifier une intervention depuis une consultation et suivre les actes chirurgicaux." />
 

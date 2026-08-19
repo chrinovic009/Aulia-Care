@@ -117,9 +117,9 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   visitBalanceDue,
   visitWorkflowStatus,
 }) => {
-  const [clinicBranding, setClinicBranding] = useState<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null }>({});
+  const [clinicBranding, setClinicBranding] = useState<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null; legalName?: string | null; phone?: string | null; email?: string | null; address?: string | null; city?: string | null; country?: string | null; rccmNumber?: string | null; taxNumber?: string | null; nationalIdNumber?: string | null; documentFooter?: string | null }>({});
   useEffect(() => {
-    apiFetch<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null }>("/administration/clinic-branding")
+    apiFetch<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null; legalName?: string | null; phone?: string | null; email?: string | null; address?: string | null; city?: string | null; country?: string | null; rccmNumber?: string | null; taxNumber?: string | null; nationalIdNumber?: string | null; documentFooter?: string | null }>("/administration/clinic-branding")
       .then(setClinicBranding)
       .catch(() => undefined);
   }, []);
@@ -132,9 +132,10 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   const headlineType = visitItems ? "FACTURE TOTALE" : "FACTURE";
   const invoiceTypeLabel = invoiceType === "ADMISSION_FEE" ? "Frais d'Admission" : invoiceType;
   const clinicDisplayName = clinicName || clinicBranding.brandDisplayName || clinicBranding.name || "Aulia Care";
-  const clinicDisplayAddress = clinicAddress || "Zone de santé, Dilala";
-  const clinicDisplayPhone = clinicPhone || "+243 987 299 227";
-  const clinicDisplayEmail = clinicEmail || "fondationd7clinic@gmail.com";
+  const clinicDisplayAddress = clinicAddress || [clinicBranding.address, clinicBranding.city, clinicBranding.country].filter(Boolean).join(", ") || "Coordonnées non renseignées";
+  const clinicDisplayPhone = clinicPhone || clinicBranding.phone || "Non renseigné";
+  const clinicDisplayEmail = clinicEmail || clinicBranding.email || "Non renseigné";
+  const legalReferences = [["RCCM", clinicBranding.rccmNumber], ["NIF", clinicBranding.taxNumber], ["ID", clinicBranding.nationalIdNumber]].filter(([, value]) => Boolean(value)).map(([label, value]) => `${label}: ${value}`).join(" · ");
 
   return (
     <div
@@ -154,12 +155,13 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8mm" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <div style={{ width: 72, height: 72, background: "#0f172a", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6 }}>
-            <img src={clinicBranding.documentLogoUrl || "/images/favicon.png"} alt="logo de l'établissement" style={{ width: 54, height: 54, objectFit: "contain" }} />
+            <img src={clinicBranding.documentLogoUrl || "/images/logo/icone.png"} alt="logo de l'établissement" style={{ width: 54, height: 54, objectFit: "contain" }} />
           </div>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a" }}>{clinicDisplayName}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#0D9488" }}>{clinicDisplayName}</div>
             <div style={{ fontSize: 11, color: "#6b7280", lineHeight: 1.4 }}>{clinicDisplayAddress}</div>
             <div style={{ fontSize: 11, color: "#6b7280" }}>Tel: {clinicDisplayPhone} | {clinicDisplayEmail}</div>
+            {legalReferences && <div style={{ fontSize: 10, color: "#6b7280", marginTop: 3 }}>{legalReferences}</div>}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -181,7 +183,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
         </div>
         <div style={{ flex: 1, border: "1px solid #eee", padding: "8px" }}>
           <div style={{ fontSize: 10, fontWeight: 800, color: "#0f172a" }}>ÉTABLISSEMENT ÉMETTEUR</div>
-          <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700 }}>{clinicDisplayName}</div>
+          <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: "#0D9488" }}>{clinicDisplayName}</div>
           <div style={{ fontSize: 11, color: "#6b7280" }}>{clinicDisplayAddress}</div>
           <div style={{ fontSize: 11, color: "#6b7280" }}>Tel: {clinicDisplayPhone}</div>
         </div>
@@ -318,8 +320,8 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
 
       {/* Footer */}
       <div style={{ marginTop: "15mm", textAlign: "center", fontSize: "10px", color: "#666", borderTop: "1px solid #ddd", paddingTop: "5mm" }}>
-        <p style={{ margin: "0" }}>Merci de votre confiance</p>
-        <p style={{ margin: "2mm 0" }}>D7 CLINIC - Tous droits réservés</p>
+        <p style={{ margin: "0" }}>{clinicBranding.documentFooter || "Merci de votre confiance. Document officiel généré par Aulia Care."}</p>
+        <p style={{ margin: "2mm 0" }}>{clinicDisplayName} — Tous droits réservés</p>
         <p style={{ margin: "2mm 0", color: "#999" }}>Facture n° {displayInvoiceId}</p>
       </div>
 

@@ -66,14 +66,22 @@ export class HospitalizationsService {
     const dayIndex = Math.floor((today.getTime() - anchor.getTime()) / 86_400_000);
     // The configured anchor is day 1. A rota must never grant access before it.
     if (!isPermanentDay && dayIndex < 0) return null;
-    const phase = ((dayIndex % 9) + 9) % 9;
-    const previousPhase = (((dayIndex - 1) % 9) + 9) % 9;
+    const rotationDays = Math.min(31, Math.max(1, employee.rotationDays || 3));
+    const cycleDays = rotationDays * 3;
+    const phase = ((dayIndex % cycleDays) + cycleDays) % cycleDays;
+    const previousPhase = (((dayIndex - 1) % cycleDays) + cycleDays) % cycleDays;
+    const [permanentEndHour, permanentEndMinute] = String(employee.permanentShiftEndTime || '17:30')
+      .split(':')
+      .map((value) => Number(value));
+    const permanentEndMinutes = Number.isInteger(permanentEndHour) && Number.isInteger(permanentEndMinute)
+      ? permanentEndHour * 60 + permanentEndMinute
+      : 17 * 60 + 30;
 
-    if ((isPermanentDay || phase <= 2) && minuteOfDay >= 7 * 60 + 30 && minuteOfDay < 17 * 60 + 30) {
-      return { startAt: at(today, 7, 30), endAt: at(today, 17, 30), employee };
+    if ((isPermanentDay || phase < rotationDays) && minuteOfDay >= 7 * 60 + 30 && minuteOfDay < permanentEndMinutes) {
+      return { startAt: at(today, 7, 30), endAt: at(today, Math.floor(permanentEndMinutes / 60), permanentEndMinutes % 60), employee };
     }
-    const isNightDay = !isPermanentDay && phase >= 3 && phase <= 5;
-    const continuesPreviousNight = !isPermanentDay && previousPhase >= 3 && previousPhase <= 5;
+    const isNightDay = !isPermanentDay && phase >= rotationDays && phase < rotationDays * 2;
+    const continuesPreviousNight = !isPermanentDay && previousPhase >= rotationDays && previousPhase < rotationDays * 2;
     if ((isNightDay && minuteOfDay >= 17 * 60 + 30) || (continuesPreviousNight && minuteOfDay < 7 * 60 + 30)) {
       const startDate = minuteOfDay < 7 * 60 + 30 ? new Date(today.getTime() - 86_400_000) : today;
       const endDate = minuteOfDay < 7 * 60 + 30 ? today : new Date(today.getTime() + 86_400_000);

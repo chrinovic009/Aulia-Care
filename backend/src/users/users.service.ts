@@ -40,9 +40,50 @@ export class UsersService {
     return dto.isResponsible || dto.isDepartmentResponsible ? RoleSlug.LAB_MANAGER : RoleSlug.LAB_TECHNICIAN;
   }
 
-  async create(dto: CreateUserDto) {
+  private makeInitialStaffPassword(clinicName: string, role: RoleSlug, firstName: string, lastName: string, position: number) {
+    const establishmentPrefix = String(clinicName || 'Aulia Care')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, 2)
+      .toUpperCase()
+      .padEnd(2, 'A');
+    const roleLetter = String(role || 'USER').charAt(0).toUpperCase() || 'U';
+    const initials = `${String(firstName || 'X').charAt(0)}${String(lastName || 'X').charAt(0)}`.toUpperCase();
+    return `${establishmentPrefix}${roleLetter}-${initials}${position}${new Date().getFullYear()}`;
+  }
+
+  private validateEmployeeSchedule(input: { shiftPattern?: string; rotationAnchorAt?: string; rotationDays?: number; permanentShiftEndTime?: string }) {
+    if (input.rotationDays !== undefined && (!Number.isInteger(input.rotationDays) || Number(input.rotationDays) < 1 || Number(input.rotationDays) > 31)) {
+      throw new BadRequestException('Le nombre de jours par phase doit être compris entre 1 et 31.');
+    }
+    if (input.shiftPattern === 'THREE_DAY_THREE_NIGHT_THREE_REST') {
+      if (!input.rotationAnchorAt) throw new BadRequestException('La date du premier jour de rotation est obligatoire.');
+      if (input.rotationDays === undefined) {
+        throw new BadRequestException('Le nombre de jours par phase doit être compris entre 1 et 31.');
+      }
+    }
+    if (input.shiftPattern === 'PERMANENT_DAY' && input.permanentShiftEndTime) {
+      if (input.permanentShiftEndTime <= '07:30') {
+        throw new BadRequestException('La sortie de permanence doit être postérieure à 07:30.');
+      }
+    }
+  }
+
+  async create(dto: CreateUserDto, creatorId?: string) {
+    this.validateEmployeeSchedule(dto);
     const primaryRole = await this.resolvePrimaryRole(dto);
-    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const creator = creatorId
+      ? await this.prisma.user.findUnique({ where: { id: creatorId }, select: { clinicId: true } })
+      : null;
+    const clinic = creator?.clinicId
+      ? await this.prisma.clinic.findUnique({ where: { id: creator.clinicId }, select: { name: true, brandDisplayName: true } })
+      : null;
+    const position = await this.prisma.user.count({
+      where: { deletedAt: null, primaryRole, ...(creator?.clinicId ? { clinicId: creator.clinicId } : {}) },
+    }) + 1;
+    const generatedPassword = dto.password ? undefined : this.makeInitialStaffPassword(clinic?.brandDisplayName || clinic?.name || 'Aulia Care', primaryRole || RoleSlug.NURSE, dto.firstName, dto.lastName, position);
+    const passwordHash = await bcrypt.hash(dto.password || generatedPassword!, 10);
     const employeeDetails = {
       gender: dto.gender ?? null,
       dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null,
@@ -52,10 +93,13 @@ export class UsersService {
       serviceUnitId: dto.serviceUnitId ?? null,
       shiftPattern: dto.shiftPattern ?? 'MANUAL',
       rotationAnchorAt: dto.rotationAnchorAt ? new Date(dto.rotationAnchorAt) : null,
+      // The rota is evaluated at access time; explicit Shift rows remain exceptional overrides.
+      rotationDays: dto.rotationDays ?? 3,
+      permanentShiftEndTime: dto.permanentShiftEndTime ?? '17:30',
     };
 
     try {
-      return await this.prisma.user.create({
+      const user = await this.prisma.user.create({
         data: {
           email: dto.email.toLowerCase(),
           username: dto.username.toLowerCase(),
@@ -63,7 +107,8 @@ export class UsersService {
           firstName: dto.firstName,
           lastName: dto.lastName,
           passwordHash,
-          primaryRole: dto.primaryRole,
+          primaryRole,
+          clinicId: creator?.clinicId ?? null,
 
           specialty: dto.specialty ?? null,
           phone: dto.phone ?? null,
@@ -128,6 +173,7 @@ export class UsersService {
           departmentResponsibilities: { include: { department: true } },
         },
       });
+      return generatedPassword ? { ...user, generatedPassword } : user;
     } catch (error: any) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -543,6 +589,7 @@ export class UsersService {
   }
 
   async update(id: string, dto: UpdateUserDto) {
+    this.validateEmployeeSchedule(dto);
     const data: any = { ...dto };
     const employeeData: any = {};
     const contractData: any = {};
@@ -582,6 +629,8 @@ export class UsersService {
       'shiftType',
       'shiftPattern',
       'rotationAnchorAt',
+      'rotationDays',
+      'permanentShiftEndTime',
     ]) {
       delete data[key];
     }
@@ -594,6 +643,8 @@ export class UsersService {
     if (dto.serviceUnitId !== undefined) employeeData.serviceUnitId = dto.serviceUnitId || null;
     if (dto.shiftPattern !== undefined) employeeData.shiftPattern = dto.shiftPattern;
     if (dto.rotationAnchorAt !== undefined) employeeData.rotationAnchorAt = dto.rotationAnchorAt ? new Date(dto.rotationAnchorAt) : null;
+    if (dto.rotationDays !== undefined) employeeData.rotationDays = dto.rotationDays;
+    if (dto.permanentShiftEndTime !== undefined) employeeData.permanentShiftEndTime = dto.permanentShiftEndTime;
     if (dto.salary !== undefined) contractData.salary = dto.salary;
     if (dto.salaryFrequency !== undefined) contractData.frequency = dto.salaryFrequency;
     if (dto.contractType !== undefined) contractData.type = dto.contractType as any;

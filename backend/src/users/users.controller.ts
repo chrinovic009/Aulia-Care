@@ -44,8 +44,8 @@ export class UsersController {
 
   @Post()
   @Roles('SUPER_ADMIN', 'ADMIN')
-  create(@Body() createUserDto: CreateUserDto) {
-    return this.usersService.create(createUserDto);
+  create(@Body() createUserDto: CreateUserDto, @Request() req: any) {
+    return this.usersService.create(createUserDto, req.user?.userId);
   }
 
   @Patch(':id')

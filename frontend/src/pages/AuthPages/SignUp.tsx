@@ -6,8 +6,8 @@ export default function SignUp() {
   return (
     <>
       <PageMeta
-        title="React.js SignUp Dashboard | D7 Clinique - Next.js Admin Dashboard Template"
-        description="This is React.js SignUp Tables Dashboard page for D7 Clinique - React.js Tailwind CSS Admin Dashboard Template"
+        title="Aulia Care | Inscription"
+        description="Page d'inscription pour Aulia Care, votre plateforme de gestion de clinique en ligne."
       />
       <AuthLayout>
         <SignUpForm />

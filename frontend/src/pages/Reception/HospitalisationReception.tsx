@@ -227,7 +227,7 @@ export default function HospitalisationReception() {
   return (
     <div className="p-4 sm:p-6 bg-slate-50 dark:bg-slate-950 min-h-screen">
       <PageMeta
-        title="Hospitalisations Réception | D7 Clinique"
+        title="Hospitalisations Réception | Aulia Care"
         description="Gérez le flux administratif des hospitalisations depuis la réception."
       />
       <PageBreadcrumb pageTitle="Hospitalisations" />

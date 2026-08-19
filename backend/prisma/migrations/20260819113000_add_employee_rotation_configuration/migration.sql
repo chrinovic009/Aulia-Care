@@ -1,0 +1,3 @@
+ALTER TABLE "Employee"
+  ADD COLUMN "rotationDays" INTEGER NOT NULL DEFAULT 3,
+  ADD COLUMN "permanentShiftEndTime" TEXT NOT NULL DEFAULT '17:30';

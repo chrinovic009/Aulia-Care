@@ -22,11 +22,11 @@ export default function PatientPayments() {
       }
     };
     void load();
-    window.addEventListener("d7:invoice.updated", load);
-    window.addEventListener("d7:payment.created", load);
+    window.addEventListener("aulia:invoice.updated", load);
+    window.addEventListener("aulia:payment.created", load);
     return () => {
-      window.removeEventListener("d7:invoice.updated", load);
-      window.removeEventListener("d7:payment.created", load);
+      window.removeEventListener("aulia:invoice.updated", load);
+      window.removeEventListener("aulia:payment.created", load);
     };
   }, []);
 

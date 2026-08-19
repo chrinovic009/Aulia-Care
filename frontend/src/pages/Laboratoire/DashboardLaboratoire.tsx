@@ -150,21 +150,21 @@ export default function DashboardLaboratoire() {
     const handler = () => {
       refreshDashboard();
     };
-    window.addEventListener("d7:consultation.created", handler);
-    window.addEventListener("d7:patient.updated", handler);
-    window.addEventListener("d7:clinicalDataUpdated", handler);
-    window.addEventListener("d7:lab.request.created", handler);
-    window.addEventListener("d7:lab.result.created", handler);
+    window.addEventListener("aulia:consultation.created", handler);
+    window.addEventListener("aulia:patient.updated", handler);
+    window.addEventListener("aulia:clinicalDataUpdated", handler);
+    window.addEventListener("aulia:lab.request.created", handler);
+    window.addEventListener("aulia:lab.result.created", handler);
     const refreshFromSocket = () => refreshDashboard();
     socket?.on("lab.result.created", refreshFromSocket);
     socket?.on("lab.item.assigned", refreshFromSocket);
     socket?.on("lab.critical-alert.acknowledged", refreshFromSocket);
     return () => {
-      window.removeEventListener("d7:consultation.created", handler);
-      window.removeEventListener("d7:patient.updated", handler);
-      window.removeEventListener("d7:clinicalDataUpdated", handler);
-      window.removeEventListener("d7:lab.request.created", handler);
-      window.removeEventListener("d7:lab.result.created", handler);
+      window.removeEventListener("aulia:consultation.created", handler);
+      window.removeEventListener("aulia:patient.updated", handler);
+      window.removeEventListener("aulia:clinicalDataUpdated", handler);
+      window.removeEventListener("aulia:lab.request.created", handler);
+      window.removeEventListener("aulia:lab.result.created", handler);
       socket?.off("lab.result.created", refreshFromSocket);
       socket?.off("lab.item.assigned", refreshFromSocket);
       socket?.off("lab.critical-alert.acknowledged", refreshFromSocket);
@@ -195,7 +195,7 @@ export default function DashboardLaboratoire() {
   return (
     <DashboardErrorBoundary>
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
-      <PageMeta title="Laboratoire | D7 Clinique" description="Demandes d'examens et resultats en temps reel." />
+      <PageMeta title="Laboratoire | Aulia Care" description="Demandes d'examens et resultats en temps reel." />
       <PageBreadcrumb pageTitle="Laboratoire" />
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">

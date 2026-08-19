@@ -168,7 +168,7 @@ export default function Hospitalisation() {
   return (
     <>
       <PageMeta
-        title="Hospitalisation - D7 Clinique"
+        title="Aulia Care | Hospitalisation"
         description="Suivi en temps réel de votre séjour médical. Informations sur votre chambre, l'équipe médicale, vos soins et votre timeline médicale."
       />
 

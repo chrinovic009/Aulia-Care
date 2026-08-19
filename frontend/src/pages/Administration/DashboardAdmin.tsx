@@ -67,15 +67,15 @@ export default function DashboardAdmin() {
 
   useEffect(() => {
     load();
-    window.addEventListener("d7:administrationUpdated", load);
-    window.addEventListener("d7:patient.updated", load);
-    window.addEventListener("d7:billingDataUpdated", load);
-    window.addEventListener("d7:clinicalDataUpdated", load);
+    window.addEventListener("aulia:administrationUpdated", load);
+    window.addEventListener("aulia:patient.updated", load);
+    window.addEventListener("aulia:billingDataUpdated", load);
+    window.addEventListener("aulia:clinicalDataUpdated", load);
     return () => {
-      window.removeEventListener("d7:administrationUpdated", load);
-      window.removeEventListener("d7:patient.updated", load);
-      window.removeEventListener("d7:billingDataUpdated", load);
-      window.removeEventListener("d7:clinicalDataUpdated", load);
+      window.removeEventListener("aulia:administrationUpdated", load);
+      window.removeEventListener("aulia:patient.updated", load);
+      window.removeEventListener("aulia:billingDataUpdated", load);
+      window.removeEventListener("aulia:clinicalDataUpdated", load);
     };
   }, []);
 

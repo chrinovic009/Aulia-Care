@@ -796,7 +796,7 @@ export class PatientsService {
 
     const usernameBase = this.slugifyUsername(`${patient.firstName}_${patient.lastName}`);
     const username = await this.makeUniqueUsername(usernameBase);
-    const email = patient.email?.trim().toLowerCase() || `${username}@patient.d7.local`;
+    const email = patient.email?.trim().toLowerCase() || `${username}@patient.aulia.local`;
     const existingUser = await this.prisma.user.findFirst({
       where: {
         OR: [{ email }, { username: usernameBase }],
@@ -811,7 +811,7 @@ export class PatientsService {
       },
     });
     const year = new Date().getFullYear();
-    const password = `D7P-${(patient.firstName[0] || 'P').toUpperCase()}${(patient.lastName[0] || 'T').toUpperCase()}${patientPosition}${year}`;
+    const password = `AUP-${(patient.firstName[0] || 'P').toUpperCase()}${(patient.lastName[0] || 'T').toUpperCase()}${patientPosition}${year}`;
 
     const patientUser =
       existingUser ||
@@ -1410,6 +1410,7 @@ export class PatientsService {
         workflowStatus: patient.workflowStatus,
         priority: patient.priority,
         admissionType: patient.admissionType,
+        arrivalAt: patient.arrivalAt,
         service: patient.service,
         familyContacts: patient.familyContacts,
         vitalSigns: patient.vitalSigns,

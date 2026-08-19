@@ -22,8 +22,8 @@ export function useSpeechNotifications(userId?: string) {
       if (payload?.recipientId && payload.recipientId !== userId) return;
       speak(`${payload?.title || 'Alerte clinique critique'}. ${payload?.message || 'Évaluation humaine immédiate requise.'}`);
     };
-    window.addEventListener('d7:notification.created', onNotification);
-    window.addEventListener('d7:clinical.alert', onClinicalAlert);
-    return () => { window.removeEventListener('d7:notification.created', onNotification); window.removeEventListener('d7:clinical.alert', onClinicalAlert); };
+    window.addEventListener('aulia:notification.created', onNotification);
+    window.addEventListener('aulia:clinical.alert', onClinicalAlert);
+    return () => { window.removeEventListener('aulia:notification.created', onNotification); window.removeEventListener('aulia:clinical.alert', onClinicalAlert); };
   }, [userId]);
 }

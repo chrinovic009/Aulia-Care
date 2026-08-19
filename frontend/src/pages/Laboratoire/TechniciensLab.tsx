@@ -212,7 +212,7 @@ export default function TechniciensLab() {
         </button>
       }
     >
-      <PageMeta title="Techniciens laboratoire | D7 Clinique" description="Gestion des techniciens du laboratoire et supervision de leurs charges de travail." />
+      <PageMeta title="Techniciens laboratoire | Aulia Care" description="Gestion des techniciens du laboratoire et supervision de leurs charges de travail." />
       <PageBreadcrumb pageTitle="Techniciens laboratoire" />
 
       {message ? (

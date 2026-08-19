@@ -27,7 +27,7 @@ export default function ReceptionPage() {
   return (
     <>
       <PageMeta
-        title={`${pageTitle} | Réception - D7 Clinique`}
+        title={`${pageTitle} | Réception - Aulia Care`}
         description="Interface réception en cours de construction. Chaque section sera déployée progressivement pour le suivi et l'accueil des patients."
       />
       <PageBreadcrumb pageTitle={pageTitle} />

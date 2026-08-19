@@ -226,18 +226,18 @@
   --color-orange-900: #7e2410;
   --color-orange-950: #511c10;
 
-  --color-success-25: #f6fef9;
-  --color-success-50: #ecfdf3;
-  --color-success-100: #d1fadf;
-  --color-success-200: #a6f4c5;
-  --color-success-300: #6ce9a6;
-  --color-success-400: #32d583;
-  --color-success-500: #12b76a;
-  --color-success-600: #039855;
-  --color-success-700: #027a48;
-  --color-success-800: #05603a;
-  --color-success-900: #054f31;
-  --color-success-950: #053321;
+  --color-success-25: #f2fbf9;
+  --color-success-50: #e6f7f4;
+  --color-success-100: #c9eee7;
+  --color-success-200: #9ddfd5;
+  --color-success-300: #66c8bb;
+  --color-success-400: #32ad9f;
+  --color-success-500: #0d9488;
+  --color-success-600: #087c73;
+  --color-success-700: #07645e;
+  --color-success-800: #0a4f4b;
+  --color-success-900: #0a1d3a;
+  --color-success-950: #061229;
 
   --color-error-25: #fffbfa;
   --color-error-50: #fef3f2;
@@ -603,11 +603,11 @@
 }
 
 @layer components {
-  .d7-scrollable-modal {
+  .AU-scrollable-modal {
     @apply max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain;
   }
 
-  .d7-responsive-page {
+  .AU-responsive-page {
     @apply min-h-screen px-3 py-4 sm:px-6 lg:px-8;
   }
 }
@@ -1263,3 +1263,31 @@ span.flatpickr-weekday,
 .simplebar-scrollbar.simplebar-visible:before {
   @apply opacity-100;
 }
+
+/* Palette officielle Aulia Care. Les utilitaires hérités green/emerald restent
+   compatibles, mais ne doivent plus faire apparaître un vert étranger. */
+.bg-green-50, .bg-emerald-50 { background-color: #f2fbf9 !important; }
+.bg-green-100, .bg-emerald-100 { background-color: #e6f7f4 !important; }
+.bg-green-200, .bg-emerald-200 { background-color: #c9eee7 !important; }
+.bg-green-500, .bg-emerald-500 { background-color: #0d9488 !important; }
+.bg-green-600, .bg-emerald-600 { background-color: #087c73 !important; }
+.bg-green-700, .bg-emerald-700 { background-color: #07645e !important; }
+.bg-green-800, .bg-emerald-800 { background-color: #0a4f4b !important; }
+.bg-green-900, .bg-emerald-900 { background-color: #0a1d3a !important; }
+.bg-green-950, .bg-emerald-950 { background-color: #061229 !important; }
+.text-green-300, .text-emerald-300 { color: #9ddfd5 !important; }
+.text-green-400, .text-emerald-400 { color: #66c8bb !important; }
+.text-green-500, .text-emerald-500 { color: #0d9488 !important; }
+.text-green-600, .text-emerald-600 { color: #087c73 !important; }
+.text-green-700, .text-emerald-700 { color: #07645e !important; }
+.text-green-800, .text-emerald-800 { color: #0a4f4b !important; }
+.text-green-900, .text-emerald-900 { color: #0a1d3a !important; }
+.border-green-100, .border-emerald-100 { border-color: #e6f7f4 !important; }
+.border-green-200, .border-emerald-200 { border-color: #c9eee7 !important; }
+.border-emerald-400 { border-color: #66c8bb !important; }
+.border-emerald-600 { border-color: #087c73 !important; }
+.border-emerald-700 { border-color: #07645e !important; }
+.border-emerald-900 { border-color: #0a4f4b !important; }
+.hover\:bg-green-700:hover, .hover\:bg-emerald-700:hover { background-color: #07645e !important; }
+.hover\:bg-green-600:hover, .hover\:bg-emerald-600:hover { background-color: #087c73 !important; }
+.hover\:text-green-700:hover, .hover\:text-emerald-700:hover { color: #07645e !important; }

@@ -5,6 +5,7 @@ import PageMeta from "../../components/common/PageMeta";
 import { useAuth } from "../../context/AuthContext";
 import { fetchPatientsPage, updatePatientRecord, fetchServices } from "../../api/reception";
 import { formatPatientDossierId } from "../../utils/formatId";
+import { documentIdentityLine, documentLegalLine, documentLogoUrl, getClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
 
 type FamilyContact = {
   name: string;
@@ -157,7 +158,8 @@ export default function ReceptionPatients() {
     history: [],
   };
 
-  const generateInsurancePDF = () => {
+  const generateInsurancePDF = async () => {
+    const clinic = await getClinicDocumentBranding();
     const selectedPatientPosition = patients.findIndex((p) => p.id === selectedPatient.id) + 1;
     const info = selectedPatient.insuranceInfo;
     const html = `
@@ -196,7 +198,11 @@ export default function ReceptionPatients() {
     setTimeout(() => w.print(), 300);
   };
 
-  const generatePatientFilePDF = () => {
+  const generatePatientFilePDF = async () => {
+    const clinic = await getClinicDocumentBranding();
+    const selectedPatientPosition = patients.findIndex((p) => p.id === selectedPatient.id) + 1;
+    const clinicContact = documentIdentityLine(clinic);
+    const clinicLegal = documentLegalLine(clinic);
     const html = `
       <!DOCTYPE html>
       <html>
@@ -209,7 +215,7 @@ export default function ReceptionPatients() {
               body { font-family: "Calibri", Arial, sans-serif; font-size: 11pt; line-height: 1.3; color: #333; }
               .page { page-break-after: always; min-height: 29.7cm; position: relative; padding: 1.5cm; }
               .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 20px; }
-              .clinic-logo { font-weight: bold; font-size: 16pt; color: #b41d1d; }
+              .clinic-logo { font-weight: bold; font-size: 16pt; color: #0D9488; }
               .clinic-tagline { font-size: 9pt; color: #666; margin-top: 4px; }
               .clinic-contact { font-size: 8pt; color: #666; margin-top: 4px; }
               .section { margin-bottom: 16px; }
@@ -227,7 +233,7 @@ export default function ReceptionPatients() {
             body { font-family: "Calibri", Arial, sans-serif; font-size: 11pt; color: #333; }
             .page { min-height: 29.7cm; padding: 1.5cm; border: 1px solid #ddd; }
             .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 20px; }
-            .clinic-logo { font-weight: bold; font-size: 16pt; color: #b41d1d; }
+            .clinic-logo { font-weight: bold; font-size: 16pt; color: #0D9488; }
             .clinic-tagline { font-size: 9pt; color: #666; margin-top: 4px; }
             .clinic-contact { font-size: 8pt; color: #666; margin-top: 4px; }
             .section { margin-bottom: 16px; }
@@ -247,10 +253,10 @@ export default function ReceptionPatients() {
           <div class="page">
             <!-- Header -->
             <div class="header">
-              <img src="../../../public/images/favicon.png" alt="" width="40">
-              <div class="clinic-logo">D7 CLINIC</div>
+              <img src="${documentLogoUrl(clinic)}" alt="Logo établissement" width="40" style="object-fit:contain">
+              <div class="clinic-logo">${clinic.name}</div>
               <div class="clinic-tagline">Centre de santé intégré - Service de qualité</div>
-              <div class="clinic-contact">Zone de santé : Dilala | Tel : +243987299227 | Email : fondationd7clinic@gmail.com</div>
+              <div class="clinic-contact">${clinicContact || "Coordonnées de l’établissement à compléter dans Administration → Identité"}</div>
             </div>
 
             <!-- Patient Header -->
@@ -325,7 +331,7 @@ export default function ReceptionPatients() {
 
             <!-- Footer -->
             <div class="footer">
-              <div style="margin-bottom: 4px;">N°7 Avenue de l'aéroport coin Avenue D7 | Commune de Dilala | Q/RVA3 | Kolwezi</div>
+              <div style="margin-bottom: 4px;">${clinic.documentFooter || clinicLegal || "Document officiel généré par Aulia Care"}</div>
             </div>
           </div>
         </body>
@@ -523,7 +529,7 @@ export default function ReceptionPatients() {
   return (
     <>
       <PageMeta
-        title="Patients | Réception - D7 Clinique"
+        title="Patients | Réception - Aulia Care"
         description="Gestion des patients avec recherche intelligente, fiche patient dynamique, assurance et alertes médicales."
       />
       <PageBreadcrumb pageTitle="Patients" />

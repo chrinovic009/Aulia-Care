@@ -302,7 +302,7 @@ export class LaboratoryService {
       suffix = 'LABV';
     }
 
-    return `${patientNumber}D7-${firstNameInitial}${lastNameInitial}${suffix}`;
+    return `${patientNumber}AU-${firstNameInitial}${lastNameInitial}${suffix}`;
   }
 
   async getActivityOverview() {

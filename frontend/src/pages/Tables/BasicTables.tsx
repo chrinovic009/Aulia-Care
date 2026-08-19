@@ -7,7 +7,7 @@ export default function BasicTables() {
   return (
     <>
       <PageMeta
-        title="Hospitalisation - D7 Clinique"
+        title="Hospitalisation - Aulia Care"
         description="Découvrez les fonctionnalités de base de notre application de gestion hospitalière, conçue pour améliorer l'efficacité et la qualité des soins. Notre plateforme intuitive offre une gestion complète des dossiers médicaux, des rendez-vous, des traitements et bien plus encore, pour une expérience optimale tant pour les patients que pour le personnel médical."
       />
       <PageBreadcrumb pageTitle="Examens & Résultats" />
