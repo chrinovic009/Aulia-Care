@@ -32,13 +32,13 @@ export default function RapportAdmin() {
       .catch(() => setPayload({}))
       .finally(() => setIsLoading(false));
     load();
-    window.addEventListener("d7:administrationUpdated", load);
-    window.addEventListener("d7:patient.updated", load);
-    window.addEventListener("d7:billingDataUpdated", load);
+    window.addEventListener("aulia:administrationUpdated", load);
+    window.addEventListener("aulia:patient.updated", load);
+    window.addEventListener("aulia:billingDataUpdated", load);
     return () => {
-      window.removeEventListener("d7:administrationUpdated", load);
-      window.removeEventListener("d7:patient.updated", load);
-      window.removeEventListener("d7:billingDataUpdated", load);
+      window.removeEventListener("aulia:administrationUpdated", load);
+      window.removeEventListener("aulia:patient.updated", load);
+      window.removeEventListener("aulia:billingDataUpdated", load);
     };
   }, []);
 

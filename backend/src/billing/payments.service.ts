@@ -272,7 +272,7 @@ export class PaymentsService {
 
   private async ensurePatientUserAccess(prisma: Prisma.TransactionClient, patient: any) {
     const usernameBase = this.normalizeUsername(`${patient.firstName}_${patient.lastName}`);
-    const email = patient.email?.trim().toLowerCase() || `${patient.id}@patients.d7.local`;
+    const email = patient.email?.trim().toLowerCase() || `${patient.id}@patients.aulia.local`;
     const existing = await prisma.user.findFirst({
       where: {
         OR: [{ email }, { username: usernameBase }],
@@ -286,7 +286,7 @@ export class PaymentsService {
     });
     const initials = `${patient.firstName?.[0] || 'P'}${patient.lastName?.[0] || 'D'}`.toUpperCase();
     const year = new Date().getFullYear();
-    const password = `D7P-${initials}${patientPosition}${year}`;
+    const password = `AUP-${initials}${patientPosition}${year}`;
     const passwordHash = await bcrypt.hash(password, 10);
 
     if (existing) {

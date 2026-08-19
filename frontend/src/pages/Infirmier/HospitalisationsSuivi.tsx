@@ -107,10 +107,10 @@ export default function HospitalisationsSuivi() {
     void loadHospitalizations();
     const interval = window.setInterval(() => void loadHospitalizations(), 30_000);
     const refresh = () => void loadHospitalizations();
-    window.addEventListener("d7:hospitalization.updated", refresh);
+    window.addEventListener("aulia:hospitalization.updated", refresh);
     return () => {
       window.clearInterval(interval);
-      window.removeEventListener("d7:hospitalization.updated", refresh);
+      window.removeEventListener("aulia:hospitalization.updated", refresh);
     };
   }, []);
 
@@ -205,7 +205,7 @@ export default function HospitalisationsSuivi() {
 
   return (
     <div className="p-4 sm:p-6 bg-slate-50 dark:bg-slate-950 min-h-screen">
-      <PageMeta title="Hospitalisations suivies | D7 Clinique" description="Vue de supervision des hospitalisations pour l'infirmière" />
+      <PageMeta title="Hospitalisations suivies | Aulia Care" description="Vue de supervision des hospitalisations pour l'infirmière" />
       <PageBreadcrumb pageTitle="Hospitalisations suivies" />
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">

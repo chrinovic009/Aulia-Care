@@ -124,7 +124,7 @@ const DashboardCaissier: React.FC = () => {
         invoiceId: patient.invoice.id,
         amount: Number(patient.invoice.balanceDue),
         method: "CASH",
-        reference: `D7-${patient.firstName.charAt(0)}${patient.lastName.charAt(0)}-${Date.now()}`,
+        reference: `AU-${patient.firstName.charAt(0)}${patient.lastName.charAt(0)}-${Date.now()}`,
       });
       await load();
     } catch (err) {

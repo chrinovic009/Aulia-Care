@@ -8,8 +8,8 @@ const PageMeta = ({
   description: string;
 }) => (
   <Helmet>
-    <title>{title}</title>
-    <meta name="description" content={description} />
+    <title>{title.replace(/Aulia Care\s*(Clinique|Clinic)?/gi, "Aulia Care")}</title>
+    <meta name="description" content={description.replace(/Aulia Care\s*(Clinique|Clinic)?/gi, "Aulia Care")} />
   </Helmet>
 );
 

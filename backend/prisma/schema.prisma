@@ -1801,11 +1801,16 @@ model Clinic {
   documentLogoUrl       String?
   documentLogoUpdatedAt DateTime?
   legalName             String?
+  registrationNumber    String?
+  rccmNumber            String?
+  taxNumber             String?
+  nationalIdNumber      String?
   phone                 String?
   email                 String?
   address               String?
   city                  String?
   country               String?
+  documentFooter        String?
   status                String             @default("ACTIVE")
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
@@ -2543,6 +2548,10 @@ model Employee {
   serviceUnitId    String?
   shiftPattern     EmployeeShiftPattern @default(MANUAL)
   rotationAnchorAt DateTime?
+  /// Number of consecutive day shifts, followed by the same number of night shifts and rest days.
+  rotationDays     Int                  @default(3)
+  /// End of the permanent day shift in local hospital time (HH:mm). Start is always 07:30.
+  permanentShiftEndTime String?         @default("17:30")
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
   attendances      Attendance[]

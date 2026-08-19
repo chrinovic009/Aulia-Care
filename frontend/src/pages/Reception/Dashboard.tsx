@@ -12,8 +12,8 @@ export default function Home() {
   return (
     <>
       <PageMeta
-        title="D7 Reception - Clinic Dashboard"
-        description="Bienvenue sur le tableau de bord de D7 Clinique, votre centre de pilotage pour suivre les opérations de la clinique. Accédez aux données en temps réel sur les rendez-vous, les dossiers patients, les performances financières et les indicateurs clés pour mieux gérer votre établissement."
+        title="Aulia Care Reception - Clinic Dashboard"
+        description="Bienvenue sur le tableau de bord de Aulia Care, votre centre de pilotage pour suivre les opérations de la clinique. Accédez aux données en temps réel sur les rendez-vous, les dossiers patients, les performances financières et les indicateurs clés pour mieux gérer votre établissement."
       />
       <div className="grid grid-cols-12 gap-4 md:gap-6">
         <div className="col-span-12 space-y-6 xl:col-span-7">

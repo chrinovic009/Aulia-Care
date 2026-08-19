@@ -340,4 +340,4 @@ Le système de gestion caissier est maintenant **complètement implémenté et p
 
 ---
 
-*Implémenté le 12 juin 2026 pour D7 Clinic*
+*Implémenté le 12 juin 2026 pour Aulia Care*

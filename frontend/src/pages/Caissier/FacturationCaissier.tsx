@@ -530,7 +530,6 @@ const FacturationCaissier: React.FC = () => {
           issuedAt={printingInvoice.issuedAt}
           dueDate={printingInvoice.dueDate}
           remarks={printingInvoice.remarks}
-          clinicName="D7 Clinique"
           clinicAddress="Zone de santé, Dilala"
           clinicPhone="+243 987 299 227"
           clinicEmail="fondationd7clinic@gmail.com"
@@ -551,7 +550,6 @@ const FacturationCaissier: React.FC = () => {
           status={printingVisit.status}
           issuedAt={new Date().toISOString()}
           dueDate={new Date().toISOString()}
-          clinicName="D7 Clinique"
           clinicAddress="Zone de santé, Dilala"
           clinicPhone="+243 987 299 227"
           clinicEmail="fondationd7clinic@gmail.com"

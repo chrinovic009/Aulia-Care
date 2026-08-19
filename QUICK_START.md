@@ -127,7 +127,7 @@ UI renders confirmation
 ## Project Structure
 
 ```
-D7 Clinnique/
+Aulia Care Clinnique/
 ├── .env.local                          ← Frontend env vars
 ├── vite.config.ts                      ← Vite config with proxy
 ├── setup-dev.bat / setup-dev.sh         ← Setup scripts

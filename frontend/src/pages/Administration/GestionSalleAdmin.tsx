@@ -89,8 +89,8 @@ export default function GestionSalleAdmin() {
       })
       .finally(() => setIsLoading(false));
     load();
-    window.addEventListener("d7:administrationUpdated", load);
-    return () => window.removeEventListener("d7:administrationUpdated", load);
+    window.addEventListener("aulia:administrationUpdated", load);
+    return () => window.removeEventListener("aulia:administrationUpdated", load);
   }, []);
 
   const reload = async () => {

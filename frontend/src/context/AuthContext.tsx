@@ -77,10 +77,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const LEGACY_BROWSER_TOKEN_KEYS = [
-  "d7-clinic-access-token",
-  "d7-clinic-refresh-token",
-  "d7-clinic-auth-token",
-  "d7-clinic-api-token",
+  "aulia-care-access-token",
+  "aulia-care-refresh-token",
+  "aulia-care-auth-token",
+  "aulia-care-api-token",
 ];
 
 const clearLegacyBrowserTokens = () => {

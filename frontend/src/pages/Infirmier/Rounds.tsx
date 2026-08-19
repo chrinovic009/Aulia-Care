@@ -49,12 +49,12 @@ export default function Rounds() {
       const model = (event as CustomEvent<{ model?: string }>).detail?.model;
       if (!model || ["NursingCareTask", "Hospitalization", "MedicationAdministration"].includes(model)) void load();
     };
-    window.addEventListener("d7:clinicalDataUpdated", refresh);
-    window.addEventListener("d7:realtime:update", refresh);
+    window.addEventListener("aulia:clinicalDataUpdated", refresh);
+    window.addEventListener("aulia:realtime:update", refresh);
     socket?.on("nursing-care-task.updated", load);
     return () => {
-      window.removeEventListener("d7:clinicalDataUpdated", refresh);
-      window.removeEventListener("d7:realtime:update", refresh);
+      window.removeEventListener("aulia:clinicalDataUpdated", refresh);
+      window.removeEventListener("aulia:realtime:update", refresh);
       socket?.off("nursing-care-task.updated", load);
     };
   }, [load, socket]);

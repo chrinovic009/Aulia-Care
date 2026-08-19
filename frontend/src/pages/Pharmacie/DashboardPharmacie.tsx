@@ -57,11 +57,11 @@ export default function DashboardPharmacie() {
   useEffect(() => {
     load();
     const handler = () => load();
-    window.addEventListener("d7:consultation.created", handler);
-    window.addEventListener("d7:notification.created", handler);
+    window.addEventListener("aulia:consultation.created", handler);
+    window.addEventListener("aulia:notification.created", handler);
     return () => {
-      window.removeEventListener("d7:consultation.created", handler);
-      window.removeEventListener("d7:notification.created", handler);
+      window.removeEventListener("aulia:consultation.created", handler);
+      window.removeEventListener("aulia:notification.created", handler);
     };
   }, []);
 
@@ -82,7 +82,7 @@ export default function DashboardPharmacie() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
-      <PageMeta title="Pharmacie | D7 Clinique" description="Gestion pharmacie basee sur PostgreSQL." />
+      <PageMeta title="Pharmacie | Aulia Care" description="Gestion pharmacie basee sur PostgreSQL." />
       <PageBreadcrumb pageTitle="Pharmacie" />
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">

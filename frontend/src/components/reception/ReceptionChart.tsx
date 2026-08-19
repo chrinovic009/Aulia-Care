@@ -220,7 +220,7 @@ export default function StatisticsChart() {
       },
     },
 
-    colors: ["#0078D7", "#34D399"],
+    colors: ["#008fa1", "#0D9488"],
 
     chart: {
       fontFamily: "Outfit, sans-serif",

@@ -178,7 +178,7 @@ const Admission: React.FC = () => {
             const position = (patients?.length || 0) + 1;
             const year = new Date().getFullYear();
             const firstInitial = (currentUser.firstName || name || "R")[0] || "R";
-            const dossier = `D7-${firstInitial}${position}${year}`;
+            const dossier = `AU-${firstInitial}${position}${year}`;
             setForm((f: any) => ({ ...f, dossierNumber: dossier }));
           } catch (e) {
             // fallback

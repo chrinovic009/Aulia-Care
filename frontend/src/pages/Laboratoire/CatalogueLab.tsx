@@ -21,6 +21,7 @@ import {
   type LabCatalogueKind,
 } from "../../api/laboratory";
 import { AlertTriangle, ClipboardList, FlaskConical, Layers, Microscope, Package, Pencil, Trash2 } from "lucide-react";
+import { documentIdentityLine, documentLegalLine, documentLogoUrl, getClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
 
 const NFS_PARAMETERS: Array<{ code: string; name: string; unit: string; reference: string }> = [
   { code: 'GB', name: 'Globules Blancs', reference: '4000-12000', unit: '10^3/µL' },
@@ -757,10 +758,13 @@ export default function CatalogueLab() {
     return 'Suffisant';
   };
 
-  const printStockReport = () => {
+  const printStockReport = async () => {
     if (!catalogue) return;
+    const clinic = await getClinicDocumentBranding();
     const rows = filteredStockRows.length > 0 ? filteredStockRows : stockRows;
     const responsibleName = currentUser?.displayName || [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(" ") || "Responsable laboratoire";
+    const clinicContact = documentIdentityLine(clinic);
+    const clinicLegal = documentLegalLine(clinic);
     const html = `
       <html>
         <head>
@@ -791,10 +795,11 @@ export default function CatalogueLab() {
           <div class="page">
             <div class="header">
               <div class="brand">
-                <img src="/images/favicon.png" alt="Logo clinique" class="logo" />
+                <img src="${documentLogoUrl(clinic)}" alt="Logo établissement" class="logo" />
                 <div>
                   <div class="title">ÉTAT DE STOCK DU LABORATOIRE</div>
-                  <div class="subtitle">Service de laboratoire - D7 Clinique</div>
+                  <div class="subtitle">Service de laboratoire - <span style="color:#0D9488;font-weight:800">${clinic.name}</span></div>
+                  ${clinicContact ? `<div class="subtitle">${clinicContact}</div>` : ""}
                   <div class="subtitle">Imprimé le ${new Date().toLocaleDateString('fr-FR')}</div>
                 </div>
               </div>
@@ -836,6 +841,7 @@ export default function CatalogueLab() {
               </tbody>
             </table>
             <div class="responsible">Responsable laboratoire: ${responsibleName}</div>
+            <div class="footer">${clinic.documentFooter || clinicLegal || "Document officiel généré par Aulia Care"}</div>
           </div>
         </body>
       </html>

@@ -6,6 +6,7 @@ import { AdminPageShell, DataTable, Panel, StatCard, formatDate } from "../Admin
 import { apiFetch } from "../../config/api";
 import { useAuth } from "../../context/AuthContext";
 import { useRealtime } from "../../context/RealtimeContext";
+import { documentIdentityLine, documentLegalLine, documentLogoUrl, getClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
 
 type ValidationItem = {
   id: string;
@@ -201,8 +202,11 @@ export default function ValidationsLab() {
     }
   };
 
-  const printLabResult = () => {
+  const printLabResult = async () => {
     if (!selectedItem) return;
+    const clinic = await getClinicDocumentBranding();
+    const clinicContact = documentIdentityLine(clinic);
+    const clinicLegal = documentLegalLine(clinic);
     const rows = (selectedItem.parameters || []).map((parameter) => `
       <tr>
         <td>${escapeHtml(parameter.name)}</td>
@@ -223,7 +227,7 @@ export default function ValidationsLab() {
             .header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #991b1b; padding-bottom: 14px; }
             .brand { display: flex; gap: 12px; align-items: center; }
             .logo { width: 58px; height: 58px; object-fit: contain; }
-            .clinic { font-size: 20px; font-weight: 800; color: #991b1b; letter-spacing: .04em; }
+            .clinic { font-size: 20px; font-weight: 800; color: #0D9488; letter-spacing: .04em; }
             .meta { text-align: right; font-size: 11px; color: #4b5563; line-height: 1.6; }
             h1 { margin: 22px 0 8px; text-align: center; font-size: 18px; text-transform: uppercase; }
             .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; margin: 18px 0; font-size: 12px; }
@@ -241,10 +245,11 @@ export default function ValidationsLab() {
         <body>
           <div class="header">
             <div class="brand">
-              <img class="logo" src="/images/logo/logo.png" />
+              <img class="logo" src="${documentLogoUrl(clinic)}" />
               <div>
-                <div class="clinic">D7 CLINIC</div>
+                <div class="clinic">${escapeHtml(clinic.name)}</div>
                 <div style="font-size:11px;color:#4b5563;">Laboratoire d'analyses medicales</div>
+                ${clinicContact ? `<div style="font-size:10px;color:#4b5563;">${escapeHtml(clinicContact)}</div>` : ""}
               </div>
             </div>
             <div class="meta">
@@ -267,12 +272,13 @@ export default function ValidationsLab() {
             <tbody>${rows || '<tr><td colspan="5">Aucun parametre detaille.</td></tr>'}</tbody>
           </table>
           <div class="footer">
-            <div class="note">Document genere par D7 Clinic. Les resultats doivent etre interpretes par le medecin demandeur selon le contexte clinique du patient.</div>
+            <div class="note">Document généré par Aulia Care. Les résultats doivent être interprétés par le médecin demandeur selon le contexte clinique du patient.</div>
             <div>
               <div class="service">Service Laboratoire</div>
               <div class="signature">Signature / Sceau du responsable</div>
             </div>
           </div>
+          <div class="note">${escapeHtml(clinic.documentFooter || clinicLegal || "Document officiel généré par Aulia Care")}</div>
         </body>
       </html>`;
     const win = window.open("", "_blank");
@@ -298,7 +304,7 @@ export default function ValidationsLab() {
         </div>
       }
     >
-      <PageMeta title="Validations laboratoire | D7 Clinique" description="Workflow complet de validation biologique et suivi des analyses." />
+      <PageMeta title="Validations laboratoire | Aulia Care" description="Workflow complet de validation biologique et suivi des analyses." />
       <PageBreadcrumb pageTitle={isManager ? "Validations laboratoire" : "Suivi de mes analyses"} />
 
       <div className="grid gap-4 md:grid-cols-4">

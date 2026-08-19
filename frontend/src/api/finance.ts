@@ -38,9 +38,9 @@ export type Invoice = {
   createdAt: string;
 };
 
-const REQ_KEY = "d7-payment-requests";
-const PAY_KEY = "d7-payments";
-const INV_KEY = "d7-invoices";
+const REQ_KEY = "AU-payment-requests";
+const PAY_KEY = "AU-payments";
+const INV_KEY = "AU-invoices";
 
 const read = (k: string) => {
   try {
@@ -53,7 +53,7 @@ const read = (k: string) => {
 
 const dispatchPaymentRequestsUpdated = () => {
   try {
-    window.dispatchEvent(new CustomEvent("d7:paymentRequestsUpdated"));
+    window.dispatchEvent(new CustomEvent("aulia:paymentRequestsUpdated"));
   } catch {
     // ignore browser dispatch errors
   }
@@ -89,7 +89,7 @@ export const createPaymentRequest = (payload: Partial<PaymentRequest>) => {
   arr.unshift(rec);
   write(REQ_KEY, arr);
   try {
-    window.dispatchEvent(new CustomEvent("d7:paymentRequest", { detail: rec }));
+    window.dispatchEvent(new CustomEvent("aulia:paymentRequest", { detail: rec }));
   } catch {
     // ignore browser dispatch errors
   }

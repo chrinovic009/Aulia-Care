@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsEmail, IsEnum, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString, Matches, Max, Min, MinLength } from 'class-validator';
 import { EmployeeShiftPattern, RoleSlug, UserStatus } from '@prisma/client';
 
 export class UpdateUserDto {
@@ -134,4 +134,14 @@ export class UpdateUserDto {
   @IsDateString()
   @IsOptional()
   rotationAnchorAt?: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  @IsOptional()
+  rotationDays?: number;
+
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  @IsOptional()
+  permanentShiftEndTime?: string;
 }

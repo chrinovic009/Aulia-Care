@@ -162,13 +162,13 @@ export default function ExamensMedecin() {
   useEffect(() => {
     load();
     const handler = () => load();
-    window.addEventListener("d7:lab.request.created", handler);
-    window.addEventListener("d7:lab.result.created", handler);
-    window.addEventListener("d7:clinicalDataUpdated", handler);
+    window.addEventListener("aulia:lab.request.created", handler);
+    window.addEventListener("aulia:lab.result.created", handler);
+    window.addEventListener("aulia:clinicalDataUpdated", handler);
     return () => {
-      window.removeEventListener("d7:lab.request.created", handler);
-      window.removeEventListener("d7:lab.result.created", handler);
-      window.removeEventListener("d7:clinicalDataUpdated", handler);
+      window.removeEventListener("aulia:lab.request.created", handler);
+      window.removeEventListener("aulia:lab.result.created", handler);
+      window.removeEventListener("aulia:clinicalDataUpdated", handler);
     };
   }, []);
 
@@ -253,7 +253,7 @@ export default function ExamensMedecin() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
-      <PageMeta title="Examens medecin | D7 Clinique" description="Demandes et resultats d'examens." />
+      <PageMeta title="Examens medecin | Aulia Care" description="Demandes et resultats d'examens." />
       <PageBreadcrumb pageTitle="Examens demandes" />
       <Header title="Examens complementaires" subtitle="Choisir une consultation, demander un examen, puis suivre les resultats." />
       {patients.length === 0 ? <EmptyState /> : (

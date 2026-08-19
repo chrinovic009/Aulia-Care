@@ -37,7 +37,7 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
 
       s.on('connect', () => {
         s.emit('user.join');
-        window.dispatchEvent(new CustomEvent('d7:realtime:connect'));
+        window.dispatchEvent(new CustomEvent('aulia:realtime:connect'));
       });
 
       s.on('connect_error', () => {
@@ -46,44 +46,44 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
         setSocket(null);
       });
 
-      s.on('disconnect', () => window.dispatchEvent(new CustomEvent('d7:realtime:disconnect')));
+      s.on('disconnect', () => window.dispatchEvent(new CustomEvent('aulia:realtime:disconnect')));
 
-      s.on('patient.created', (payload: any) => window.dispatchEvent(new CustomEvent('d7:patient.created', { detail: payload })));
-      s.on('patient.updated', (payload: any) => window.dispatchEvent(new CustomEvent('d7:patient.updated', { detail: payload })));
-      s.on('hospitalization.created', (payload: any) => window.dispatchEvent(new CustomEvent('d7:hospitalization.created', { detail: payload })));
-      s.on('notification.created', (payload: any) => window.dispatchEvent(new CustomEvent('d7:notification.created', { detail: payload })));
-      s.on('lab.request.created', (payload: any) => window.dispatchEvent(new CustomEvent('d7:lab.request.created', { detail: payload })));
-      s.on('lab.result.created', (payload: any) => window.dispatchEvent(new CustomEvent('d7:lab.result.created', { detail: payload })));
-      s.on('wearable.measurement.received', (payload: any) => window.dispatchEvent(new CustomEvent('d7:wearable.measurement', { detail: payload })));
-      s.on('clinical.alert', (payload: any) => window.dispatchEvent(new CustomEvent('d7:clinical.alert', { detail: payload })));
-      s.on('message.received', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.received', { detail: payload })));
-      s.on('message.sent', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.sent', { detail: payload })));
-      s.on('message.status', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.status', { detail: payload })));
-      s.on('message.read', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.read', { detail: payload })));
-      s.on('message.typing', (payload: any) => window.dispatchEvent(new CustomEvent('d7:message.typing', { detail: payload })));
-      s.on('user.presence', (payload: any) => window.dispatchEvent(new CustomEvent('d7:user.presence', { detail: payload })));
+      s.on('patient.created', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:patient.created', { detail: payload })));
+      s.on('patient.updated', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:patient.updated', { detail: payload })));
+      s.on('hospitalization.created', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:hospitalization.created', { detail: payload })));
+      s.on('notification.created', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:notification.created', { detail: payload })));
+      s.on('lab.request.created', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:lab.request.created', { detail: payload })));
+      s.on('lab.result.created', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:lab.result.created', { detail: payload })));
+      s.on('wearable.measurement.received', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:wearable.measurement', { detail: payload })));
+      s.on('clinical.alert', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:clinical.alert', { detail: payload })));
+      s.on('message.received', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:message.received', { detail: payload })));
+      s.on('message.sent', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:message.sent', { detail: payload })));
+      s.on('message.status', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:message.status', { detail: payload })));
+      s.on('message.read', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:message.read', { detail: payload })));
+      s.on('message.typing', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:message.typing', { detail: payload })));
+      s.on('user.presence', (payload: any) => window.dispatchEvent(new CustomEvent('aulia:user.presence', { detail: payload })));
       s.on('realtime.update', (payload: any) => {
         // Payload deliberately contains no patient, financial or clinical content.
         // The receiving screen re-fetches only through its already-authorized API.
-        window.dispatchEvent(new CustomEvent('d7:realtime:update', { detail: payload }));
+        window.dispatchEvent(new CustomEvent('aulia:realtime:update', { detail: payload }));
         if (['Patient', 'PatientVisit', 'Appointment'].includes(payload?.model)) {
-          window.dispatchEvent(new CustomEvent('d7:patientRecordsUpdated', { detail: payload }));
-          window.dispatchEvent(new CustomEvent('d7:patient.updated', { detail: payload }));
+          window.dispatchEvent(new CustomEvent('aulia:patientRecordsUpdated', { detail: payload }));
+          window.dispatchEvent(new CustomEvent('aulia:patient.updated', { detail: payload }));
         }
         if (payload?.model === 'Appointment') {
-          window.dispatchEvent(new CustomEvent('d7:appointmentsUpdated', { detail: payload }));
-          window.dispatchEvent(new CustomEvent('d7:patientRecordsUpdated', { detail: payload }));
+          window.dispatchEvent(new CustomEvent('aulia:appointmentsUpdated', { detail: payload }));
+          window.dispatchEvent(new CustomEvent('aulia:patientRecordsUpdated', { detail: payload }));
         }
         if (['Invoice', 'Payment'].includes(payload?.model)) {
-          window.dispatchEvent(new CustomEvent('d7:billingDataUpdated', { detail: payload }));
-          window.dispatchEvent(new CustomEvent('d7:patientRecordsUpdated', { detail: payload }));
+          window.dispatchEvent(new CustomEvent('aulia:billingDataUpdated', { detail: payload }));
+          window.dispatchEvent(new CustomEvent('aulia:patientRecordsUpdated', { detail: payload }));
         }
         if (['VitalSign', 'Consultation', 'Prescription', 'LabRequest', 'LabResult', 'LabSample', 'LabReport', 'ImagingRequest', 'ImagingReport', 'Hospitalization', 'NursingCareTask', 'MedicationAdministration', 'Surgery'].includes(payload?.model)) {
-          window.dispatchEvent(new CustomEvent('d7:clinicalDataUpdated', { detail: payload }));
-          window.dispatchEvent(new CustomEvent('d7:patientRecordsUpdated', { detail: payload }));
+          window.dispatchEvent(new CustomEvent('aulia:clinicalDataUpdated', { detail: payload }));
+          window.dispatchEvent(new CustomEvent('aulia:patientRecordsUpdated', { detail: payload }));
         }
         if (['User', 'Employee', 'EmployeeContract', 'Service', 'ServiceStaff', 'ServiceResponsable', 'ServiceTarif', 'Department', 'ServiceUnit', 'Room', 'Bed', 'OperatingRoom', 'Surgery', 'Medication', 'MedicationStock', 'StockLot', 'StockMovement', 'StockTransaction', 'Supplier', 'PurchaseOrder', 'GoodsReceipt', 'PharmacyDispense', 'Attendance', 'LeaveRequest', 'Payroll', 'AuditTrail'].includes(payload?.model)) {
-          window.dispatchEvent(new CustomEvent('d7:administrationUpdated', { detail: payload }));
+          window.dispatchEvent(new CustomEvent('aulia:administrationUpdated', { detail: payload }));
         }
       });
 

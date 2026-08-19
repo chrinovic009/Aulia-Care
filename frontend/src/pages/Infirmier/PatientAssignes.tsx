@@ -302,7 +302,7 @@ export default function PatientAssignes() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
       <PageMeta
-        title="Patients infirmier | D7 Clinique"
+        title="Patients infirmier | Aulia Care"
         description="File infirmier alimentee uniquement par les patients PostgreSQL en attente de signes vitaux."
       />
       <PageBreadcrumb pageTitle="Patients a prelever" />

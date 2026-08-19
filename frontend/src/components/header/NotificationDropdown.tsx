@@ -109,11 +109,11 @@ export default function NotificationDropdown() {
       setUnreadMessages((current) => current.filter((message) => message.senderId !== detail.contactId));
     };
 
-    window.addEventListener("d7:message.received", handleIncoming);
-    window.addEventListener("d7:messages.read", handleRead);
+    window.addEventListener("aulia:message.received", handleIncoming);
+    window.addEventListener("aulia:messages.read", handleRead);
     return () => {
-      window.removeEventListener("d7:message.received", handleIncoming);
-      window.removeEventListener("d7:messages.read", handleRead);
+      window.removeEventListener("aulia:message.received", handleIncoming);
+      window.removeEventListener("aulia:messages.read", handleRead);
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     };
   }, [currentUser?.id]);

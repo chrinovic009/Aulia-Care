@@ -5,6 +5,10 @@ import {
   IsBoolean,
   IsNotEmpty,
   IsNumber,
+  IsInt,
+  Matches,
+  Max,
+  Min,
   IsOptional,
   IsString,
   MinLength,
@@ -31,9 +35,10 @@ export class CreateUserDto {
   @IsNotEmpty()
   lastName: string;
 
+  @IsOptional()
   @IsString()
-  @MinLength(6)
-  password: string;
+  @MinLength(10)
+  password?: string;
 
   @IsEnum(RoleSlug)
   primaryRole: RoleSlug;
@@ -75,4 +80,6 @@ export class CreateUserDto {
   @IsOptional() @IsString() shiftType?: string;
   @IsOptional() @IsEnum(EmployeeShiftPattern) shiftPattern?: EmployeeShiftPattern;
   @IsOptional() @IsDateString() rotationAnchorAt?: string;
+  @IsOptional() @IsInt() @Min(1) @Max(31) rotationDays?: number;
+  @IsOptional() @Matches(/^([01]\d|2[0-3]):[0-5]\d$/) permanentShiftEndTime?: string;
 }

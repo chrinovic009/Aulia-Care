@@ -71,7 +71,7 @@ export default function DashboardInfirmier() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
       <PageMeta
-        title="Dashboard infirmier | D7 Clinique"
+        title="Dashboard infirmier | Aulia Care"
         description="Tableau de bord infirmier alimente par les patients PostgreSQL en attente de signes vitaux."
       />
       <PageBreadcrumb pageTitle="Dashboard soins infirmiers" />

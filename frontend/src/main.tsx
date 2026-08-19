@@ -9,6 +9,9 @@ import { ThemeProvider } from "./context/ThemeContext.tsx";
 import { AuthProvider } from "./context/AuthContext.tsx";
 import { RealtimeProvider } from "./context/RealtimeContext.tsx";
 import { registerSW } from "virtual:pwa-register";
+import { installCsrfFetchInterceptor } from "./config/csrfFetch.ts";
+
+installCsrfFetchInterceptor();
 
 registerSW({
   immediate: true,

@@ -1,0 +1,6 @@
+ALTER TABLE "Clinic"
+  ADD COLUMN IF NOT EXISTS "registrationNumber" TEXT,
+  ADD COLUMN IF NOT EXISTS "rccmNumber" TEXT,
+  ADD COLUMN IF NOT EXISTS "taxNumber" TEXT,
+  ADD COLUMN IF NOT EXISTS "nationalIdNumber" TEXT,
+  ADD COLUMN IF NOT EXISTS "documentFooter" TEXT;

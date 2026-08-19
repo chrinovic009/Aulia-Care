@@ -52,8 +52,8 @@ export default function RealtimePageBoundary({ children }: PropsWithChildren) {
       }
       setRevision((value) => value + 1);
     };
-    window.addEventListener("d7:realtime:update", onUpdate);
-    return () => window.removeEventListener("d7:realtime:update", onUpdate);
+    window.addEventListener("aulia:realtime:update", onUpdate);
+    return () => window.removeEventListener("aulia:realtime:update", onUpdate);
   }, [pathname]);
 
   return (

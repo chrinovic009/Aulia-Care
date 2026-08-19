@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { apiFetch } from "../../config/api";
 
 interface HistoryRecord {
   id: string;
@@ -27,6 +28,10 @@ export const HistoryPrintTemplate: React.FC<HistoryPrintProps> = ({
   records,
   printDate = new Date().toLocaleDateString("fr-FR"),
 }) => {
+  const [clinic, setClinic] = useState<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null; address?: string | null; city?: string | null; phone?: string | null; email?: string | null; documentFooter?: string | null }>({});
+  useEffect(() => { apiFetch<typeof clinic>("/administration/clinic-branding").then(setClinic).catch(() => undefined); }, []);
+  const clinicName = clinic.brandDisplayName || clinic.name || "Aulia Care";
+  const clinicAddress = [clinic.address, clinic.city].filter(Boolean).join(", ");
   const totalPayments = records
     .filter((r) => r.type === "payment")
     .reduce((sum, r) => sum + Number(r.amount || 0), 0);
@@ -48,6 +53,9 @@ export const HistoryPrintTemplate: React.FC<HistoryPrintProps> = ({
       <table style={{ width: "100%", marginBottom: "5mm" }}>
         <tbody>
           <tr>
+            <td style={{ width: "50%" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}><img src={clinic.documentLogoUrl || "/images/logo/icone.png"} alt="Logo" style={{ width: 42, height: 42, objectFit: "contain" }} /><div><strong style={{ fontSize: "15px", color: "#0D9488" }}>{clinicName}</strong><div style={{ fontSize: "10px", color: "#64748b" }}>{clinicAddress || clinic.phone || ""}</div></div></div>
+            </td>
             <td style={{ width: "50%", textAlign: "right" }}>
               <h2 style={{ margin: "0", fontSize: "18px", fontWeight: "bold" }}>HISTORIQUE CAISSE</h2>
               <p style={{ margin: "2px 0", fontSize: "11px" }}>Date d'impression: {printDate}</p>
@@ -154,7 +162,7 @@ export const HistoryPrintTemplate: React.FC<HistoryPrintProps> = ({
       {/* Footer */}
       <div style={{ borderTop: "1px solid #ddd", paddingTop: "5mm", fontSize: "10px", color: "#666", textAlign: "center" }}>
         <p style={{ margin: "0" }}>Imprimé le {printDate} à {new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
-        <p style={{ margin: "2mm 0" }}>D7 CLINIC - Tous droits réservés</p>
+        <p style={{ margin: "2mm 0" }}>{clinic.documentFooter || `${clinicName} — Document administratif officiel`}</p>
       </div>
 
       {/* Print Styles */}

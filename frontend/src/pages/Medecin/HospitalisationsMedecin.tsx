@@ -88,11 +88,11 @@ export default function HospitalisationsMedecin() {
     void loadRooms();
     void loadAvailableNurses();
     const handler = () => load();
-    window.addEventListener("d7:hospitalization.updated", handler);
-    window.addEventListener("d7:clinicalDataUpdated", handler);
+    window.addEventListener("aulia:hospitalization.updated", handler);
+    window.addEventListener("aulia:clinicalDataUpdated", handler);
     return () => {
-      window.removeEventListener("d7:hospitalization.updated", handler);
-      window.removeEventListener("d7:clinicalDataUpdated", handler);
+      window.removeEventListener("aulia:hospitalization.updated", handler);
+      window.removeEventListener("aulia:clinicalDataUpdated", handler);
     };
   }, []);
 
@@ -166,7 +166,7 @@ export default function HospitalisationsMedecin() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
-      <PageMeta title="Hospitalisations medecin | D7 Clinique" description="Suivi des patients hospitalises." />
+      <PageMeta title="Hospitalisations medecin | Aulia Care" description="Suivi des patients hospitalises." />
       <PageBreadcrumb pageTitle="Hospitalisations" />
       <Header title="Hospitalisations" subtitle="Declarer une hospitalisation depuis une consultation et suivre les patients hospitalises." />
 

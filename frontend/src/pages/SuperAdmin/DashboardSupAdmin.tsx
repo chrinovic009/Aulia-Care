@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../config/api";
+import { documentIdentityLine, documentLegalLine, documentLogoUrl, getClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
 
 const tabs = ["Vue globale", "Finances", "Performances", "Alertes", "Rapports"];
 
@@ -51,13 +52,13 @@ export default function DashboardSupAdmin() {
   useEffect(() => {
     load();
     const handler = () => load();
-    window.addEventListener("d7:patient.created", handler);
-    window.addEventListener("d7:patient.updated", handler);
-    window.addEventListener("d7:notification.created", handler);
+    window.addEventListener("aulia:patient.created", handler);
+    window.addEventListener("aulia:patient.updated", handler);
+    window.addEventListener("aulia:notification.created", handler);
     return () => {
-      window.removeEventListener("d7:patient.created", handler);
-      window.removeEventListener("d7:patient.updated", handler);
-      window.removeEventListener("d7:notification.created", handler);
+      window.removeEventListener("aulia:patient.created", handler);
+      window.removeEventListener("aulia:patient.updated", handler);
+      window.removeEventListener("aulia:notification.created", handler);
     };
   }, []);
 
@@ -133,7 +134,7 @@ export default function DashboardSupAdmin() {
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <p className="text-xs font-semibold uppercase text-slate-500">DG de l'hopital</p>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Vue strategique D7 Clinic</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Vue stratégique Aulia Care</h1>
         <div className="mt-5 flex flex-wrap gap-2">
           {tabs.map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)} className={`rounded-lg px-4 py-2 text-sm font-semibold ${activeTab === tab ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}>
@@ -144,9 +145,6 @@ export default function DashboardSupAdmin() {
       </section>
 
       <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-        {/* Print helper */}
-        <script dangerouslySetInnerHTML={{ __html: `function __d7_print(html){ const w = window.open('','_blank'); w.document.write('<html><head><title>Impression</title><style>body{font-family:Arial,Helvetica,sans-serif;padding:20px;color:#111}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}</style></head><body>'+html+'</body></html>'); w.document.close(); w.focus(); w.print(); w.close(); }` }} />
-        
         {activeTab === "Vue globale" && (
           <div className="grid gap-3 sm:grid-cols-4">
             <Metric label="Patients aujourd'hui" value={metrics.patientsToday} />
@@ -399,13 +397,20 @@ function computePayrollEstimate(users: any[]) {
   return users.reduce((s, u) => s + Number(u.salary || 0), 0).toLocaleString('fr-FR');
 }
 
-  function printSection(id: string) {
+  async function printSection(id: string) {
     const el = document.getElementById(id);
     if (!el) return;
+    const clinic = await getClinicDocumentBranding();
+    const identity = documentIdentityLine(clinic);
+    const legal = documentLegalLine(clinic);
     const html = `
       <div>
-        <h1>${document.title || 'D7 Clinique'} - Impression</h1>
+        <div style="display:flex;align-items:center;gap:12px;border-bottom:2px solid #0d9488;padding-bottom:12px;margin-bottom:18px">
+          <img src="${documentLogoUrl(clinic)}" width="48" height="48" style="object-fit:contain" alt="Logo établissement" />
+          <div><h1 style="margin:0;color:#0D9488">${clinic.name}</h1><div style="font-size:12px;color:#475569">${identity || "Document administratif"}</div></div>
+        </div>
         ${el.innerHTML}
+        <footer style="margin-top:24px;border-top:1px solid #cbd5e1;padding-top:8px;font-size:11px;color:#64748b">${clinic.documentFooter || legal || "Document officiel généré par Aulia Care"}</footer>
       </div>`;
     const w = window.open('', '_blank');
     if (!w) return;

@@ -190,8 +190,8 @@ const Calendar: React.FC = () => {
   return (
     <>
       <PageMeta
-        title="Calendrier - D7 Clinique"
-        description="Gérez vos rendez-vous et événements médicaux avec notre calendrier interactif. Prenez, modifiez ou annulez des rendez-vous en quelques clics, et visualisez tous vos engagements à venir pour une meilleure organisation de votre emploi du temps médical."
+        title="Aulia Care | Calendrier des rendez-vous"
+        description="Calendrier des rendez-vous pour la gestion des patients"
       />
       <div className="rounded-2xl border  border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
         <div className="custom-calendar">

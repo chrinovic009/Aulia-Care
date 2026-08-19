@@ -238,7 +238,7 @@ This checks all configuration files, dependencies, and environment setup.
 ## File Organization
 
 ```
-D7 Clinnique/
+Aulia Care Clinnique/
 ├── START_HERE.md              ← You are here!
 ├── QUICK_START.md             ← Executive summary
 ├── DEVELOPMENT.md             ← Full setup guide

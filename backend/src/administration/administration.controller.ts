@@ -3,6 +3,7 @@ import { Roles } from '../auth/roles.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdministrationService } from './administration.service';
+import { UpdateClinicBrandingDto } from './dto/update-clinic-branding.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('administration')
@@ -17,7 +18,7 @@ export class AdministrationController {
 
   @Patch('clinic-branding')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  updateClinicBranding(@Request() req: any, @Body() body: { brandDisplayName?: string; documentLogoUrl?: string | null }) {
+  updateClinicBranding(@Request() req: any, @Body() body: UpdateClinicBrandingDto) {
     return this.administrationService.updateClinicBranding(req.user?.userId, body);
   }
 

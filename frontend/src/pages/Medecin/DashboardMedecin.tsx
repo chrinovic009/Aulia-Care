@@ -8,9 +8,11 @@ import {
   formatDoctorPatientName,
   saveClinicalSections,
   updateConsultation,
+  openConsultationForPatient,
 } from "../../api/doctor";
 import { useAuth } from "../../context/AuthContext";
 import { DoctorTelehealthCall } from "../../components/telehealth/TelehealthCall";
+import { ClinicalConsultationWorkspace, createInitialStructuredConsultation, type StructuredConsultation } from "./ClinicalConsultationWorkspace";
 
 // Petit hook utilitaire pour gérer l'état d'une modale
 function useModal(initialState = false) {
@@ -233,6 +235,7 @@ type ConsultationModuleState = {
   sickLeave: { active: boolean; durationDays?: number; startDate?: string };
   followUp: { recommendedInterval: string; specificDate?: string };
   telehealthTranscript: Array<{ id: string; speaker: "MEDECIN" | "PATIENT"; text: string; at: string }>;
+  structured: StructuredConsultation;
 };
 
 const createInitialConsultationModule = (): ConsultationModuleState => ({
@@ -259,7 +262,29 @@ const createInitialConsultationModule = (): ConsultationModuleState => ({
   sickLeave: { active: false, durationDays: 0, startDate: "" },
   followUp: { recommendedInterval: "", specificDate: "" },
   telehealthTranscript: [],
+  structured: createInitialStructuredConsultation(),
 });
+
+/** Keeps older saved drafts compatible when the structured consultation grows. */
+const hydrateConsultationModule = (saved?: Partial<ConsultationModuleState> | null): ConsultationModuleState => {
+  const initial = createInitialConsultationModule();
+  if (!saved) return initial;
+  const structured = saved.structured;
+  return {
+    ...initial,
+    ...saved,
+    structured: {
+      ...initial.structured,
+      ...structured,
+      illness: { ...initial.structured.illness, ...structured?.illness },
+      antecedents: { ...initial.structured.antecedents, ...structured?.antecedents },
+      anamnesis: { ...initial.structured.anamnesis, ...structured?.anamnesis },
+      physical: { ...initial.structured.physical, ...structured?.physical },
+      orientation: { ...initial.structured.orientation, ...structured?.orientation },
+      care: { ...initial.structured.care, ...structured?.care },
+    },
+  };
+};
 
 const splitList = (value: string) => value.split(/\n|,/).map((item) => item.trim()).filter(Boolean);
 
@@ -274,6 +299,8 @@ export default function DashboardMedecin() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [saveFeedback, setSaveFeedback] = useState<{ title: string; message: string; tone: "success" | "warning" | "error" } | null>(null);
+  const [isSavingConsultation, setIsSavingConsultation] = useState(false);
   const [isConsultationOpen, setIsConsultationOpen] = useState(false);
   const [telehealthReady, setTelehealthReady] = useState(false);
   
@@ -334,6 +361,7 @@ export default function DashboardMedecin() {
   const [draftMedication, setDraftMedication] = useState({ drugName: "", dosage: "", compliance: "GOOD" as "GOOD" | "IRREGULAR" | "STOPPED" });
 
   type ClinicalSummaryPayload = {
+    consultationModule?: Partial<ConsultationModuleState>;
     medicalHistory?: {
       knownDiseases?: string;
       surgeries?: string;
@@ -377,7 +405,7 @@ export default function DashboardMedecin() {
         return new Date(aDate).getTime() - new Date(bDate).getTime();
       });
       setPatients(ordered);
-      setSelectedPatient((current) => current || ordered[0] || null);
+      setSelectedPatient((current) => current ? ordered.find((patient) => patient.id === current.id) || current : ordered[0] || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible de charger la file medecin.");
     } finally {
@@ -388,17 +416,17 @@ export default function DashboardMedecin() {
   useEffect(() => {
     loadPatients();
     const handler = () => loadPatients();
-    window.addEventListener("d7:patient.updated", handler);
-    window.addEventListener("d7:consultation.created", handler);
-    window.addEventListener("d7:clinicalDataUpdated", handler);
-    window.addEventListener("d7:lab.request.created", handler);
-    window.addEventListener("d7:lab.result.created", handler);
+    window.addEventListener("aulia:patient.updated", handler);
+    window.addEventListener("aulia:consultation.created", handler);
+    window.addEventListener("aulia:clinicalDataUpdated", handler);
+    window.addEventListener("aulia:lab.request.created", handler);
+    window.addEventListener("aulia:lab.result.created", handler);
     return () => {
-      window.removeEventListener("d7:patient.updated", handler);
-      window.removeEventListener("d7:consultation.created", handler);
-      window.removeEventListener("d7:clinicalDataUpdated", handler);
-      window.removeEventListener("d7:lab.request.created", handler);
-      window.removeEventListener("d7:lab.result.created", handler);
+      window.removeEventListener("aulia:patient.updated", handler);
+      window.removeEventListener("aulia:consultation.created", handler);
+      window.removeEventListener("aulia:clinicalDataUpdated", handler);
+      window.removeEventListener("aulia:lab.request.created", handler);
+      window.removeEventListener("aulia:lab.result.created", handler);
     };
   }, []);
 
@@ -415,7 +443,7 @@ export default function DashboardMedecin() {
   }, []);
 
   useEffect(() => {
-    const consultation = selectedPatient?.latestConsultation || selectedPatient?.consultations?.[0];
+    const consultation = (selectedPatient?.consultations || []).find((item) => ["DRAFT", "IN_PROGRESS"].includes(String(item.status).toUpperCase()));
     if (!consultation) return;
 
     let parsed: ClinicalSummaryPayload = {};
@@ -447,12 +475,45 @@ export default function DashboardMedecin() {
       treatmentPlan: parsed.treatmentPlan?.notes || "",
       followUp: parsed.followUp?.notes || "",
     }));
+    if (parsed.consultationModule) {
+      setConsultationModule(hydrateConsultationModule(parsed.consultationModule));
+    } else {
+      setConsultationModule((current) => ({
+        ...createInitialConsultationModule(),
+        consultationMode: current.consultationMode,
+        chiefComplaint: consultation.chiefComplaint || "",
+      }));
+    }
   }, [selectedPatient?.id, selectedPatient?.latestConsultation, selectedPatient?.consultations]);
 
-  const currentConsultationId = selectedPatient?.latestConsultation?.id || selectedPatient?.consultations?.[0]?.id || "";
+  const activeConsultation = (selectedPatient?.consultations || []).find((item) => ["DRAFT", "IN_PROGRESS"].includes(String(item.status).toUpperCase()));
+  const currentConsultationId = activeConsultation?.id || "";
+  const hasConsultationResults = Boolean(currentConsultationId && (
+    selectedPatient?.labRequests?.some((request) => request.consultationId === currentConsultationId && request.results?.length && ["AVAILABLE", "SENT", "COMPLETED", "VERIFIED"].includes(String(request.status).toUpperCase()))
+    || selectedPatient?.imagingRequests?.some((request) => request.consultationId === currentConsultationId && request.report && ["COMPLETED", "VERIFIED"].includes(String(request.status).toUpperCase()))
+  ));
   const consultationDraftKey = currentConsultationId && currentUser?.id
     ? `aulia:consultation-draft:${currentUser.id}:${currentConsultationId}`
     : "";
+
+  const ensureActiveConsultation = async () => {
+    if (currentConsultationId) return currentConsultationId;
+    if (!selectedPatient) {
+      setSaveFeedback({ title: "Patient requis", message: "Sélectionnez un patient avant d’enregistrer une consultation.", tone: "error" });
+      return null;
+    }
+    try {
+      setActionMessage("Ouverture sécurisée d’une nouvelle consultation…");
+      const opened = await openConsultationForPatient(selectedPatient.id, consultationModule.chiefComplaint || clinicalForm.chiefComplaint);
+      await loadPatients();
+      return opened.id;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Impossible d’ouvrir la consultation pour ce patient.";
+      setActionMessage(message);
+      setSaveFeedback({ title: "Ouverture impossible", message, tone: "error" });
+      return null;
+    }
+  };
 
   const changeConsultationMode = async (value: string) => {
     if (value !== "TELECONSULTATION") {
@@ -461,7 +522,7 @@ export default function DashboardMedecin() {
       return;
     }
     if (!currentConsultationId) {
-      setActionMessage("Ouvrez d’abord une consultation active avant de lancer la télésanté.");
+      setActionMessage("Cette consultation est déjà finalisée ou aucune consultation active n’existe. Créez une nouvelle consultation/rendez-vous avant de lancer une télésanté.");
       return;
     }
     setActionMessage("Vérification sécurisée de la consultation de télésanté…");
@@ -492,7 +553,7 @@ export default function DashboardMedecin() {
       if (!draft.clinicalForm || !draft.consultationModule) return;
       if (window.confirm(`Un brouillon non envoyé du ${formatDateTime(draft.capturedAt)} a été retrouvé. Le restaurer ?`)) {
         setClinicalForm(draft.clinicalForm);
-        setConsultationModule(draft.consultationModule);
+        setConsultationModule(hydrateConsultationModule(draft.consultationModule));
         setActionMessage("Brouillon local restauré. Enregistrez-le pour le sécuriser sur le serveur.");
       }
     } catch {
@@ -575,12 +636,13 @@ export default function DashboardMedecin() {
     });
   };
 
-  const saveDraftConsultation = async () => {
-    if (!currentConsultationId) {
-      setActionMessage("Aucune consultation active pour ce patient.");
-      return;
-    }
+  const saveDraftConsultation = async (awaitingResults = false) => {
+    if (isSavingConsultation) return;
+    setIsSavingConsultation(true);
     setActionMessage(null);
+    try {
+    const consultationId = await ensureActiveConsultation();
+    if (!consultationId) return;
     const consignesNotes = [
       consultationModule.safetyConsignes,
       consultationModule.sickLeave.active ? `Arrêt de travail: ${consultationModule.sickLeave.durationDays || 0} jour(s)` : "",
@@ -588,7 +650,7 @@ export default function DashboardMedecin() {
       consultationModule.followUp.specificDate ? `Date de suivi: ${consultationModule.followUp.specificDate}` : "",
     ].filter(Boolean).join("\n");
 
-    await saveClinicalSections(currentConsultationId, {
+    await saveClinicalSections(consultationId, {
       chiefComplaint: clinicalForm.chiefComplaint,
       medicalHistory: {
         knownDiseases: clinicalForm.knownDiseases,
@@ -623,17 +685,34 @@ export default function DashboardMedecin() {
       consultationModule,
       status: "DRAFT",
     });
-    if (consultationDraftKey) window.sessionStorage.removeItem(consultationDraftKey);
-    setActionMessage("Brouillon enregistré. Les informations sont prêtes pour la validation clinique.");
+      const savedDraftKey = currentUser?.id ? `aulia:consultation-draft:${currentUser.id}:${consultationId}` : consultationDraftKey;
+      if (savedDraftKey) window.sessionStorage.removeItem(savedDraftKey);
+      const message = awaitingResults
+        ? "Les données cliniques ont été enregistrées en brouillon. Demandez les examens complémentaires : l’orientation et la prise en charge seront disponibles à réception de leurs résultats."
+        : "Brouillon enregistré dans le dossier médical. Vous pouvez reprendre la consultation à tout moment.";
+      setActionMessage(message);
+      setSaveFeedback({ title: "Brouillon enregistré", message, tone: awaitingResults ? "warning" : "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "La sauvegarde du brouillon a échoué.";
+      setActionMessage(message);
+      setSaveFeedback({ title: "Enregistrement impossible", message, tone: "error" });
+    } finally {
+      setIsSavingConsultation(false);
+    }
   };
 
   const validateConsultation = async () => {
-    if (!currentConsultationId) {
-      setActionMessage("Aucune consultation active pour ce patient.");
+    if (isSavingConsultation) return;
+    if (!hasConsultationResults) {
+      await saveDraftConsultation(true);
       return;
     }
+    setIsSavingConsultation(true);
     setActionMessage(null);
-    await saveClinicalSections(currentConsultationId, {
+    try {
+    const consultationId = await ensureActiveConsultation();
+    if (!consultationId) return;
+    await saveClinicalSections(consultationId, {
       chiefComplaint: clinicalForm.chiefComplaint,
       medicalHistory: {
         knownDiseases: clinicalForm.knownDiseases,
@@ -685,7 +764,8 @@ export default function DashboardMedecin() {
         followUp: consultationModule.followUp.recommendedInterval || clinicalForm.followUp,
       },
     });
-    if (consultationDraftKey) window.sessionStorage.removeItem(consultationDraftKey);
+    const savedDraftKey = currentUser?.id ? `aulia:consultation-draft:${currentUser.id}:${consultationId}` : consultationDraftKey;
+    if (savedDraftKey) window.sessionStorage.removeItem(savedDraftKey);
     setActionMessage("Consultation validée. Mise à jour des données cliniques...");
     // Refresh local list so other panels reflect the validated consultation
     try {
@@ -695,14 +775,22 @@ export default function DashboardMedecin() {
     }
     // Notify other parts of the app that clinical data changed
     try {
-      window.dispatchEvent(new CustomEvent('d7:clinicalDataUpdated'));
-      window.dispatchEvent(new CustomEvent('d7:patient.updated'));
-      window.dispatchEvent(new CustomEvent('d7:consultation.created'));
+      window.dispatchEvent(new CustomEvent('aulia:clinicalDataUpdated'));
+      window.dispatchEvent(new CustomEvent('aulia:patient.updated'));
+      window.dispatchEvent(new CustomEvent('aulia:consultation.created'));
     } catch (e) {
       // ignore
     }
-    setActionMessage("Consultation validée. Vous pouvez maintenant finaliser l’ordonnance et les examens depuis les vues dédiées.");
-    navigate("/doctor/prescriptions");
+    const message = "Consultation signée et enregistrée dans le dossier médical. Les données d’orientation et de prise en charge sont traçables.";
+    setActionMessage(message);
+    setSaveFeedback({ title: "Consultation validée", message, tone: "success" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "La validation de la consultation a échoué.";
+      setActionMessage(message);
+      setSaveFeedback({ title: "Validation impossible", message, tone: "error" });
+    } finally {
+      setIsSavingConsultation(false);
+    }
   };
 
   const resetConsultationModule = () => {
@@ -947,7 +1035,7 @@ export default function DashboardMedecin() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
-      <PageMeta title="Dashboard medecin | D7 Clinique" description="File medecin alimentee par PostgreSQL." />
+      <PageMeta title="Dashboard medecin | Aulia Care" description="File medecin alimentee par PostgreSQL." />
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -971,6 +1059,7 @@ export default function DashboardMedecin() {
 
       {error && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
       {actionMessage && <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700">{actionMessage}</div>}
+      {saveFeedback && <SaveFeedbackModal {...saveFeedback} onClose={() => setSaveFeedback(null)} />}
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[360px_1fr]">
         <aside className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -1121,6 +1210,26 @@ export default function DashboardMedecin() {
                     )}
                   </SectionBox>
 
+                  {consultationModule.consultationMode !== "TELECONSULTATION" ? (
+                    <ClinicalConsultationWorkspace
+                      patient={selectedPatient}
+                      mode={consultationModule.consultationMode}
+                      complaint={consultationModule.chiefComplaint}
+                      onComplaintChange={(chiefComplaint) => {
+                        setConsultationModule((current) => ({ ...current, chiefComplaint }));
+                        setClinicalForm((current) => ({ ...current, chiefComplaint }));
+                      }}
+                      value={consultationModule.structured}
+                      onChange={(structured) => setConsultationModule((current) => ({ ...current, structured }))}
+                      hasAvailableResults={hasConsultationResults}
+                    />
+                  ) : !telehealthReady ? (
+                    <div className="mt-4 rounded-xl border border-aulia-teal/25 bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-aulia-teal/10 dark:text-aulia-mist">
+                      La télésanté est préparée après vérification de la consultation. Aucun champ clinique n’est affiché pendant l’appel.
+                    </div>
+                  ) : null}
+
+                  {false && <>
                   <SectionBox title="Motif, triage et plainte principale">
                     <FormInput label="Motif de consultation" value={consultationModule.chiefComplaint} onChange={(value) => { setConsultationModule((current) => ({ ...current, chiefComplaint: value })); setClinicalForm((currentForm) => ({ ...currentForm, chiefComplaint: value })); }} />
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -1214,16 +1323,19 @@ export default function DashboardMedecin() {
                       <FormInput label="Date de suivi" value={consultationModule.followUp.specificDate || ""} onChange={(value) => setConsultationModule((current) => ({ ...current, followUp: { ...current.followUp, specificDate: value } }))} placeholder="YYYY-MM-DD" />
                     </div>
                   </SectionBox>
+                  </>}
 
-                  <div className="sticky bottom-3 mt-4 flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                    <button type="button" onClick={resetConsultationModule} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">Effacer / réinitialiser</button>
-                    <button type="button" onClick={saveDraftConsultation} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Enregistrer brouillon</button>
-                    <button type="button" onClick={validateConsultation} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white">Valider et signer</button>
-                  </div>
                   </>
                   ) : (
                     <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
                       La consultation est actuellement fermée. Ouvrez-la pour saisir le dossier clinique et les actes associés.
+                    </div>
+                  )}
+                  {consultationModule.consultationMode !== "TELECONSULTATION" && (
+                    <div className="sticky bottom-3 z-10 mt-4 flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
+                      <button type="button" onClick={resetConsultationModule} disabled={isSavingConsultation} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200">Effacer / réinitialiser</button>
+                      <button type="button" onClick={() => void saveDraftConsultation()} disabled={isSavingConsultation} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{isSavingConsultation ? "Enregistrement…" : "Enregistrer brouillon"}</button>
+                      <button type="button" onClick={() => void validateConsultation()} disabled={isSavingConsultation} className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60">{isSavingConsultation ? "Enregistrement…" : "Valider et signer"}</button>
                     </div>
                   )}
                 </Panel>
@@ -1468,6 +1580,23 @@ function FormSelect({
         {options.map(([key, optionLabel]) => <option key={key} value={key}>{optionLabel}</option>)}
       </select>
     </label>
+  );
+}
+
+function SaveFeedbackModal({ title, message, tone, onClose }: { title: string; message: string; tone: "success" | "warning" | "error"; onClose: () => void }) {
+  const toneClasses = tone === "success"
+    ? "border-aulia-teal/30 bg-aulia-mist text-aulia-navy dark:bg-aulia-teal/15 dark:text-aulia-mist"
+    : tone === "warning"
+      ? "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-100"
+      : "border-red-300 bg-red-50 text-red-950 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-100";
+  return (
+    <div className="fixed inset-0 z-[1000000] grid place-items-center bg-slate-950/55 p-4" role="dialog" aria-modal="true" aria-labelledby="consultation-save-title">
+      <section className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl ${toneClasses}`}>
+        <h2 id="consultation-save-title" className="text-lg font-bold">{title}</h2>
+        <p className="mt-2 text-sm leading-6">{message}</p>
+        <button type="button" onClick={onClose} className="mt-5 w-full rounded-xl bg-aulia-teal px-4 py-2.5 text-sm font-bold text-white">Compris</button>
+      </section>
+    </div>
   );
 }
 

@@ -185,17 +185,17 @@ export default function PatientsMedecin() {
       loadLabTests();
       loadDepartments();
     };
-    window.addEventListener("d7:patient.updated", handler);
-    window.addEventListener("d7:consultation.created", handler);
-    window.addEventListener("d7:clinicalDataUpdated", handler);
-    window.addEventListener("d7:lab.request.created", handler);
-    window.addEventListener("d7:lab.result.created", handler);
+    window.addEventListener("aulia:patient.updated", handler);
+    window.addEventListener("aulia:consultation.created", handler);
+    window.addEventListener("aulia:clinicalDataUpdated", handler);
+    window.addEventListener("aulia:lab.request.created", handler);
+    window.addEventListener("aulia:lab.result.created", handler);
     return () => {
-      window.removeEventListener("d7:patient.updated", handler);
-      window.removeEventListener("d7:consultation.created", handler);
-      window.removeEventListener("d7:clinicalDataUpdated", handler);
-      window.removeEventListener("d7:lab.request.created", handler);
-      window.removeEventListener("d7:lab.result.created", handler);
+      window.removeEventListener("aulia:patient.updated", handler);
+      window.removeEventListener("aulia:consultation.created", handler);
+      window.removeEventListener("aulia:clinicalDataUpdated", handler);
+      window.removeEventListener("aulia:lab.request.created", handler);
+      window.removeEventListener("aulia:lab.result.created", handler);
     };
   }, [page]);
 
@@ -228,7 +228,7 @@ export default function PatientsMedecin() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      <PageMeta title="Patients medecin | D7 Clinique" description="Dossiers patients visibles par les medecins." />
+      <PageMeta title="Patients medecin | Aulia Care" description="Dossiers patients visibles par les medecins." />
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -383,7 +383,7 @@ function PatientRecord({ patient, position, labTests, departments }: { patient: 
           <div className="grid gap-3 sm:auto-rows-min">
             <button
               type="button"
-              onClick={() => printPatientRecord(patient, position, labTests, departments)}
+              onClick={() => void printPatientRecord(patient, position, labTests, departments)}
               className="rounded-3xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-900 transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:border-slate-600 dark:hover:bg-slate-900"
             >
               🖨️ Imprimer le dossier
@@ -1037,7 +1037,11 @@ function QuickStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function printPatientRecord(patient: DoctorPatient, position?: number, labTests: LabTestMetadata[] = [], departments: Department[] = []) {
+async function printPatientRecord(patient: DoctorPatient, position?: number, labTests: LabTestMetadata[] = [], departments: Department[] = []) {
+    const clinic = await apiFetch<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null; address?: string | null; city?: string | null; country?: string | null; phone?: string | null; email?: string | null; rccmNumber?: string | null; taxNumber?: string | null; nationalIdNumber?: string | null; documentFooter?: string | null }>("/administration/clinic-branding").catch(() => ({}));
+    const clinicName = clinic.brandDisplayName || clinic.name || "Aulia Care";
+    const clinicContact = [[clinic.address, clinic.city, clinic.country].filter(Boolean).join(", "), clinic.phone ? `Tél: ${clinic.phone}` : "", clinic.email ? `E-mail: ${clinic.email}` : ""].filter(Boolean).join(" | ") || "Coordonnées de l’établissement non renseignées";
+    const legalReferences = [["RCCM", clinic.rccmNumber], ["NIF", clinic.taxNumber], ["ID", clinic.nationalIdNumber]].filter(([, value]) => Boolean(value)).map(([label, value]) => `${label}: ${value}`).join(" | ");
   const formatDateString = (value?: string | null) => {
     if (!value) return "—";
     return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -1340,7 +1344,7 @@ function printPatientRecord(patient: DoctorPatient, position?: number, labTests:
           .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #222; padding-bottom: 16px; margin-bottom: 24px; }
           .brand { display: flex; align-items: center; gap: 16px; }
           .brand img { width: 56px; height: auto; }
-          .clinic-name { font-size: 24px; font-weight: 700; letter-spacing: 0.04em; color: #1f2937; }
+          .clinic-name { font-size: 24px; font-weight: 700; letter-spacing: 0.04em; color: #0D9488; }
           .clinic-details { font-size: 11px; color: #4b5563; margin-top: 4px; }
           .title { text-align: right; }
           .title .document-type { font-size: 18px; font-weight: 700; color: #111827; }
@@ -1363,11 +1367,12 @@ function printPatientRecord(patient: DoctorPatient, position?: number, labTests:
         <div class="page">
           <div class="header">
             <div class="brand">
-              <img src="/images/favicon.png" alt="Logo clinique" />
+              <img src="${clinic.documentLogoUrl || "/images/logo/icone.png"}" alt="Logo clinique" />
               <div>
-                <div class="clinic-name">D7 Clinique</div>
-                <div class="clinic-details">Centre hospitalier régional - Services médicaux et administratifs</div>
-                <div class="clinic-details">Adresse: Zone de santé, Dilala | Tel: +243 987 299 227 | Email: fondationd7clinic@gmail.com</div>
+                <div class="clinic-name">${clinicName}</div>
+                <div class="clinic-details">Dossier médical officiel — système Aulia Care</div>
+                <div class="clinic-details">${clinicContact}</div>
+                ${legalReferences ? `<div class="clinic-details">${legalReferences}</div>` : ''}
               </div>
             </div>
             <div class="title">
@@ -1471,7 +1476,7 @@ function printPatientRecord(patient: DoctorPatient, position?: number, labTests:
           ` : ''}
 
           <div class="footer">
-            D7 Clinique - dossier patient administratif imprimé depuis le système interne.
+            ${clinic.documentFooter || `${clinicName} — dossier patient imprimé depuis Aulia Care.`}
           </div>
         </div>
       </body>

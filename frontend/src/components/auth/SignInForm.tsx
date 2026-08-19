@@ -103,7 +103,7 @@ export default function SignInForm() {
                   <Input
                     value={identifier}
                     onChange={(event) => setIdentifier(event.target.value)}
-                    placeholder="d7fk01 ou failakeren04@gmail.com"
+                    placeholder="AUP-AC12026 ou auliacare04@gmail.com"
                     disabled={isLoading}
                   />
                 </div>

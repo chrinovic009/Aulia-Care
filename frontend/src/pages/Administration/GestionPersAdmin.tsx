@@ -56,6 +56,7 @@ type AdminUser = {
   bio?: string | null;
   createdAt?: string;
   lastLoginAt?: string | null;
+  generatedPassword?: string;
   Employee?: Array<{
     gender?: string | null;
     dateOfBirth?: string | null;
@@ -67,6 +68,8 @@ type AdminUser = {
     shifts?: Array<{ startAt?: string; endAt?: string; type?: string }>;
     shiftPattern?: "MANUAL" | "THREE_DAY_THREE_NIGHT_THREE_REST" | "PERMANENT_DAY";
     rotationAnchorAt?: string | null;
+    rotationDays?: number | null;
+    permanentShiftEndTime?: string | null;
   }>;
   staff?: Array<{ service?: ServiceRecord; roleInService?: string | null }>;
   serviceResponsabilites?: Array<{ service?: ServiceRecord; principal?: boolean }>;
@@ -94,6 +97,8 @@ type HrReport = {
   leaveRequests?: Array<{ status?: string; leaveType?: string; requestedAt?: string }>;
   payrolls?: Array<{ status?: string; netAmount?: string | number; createdAt?: string }>;
 };
+
+type ClinicBranding = { name?: string; brandDisplayName?: string | null };
 
 const roleFilters: Array<{ key: string; label: string }> = [
   { key: "ALL", label: "Tous" },
@@ -140,18 +145,30 @@ const emptyForm = {
   status: "ACTIVE" as UserStatus,
   salary: "",
   salaryFrequency: "MONTHLY",
-  shiftStartAt: "",
-  shiftEndAt: "",
-  shiftType: "DAY",
-  shiftPattern: "MANUAL" as "MANUAL" | "THREE_DAY_THREE_NIGHT_THREE_REST" | "PERMANENT_DAY",
+  shiftMode: "ROTATION" as "ROTATION" | "PERMANENT",
   rotationAnchorAt: "",
+  rotationDays: "3",
+  permanentShiftEndTime: "17:30",
 };
+
+function initialPasswordPreview(clinicName: string, role: RoleSlug, firstName: string, lastName: string, position: number) {
+  const establishment = (clinicName || "Aulia Care")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(0, 2)
+    .toUpperCase()
+    .padEnd(2, "A");
+  const initials = `${firstName.charAt(0) || "X"}${lastName.charAt(0) || "X"}`.toUpperCase();
+  return `${establishment}${role.charAt(0)}-${initials}${position}${new Date().getFullYear()}`;
+}
 
 export default function GestionPersAdmin() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [services, setServices] = useState<ServiceRecord[]>([]);
   const [departments, setDepartments] = useState<DepartmentRecord[]>([]);
   const [hrReport, setHrReport] = useState<HrReport>({});
+  const [clinicName, setClinicName] = useState("Aulia Care");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("ALL");
   const [isLoading, setIsLoading] = useState(true);
@@ -161,6 +178,7 @@ export default function GestionPersAdmin() {
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [createdCredential, setCreatedCredential] = useState<{ name: string; username: string; password: string } | null>(null);
   const [pendingAction, setPendingAction] = useState<null | {
     user: AdminUser;
     type: "SUSPEND" | "INACTIVE" | "ACTIVE" | "DELETE";
@@ -169,16 +187,18 @@ export default function GestionPersAdmin() {
   const load = async () => {
     setIsLoading(true);
     try {
-      const [usersData, servicesData, departmentsData, hrData] = await Promise.all([
+      const [usersData, servicesData, departmentsData, hrData, branding] = await Promise.all([
         apiFetch<AdminUser[]>("/users").catch(() => []),
         apiFetch<ServiceRecord[]>("/services").catch(() => []),
         apiFetch<DepartmentRecord[]>("/administration/departments").catch(() => []),
         apiFetch<HrReport>("/administration/reports").catch(() => ({})),
+        apiFetch<ClinicBranding>("/administration/clinic-branding").catch(() => ({ name: "Aulia Care" })),
       ]);
       setUsers(usersData.filter((user) => user.primaryRole !== "SUPER_ADMIN" && user.primaryRole !== "ADMIN"));
       setServices(servicesData);
       setDepartments(departmentsData);
       setHrReport(hrData);
+      setClinicName(branding.brandDisplayName || branding.name || "Aulia Care");
     } finally {
       setIsLoading(false);
     }
@@ -187,13 +207,13 @@ export default function GestionPersAdmin() {
   useEffect(() => {
     load();
     const handler = () => load();
-    window.addEventListener("d7:user.updated", handler);
-    window.addEventListener("d7:administrationUpdated", handler);
-    window.addEventListener("d7:notification.created", handler);
+    window.addEventListener("aulia:user.updated", handler);
+    window.addEventListener("aulia:administrationUpdated", handler);
+    window.addEventListener("aulia:notification.created", handler);
     return () => {
-      window.removeEventListener("d7:user.updated", handler);
-      window.removeEventListener("d7:administrationUpdated", handler);
-      window.removeEventListener("d7:notification.created", handler);
+      window.removeEventListener("aulia:user.updated", handler);
+      window.removeEventListener("aulia:administrationUpdated", handler);
+      window.removeEventListener("aulia:notification.created", handler);
     };
   }, []);
 
@@ -229,7 +249,7 @@ export default function GestionPersAdmin() {
 
   const openCreate = () => {
     const next = { ...emptyForm };
-    next.password = generatePassword(next.primaryRole, next.firstName, next.lastName, staffUsers.length + 1);
+    next.password = "";
     setForm(next);
     setEditingUser(null);
     setFormError(null);
@@ -263,11 +283,10 @@ export default function GestionPersAdmin() {
       status: user.status || "ACTIVE",
       salary: contract?.salary ? String(contract.salary) : "",
       salaryFrequency: contract?.frequency || "MONTHLY",
-      shiftStartAt: employee?.shifts?.[0]?.startAt?.slice(0, 16) || "",
-      shiftEndAt: employee?.shifts?.[0]?.endAt?.slice(0, 16) || "",
-      shiftType: employee?.shifts?.[0]?.type || "DAY",
-      shiftPattern: employee?.shiftPattern || "MANUAL",
+      shiftMode: employee?.shiftPattern === "PERMANENT_DAY" ? "PERMANENT" : "ROTATION",
       rotationAnchorAt: employee?.rotationAnchorAt?.slice(0, 10) || "",
+      rotationDays: String(employee?.rotationDays || 3),
+      permanentShiftEndTime: employee?.permanentShiftEndTime || "17:30",
     });
     setShowForm(true);
     setFormError(null);
@@ -280,9 +299,6 @@ export default function GestionPersAdmin() {
     if (!editingUser && (patch.firstName !== undefined || patch.lastName !== undefined)) {
       next.username = username;
       if (!next.email) next.email = username ? `${username.replace("_", "")}@gmail.com` : "";
-    }
-    if (!editingUser && (patch.firstName !== undefined || patch.lastName !== undefined || patch.primaryRole !== undefined)) {
-      next.password = generatePassword(next.primaryRole, next.firstName, next.lastName, staffUsers.length + 1);
     }
     setForm(next);
   };
@@ -312,7 +328,7 @@ export default function GestionPersAdmin() {
         displayName,
         username,
         email: form.email || `${form.firstName}${form.lastName}@gmail.com`.toLowerCase(),
-        password: form.password || undefined,
+        password: editingUser ? form.password || undefined : undefined,
         primaryRole: form.primaryRole,
         isResponsible: form.isResponsible,
         isDepartmentResponsible: form.isResponsible,
@@ -330,11 +346,10 @@ export default function GestionPersAdmin() {
         position: form.specialty || roleLabel({ primaryRole: form.primaryRole } as AdminUser),
         salary: form.salary ? Number(form.salary) : undefined,
         salaryFrequency: form.salaryFrequency || undefined,
-        shiftStartAt: form.shiftStartAt || undefined,
-        shiftEndAt: form.shiftEndAt || undefined,
-        shiftType: form.shiftType || undefined,
-        shiftPattern: form.shiftPattern,
-        rotationAnchorAt: form.rotationAnchorAt || undefined,
+        shiftPattern: form.shiftMode === "PERMANENT" ? "PERMANENT_DAY" : "THREE_DAY_THREE_NIGHT_THREE_REST",
+        rotationAnchorAt: form.shiftMode === "ROTATION" ? form.rotationAnchorAt || undefined : undefined,
+        rotationDays: form.shiftMode === "ROTATION" ? Number(form.rotationDays || 3) : undefined,
+        permanentShiftEndTime: form.shiftMode === "PERMANENT" ? form.permanentShiftEndTime : undefined,
       };
 
       // If admin marked user as department responsible and the department is a lab,
@@ -378,6 +393,9 @@ export default function GestionPersAdmin() {
 
       setShowForm(false);
       setEditingUser(null);
+      if (!editingUser && saved.generatedPassword) {
+        setCreatedCredential({ name: saved.displayName || `${saved.firstName} ${saved.lastName}`, username: saved.username, password: saved.generatedPassword });
+      }
       await load();
     } finally {
       setIsSaving(false);
@@ -554,6 +572,7 @@ export default function GestionPersAdmin() {
           onClose={() => setShowForm(false)}
           onSave={saveEmployee}
           error={formError}
+          passwordPreview={initialPasswordPreview(clinicName, form.primaryRole, form.firstName, form.lastName, users.filter((user) => user.primaryRole === form.primaryRole).length + 1)}
         />
       ) : null}
 
@@ -565,8 +584,21 @@ export default function GestionPersAdmin() {
           onConfirm={confirmPendingAction}
         />
       ) : null}
+      {createdCredential ? <GeneratedCredentialModal credential={createdCredential} onClose={() => setCreatedCredential(null)} /> : null}
     </AdminPageShell>
   );
+}
+
+function GeneratedCredentialModal({ credential, onClose }: { credential: { name: string; username: string; password: string }; onClose: () => void }) {
+  return <div className="fixed inset-0 z-[80] grid place-items-center overflow-y-auto overscroll-contain bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6">
+    <div role="dialog" aria-modal="true" className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-aulia-teal/30 bg-white p-5 shadow-2xl dark:bg-slate-950 sm:p-6">
+      <p className="text-xs font-bold uppercase tracking-[.2em] text-aulia-teal">Accès initial</p>
+      <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">Compte créé pour {credential.name}</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Communiquez ces identifiants une seule fois par un canal sûr. Le collaborateur doit changer son mot de passe à sa première connexion.</p>
+      <dl className="mt-5 space-y-3 rounded-xl bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><div><dt className="text-xs font-semibold uppercase opacity-70">Utilisateur</dt><dd className="mt-1 font-bold">{credential.username}</dd></div><div><dt className="text-xs font-semibold uppercase opacity-70">Mot de passe temporaire</dt><dd className="mt-1 break-all font-bold">{credential.password}</dd></div></dl>
+      <button type="button" onClick={onClose} className="mt-6 w-full rounded-xl bg-aulia-navy px-4 py-3 text-sm font-semibold text-white">J’ai communiqué les identifiants</button>
+    </div>
+  </div>;
 }
 
 function ConfirmActionModal({
@@ -641,6 +673,7 @@ function EmployeeForm({
   onClose,
   onSave,
   error,
+  passwordPreview,
 }: {
   form: typeof emptyForm;
   services: ServiceRecord[];
@@ -651,12 +684,13 @@ function EmployeeForm({
   onClose: () => void;
   onSave: () => void;
   error?: string | null;
+  passwordPreview: string;
 }) {
   // Admin assigns employees to departments only; services are managed later by responsables.
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
-      <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-950">
+    <div className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto overscroll-contain bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6">
+      <div role="dialog" aria-modal="true" className="my-auto flex max-h-[calc(100dvh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950 sm:max-h-[calc(100dvh-3rem)]">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
           <div>
             <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{editing ? "Modifier un employe" : "Ajouter un employe"}</h2>
@@ -665,7 +699,7 @@ function EmployeeForm({
           <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 dark:border-slate-800 dark:text-slate-300">Fermer</button>
         </div>
 
-        <div className="grid gap-6 p-5 lg:grid-cols-2">
+        <div className="grid flex-1 gap-6 overflow-y-auto overscroll-contain p-4 sm:p-6 lg:grid-cols-2">
           <FormSection title="Informations personnelles">
             <FormInput label="Nom" value={form.lastName} onChange={(lastName) => onChange({ lastName })} />
             <FormInput label="Postnom" value={form.middleName} onChange={(middleName) => onChange({ middleName })} />
@@ -680,7 +714,7 @@ function EmployeeForm({
 
           <FormSection title="Informations professionnelles">
             <FormInput label="Nom utilisateur" value={form.username} onChange={(username) => onChange({ username })} />
-            <FormInput label="Mot de passe" value={form.password} onChange={(password) => onChange({ password })} />
+            {editing ? <FormInput label="Nouveau mot de passe (laisser vide pour ne pas le changer)" value={form.password} onChange={(password) => onChange({ password })} /> : <div className="rounded-xl border border-aulia-teal/30 bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><p className="font-semibold">Mot de passe initial généré par le système</p><p className="mt-1 text-xs">L’aperçu se met à jour avec le nom, le prénom et le rôle. Le serveur reste la source de vérité au moment de créer le compte.</p><output className="mt-3 block break-all rounded-lg bg-white/80 px-3 py-2 font-mono text-base font-bold text-aulia-navy dark:bg-slate-950">{passwordPreview}</output></div>}
             <FormSelect label="Role" value={form.primaryRole} onChange={(primaryRole) => onChange({ primaryRole: primaryRole as RoleSlug })} options={roleOptions.map((role) => [role, roleLabel({ primaryRole: role } as AdminUser)])} />
             <FormInput label="Fonction / Specialite" value={form.specialty} onChange={(specialty) => onChange({ specialty })} />
             <FormSelect label="Departement RH" value={form.departmentId} onChange={(departmentId) => onChange({ departmentId })} options={[["", "Aucun"], ...departments.map((department) => [department.id, department.name] as [string, string])]} />
@@ -688,18 +722,15 @@ function EmployeeForm({
             <FormSelect label="Statut" value={form.status} onChange={(status) => onChange({ status: status as UserStatus })} options={[["ACTIVE", "Actif"], ["INACTIVE", "Inactif"], ["SUSPENDED", "Suspendu"]]} />
             <FormInput label="Salaire" type="number" value={form.salary} onChange={(salary) => onChange({ salary })} />
             <FormSelect label="Frequence paie" value={form.salaryFrequency} onChange={(salaryFrequency) => onChange({ salaryFrequency })} options={[["MONTHLY", "Mensuel"], ["WEEKLY", "Hebdomadaire"], ["DAILY", "Journalier"]]} />
-            <FormInput label="Debut shift" type="datetime-local" value={form.shiftStartAt} onChange={(shiftStartAt) => onChange({ shiftStartAt })} />
-            <FormInput label="Fin shift" type="datetime-local" value={form.shiftEndAt} onChange={(shiftEndAt) => onChange({ shiftEndAt })} />
-            <FormSelect label="Type de shift" value={form.shiftType} onChange={(shiftType) => onChange({ shiftType })} options={[["DAY", "Jour"], ["NIGHT", "Nuit"], ["ROTATING", "Rotation"]]} />
-            <FormSelect label="Cycle de travail" value={form.shiftPattern} onChange={(shiftPattern) => onChange({ shiftPattern: shiftPattern as typeof form.shiftPattern })} options={[["MANUAL", "Planning manuel"], ["THREE_DAY_THREE_NIGHT_THREE_REST", "3 jours / 3 nuits / 3 repos"], ["PERMANENT_DAY", "Permanent de jour (07:30 - 17:30)"]]} />
-            {form.shiftPattern === "THREE_DAY_THREE_NIGHT_THREE_REST" ? <FormInput label="Premier jour du cycle" type="date" value={form.rotationAnchorAt} onChange={(rotationAnchorAt) => onChange({ rotationAnchorAt })} /> : null}
+            <FormSelect label="Type de shift" value={form.shiftMode} onChange={(shiftMode) => onChange({ shiftMode: shiftMode as typeof form.shiftMode })} options={[["ROTATION", "Rotation"], ["PERMANENT", "Permanence"]]} />
+            {form.shiftMode === "ROTATION" ? <><FormInput label="Premier jour de jour" type="date" value={form.rotationAnchorAt} onChange={(rotationAnchorAt) => onChange({ rotationAnchorAt })} /><FormInput label="Nombre de jours par phase" type="number" min="1" max="31" value={form.rotationDays} onChange={(rotationDays) => onChange({ rotationDays })} /><div className="sm:col-span-2 rounded-xl border border-aulia-teal/25 bg-aulia-mist p-3 text-xs leading-5 text-aulia-navy dark:bg-slate-900 dark:text-slate-100">Jour : 07:30–17:30, puis le même nombre de nuits : 17:30–07:30, puis le même nombre de jours de repos. Le cycle recommence automatiquement.</div></> : <><FormInput label="Heure de sortie" type="time" min="07:31" value={form.permanentShiftEndTime} onChange={(permanentShiftEndTime) => onChange({ permanentShiftEndTime })} /><div className="rounded-xl border border-aulia-teal/25 bg-aulia-mist p-3 text-xs leading-5 text-aulia-navy dark:bg-slate-900 dark:text-slate-100">Entrée fixe : 07:30, tous les jours. Choisissez uniquement l’heure de sortie.</div></>}
           </FormSection>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-slate-200 p-5 dark:border-slate-800">
+        <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-end sm:p-5">
           {error ? <div className="mr-auto text-sm text-red-600">{error}</div> : null}
           <button onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:text-slate-200">Annuler</button>
-          <button disabled={isSaving || !form.firstName || !form.lastName || !form.primaryRole} onClick={onSave} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
+          <button disabled={isSaving || !form.firstName || !form.lastName || !form.primaryRole || (form.shiftMode === "ROTATION" && (!form.rotationAnchorAt || Number(form.rotationDays) < 1))} onClick={onSave} className="rounded-lg bg-aulia-teal px-4 py-2.5 text-sm font-semibold text-white hover:bg-aulia-teal/90 disabled:cursor-not-allowed disabled:opacity-60">
             {isSaving ? "Enregistrement..." : "Enregistrer"}
           </button>
         </div>
@@ -712,9 +743,9 @@ function ProfileDrawer({ user, onClose }: { user: AdminUser; onClose: () => void
   const employee = user.Employee?.[0];
   const contract = employee?.contracts?.[0];
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 backdrop-blur-sm">
-      <aside className="h-full w-full max-w-xl overflow-y-auto border-l border-slate-200 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex items-start justify-between gap-4">
+    <div className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto overscroll-contain bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6">
+      <section role="dialog" aria-modal="true" className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-800 dark:bg-slate-950 sm:max-h-[calc(100dvh-3rem)] sm:p-6">
+        <div className="sticky -top-4 z-10 -mx-4 flex items-start justify-between gap-4 border-b border-slate-100 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-950 sm:-top-6 sm:-mx-6 sm:px-6">
           <div className="flex items-center gap-3">
             <Avatar user={user} large />
             <div>
@@ -749,7 +780,7 @@ function ProfileDrawer({ user, onClose }: { user: AdminUser; onClose: () => void
             {user.staff?.length ? <StatusBadge label="Membre d'equipe" tone="slate" /> : null}
           </div>
         </div>
-      </aside>
+      </section>
     </div>
   );
 }
@@ -763,11 +794,11 @@ function FormSection({ title, children }: { title: string; children: React.React
   );
 }
 
-function FormInput({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
+function FormInput({ label, value, onChange, type = "text", min, max }: { label: string; value: string; onChange: (value: string) => void; type?: string; min?: string; max?: string }) {
   return (
     <label className="text-sm">
       <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">{label}</span>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
+      <input type={type} min={min} max={max} value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-aulia-teal focus:ring-2 focus:ring-aulia-teal/15 dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
     </label>
   );
 }
@@ -776,7 +807,7 @@ function FormSelect({ label, value, onChange, options }: { label: string; value:
   return (
     <label className="text-sm">
       <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-slate-800 dark:bg-slate-950 dark:text-white">
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-aulia-teal focus:ring-2 focus:ring-aulia-teal/15 dark:border-slate-800 dark:bg-slate-950 dark:text-white">
         {options.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
       </select>
     </label>
@@ -793,7 +824,7 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function Avatar({ user, large = false }: { user: AdminUser; large?: boolean }) {
-  const initials = `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || "D7";
+  const initials = `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase() || "Aulia Care";
   const size = large ? "h-14 w-14 text-base" : "h-10 w-10 text-sm";
   if (user.profilePhotoUrl) {
     return <img src={user.profilePhotoUrl} alt={user.displayName} className={`${size} rounded-full object-cover`} />;
@@ -857,15 +888,4 @@ function normalizeText(value?: string | null) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
-}
-
-function generatePassword(role: RoleSlug, firstName: string, lastName: string, position: number) {
-  const clinicName = String(import.meta.env.VITE_CLINIC_NAME || "D7 Clinic")
-    .replace(/clinique|clinic/gi, "")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .toUpperCase() || "D7";
-  const year = new Date().getFullYear();
-  const roleLetter = role?.[0] || "U";
-  const initials = `${firstName?.[0] || "X"}${lastName?.[0] || "X"}`.toUpperCase();
-  return `${clinicName}${roleLetter}-${initials}${position}${year}`.toUpperCase();
 }
