@@ -207,6 +207,11 @@ const doctorNavItems: NavItem[] = [
   },
   {
     icon: <DocsIcon />,
+    name: "Brouillons",
+    path: "/doctor/drafts",
+  },
+  {
+    icon: <DocsIcon />,
     name: "Prescriptions",
     path: "/doctor/prescriptions",
   },

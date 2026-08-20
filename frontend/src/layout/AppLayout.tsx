@@ -26,7 +26,7 @@ const LayoutContent: React.FC = () => {
       >
         <AppHeader />
         {currentUser?.primaryRole === "PATIENT" && <PatientTelehealthOverlay />}
-        <div className="mx-auto w-full max-w-(--breakpoint-2xl)">
+        <div className="aulia-content-frame mx-auto w-full min-w-0 max-w-[1680px] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           <RealtimePageBoundary><Outlet /></RealtimePageBoundary>
         </div>
       </div>

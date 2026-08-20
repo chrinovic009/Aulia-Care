@@ -64,7 +64,7 @@ export default function RealtimePageBoundary({ children }: PropsWithChildren) {
           <button type="button" onClick={() => { setPending(false); setRevision((value) => value + 1); }} className="rounded-lg bg-sky-700 px-3 py-1.5 font-semibold text-white">Actualiser</button>
         </div>
       )}
-      <div key={revision}>{children}</div>
+      <div key={revision} className="aulia-page-host">{children}</div>
     </>
   );
 }
