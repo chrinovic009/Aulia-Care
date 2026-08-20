@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { fetchPharmacyHistory, PharmacyHistoryRecord } from "../../api/pharmacy";
-import { apiFetch } from "../../config/api";
+import { getClinicDocumentBranding, type ClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
 
 function formatDateTime(value?: string | null) {
   if (!value) return "-";
@@ -21,7 +21,7 @@ export default function HistoriquePharmacie() {
   const [filterType, setFilterType] = useState<"ALL" | "DISPENSE" | "SALE">("ALL");
   const [dateRange, setDateRange] = useState<"ALL" | "TODAY" | "WEEK" | "MONTH">("ALL");
   const [printingData, setPrintingData] = useState<PharmacyHistoryRecord[] | null>(null);
-  const [clinicIdentity, setClinicIdentity] = useState<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null; address?: string | null; city?: string | null; phone?: string | null }>({});
+  const [clinicIdentity, setClinicIdentity] = useState<ClinicDocumentBranding | null>(null);
 
   const loadHistory = async () => {
     try {
@@ -40,7 +40,7 @@ export default function HistoriquePharmacie() {
 
   useEffect(() => {
     loadHistory();
-    void apiFetch<typeof clinicIdentity>("/administration/clinic-branding").then(setClinicIdentity).catch(() => undefined);
+    void getClinicDocumentBranding().then(setClinicIdentity);
     const interval = window.setInterval(loadHistory, 30000);
     return () => window.clearInterval(interval);
   }, []);
@@ -91,7 +91,8 @@ export default function HistoriquePharmacie() {
     };
   }, [filtered]);
 
-  const handlePrintHistory = () => {
+  const handlePrintHistory = async () => {
+    setClinicIdentity(await getClinicDocumentBranding());
     setPrintingData(filtered);
     window.setTimeout(() => {
       const cleanup = () => setPrintingData(null);
@@ -234,7 +235,7 @@ export default function HistoriquePharmacie() {
   );
 }
 
-function HistoryPrintTemplate({ records, clinic }: { records: PharmacyHistoryRecord[]; clinic: { name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null; address?: string | null; city?: string | null; phone?: string | null } }) {
+function HistoryPrintTemplate({ records, clinic }: { records: PharmacyHistoryRecord[]; clinic: ClinicDocumentBranding | null }) {
   const printableRecords = records.filter((record) => record.typeLabel !== "Sortie stock");
 
   const totals = printableRecords.reduce(
@@ -252,8 +253,8 @@ function HistoryPrintTemplate({ records, clinic }: { records: PharmacyHistoryRec
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #0f172a", paddingBottom: "12px" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <img src={clinic.documentLogoUrl || "/images/logo/icone.png"} alt="Logo" style={{ width: 44, height: 44, objectFit: "contain" }} />
-            <div><div style={{ fontSize: "20px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#0D9488" }}>{clinic.brandDisplayName || clinic.name || "AULIA CARE"}</div><div style={{ fontSize: "13px", color: "#475569", marginTop: "4px" }}>Pharmacie • Historique des activités</div><div style={{ fontSize: "10px", color: "#64748b" }}>{[clinic.address, clinic.city, clinic.phone].filter(Boolean).join(" · ")}</div></div>
+            <img src={clinic?.documentLogoUrl || "/images/logo/icone.png"} alt="Logo" style={{ width: 44, height: 44, objectFit: "contain" }} />
+            <div><div style={{ fontSize: "20px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#0D9488" }}>{clinic?.brandDisplayName || clinic?.name || "AULIA CARE"}</div><div style={{ fontSize: "13px", color: "#475569", marginTop: "4px" }}>Pharmacie • Historique des activités</div><div style={{ fontSize: "10px", color: "#64748b" }}>{[clinic?.address, clinic?.city, clinic?.phone].filter(Boolean).join(" · ")}</div></div>
           </div>
         </div>
         <div style={{ textAlign: "right", fontSize: "12px", color: "#475569" }}>

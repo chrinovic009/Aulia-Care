@@ -16,6 +16,7 @@ import {
 import { formatPatientDossierId } from "../../utils/formatId";
 import { useRealtime } from "../../context/RealtimeContext";
 import { ClientPagination, useClientPagination } from "../../components/common/ClientPagination";
+import { documentIdentityLine, documentLegalLine, documentLogoUrl, getClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
 
 const statusStyles: Record<string, string> = {
   ADMITTED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
@@ -41,6 +42,25 @@ function getDoctorName(record: HospitalizationRecord) {
 
 function getRoomLabel(record: HospitalizationRecord) {
   return record.bed?.room?.number || record.bedNumber || '—';
+}
+
+const escapePrintHtml = (value: unknown) => String(value ?? "—")
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#039;");
+
+async function printHospitalizationRecord(record: HospitalizationRecord, timeline: HospitalizationTimelineEvent[]) {
+  const printWindow = window.open("", "_blank", "width=900,height=760");
+  if (!printWindow) return;
+  try { printWindow.opener = null; } catch { /* best effort */ }
+  const clinic = await getClinicDocumentBranding();
+  const identity = documentIdentityLine(clinic);
+  const legal = documentLegalLine(clinic);
+  const patientName = escapePrintHtml(formatPatientName(record.patient));
+  const admittedAt = record.admittedAt ? new Date(record.admittedAt).toLocaleString("fr-FR") : "—";
+  const events = timeline.length
+    ? timeline.map((event) => `<li><strong>${escapePrintHtml(new Date(event.date).toLocaleString("fr-FR"))}</strong> — ${escapePrintHtml(event.event)}</li>`).join("")
+    : "<li>Aucun événement documenté.</li>";
+  printWindow.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Fiche d'hospitalisation</title><style>body{font-family:Arial,sans-serif;color:#0f172a;padding:26px;line-height:1.45}.header{display:flex;gap:14px;border-bottom:2px solid #0D9488;padding-bottom:15px;margin-bottom:22px}.logo{height:56px;width:56px;object-fit:contain}.name{font-size:22px;font-weight:800;color:#0D9488}.muted{color:#475569;font-size:12px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.cell{border:1px solid #cbd5e1;border-radius:8px;padding:12px}.label{font-size:11px;color:#64748b;text-transform:uppercase}.value{font-weight:700;margin-top:4px}ul{padding-left:20px}@media print{body{padding:12mm}}</style></head><body><header class="header"><img class="logo" src="${documentLogoUrl(clinic)}" alt="Logo établissement"><div><div class="name">${escapePrintHtml(clinic.name)}</div><div class="muted">${escapePrintHtml(identity || "Établissement de santé")}</div><div class="muted">${escapePrintHtml(legal)}</div><h2>Fiche officielle d'hospitalisation</h2></div></header><section class="grid"><div class="cell"><div class="label">Patient</div><div class="value">${patientName}</div></div><div class="cell"><div class="label">Dossier</div><div class="value">${escapePrintHtml(formatPatientDossierId(record.patient?.id, record.patient?.externalId, { truncateTo: 8 }))}</div></div><div class="cell"><div class="label">Admission</div><div class="value">${escapePrintHtml(admittedAt)}</div></div><div class="cell"><div class="label">Statut</div><div class="value">${escapePrintHtml(record.status)}</div></div><div class="cell"><div class="label">Service / chambre</div><div class="value">${escapePrintHtml(record.ServiceUnit?.name)} — ${escapePrintHtml(getRoomLabel(record))}</div></div><div class="cell"><div class="label">Médecin référent</div><div class="value">${escapePrintHtml(getDoctorName(record))}</div></div></section><section><h3>Motif d'admission</h3><p>${escapePrintHtml(record.admissionReason)}</p><h3>Chronologie du séjour</h3><ul>${events}</ul></section><footer class="muted">Document généré le ${escapePrintHtml(new Date().toLocaleString("fr-FR"))}</footer><script>window.onload=()=>window.print()</script></body></html>`);
+  printWindow.document.close();
 }
 
 function HospitalizationDetails(props: {
@@ -99,7 +119,7 @@ function HospitalizationDetails(props: {
               Contacter famille
             </a>
             <button
-              onClick={() => window.print()}
+              onClick={() => void printHospitalizationRecord(hospitalization, timeline)}
               className="rounded-2xl border border-slate-300 bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
             >
               Imprimer fiche d'hospitalisation
