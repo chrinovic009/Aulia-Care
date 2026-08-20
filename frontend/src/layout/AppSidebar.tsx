@@ -351,9 +351,19 @@ const AppSidebar: React.FC = () => {
 
   useEffect(() => {
     if (!currentUser) return;
-    apiFetch<{ name?: string; brandDisplayName?: string | null }>("/administration/clinic-branding")
+    const loadClinicBrand = () => apiFetch<{ name?: string; brandDisplayName?: string | null }>("/administration/clinic-branding")
       .then(setClinicBrand)
       .catch(() => setClinicBrand({}));
+    void loadClinicBrand();
+    window.addEventListener("aulia:clinic-branding-updated", loadClinicBrand);
+    const onBrandingStorage = (event: StorageEvent) => {
+      if (event.key === "aulia:clinic-document-branding") void loadClinicBrand();
+    };
+    window.addEventListener("storage", onBrandingStorage);
+    return () => {
+      window.removeEventListener("aulia:clinic-branding-updated", loadClinicBrand);
+      window.removeEventListener("storage", onBrandingStorage);
+    };
   }, [currentUser?.id]);
   const isReceptionSection = location.pathname.startsWith("/reception");
   const isNurseSection = location.pathname.startsWith("/nurse");

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { fetchAllInvoices } from "../../api/cashier";
 import { InvoicePrintTemplate } from "./InvoicePrintTemplate";
 import { formatInvoiceId } from "../../utils/formatId";
+import { getClinicDocumentBranding, type ClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
 
 interface InvoiceDetail {
   id: string;
@@ -132,6 +133,7 @@ const FacturationCaissier: React.FC = () => {
   const [printingInvoice, setPrintingInvoice] = useState<InvoiceDetail | null>(null);
   const [printingInvoicePosition, setPrintingInvoicePosition] = useState<number | undefined>(undefined);
   const [printingVisit, setPrintingVisit] = useState<VisitSummary | null>(null);
+  const [printBranding, setPrintBranding] = useState<ClinicDocumentBranding | null>(null);
   const [previewActive, setPreviewActive] = useState(false);
 
   const load = async () => {
@@ -229,7 +231,9 @@ const FacturationCaissier: React.FC = () => {
     return Array.from(grouped.values()).sort((a, b) => b.totalAmount - a.totalAmount);
   }, [invoices]);
 
-  const handlePrintInvoice = (invoice: InvoiceDetail) => {
+  const handlePrintInvoice = async (invoice: InvoiceDetail) => {
+    const branding = await getClinicDocumentBranding();
+    setPrintBranding(branding);
     const index = filtered.findIndex((item) => item.id === invoice.id);
     setPrintingInvoicePosition(index >= 0 ? index + 1 : undefined);
     setPrintingInvoice(invoice);
@@ -274,7 +278,9 @@ const FacturationCaissier: React.FC = () => {
     void waitAndPrint();
   };
 
-  const handlePrintVisit = (visit: VisitSummary) => {
+  const handlePrintVisit = async (visit: VisitSummary) => {
+    const branding = await getClinicDocumentBranding();
+    setPrintBranding(branding);
     setPrintingVisit(visit);
     setPrintingInvoice(null);
     setPrintingInvoicePosition(undefined);
@@ -530,9 +536,7 @@ const FacturationCaissier: React.FC = () => {
           issuedAt={printingInvoice.issuedAt}
           dueDate={printingInvoice.dueDate}
           remarks={printingInvoice.remarks}
-          clinicAddress="Zone de santé, Dilala"
-          clinicPhone="+243 987 299 227"
-          clinicEmail="fondationd7clinic@gmail.com"
+          clinicBranding={printBranding}
           invoiceId={printingInvoice.id}
           invoicePosition={printingInvoicePosition}
           invoiceLines={printingInvoice.invoiceLines}
@@ -550,9 +554,7 @@ const FacturationCaissier: React.FC = () => {
           status={printingVisit.status}
           issuedAt={new Date().toISOString()}
           dueDate={new Date().toISOString()}
-          clinicAddress="Zone de santé, Dilala"
-          clinicPhone="+243 987 299 227"
-          clinicEmail="fondationd7clinic@gmail.com"
+          clinicBranding={printBranding}
           invoiceId={printingVisit.patientId}
           invoicePosition={1}
           visitItems={printingVisit.invoices.map((invoice) => {

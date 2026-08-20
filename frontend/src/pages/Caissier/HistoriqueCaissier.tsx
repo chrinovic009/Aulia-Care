@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { fetchAllPayments, fetchAllInvoices } from "../../api/cashier";
 import { HistoryPrintTemplate } from "./HistoryPrintTemplate";
+import { getClinicDocumentBranding, type ClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
 
 interface HistoryRecord {
   id: string;
@@ -27,6 +28,7 @@ const HistoriqueCaissier: React.FC = () => {
   const [filterType, setFilterType] = useState<"ALL" | "PAYMENT" | "INVOICE">("ALL");
   const [dateRange, setDateRange] = useState<"ALL" | "TODAY" | "WEEK" | "MONTH">("ALL");
   const [printingData, setPrintingData] = useState<HistoryRecord[] | null>(null);
+  const [printBranding, setPrintBranding] = useState<ClinicDocumentBranding | null>(null);
 
   const load = async () => {
     try {
@@ -144,7 +146,8 @@ const HistoriqueCaissier: React.FC = () => {
     };
   }, [filtered]);
 
-  const handlePrintHistory = () => {
+  const handlePrintHistory = async () => {
+    setPrintBranding(await getClinicDocumentBranding());
     setPrintingData(filtered);
     setTimeout(() => {
       window.print();
@@ -343,7 +346,7 @@ const HistoriqueCaissier: React.FC = () => {
       </div>
     </div>
     <div id="history-print-area">
-      {printingData && <HistoryPrintTemplate records={printingData} />}
+      {printingData && <HistoryPrintTemplate records={printingData} clinicBranding={printBranding} />}
     </div>
     </>
   );

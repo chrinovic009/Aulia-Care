@@ -7,10 +7,26 @@ export class AdministrationService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getClinicBranding(userId?: string) {
-    const user = userId ? await this.prisma.user.findUnique({ where: { id: userId }, select: { clinicId: true } }) : null;
-    if (!user?.clinicId) return { name: 'Aulia Care', brandDisplayName: null, documentLogoUrl: null };
+    const user = userId ? await (this.prisma as any).user.findUnique({
+      where: { id: userId },
+      select: { clinicId: true, email: true, Employee: { select: { clinicId: true }, take: 1 } },
+    }) : null;
+    // Some legacy staff accounts are linked through Employee rather than User.
+    // They must receive their hospital branding too, without being allowed to edit it.
+    const linkedPatient = !user?.clinicId && user?.email
+      ? await this.prisma.patient.findFirst({ where: { email: user.email, deletedAt: null }, select: { clinicId: true } })
+      : null;
+    let clinicId = user?.clinicId || user?.Employee?.[0]?.clinicId || linkedPatient?.clinicId;
+    // A local installation with exactly one active establishment is safe to
+    // resolve for legacy accounts which predate clinic links. In a multi-site
+    // database there is deliberately no fallback, preventing tenant leakage.
+    if (!clinicId) {
+      const clinics = await (this.prisma as any).clinic.findMany({ where: { deletedAt: null, status: 'ACTIVE' }, select: { id: true }, take: 2 });
+      if (clinics.length === 1) clinicId = clinics[0].id;
+    }
+    if (!clinicId) return { name: 'Aulia Care', brandDisplayName: null, documentLogoUrl: null };
     const clinic = await (this.prisma as any).clinic.findUnique({
-      where: { id: user.clinicId },
+      where: { id: clinicId },
       select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true, legalName: true, registrationNumber: true, rccmNumber: true, taxNumber: true, nationalIdNumber: true, phone: true, email: true, address: true, city: true, country: true, documentFooter: true },
     });
     return clinic || { name: 'Aulia Care', brandDisplayName: null, documentLogoUrl: null };
@@ -65,7 +81,10 @@ export class AdministrationService {
     return (this.prisma as any).clinic.update({
       where: { id: user.clinicId },
       data: {
-        ...(brandDisplayName !== undefined ? { brandDisplayName } : {}),
+        // `name` is the canonical establishment name used by older print
+        // templates.  Keep it synchronized with the configured display name
+        // so documents cannot keep an obsolete clinic identity.
+        ...(brandDisplayName !== undefined ? { name: brandDisplayName, brandDisplayName } : {}),
         ...(data.documentLogoUrl !== undefined ? { documentLogoUrl, documentLogoUpdatedAt: new Date() } : {}),
         ...(data.legalName !== undefined ? { legalName: data.legalName.trim() || null } : {}),
         ...(data.registrationNumber !== undefined ? { registrationNumber: data.registrationNumber.trim() || null } : {}),

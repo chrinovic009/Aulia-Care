@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { apiFetch } from "../../config/api";
+import React from "react";
+import type { ClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
 
 interface HistoryRecord {
   id: string;
@@ -22,14 +22,15 @@ interface HistoryPrintProps {
   clinicAddress?: string;
   clinicPhone?: string;
   printDate?: string;
+  clinicBranding?: ClinicDocumentBranding | null;
 }
 
 export const HistoryPrintTemplate: React.FC<HistoryPrintProps> = ({
   records,
   printDate = new Date().toLocaleDateString("fr-FR"),
+  clinicBranding,
 }) => {
-  const [clinic, setClinic] = useState<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null; address?: string | null; city?: string | null; phone?: string | null; email?: string | null; documentFooter?: string | null }>({});
-  useEffect(() => { apiFetch<typeof clinic>("/administration/clinic-branding").then(setClinic).catch(() => undefined); }, []);
+  const clinic: ClinicDocumentBranding = clinicBranding || { name: "Aulia Care" };
   const clinicName = clinic.brandDisplayName || clinic.name || "Aulia Care";
   const clinicAddress = [clinic.address, clinic.city].filter(Boolean).join(", ");
   const totalPayments = records

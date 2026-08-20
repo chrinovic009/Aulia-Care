@@ -1,7 +1,7 @@
 import { ChangeEvent, useEffect, useState } from "react";
 import PageMeta from "../../components/common/PageMeta";
 import { apiFetch } from "../../config/api";
-import { invalidateClinicDocumentBrandingCache } from "../../utils/clinicDocumentBranding";
+import { setClinicDocumentBrandingCache } from "../../utils/clinicDocumentBranding";
 
 type ClinicBranding = {
   name: string;
@@ -61,7 +61,8 @@ export default function ClinicBrandingPage() {
     try {
       const saved = await apiFetch<ClinicBranding>("/administration/clinic-branding", { method: "PATCH", body: JSON.stringify({ brandDisplayName: name, documentLogoUrl: logo, ...identity }) });
       setBranding(saved); setName(saved.brandDisplayName || saved.name); setLogo(saved.documentLogoUrl || null);
-      invalidateClinicDocumentBrandingCache();
+      setClinicDocumentBrandingCache(saved);
+      window.dispatchEvent(new CustomEvent("aulia:clinic-branding-updated", { detail: saved }));
       setMessage("Identité enregistrée. Les nouveaux documents utilisent désormais ces coordonnées et ce logo, ou le logo Aulia Care si aucun logo n’est fourni.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Enregistrement impossible."); }
     finally { setSaving(false); }

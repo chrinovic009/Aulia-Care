@@ -2,6 +2,7 @@ import { apiFetch } from "../config/api";
 
 export type ClinicDocumentBranding = {
   name: string;
+  brandDisplayName?: string | null;
   legalName?: string | null;
   documentLogoUrl?: string | null;
   phone?: string | null;
@@ -18,9 +19,42 @@ export type ClinicDocumentBranding = {
 
 const FALLBACK: ClinicDocumentBranding = { name: "Aulia Care" };
 let cachedBranding: ClinicDocumentBranding | null = null;
+const CACHE_KEY = "aulia:clinic-document-branding";
+
+function normaliseBranding(branding?: Partial<ClinicDocumentBranding> | null): ClinicDocumentBranding {
+  return {
+    ...FALLBACK,
+    ...branding,
+    name: branding?.brandDisplayName?.trim() || branding?.name?.trim() || "Aulia Care",
+  };
+}
+
+function readBrowserCache(): ClinicDocumentBranding | null {
+  try {
+    const raw = window.localStorage.getItem(CACHE_KEY);
+    return raw ? normaliseBranding(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setClinicDocumentBrandingCache(branding: Partial<ClinicDocumentBranding>) {
+  cachedBranding = normaliseBranding(branding);
+  try {
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify(cachedBranding));
+  } catch {
+    // Printing still works when browser storage is unavailable.
+  }
+  return cachedBranding;
+}
 
 export function invalidateClinicDocumentBrandingCache() {
   cachedBranding = null;
+  try {
+    window.localStorage.removeItem(CACHE_KEY);
+  } catch {
+    // no-op
+  }
 }
 
 /** Loads the hospital identity once per browser session for official documents.
@@ -28,16 +62,14 @@ export function invalidateClinicDocumentBrandingCache() {
  */
 export async function getClinicDocumentBranding(): Promise<ClinicDocumentBranding> {
   if (cachedBranding) return cachedBranding;
+  const storedBranding = readBrowserCache();
+  if (storedBranding) cachedBranding = storedBranding;
 
   try {
     const branding = await apiFetch<Partial<ClinicDocumentBranding>>("/administration/clinic-branding");
-    cachedBranding = {
-      ...FALLBACK,
-      ...branding,
-      name: branding.name?.trim() || "Aulia Care",
-    };
+    cachedBranding = setClinicDocumentBrandingCache(branding);
   } catch {
-    cachedBranding = FALLBACK;
+    cachedBranding = storedBranding || FALLBACK;
   }
 
   return cachedBranding;

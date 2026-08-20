@@ -10,6 +10,7 @@ import { fetchLaboratoryCatalogue } from "../../api/laboratory";
 import { formatConsultationId, formatDossierId, formatExamRequestId, formatPrescriptionId } from "../../utils/formatId";
 import { medicalHistoryKindLabel } from "../../utils/medicalHistoryLabels";
 import { calculateBmi } from "../../utils/vitals";
+import { getClinicDocumentBranding, documentLogoUrl } from "../../utils/clinicDocumentBranding";
 
 type LabTestMetadata = {
   id: string;
@@ -1041,7 +1042,7 @@ function QuickStat({ label, value }: { label: string; value: string }) {
 }
 
 async function printPatientRecord(patient: DoctorPatient, position?: number, labTests: LabTestMetadata[] = [], departments: Department[] = []) {
-    const clinic = await apiFetch<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null; address?: string | null; city?: string | null; country?: string | null; phone?: string | null; email?: string | null; rccmNumber?: string | null; taxNumber?: string | null; nationalIdNumber?: string | null; documentFooter?: string | null }>("/administration/clinic-branding").catch(() => ({}));
+    const clinic = await getClinicDocumentBranding();
     const clinicName = clinic.brandDisplayName || clinic.name || "Aulia Care";
     const clinicContact = [[clinic.address, clinic.city, clinic.country].filter(Boolean).join(", "), clinic.phone ? `Tél: ${clinic.phone}` : "", clinic.email ? `E-mail: ${clinic.email}` : ""].filter(Boolean).join(" | ") || "Coordonnées de l’établissement non renseignées";
     const legalReferences = [["RCCM", clinic.rccmNumber], ["NIF", clinic.taxNumber], ["ID", clinic.nationalIdNumber]].filter(([, value]) => Boolean(value)).map(([label, value]) => `${label}: ${value}`).join(" | ");
@@ -1370,7 +1371,7 @@ async function printPatientRecord(patient: DoctorPatient, position?: number, lab
         <div class="page">
           <div class="header">
             <div class="brand">
-              <img src="${clinic.documentLogoUrl || "/images/logo/icone.png"}" alt="Logo clinique" />
+              <img src="${documentLogoUrl(clinic)}" alt="Logo clinique" />
               <div>
                 <div class="clinic-name">${clinicName}</div>
                 <div class="clinic-details">Dossier médical officiel — système Aulia Care</div>
