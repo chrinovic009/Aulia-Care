@@ -3,6 +3,7 @@ import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { fetchMyPatientProfile, PatientProfile } from "../../api/patient";
 import { medicalHistoryKindLabel } from "../../utils/medicalHistoryLabels";
+import { calculateBmi } from "../../utils/vitals";
 
 type PatientClinicalPageProps = {
   mode: "dossier" | "traitements" | "suivi" | "historique";
@@ -174,6 +175,7 @@ export default function PatientClinicalPage({ mode }: PatientClinicalPageProps) 
                 <Info label="Respiration" value={latestVitals.RESPIRATORY_RATE || "-"} />
                 <Info label="Poids" value={latestVitals.WEIGHT || "-"} />
                 <Info label="Taille" value={latestVitals.HEIGHT || "-"} />
+                <Info label="IMC" value={calculateBmi(profile.vitalSigns) || "-"} />
                 <Info label="Perimetre thoracique" value={latestVitals.CHEST_CIRCUMFERENCE || "-"} />
                 <Info label="Perimetre brachial" value={latestVitals.ARM_CIRCUMFERENCE || "-"} />
               </Panel>

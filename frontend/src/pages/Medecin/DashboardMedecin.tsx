@@ -13,6 +13,8 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import { DoctorTelehealthCall } from "../../components/telehealth/TelehealthCall";
 import { ClinicalConsultationWorkspace, createInitialStructuredConsultation, type StructuredConsultation } from "./ClinicalConsultationWorkspace";
+import { ConsultationExamOrder, ConsultationPrescriptionOrder } from "./ConsultationOrders";
+import { apiFetch } from "../../config/api";
 
 // Petit hook utilitaire pour gérer l'état d'une modale
 function useModal(initialState = false) {
@@ -295,13 +297,16 @@ export default function DashboardMedecin() {
   const isConsultationPage = location.pathname.includes("/doctor/consultations");
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<DoctorPatient | null>(null);
+  const [openedDraft, setOpenedDraft] = useState<{ id: string; status: string; chiefComplaint?: string | null; clinicalSummary?: string | null; createdAt: string; updatedAt?: string; provider?: { id?: string; displayName?: string | null; firstName?: string | null; lastName?: string | null } | null } | null>(null);
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState<{ title: string; message: string; tone: "success" | "warning" | "error" } | null>(null);
+  const [confirmation, setConfirmation] = useState<{ title: string; message: string; confirmLabel: string; tone?: "danger" | "primary"; onConfirm: () => void; onCancel?: () => void } | null>(null);
   const [isSavingConsultation, setIsSavingConsultation] = useState(false);
   const [isConsultationOpen, setIsConsultationOpen] = useState(false);
+  const [exitConsultationModal, setExitConsultationModal] = useState(false);
   const [telehealthReady, setTelehealthReady] = useState(false);
   
   const speechRecognitionRef = useRef<any>(null);
@@ -310,6 +315,10 @@ export default function DashboardMedecin() {
   const voiceRouteRef = useRef<VoiceRoute | null>(null);
   const voiceAnswerRef = useRef("");
   const restoredDraftRef = useRef<string | null>(null);
+  const restoredServerDraftRef = useRef<string | null>(null);
+  const acceptedServerDraftsRef = useRef(new Set<string>());
+  const declinedServerDraftsRef = useRef(new Set<string>());
+  const [draftDecisionVersion, setDraftDecisionVersion] = useState(0);
   
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
@@ -430,6 +439,28 @@ export default function DashboardMedecin() {
     };
   }, []);
 
+  useEffect(() => {
+    const patientId = new URLSearchParams(location.search).get("patient");
+    if (!patientId || patients.length === 0) return;
+    const patient = patients.find((item) => item.id === patientId);
+    if (patient) setSelectedPatient(patient);
+  }, [location.search, patients]);
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get("draft")) setIsConsultationOpen(true);
+  }, [location.search]);
+
+  // A draft can be older than the short consultation history embedded in the
+  // patient list. Fetch it explicitly so clicking a draft always restores the
+  // exact saved clinical JSON, never merely the most recent consultation.
+  useEffect(() => {
+    const draftId = new URLSearchParams(location.search).get("draft");
+    if (!draftId) { setOpenedDraft(null); return; }
+    apiFetch<typeof openedDraft>(`/consultations/${encodeURIComponent(draftId)}/draft-detail`)
+      .then((draft) => setOpenedDraft(draft))
+      .catch((error) => { setOpenedDraft(null); setActionMessage(error instanceof Error ? error.message : "Impossible de charger ce brouillon."); });
+  }, [location.search]);
+
   // Nettoyage de la reconnaissance vocale au démontage pour libérer le micro
   useEffect(() => {
     return () => {
@@ -443,7 +474,10 @@ export default function DashboardMedecin() {
   }, []);
 
   useEffect(() => {
-    const consultation = (selectedPatient?.consultations || []).find((item) => ["DRAFT", "IN_PROGRESS"].includes(String(item.status).toUpperCase()));
+    const requestedDraftId = new URLSearchParams(location.search).get("draft");
+    if (requestedDraftId && !openedDraft) return;
+    const consultation = openedDraft && openedDraft.id === requestedDraftId ? openedDraft : (selectedPatient?.consultations || []).find((item) => item.id === requestedDraftId && ["DRAFT", "IN_PROGRESS"].includes(String(item.status).toUpperCase()))
+      || (selectedPatient?.consultations || []).find((item) => ["DRAFT", "IN_PROGRESS"].includes(String(item.status).toUpperCase()));
     if (!consultation) return;
 
     let parsed: ClinicalSummaryPayload = {};
@@ -453,6 +487,27 @@ export default function DashboardMedecin() {
       parsed = {};
     }
 
+    const restoreKey = `aulia:server-draft:${consultation.id}`;
+    if (!acceptedServerDraftsRef.current.has(restoreKey) && !declinedServerDraftsRef.current.has(restoreKey)) {
+      setConfirmation({
+        title: "Brouillon retrouvé",
+        message: `Un brouillon enregistré le ${formatDateTime(consultation.updatedAt || consultation.createdAt)} existe pour ${formatDoctorPatientName(selectedPatient)}. Voulez-vous continuer cette consultation ?`,
+        confirmLabel: "Continuer le brouillon",
+        onConfirm: () => { acceptedServerDraftsRef.current.add(restoreKey); setIsConsultationOpen(true); setConfirmation(null); setDraftDecisionVersion((version) => version + 1); },
+        onCancel: () => { declinedServerDraftsRef.current.add(restoreKey); setActionMessage("Brouillon conservé. Vous pourrez le reprendre depuis l’onglet Brouillons."); },
+      });
+      return;
+    }
+    if (declinedServerDraftsRef.current.has(restoreKey)) return;
+    // The legacy prompt below is intentionally bypassed: confirmations are Aulia modals.
+    restoredServerDraftRef.current = restoreKey;
+    if (restoredServerDraftRef.current !== restoreKey) {
+      restoredServerDraftRef.current = restoreKey;
+      if (!window.confirm(`Un brouillon enregistré le ${formatDateTime(consultation.updatedAt || consultation.createdAt)} existe pour ${formatDoctorPatientName(selectedPatient)}. Voulez-vous continuer cette consultation ?`)) {
+        setActionMessage("Brouillon conservé. Vous pourrez le reprendre depuis l’onglet Brouillons.");
+        return;
+      }
+    }
     setClinicalForm((current) => ({
       ...current,
       chiefComplaint: consultation.chiefComplaint || current.chiefComplaint,
@@ -484,9 +539,11 @@ export default function DashboardMedecin() {
         chiefComplaint: consultation.chiefComplaint || "",
       }));
     }
-  }, [selectedPatient?.id, selectedPatient?.latestConsultation, selectedPatient?.consultations]);
+  }, [selectedPatient?.id, selectedPatient?.latestConsultation, selectedPatient?.consultations, location.search, draftDecisionVersion, openedDraft]);
 
-  const activeConsultation = (selectedPatient?.consultations || []).find((item) => ["DRAFT", "IN_PROGRESS"].includes(String(item.status).toUpperCase()));
+  const requestedDraftId = new URLSearchParams(location.search).get("draft");
+  const activeConsultation = openedDraft && openedDraft.id === requestedDraftId ? openedDraft : (selectedPatient?.consultations || []).find((item) => item.id === requestedDraftId && ["DRAFT", "IN_PROGRESS"].includes(String(item.status).toUpperCase()))
+    || (selectedPatient?.consultations || []).find((item) => ["DRAFT", "IN_PROGRESS"].includes(String(item.status).toUpperCase()));
   const currentConsultationId = activeConsultation?.id || "";
   const hasConsultationResults = Boolean(currentConsultationId && (
     selectedPatient?.labRequests?.some((request) => request.consultationId === currentConsultationId && request.results?.length && ["AVAILABLE", "SENT", "COMPLETED", "VERIFIED"].includes(String(request.status).toUpperCase()))
@@ -551,6 +608,13 @@ export default function DashboardMedecin() {
         capturedAt?: string;
       };
       if (!draft.clinicalForm || !draft.consultationModule) return;
+      setConfirmation({
+        title: "Récupération après interruption",
+        message: `Un brouillon local du ${formatDateTime(draft.capturedAt)} a été retrouvé. Souhaitez-vous le restaurer ?`,
+        confirmLabel: "Restaurer",
+        onConfirm: () => { setClinicalForm(draft.clinicalForm!); setConsultationModule(hydrateConsultationModule(draft.consultationModule!)); setActionMessage("Brouillon local restauré. Enregistrez-le pour le sécuriser sur le serveur."); setConfirmation(null); },
+      });
+      return;
       if (window.confirm(`Un brouillon non envoyé du ${formatDateTime(draft.capturedAt)} a été retrouvé. Le restaurer ?`)) {
         setClinicalForm(draft.clinicalForm);
         setConsultationModule(hydrateConsultationModule(draft.consultationModule));
@@ -692,6 +756,7 @@ export default function DashboardMedecin() {
         : "Brouillon enregistré dans le dossier médical. Vous pouvez reprendre la consultation à tout moment.";
       setActionMessage(message);
       setSaveFeedback({ title: "Brouillon enregistré", message, tone: awaitingResults ? "warning" : "success" });
+      setIsConsultationOpen(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : "La sauvegarde du brouillon a échoué.";
       setActionMessage(message);
@@ -700,6 +765,18 @@ export default function DashboardMedecin() {
       setIsSavingConsultation(false);
     }
   };
+
+  // A server draft is kept whenever the clinical page loses visibility. The
+  // session copy above remains a recovery fallback if the browser is killed
+  // before the network request can finish.
+  useEffect(() => {
+    if (!isConsultationPage || !selectedPatient) return;
+    const saveOnHide = () => {
+      if (document.visibilityState === "hidden") void saveDraftConsultation();
+    };
+    document.addEventListener("visibilitychange", saveOnHide);
+    return () => document.removeEventListener("visibilitychange", saveOnHide);
+  }, [isConsultationPage, selectedPatient?.id, currentConsultationId, clinicalForm, consultationModule]);
 
   const validateConsultation = async () => {
     if (isSavingConsultation) return;
@@ -784,6 +861,7 @@ export default function DashboardMedecin() {
     const message = "Consultation signée et enregistrée dans le dossier médical. Les données d’orientation et de prise en charge sont traçables.";
     setActionMessage(message);
     setSaveFeedback({ title: "Consultation validée", message, tone: "success" });
+    setIsConsultationOpen(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : "La validation de la consultation a échoué.";
       setActionMessage(message);
@@ -798,6 +876,21 @@ export default function DashboardMedecin() {
     setDraftAllergy({ allergen: "", reactionType: "" });
     setDraftMedication({ drugName: "", dosage: "", compliance: "GOOD" });
     setClinicalForm((current) => ({ ...current, chiefComplaint: "", onset: "", associatedSymptoms: "", principalDiagnosis: "", hypotheses: "", treatmentPlan: "", followUp: "" }));
+  };
+
+  const requestConsultationClose = () => {
+    if (!isConsultationOpen) {
+      setIsConsultationOpen(true);
+      return;
+    }
+    setExitConsultationModal(true);
+  };
+
+  const discardConsultationChanges = () => {
+    if (consultationDraftKey) window.sessionStorage.removeItem(consultationDraftKey);
+    setExitConsultationModal(false);
+    setIsConsultationOpen(false);
+    setActionMessage("Consultation fermée sans enregistrer les modifications locales.");
   };
 
   const addAllergy = () => {
@@ -1060,6 +1153,8 @@ export default function DashboardMedecin() {
       {error && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
       {actionMessage && <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700">{actionMessage}</div>}
       {saveFeedback && <SaveFeedbackModal {...saveFeedback} onClose={() => setSaveFeedback(null)} />}
+      {confirmation && <ConfirmationModal {...confirmation} onClose={() => { confirmation.onCancel?.(); setConfirmation(null); }} />}
+      {exitConsultationModal && <ExitConsultationModal onCancel={() => setExitConsultationModal(false)} onDiscard={discardConsultationChanges} onSave={() => { setExitConsultationModal(false); void saveDraftConsultation(); }} />}
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[360px_1fr]">
         <aside className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -1140,7 +1235,7 @@ export default function DashboardMedecin() {
                   actions={
                     <button
                       type="button"
-                      onClick={() => setIsConsultationOpen((current) => !current)}
+                      onClick={requestConsultationClose}
                       className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700"
                     >
                       {isConsultationOpen ? "Fermer la consultation" : "Ouvrir la consultation"}
@@ -1181,19 +1276,6 @@ export default function DashboardMedecin() {
                     )}
                   </div>
 
-                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">Patient en consultation</p>
-                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{formatDoctorPatientName(selectedPatient)} • {serviceName(selectedPatient) || "Service non renseigné"}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => navigate("/doctor/prescriptions")} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">Ordonnance</button>
-                        <button type="button" onClick={() => navigate("/doctor/exams")} className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700">Examens</button>
-                      </div>
-                    </div>
-                  </div>
-
                   <SectionBox title="Mode de consultation">
                     <div className="grid gap-3 md:grid-cols-3">
                       <FormSelect label="Mode" value={consultationModule.consultationMode} onChange={(value) => void changeConsultationMode(value)} options={[['PRESENTIAL','Présentiel'], ['TELECONSULTATION','Télésanté'], ['HOME_VISIT','Visite à domicile'], ['EMERGENCY','Urgence']]} />
@@ -1222,6 +1304,8 @@ export default function DashboardMedecin() {
                       value={consultationModule.structured}
                       onChange={(structured) => setConsultationModule((current) => ({ ...current, structured }))}
                       hasAvailableResults={hasConsultationResults}
+                      examinationsSlot={<ConsultationExamOrder ensureConsultation={ensureActiveConsultation} />}
+                      prescriptionSlot={<ConsultationPrescriptionOrder ensureConsultation={ensureActiveConsultation} />}
                     />
                   ) : !telehealthReady ? (
                     <div className="mt-4 rounded-xl border border-aulia-teal/25 bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-aulia-teal/10 dark:text-aulia-mist">
@@ -1333,7 +1417,7 @@ export default function DashboardMedecin() {
                   )}
                   {consultationModule.consultationMode !== "TELECONSULTATION" && (
                     <div className="sticky bottom-3 z-10 mt-4 flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
-                      <button type="button" onClick={resetConsultationModule} disabled={isSavingConsultation} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200">Effacer / réinitialiser</button>
+                      <button type="button" onClick={() => setConfirmation({ title: "Réinitialiser la consultation ?", message: "Les données non enregistrées de cette consultation seront effacées. Cette action ne peut pas être annulée.", confirmLabel: "Oui, effacer", tone: "danger", onConfirm: () => { resetConsultationModule(); setConfirmation(null); } })} disabled={isSavingConsultation} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200">Effacer / réinitialiser</button>
                       <button type="button" onClick={() => void saveDraftConsultation()} disabled={isSavingConsultation} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{isSavingConsultation ? "Enregistrement…" : "Enregistrer brouillon"}</button>
                       <button type="button" onClick={() => void validateConsultation()} disabled={isSavingConsultation} className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60">{isSavingConsultation ? "Enregistrement…" : "Valider et signer"}</button>
                     </div>
@@ -1598,6 +1682,14 @@ function SaveFeedbackModal({ title, message, tone, onClose }: { title: string; m
       </section>
     </div>
   );
+}
+
+function ConfirmationModal({ title, message, confirmLabel, tone = "primary", onConfirm, onClose }: { title: string; message: string; confirmLabel: string; tone?: "danger" | "primary"; onConfirm: () => void; onClose: () => void }) {
+  return <div className="fixed inset-0 z-[1000000] grid place-items-center overflow-y-auto bg-slate-950/60 p-4" role="dialog" aria-modal="true" aria-labelledby="consultation-confirm-title"><section className="w-full max-w-md rounded-2xl border border-aulia-teal/25 bg-white p-5 shadow-2xl dark:bg-slate-950"><p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Aulia Care · confirmation</p><h2 id="consultation-confirm-title" className="mt-2 text-lg font-bold text-aulia-navy dark:text-white">{title}</h2><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{message}</p><div className="mt-5 grid gap-2 sm:grid-cols-2"><button type="button" onClick={onClose} className="order-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-bold text-slate-700 dark:border-slate-700 dark:text-slate-200 sm:order-1">Annuler</button><button type="button" onClick={onConfirm} className={`order-1 rounded-xl px-4 py-2.5 text-sm font-bold text-white sm:order-2 ${tone === "danger" ? "bg-red-600 hover:bg-red-700" : "bg-aulia-teal hover:bg-[#087c73]"}`}>{confirmLabel}</button></div></section></div>;
+}
+
+function ExitConsultationModal({ onCancel, onDiscard, onSave }: { onCancel: () => void; onDiscard: () => void; onSave: () => void }) {
+  return <div className="fixed inset-0 z-[1000000] grid place-items-center overflow-y-auto bg-slate-950/60 p-4" role="dialog" aria-modal="true" aria-labelledby="consultation-exit-title"><section className="w-full max-w-lg rounded-2xl border border-aulia-teal/25 bg-white p-5 shadow-2xl dark:bg-slate-950"><p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Aulia Care · consultation</p><h2 id="consultation-exit-title" className="mt-2 text-lg font-bold text-aulia-navy dark:text-white">Quitter la consultation ?</h2><p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Choisissez explicitement le sort de votre saisie clinique. Un brouillon reste privé au médecin auteur tant qu’il n’est pas signé.</p><div className="mt-5 grid gap-2"><button type="button" onClick={onSave} className="rounded-xl bg-aulia-teal px-4 py-2.5 text-sm font-bold text-white hover:bg-[#087c73]">Quitter et enregistrer le brouillon</button><button type="button" onClick={onDiscard} className="rounded-xl border border-red-200 px-4 py-2.5 text-sm font-bold text-red-700 hover:bg-red-50 dark:border-red-900/70 dark:text-red-300 dark:hover:bg-red-950/30">Quitter sans enregistrer</button><button type="button" onClick={onCancel} className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-bold text-slate-700 dark:border-slate-700 dark:text-slate-200">Annuler</button></div></section></div>;
 }
 
 function Empty() {

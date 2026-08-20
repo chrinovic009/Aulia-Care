@@ -10,6 +10,7 @@ import { AuthProvider } from "./context/AuthContext.tsx";
 import { RealtimeProvider } from "./context/RealtimeContext.tsx";
 import { registerSW } from "virtual:pwa-register";
 import { installCsrfFetchInterceptor } from "./config/csrfFetch.ts";
+import { ActionFeedbackProvider } from "./components/common/ActionFeedbackProvider.tsx";
 
 installCsrfFetchInterceptor();
 
@@ -22,9 +23,11 @@ createRoot(document.getElementById("root")!).render(
     <ThemeProvider>
       <AuthProvider>
         <RealtimeProvider>
-          <AppWrapper>
-            <App />
-          </AppWrapper>
+          <ActionFeedbackProvider>
+            <AppWrapper>
+              <App />
+            </AppWrapper>
+          </ActionFeedbackProvider>
         </RealtimeProvider>
       </AuthProvider>
     </ThemeProvider>

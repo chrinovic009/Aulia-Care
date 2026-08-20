@@ -9,6 +9,7 @@ import {
 import { fetchLaboratoryCatalogue } from "../../api/laboratory";
 import { formatConsultationId, formatDossierId, formatExamRequestId, formatPrescriptionId } from "../../utils/formatId";
 import { medicalHistoryKindLabel } from "../../utils/medicalHistoryLabels";
+import { calculateBmi } from "../../utils/vitals";
 
 type LabTestMetadata = {
   id: string;
@@ -431,11 +432,13 @@ function PatientRecord({ patient, position, labTests, departments }: { patient: 
               ["Respiration", "RESPIRATORY_RATE"],
               ["Poids", "WEIGHT"],
               ["Taille", "HEIGHT"],
+              ["IMC", "__BMI__"],
               ["P. thoracique", "CHEST_CIRCUMFERENCE"],
               ["P. brachial", "ARM_CIRCUMFERENCE"],
             ].map(([label, type]) => {
               const vital = latestVital(patient, type);
-              return <Info key={type} label={label} value={vital ? `${vital.value} ${vital.unit || ""}`.trim() : "-"} />;
+              const reading = type === "__BMI__" ? calculateBmi(patient.vitalSigns) || "-" : vital ? `${vital.value} ${vital.unit || ""}`.trim() : "-";
+              return <Info key={type} label={label} value={reading} />;
             })}
           </div>
         </Section>

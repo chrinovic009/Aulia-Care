@@ -23,6 +23,28 @@ export class ConsultationsController {
     return this.consultationsService.findAll(req.user?.userId, req.user?.role);
   }
 
+  /**
+   * A draft is readable by physicians who legitimately follow the patient, but
+   * only its author can resume editing it.  This route must precede `:id`.
+   */
+  @Get('drafts')
+  @Roles('PHYSICIAN')
+  findDrafts(@Request() req: any) {
+    return this.consultationsService.findDraftsForPhysician(req.user?.userId);
+  }
+
+  @Get(':id/draft-detail')
+  @Roles('PHYSICIAN')
+  findDraftDetail(@Param('id') id: string, @Request() req: any) {
+    return this.consultationsService.findDraftDetailForPhysician(id, req.user?.userId);
+  }
+
+  @Delete(':id/draft')
+  @Roles('PHYSICIAN')
+  archiveOwnDraft(@Param('id') id: string, @Request() req: any) {
+    return this.consultationsService.archiveOwnDraft(id, req.user?.userId);
+  }
+
   @Get(':id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
   findOne(@Param('id') id: string, @Request() req: any) {

@@ -132,7 +132,11 @@ export class ConsultationsService {
     const consultation = await this.prisma.$transaction(async (tx) => {
       // Serialize opening an encounter for one doctor/patient pair. This avoids
       // duplicate drafts when two clicks or two browser tabs arrive together.
-      await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`consultation:${dto.patientId}:${actorId}`}))`);
+      // pg_advisory_xact_lock returns PostgreSQL's `void` type. Prisma cannot
+      // deserialize that type through $queryRaw, which used to abort opening a
+      // consultation (and surface as an authentication-looking browser error).
+      // executeRaw intentionally ignores the result while retaining the lock.
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`consultation:${dto.patientId}:${actorId}`}))`);
       const current = await tx.consultation.findFirst({
         where: { patientId: dto.patientId, providerId: actorId, status: { in: [ConsultationStatus.DRAFT, ConsultationStatus.IN_PROGRESS] }, deletedAt: null },
         orderBy: { createdAt: 'desc' },
@@ -196,6 +200,92 @@ export class ConsultationsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * Deliberately separate from findAll: the regular consultation list remains
+   * limited to the physician author.  A clinician following the same patient
+   * may read an unfinished note, but cannot take ownership of it or edit it.
+   */
+  async findDraftsForPhysician(actorId?: string) {
+    if (!actorId) throw new ForbiddenException('Médecin non identifié.');
+
+    const visiblePatients = await this.prisma.patient.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          { consultations: { some: { providerId: actorId, deletedAt: null } } },
+          { hospitalizations: { some: { physicianId: actorId, deletedAt: null } } },
+        ],
+      },
+      select: { id: true },
+    });
+    const patientIds = visiblePatients.map((patient) => patient.id);
+    if (patientIds.length === 0) return [];
+
+    const drafts = await this.prisma.consultation.findMany({
+      where: {
+        patientId: { in: patientIds },
+        deletedAt: null,
+        status: { in: [ConsultationStatus.DRAFT, ConsultationStatus.IN_PROGRESS] },
+      },
+      select: {
+        id: true,
+        patientId: true,
+        providerId: true,
+        status: true,
+        chiefComplaint: true,
+        createdAt: true,
+        updatedAt: true,
+        patient: { select: { firstName: true, middleName: true, lastName: true } },
+        provider: { select: { firstName: true, lastName: true, displayName: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    return drafts.map((draft) => ({ ...draft, canWrite: draft.providerId === actorId }));
+  }
+
+  async findDraftDetailForPhysician(id: string, actorId?: string) {
+    if (!actorId) throw new ForbiddenException('Médecin non identifié.');
+    const consultation = await this.prisma.consultation.findUnique({
+      where: { id },
+      include: {
+        patient: { select: { id: true, firstName: true, middleName: true, lastName: true, dateOfBirth: true, gender: true } },
+        provider: { select: { id: true, firstName: true, lastName: true, displayName: true } },
+      },
+    });
+    if (!consultation || consultation.deletedAt || (consultation.status !== ConsultationStatus.DRAFT && consultation.status !== ConsultationStatus.IN_PROGRESS)) {
+      throw new NotFoundException('Brouillon introuvable.');
+    }
+    const canRead = await this.prisma.patient.count({
+      where: {
+        id: consultation.patientId,
+        deletedAt: null,
+        OR: [
+          { consultations: { some: { providerId: actorId, deletedAt: null } } },
+          { hospitalizations: { some: { physicianId: actorId, deletedAt: null } } },
+        ],
+      },
+    });
+    if (!canRead) throw new ForbiddenException('Accès à ce brouillon non autorisé.');
+    return { ...consultation, canWrite: consultation.providerId === actorId };
+  }
+
+  /** Archives, rather than physically deletes, the author's unfinished note. */
+  async archiveOwnDraft(id: string, actorId?: string) {
+    if (!actorId) throw new ForbiddenException('Médecin non identifié.');
+    const draft = await this.prisma.consultation.findUnique({ where: { id }, select: { id: true, providerId: true, status: true } });
+    if (!draft) throw new NotFoundException('Brouillon introuvable.');
+    if (draft.providerId !== actorId) throw new ForbiddenException('Seul le médecin responsable peut supprimer ce brouillon.');
+    if (draft.status !== ConsultationStatus.DRAFT && draft.status !== ConsultationStatus.IN_PROGRESS) {
+      throw new BadRequestException('Seul un brouillon non finalisé peut être supprimé.');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.consultation.update({ where: { id }, data: { status: ConsultationStatus.CANCELLED, deletedAt: new Date(), version: { increment: 1 } } });
+      await tx.consultationNote.create({ data: { consultationId: id, authorId: actorId, noteType: 'DRAFT_ARCHIVED_BY_AUTHOR', content: 'Brouillon archivé à la demande de son médecin responsable.' } });
+    });
+    return { archived: true };
   }
 
   async findOne(id: string, actorId?: string, actorRole?: string) {
