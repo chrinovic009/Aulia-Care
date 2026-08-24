@@ -1,4 +1,0 @@
-ALTER TABLE "WearableLot"
-  ALTER COLUMN "planId" DROP NOT NULL,
-  ADD COLUMN "paidAmount" DECIMAL(12,2),
-  ADD COLUMN "currency" TEXT NOT NULL DEFAULT 'CDF';

@@ -1,10 +1,10 @@
 import RoleMessages from "../../components/messages/RoleMessages";
 
-export default function MessagesLaboratoire() {
+export default function MessagesFinance() {
   return (
     <RoleMessages
-      title="Messages laboratoire | Aulia Care"
-      description="Messagerie laboratoire avec medecins et services para-medicaux autorises."
+      title="Messages finance | Aulia Care"
+      description="Messagerie sécurisée avec les personnels, l’administration et le super-administrateur."
     />
   );
 }

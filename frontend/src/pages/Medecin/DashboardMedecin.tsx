@@ -272,6 +272,11 @@ const hydrateConsultationModule = (saved?: Partial<ConsultationModuleState> | nu
   const initial = createInitialConsultationModule();
   if (!saved) return initial;
   const structured = saved.structured;
+  const legacyPhysical = structured?.physical || {};
+  // Les consultations antérieures employaient les clés d'interface
+  // generalInspection / dermatological. Elles restent lisibles, mais les
+  // nouvelles sauvegardes utilisent les noms cliniques canoniques.
+  const { generalInspection, dermatological, ...physicalWithoutLegacyKeys } = legacyPhysical;
   return {
     ...initial,
     ...saved,
@@ -281,7 +286,12 @@ const hydrateConsultationModule = (saved?: Partial<ConsultationModuleState> | nu
       illness: { ...initial.structured.illness, ...structured?.illness },
       antecedents: { ...initial.structured.antecedents, ...structured?.antecedents },
       anamnesis: { ...initial.structured.anamnesis, ...structured?.anamnesis },
-      physical: { ...initial.structured.physical, ...structured?.physical },
+      physical: {
+        ...initial.structured.physical,
+        ...physicalWithoutLegacyKeys,
+        generalState: legacyPhysical.generalState || generalInspection || "",
+        palpations: legacyPhysical.palpations || dermatological || "",
+      },
       orientation: { ...initial.structured.orientation, ...structured?.orientation },
       care: { ...initial.structured.care, ...structured?.care },
     },
@@ -731,6 +741,13 @@ export default function DashboardMedecin() {
         aggravatingFactors: clinicalForm.aggravatingFactors,
         associatedSymptoms: clinicalForm.associatedSymptoms,
         description: historyDescription,
+      },
+      clinicalExam: {
+        generalState: clinicalForm.generalState,
+        auscultation: clinicalForm.auscultation,
+        palpation: clinicalForm.palpation,
+        focusedExam: clinicalForm.focusedExam,
+        description: examDescription,
       },
       treatmentPlan: {
         notes: consignesNotes,

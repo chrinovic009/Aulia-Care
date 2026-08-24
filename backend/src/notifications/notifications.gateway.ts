@@ -375,6 +375,16 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     }
   }
 
+  /** A finance signal carries no financial or patient data. Only authenticated
+   * users in the correct clinic + finance domain receive it. */
+  notifyFinanceClinic(clinicId: string, payload: { resource: 'budget' | 'allocation' | 'investment' | 'payment' | 'invoice' | 'bank-account' | 'bank-statement' | 'bank-reconciliation' | 'journal' | 'refund' }) {
+    try {
+      if (this.server) this.server.to(this.clinicDomainRoom(clinicId, 'finance')).emit('finance.updated', payload);
+    } catch {
+      // WebSocket delivery is best-effort; the auditable write remains valid.
+    }
+  }
+
   private userRoom(userId: string) {
     return `user:${userId}`;
   }
@@ -568,7 +578,7 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   }
 }
 
-type RealtimeDomain = 'reception' | 'clinical' | 'laboratory' | 'radiology' | 'pharmacy' | 'billing' | 'administration';
+type RealtimeDomain = 'reception' | 'clinical' | 'laboratory' | 'radiology' | 'pharmacy' | 'billing' | 'finance' | 'administration';
 type RealtimeAudience = { clinicId?: string; patientId?: string; userIds: string[] };
 type TelehealthCall = {
   id: string;
@@ -621,10 +631,10 @@ const domainForModel = (model: string): RealtimeDomain => {
 const domainsForRole = (role?: string | null): RealtimeDomain[] => {
   switch (String(role || '').toUpperCase()) {
     case 'SUPER_ADMIN':
-    case 'ADMIN': return ['reception', 'clinical', 'laboratory', 'radiology', 'pharmacy', 'billing', 'administration'];
+    case 'ADMIN': return ['reception', 'clinical', 'laboratory', 'radiology', 'pharmacy', 'billing', 'finance', 'administration'];
     case 'RECEPTIONIST': return ['reception', 'clinical'];
-    case 'CASHIER':
-    case 'FINANCE': return ['billing'];
+    case 'CASHIER': return ['billing'];
+    case 'FINANCE': return ['billing', 'finance'];
     case 'NURSE':
     case 'PHYSICIAN':
     case 'SURGEON':

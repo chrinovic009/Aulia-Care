@@ -6,6 +6,19 @@ import { UpdateClinicBrandingDto } from './dto/update-clinic-branding.dto';
 export class AdministrationService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly departmentTypes = new Set([
+    'RECEPTION', 'NURSING', 'MEDICAL', 'LABORATORY', 'RADIOLOGY', 'SURGERY', 'PHARMACY', 'BILLING', 'ADMINISTRATION',
+  ]);
+
+  private validateDepartmentInput(data: any) {
+    const name = String(data?.name || '').trim();
+    const code = String(data?.code || '').trim().toUpperCase();
+    const type = String(data?.type || '').trim().toUpperCase();
+    if (!name || !code) throw new BadRequestException('Le nom et le code du département sont obligatoires.');
+    if (!this.departmentTypes.has(type)) throw new BadRequestException('Le type de département choisi est invalide.');
+    return { name, code, type };
+  }
+
   async getClinicBranding(userId?: string) {
     const user = userId ? await (this.prisma as any).user.findUnique({
       where: { id: userId },
@@ -181,20 +194,20 @@ export class AdministrationService {
     });
   }
 
-  createDepartment(data: any) {
+  async createDepartment(data: any) {
+    const normalized = this.validateDepartmentInput(data);
     if (!data.type) {
       throw new BadRequestException("Le champ 'type' (DepartmentType) est requis pour créer un département.");
     }
 
-    return (this.prisma as any).department.create({
-      data: {
-        name: data.name,
-        code: data.code,
-        type: data.type,
-        description: data.description ?? null,
-        isParamedical: data.isParamedical ?? false,
-      },
-    });
+    try {
+      return await (this.prisma as any).department.create({
+        data: { name: normalized.name, code: normalized.code, type: normalized.type, description: data.description ?? null, isParamedical: data.isParamedical ?? false },
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2002') throw new ConflictException('Un département actif utilise déjà ce nom ou ce code.');
+      throw error;
+    }
   }
 
   async updateDepartment(id: string, data: any) {
@@ -203,12 +216,17 @@ export class AdministrationService {
       throw new NotFoundException('Département introuvable');
     }
 
+    const normalized = this.validateDepartmentInput({
+      name: data.name ?? existing.name,
+      code: data.code ?? existing.code,
+      type: data.type ?? existing.type,
+    });
     return (this.prisma as any).department.update({
       where: { id },
       data: {
-        name: data.name ?? existing.name,
-        code: data.code ?? existing.code,
-        type: data.type ?? existing.type,
+        name: normalized.name,
+        code: normalized.code,
+        type: normalized.type,
         description: data.description ?? existing.description,
         isParamedical: data.isParamedical ?? existing.isParamedical,
       },
@@ -221,24 +239,42 @@ export class AdministrationService {
       throw new NotFoundException('Département introuvable');
     }
 
-    await (this.prisma as any).department.update({
-      where: { id },
-      data: { deletedAt: new Date() },
-    });
+    const [units, employees, responsables] = await Promise.all([
+      (this.prisma as any).serviceUnit.count({ where: { departmentId: id, deletedAt: null } }),
+      (this.prisma as any).employee.count({ where: { departmentId: id } }),
+      (this.prisma as any).departmentResponsable.count({ where: { departmentId: id } }),
+    ]);
+    if (units === 0 && employees === 0 && responsables === 0) {
+      await (this.prisma as any).department.delete({ where: { id } });
+      return { success: true, id, deleted: true, archived: false };
+    }
 
-    return { success: true, id };
+    // Preserve clinical references, but make the archived configuration invisible
+    // and free its name/code for a later legitimate recreation.
+    const archivedAt = new Date();
+    const suffix = `__ARCHIVED__${id.slice(0, 8)}`;
+    await (this.prisma as any).$transaction(async (tx: any) => {
+      await tx.serviceUnit.updateMany({ where: { departmentId: id, deletedAt: null }, data: { deletedAt: archivedAt, active: false } });
+      await tx.employee.updateMany({ where: { departmentId: id }, data: { departmentId: null } });
+      await tx.departmentResponsable.deleteMany({ where: { departmentId: id } });
+      await tx.department.update({ where: { id }, data: { deletedAt: archivedAt, name: `${existing.name}${suffix}`, code: `${existing.code}${suffix}` } });
+    });
+    return { success: true, id, deleted: false, archived: true };
   }
 
-  createServiceUnit(data: any) {
-    return (this.prisma as any).serviceUnit.create({
-      data: {
-        name: data.name,
-        departmentId: data.departmentId,
-        location: data.location ?? null,
-        contactNumber: data.contactNumber ?? null,
-        active: data.active ?? true,
-      },
+  async createServiceUnit(data: any) {
+    const department = await this.prisma.department.findFirst({
+      where: { id: data.departmentId, deletedAt: null },
+      select: { id: true, type: true, name: true },
     });
+    if (!department) throw new NotFoundException('Département introuvable.');
+    const name = String(data.name || '').trim();
+    if (!name) throw new BadRequestException('Le nom de l’unité est obligatoire.');
+    const prior = await (this.prisma as any).serviceUnit.findFirst({ where: { departmentId: department.id, name } });
+    const created = prior
+      ? await (this.prisma as any).serviceUnit.update({ where: { id: prior.id }, data: { deletedAt: null, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true } })
+      : await (this.prisma as any).serviceUnit.create({ data: { name, departmentId: department.id, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true } });
+    return { ...created, billable: department.type !== 'ADMINISTRATION' };
   }
 
   rooms() {

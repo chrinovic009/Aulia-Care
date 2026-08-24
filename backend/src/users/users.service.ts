@@ -18,6 +18,30 @@ export class UsersService {
       .trim();
   }
 
+  /** Limited, clinic-scoped directory used for the nurse's vital-sign routing. */
+  async findAvailablePhysicians(actorId?: string) {
+    const actor = actorId
+      ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } })
+      : null;
+
+    return this.prisma.user.findMany({
+      where: {
+        primaryRole: RoleSlug.PHYSICIAN,
+        status: 'ACTIVE',
+        deletedAt: null,
+        ...(actor?.clinicId ? { clinicId: actor.clinicId } : {}),
+      },
+      select: {
+        id: true,
+        displayName: true,
+        firstName: true,
+        lastName: true,
+        specialty: true,
+      },
+      orderBy: [{ displayName: 'asc' }, { lastName: 'asc' }],
+    });
+  }
+
   private async resolvePrimaryRole(dto: {
     primaryRole?: RoleSlug | null;
     departmentId?: string | null;
@@ -70,8 +94,29 @@ export class UsersService {
     }
   }
 
+  private validateEmployeeIdentity(input: { phone?: string; dateOfBirth?: string }) {
+    if (input.dateOfBirth) {
+      const birth = new Date(`${input.dateOfBirth.slice(0, 10)}T00:00:00.000Z`);
+      if (Number.isNaN(birth.getTime()) || birth > new Date()) throw new BadRequestException('La date de naissance est invalide.');
+      const today = new Date();
+      let age = today.getUTCFullYear() - birth.getUTCFullYear();
+      const beforeBirthday = today.getUTCMonth() < birth.getUTCMonth() || (today.getUTCMonth() === birth.getUTCMonth() && today.getUTCDate() < birth.getUTCDate());
+      if (beforeBirthday) age -= 1;
+      if (age < 18) throw new BadRequestException('Un employé doit être âgé d’au moins 18 ans.');
+    }
+    if (input.phone) {
+      const compact = input.phone.replace(/\s/g, '');
+      if (!/^\+[1-9]\d{7,14}$/.test(compact)) throw new BadRequestException('Le téléphone doit être au format international, par exemple +243…');
+      const rdc = compact.startsWith('+243') ? compact.slice(4) : null;
+      if (rdc && (!/^\d{9}$/.test(rdc) || !['81', '82', '83', '84', '85', '89', '90', '91', '97', '98', '99'].includes(rdc.slice(0, 2)))) {
+        throw new BadRequestException('Le numéro RDC doit contenir 9 chiffres et un préfixe mobile reconnu.');
+      }
+    }
+  }
+
   async create(dto: CreateUserDto, creatorId?: string) {
     this.validateEmployeeSchedule(dto);
+    this.validateEmployeeIdentity(dto);
     const primaryRole = await this.resolvePrimaryRole(dto);
     const creator = creatorId
       ? await this.prisma.user.findUnique({ where: { id: creatorId }, select: { clinicId: true } })
@@ -255,11 +300,12 @@ export class UsersService {
       RoleSlug.RADIOLOGIST,
       RoleSlug.PHARMACIST,
       RoleSlug.CASHIER,
+      RoleSlug.FINANCE,
     ];
     const allowedRolesByRole: Partial<Record<RoleSlug | 'PATIENT', ContactRole[]>> = {
       // Administrative accounts do not directly message patients; clinical roles
       // remain the designated communication channel.
-      SUPER_ADMIN: ['ADMIN'],
+      SUPER_ADMIN: ['ADMIN', 'FINANCE'],
 
       // Admin can contact staff, but not patients.
       ADMIN: [
@@ -272,6 +318,7 @@ export class UsersService {
         'RADIOLOGIST',
         'PHARMACIST',
         'CASHIER',
+        'FINANCE',
       ],
       // All operational staff can collaborate with every other operational staff.
       RECEPTIONIST: staffRoles,
@@ -282,6 +329,9 @@ export class UsersService {
       RADIOLOGIST: staffRoles,
       PHARMACIST: staffRoles,
       CASHIER: staffRoles,
+      // Finance collaborates with all staff and both administration levels,
+      // while patient conversations remain restricted to the care pathway.
+      FINANCE: [...staffRoles, RoleSlug.ADMIN, RoleSlug.SUPER_ADMIN],
       PATIENT: ['RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER'],
     };
 
@@ -438,8 +488,8 @@ export class UsersService {
     const recipientRole = String(recipient.primaryRole || '');
 
     // The platform owner has a deliberately narrow channel: only the local admin.
-    if (senderRole === 'SUPER_ADMIN') return recipientRole === 'ADMIN';
-    if (recipientRole === 'SUPER_ADMIN') return senderRole === 'ADMIN';
+    if (senderRole === 'SUPER_ADMIN') return ['ADMIN', 'FINANCE'].includes(recipientRole);
+    if (recipientRole === 'SUPER_ADMIN') return ['ADMIN', 'FINANCE'].includes(senderRole);
     // Local administration may collaborate with staff but never with patient accounts.
     if (senderRole === 'ADMIN') return recipientRole !== 'PATIENT';
     if (recipientRole === 'ADMIN') return senderRole !== 'PATIENT';
@@ -568,6 +618,7 @@ export class UsersService {
       RADIOLOGIST: 'Radiologie',
       PHARMACIST: 'Pharmacie',
       CASHIER: 'Caisse',
+      FINANCE: 'Finance',
       PATIENT: 'Patient',
       ADMIN: 'Administration',
       SUPER_ADMIN: 'Administration',
@@ -590,6 +641,7 @@ export class UsersService {
 
   async update(id: string, dto: UpdateUserDto) {
     this.validateEmployeeSchedule(dto);
+    this.validateEmployeeIdentity(dto);
     const data: any = { ...dto };
     const employeeData: any = {};
     const contractData: any = {};

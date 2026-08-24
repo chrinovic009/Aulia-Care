@@ -1147,7 +1147,8 @@ export class LaboratoryService {
 
   private async archiveTestFromCatalogue(tx: any, id: string) {
     const archivedAt = new Date();
-    await tx.labTest.update({ where: { id }, data: { active: false } });
+    const test = await tx.labTest.findUnique({ where: { id }, select: { code: true } });
+    await tx.labTest.update({ where: { id }, data: { active: false, ...(test ? { code: `${test.code}__ARCHIVED__${id.slice(0, 8)}` } : {}) } });
     await tx.labTestSampleRequirement.updateMany({ where: { labTestId: id, archivedAt: null }, data: { archivedAt } });
     await tx.labTestConsumableRequirement.updateMany({ where: { labTestId: id, archivedAt: null }, data: { archivedAt } });
     await tx.labTestParameter.updateMany({ where: { labTestId: id, archivedAt: null }, data: { active: false, archivedAt } });
@@ -1164,7 +1165,8 @@ export class LaboratoryService {
       if (kind === 'categories') {
         const tests = await tx.labTest.findMany({ where: { categoryId: id }, select: { id: true } });
         for (const test of tests) await this.archiveTestFromCatalogue(tx, test.id);
-        await tx.labCategory.update({ where: { id }, data: { active: false } });
+        const category = await tx.labCategory.findUnique({ where: { id }, select: { name: true, code: true } });
+        await tx.labCategory.update({ where: { id }, data: { active: false, ...(category ? { name: `${category.name}__ARCHIVED__${id.slice(0, 8)}`, code: category.code ? `${category.code}__ARCHIVED__${id.slice(0, 8)}` : null } : {}) } });
         return { archived: true, kind, id };
       }
       if (kind === 'sections') {
@@ -1172,19 +1174,23 @@ export class LaboratoryService {
         for (const category of categories) {
           const tests = await tx.labTest.findMany({ where: { categoryId: category.id }, select: { id: true } });
           for (const test of tests) await this.archiveTestFromCatalogue(tx, test.id);
-          await tx.labCategory.update({ where: { id: category.id }, data: { active: false } });
+          const archivedCategory = await tx.labCategory.findUnique({ where: { id: category.id }, select: { name: true, code: true } });
+          await tx.labCategory.update({ where: { id: category.id }, data: { active: false, ...(archivedCategory ? { name: `${archivedCategory.name}__ARCHIVED__${category.id.slice(0, 8)}`, code: archivedCategory.code ? `${archivedCategory.code}__ARCHIVED__${category.id.slice(0, 8)}` : null } : {}) } });
         }
-        await tx.labSection.update({ where: { id }, data: { active: false } });
+        const section = await tx.labSection.findUnique({ where: { id }, select: { name: true } });
+        await tx.labSection.update({ where: { id }, data: { active: false, ...(section ? { name: `${section.name}__ARCHIVED__${id.slice(0, 8)}` } : {}) } });
         return { archived: true, kind, id };
       }
       if (kind === 'sample-types') {
         await tx.labTestSampleRequirement.updateMany({ where: { labSampleTypeId: id, archivedAt: null }, data: { archivedAt } });
-        await tx.labSampleType.update({ where: { id }, data: { active: false } });
+        const sampleType = await tx.labSampleType.findUnique({ where: { id }, select: { name: true } });
+        await tx.labSampleType.update({ where: { id }, data: { active: false, ...(sampleType ? { name: `${sampleType.name}__ARCHIVED__${id.slice(0, 8)}` } : {}) } });
         return { archived: true, kind, id };
       }
       await tx.labTestConsumableRequirement.updateMany({ where: { labConsumableId: id, archivedAt: null }, data: { archivedAt } });
       await tx.labConsumableStock.updateMany({ where: { labConsumableId: id, archivedAt: null }, data: { archivedAt } });
-      await tx.labConsumable.update({ where: { id }, data: { active: false } });
+      const consumable = await tx.labConsumable.findUnique({ where: { id }, select: { code: true } });
+      await tx.labConsumable.update({ where: { id }, data: { active: false, ...(consumable ? { code: `${consumable.code}__ARCHIVED__${id.slice(0, 8)}` } : {}) } });
       return { archived: true, kind, id };
     });
   }

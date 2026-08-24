@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { ImagingService } from './imaging.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -26,6 +26,12 @@ export class ImagingController {
   @Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')
   createCatalogue(@Body() body: CreateImagingCatalogueDto) {
     return this.imagingService.createCatalogue(body);
+  }
+
+  @Delete('catalogue/:id')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')
+  removeCatalogue(@Param('id') id: string) {
+    return this.imagingService.removeCatalogue(id);
   }
 
   @Get('dashboard/overview')

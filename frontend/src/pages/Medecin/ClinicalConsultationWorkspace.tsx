@@ -93,8 +93,8 @@ export const createInitialStructuredConsultation =
       specialist: "",
       specialistNote: "",
       notes: "",
-      generalInspection: "",
-      dermatological: "",
+      generalState: "",
+      palpations: "",
       ent: "",
       cardiovascular: "",
       respiratory: "",
@@ -186,8 +186,8 @@ const antecedentPages = [
 ];
 const physicalPages = [
   "Constantes",
-  "Inspection",
-  "Peau & ganglions",
+  "État général",
+  "Palpations",
   "Tête & sens",
   "Cardiovasculaire",
   "Respiratoire",
@@ -1022,8 +1022,8 @@ export function ClinicalConsultationWorkspace({
                 value={physical(
                   [
                     "",
-                    "generalInspection",
-                    "dermatological",
+                    "generalState",
+                    "palpations",
                     "ent",
                     "cardiovascular",
                     "respiratory",
@@ -1037,8 +1037,8 @@ export function ClinicalConsultationWorkspace({
                   setPhysical(
                     [
                       "",
-                      "generalInspection",
-                      "dermatological",
+                      "generalState",
+                      "palpations",
                       "ent",
                       "cardiovascular",
                       "respiratory",

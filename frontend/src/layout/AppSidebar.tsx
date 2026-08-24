@@ -271,7 +271,9 @@ const cashierNavItems: NavItem[] = [
 ];
 
 const financeNavItems: NavItem[] = [
-  { icon: <DollarLineIcon />, name: "Pilotage financier", path: "/finance" },
+  { icon: <DollarLineIcon />, name: "Tableau de bord", path: "/finance" },
+  { icon: <FolderIcon />, name: "Trésorerie & opérations", path: "/finance/tresorerie" },
+  { icon: <TaskIcon />, name: "Budgets & investissements", path: "/finance/budgets" },
   { icon: <ChatIcon />, name: "Messages", path: "/finance/messages" },
   { icon: <LockIcon />, name: "Profil finance", path: "/finance/profile" },
 ];

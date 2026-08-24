@@ -43,7 +43,16 @@ const getActiveServicePrice = (service: any) => {
   return Number(activeTarif?.prix || 0);
 };
 
+const isReceptionAdmissionFee = (service: any) => {
+  const name = normalizeServiceName(service?.name || "");
+  return name.includes("consultation generale - reception") || name.includes("consultation specialiste - reception");
+};
+
+const consultationKindFromFee = (service: any) =>
+  normalizeServiceName(service?.name || "").includes("special") ? "CONSULTATION_SPECIALISTE" : "CONSULTATION_GENERALE";
+
 const isAdministrativeService = (service: any) => {
+  if (isReceptionAdmissionFee(service)) return false;
   const normalizedName = normalizeServiceName(service.name || "");
   const normalizedDepartment = normalizeServiceName(service.department?.name || "");
   return [
@@ -147,6 +156,10 @@ const Admission: React.FC = () => {
     return Number(form.amountDue || 0);
   }, [form.admissionMode, consultationType, consultationTypes, selectedServicePrice, form.amountDue]);
   const admissionServices = useMemo(() => servicesList.filter((service) => !isAdministrativeService(service)), [servicesList]);
+  const paramedicalAdmissionServices = useMemo(
+    () => admissionServices.filter((service: any) => service.isParamedical === true),
+    [admissionServices],
+  );
   const labServiceResponsables = useMemo(() => {
     const labService = findLaboratoryResponsibleService(servicesList);
     return labService?.responsables || [];
@@ -255,10 +268,11 @@ const Admission: React.FC = () => {
           setForm((f: any) => ({ ...f, serviceId: patientServices[0].id }));
         }
 
-        // Extraire les services de type "consultation" et leurs tarifs actifs
+        // Only the two reception-configured admission fees are eligible here.
+        // Clinical/paramedical services are selected exclusively for vouchers.
         try {
           const consultations = (patientServices || [])
-            .filter((s: any) => /consultation/i.test(String(s.name || '')))
+            .filter((s: any) => isReceptionAdmissionFee(s))
             .map((s: any) => ({ id: s.id, label: s.name, price: getActiveServicePrice(s) }));
           setConsultationTypes(consultations);
           if (consultations.length > 0 && !consultationType) {
@@ -378,6 +392,14 @@ const Admission: React.FC = () => {
 
   const handleSaveClick = async () => {
     const isVoucherAdmission = form.admissionMode === "PARAMEDICAL_VOUCHER";
+    if (!isVoucherAdmission && !consultationType) {
+      window.alert("Configurez puis choisissez un tarif de fiche d’admission généraliste ou spécialiste avant de poursuivre.");
+      return;
+    }
+    if (isVoucherAdmission && !paramedicalAdmissionServices.some((service) => service.id === form.serviceId)) {
+      window.alert("Choisissez le service paramédical actif indiqué sur le bon avant d'enregistrer l'admission.");
+      return;
+    }
     if (!isVoucherAdmission && conflictPatient) {
       window.alert(`Un patient existe déjà avec le même nom, téléphone ou email. Vérifiez son dossier avant de créer une admission.`);
       return;
@@ -406,7 +428,9 @@ const Admission: React.FC = () => {
         insuranceProvider: form.insurance.company,
         insuranceNumber: form.insurance.policy,
         admissionType: isVoucherAdmission ? "BON_PARAMEDICAL" : form.admissionType,
-        serviceId: form.serviceId,
+        serviceId: isVoucherAdmission ? form.serviceId : undefined,
+        billingServiceId: isVoucherAdmission ? undefined : consultationType,
+        consultationKind: isVoucherAdmission ? undefined : consultationKindFromFee(consultationTypes.find((item) => item.id === consultationType)),
         priority: form.priority,
         voucherNumber: form.voucherNumber,
         voucherIssuer: form.voucherIssuer,
@@ -461,7 +485,14 @@ const Admission: React.FC = () => {
         </button>
         <button
           type="button"
-          onClick={() => setForm((current: any) => ({ ...current, admissionMode: "PARAMEDICAL_VOUCHER", admissionType: "BON_PARAMEDICAL" }))}
+          onClick={() => setForm((current: any) => ({
+            ...current,
+            admissionMode: "PARAMEDICAL_VOUCHER",
+            admissionType: "BON_PARAMEDICAL",
+            serviceId: paramedicalAdmissionServices.some((service) => service.id === current.serviceId)
+              ? current.serviceId
+              : (paramedicalAdmissionServices[0]?.id || ""),
+          }))}
           className={`rounded-lg border p-4 text-left transition ${
             form.admissionMode === "PARAMEDICAL_VOUCHER"
               ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-100"
@@ -621,7 +652,8 @@ const Admission: React.FC = () => {
                   <h3 className="font-medium mb-3 text-gray-900 dark:text-white text-sm sm:text-base">4. Orientation médicale</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
                     <select value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })} className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      {admissionServices.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+                      <option value="">Choisir le service indiqué sur le bon</option>
+                      {paramedicalAdmissionServices.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
                     </select>
                     <select value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                       {orientationResponsables.map((r: any) => (<option key={r.id} value={r.user?.displayName || r.user?.username}>{r.user?.displayName || r.user?.username}</option>))}

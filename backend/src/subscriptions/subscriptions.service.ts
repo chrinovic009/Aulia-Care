@@ -208,16 +208,15 @@ export class SubscriptionsService {
   }
 
   private async resolveReceptionBillingService(kind?: string) {
+    const isSpecialist = normalizeText(kind).includes('special');
+    const expectedName = isSpecialist
+      ? 'consultation specialiste - reception'
+      : 'consultation generale - reception';
     const services = await this.prisma.service.findMany({
+      where: { active: true },
       include: { tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' }, take: 1 } },
     });
-    const isSpecialist = normalizeText(kind).includes('special');
-    const service = services.find((item: any) => {
-      const name = normalizeText(item.name);
-      return isSpecialist
-        ? name.includes('consultation specialiste') || name.includes('specialiste')
-        : name.includes('consultation generale') || name.includes('generale');
-    });
+    const service = services.find((item: any) => normalizeText(item.name) === expectedName);
     if (!service) throw new BadRequestException('Configurez le tarif reception pour cette consultation.');
     const price = Number((service as any).tarifs?.[0]?.prix);
     if (!Number.isFinite(price) || price <= 0) throw new BadRequestException(`Aucun tarif actif CDF pour ${service.name}.`);
@@ -359,7 +358,8 @@ export class SubscriptionsService {
     });
     if (!charges.length) throw new BadRequestException('Aucune depense a facturer pour cette periode.');
     const total = charges.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0);
-    const anchorPatient = charges.find((item: any) => item.patientId)?.patientId;
+    const anchorCharge = charges.find((item: any) => item.patientId);
+    const anchorPatient = anchorCharge?.patientId;
     if (!anchorPatient) throw new BadRequestException('Impossible de generer une facture sans patient rattache.');
 
     const dueDate = new Date(year, month, 0);
@@ -368,6 +368,7 @@ export class SubscriptionsService {
         data: {
           patientId: anchorPatient,
           issuedById: actorId || null,
+          clinicId: anchorCharge?.patient?.clinicId || null,
           type: 'SUBSCRIPTION_MONTHLY' as any,
           status: 'ISSUED',
           issuedAt: new Date(),

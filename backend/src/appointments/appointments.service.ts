@@ -31,6 +31,14 @@ export class AppointmentsService {
     return PatientWorkflowStatus.EN_ATTENTE_MEDECIN;
   }
 
+  private isAdministrativeDestination(name?: string | null, department?: { type?: string | null; name?: string | null } | null) {
+    const normalized = this.normalizeText(name).replace(/[^a-z0-9]/g, '');
+    const departmentName = this.normalizeText(department?.name);
+    return department?.type === 'ADMINISTRATION'
+      || departmentName.includes('administration')
+      || ['reception', 'accueil', 'caisse', 'cashier', 'finance', 'comptabilite', 'secretariat', 'gestion'].some((keyword) => normalized.includes(keyword));
+  }
+
   private async resolveServiceSelection(serviceId?: string | null, serviceUnitId?: string | null) {
     const selectedId = serviceId || serviceUnitId;
     if (!selectedId) return { service: null, serviceUnit: null };
@@ -40,6 +48,9 @@ export class AppointmentsService {
       include: { department: true },
     });
     if (serviceUnitById) {
+      if (this.isAdministrativeDestination(serviceUnitById.name, serviceUnitById.department)) {
+        throw new BadRequestException('Une unité administrative ne peut pas être sélectionnée pour un rendez-vous patient.');
+      }
       const service = await this.prisma.service.findFirst({
         where: { name: { equals: serviceUnitById.name, mode: 'insensitive' } },
         include: { responsables: { where: { actif: true }, include: { user: true } }, staff: { where: { actif: true }, include: { user: true } } },
@@ -59,15 +70,26 @@ export class AppointmentsService {
       where: { name: { equals: service.name, mode: 'insensitive' } },
       include: { department: true },
     });
+    if (this.isAdministrativeDestination(service.name, serviceUnit?.department)) {
+      throw new BadRequestException('Un service administratif ne peut pas être sélectionné pour un rendez-vous patient.');
+    }
     return { service, serviceUnit };
   }
 
   async getBookingOptions(userId?: string) {
     if (!userId) throw new ForbiddenException('Compte patient non authentifié.');
-    return this.prisma.service.findMany({
+    const services = await this.prisma.service.findMany({
       where: { active: true },
       orderBy: { name: 'asc' },
       select: { id: true, name: true, description: true, isParamedical: true },
+    });
+    const units = await this.prisma.serviceUnit.findMany({
+      where: { deletedAt: null, name: { in: services.map((service) => service.name) } },
+      include: { department: true },
+    });
+    return services.filter((service) => {
+      const unit = units.find((item) => this.normalizeText(item.name) === this.normalizeText(service.name));
+      return !this.isAdministrativeDestination(service.name, unit?.department);
     });
   }
 

@@ -48,6 +48,7 @@ const roleLabels: Record<string, string> = {
   PATIENT: "Patient",
   ADMIN: "Administration",
   SUPER_ADMIN: "Administration",
+  FINANCE: "Finance",
 };
 
 const mapStoredMessage = (stored: StoredMessage, currentUserId: string): ChatMessage => ({

@@ -365,8 +365,11 @@ export const createPatientAdmission = async (payload: Partial<PatientRecord>): P
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Admission failed (${response.status}): ${errorBody}`);
+    const errorBody = await response.json().catch(async () => ({ message: await response.text() }));
+    const message = Array.isArray(errorBody?.message)
+      ? errorBody.message.join(' ')
+      : errorBody?.message || `Erreur d’admission (${response.status}).`;
+    throw new Error(message);
   }
   return (await response.json()) as PatientRecord;
 };
