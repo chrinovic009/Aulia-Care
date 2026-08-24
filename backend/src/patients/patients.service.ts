@@ -58,26 +58,15 @@ export class PatientsService {
         where: { id: createAdmissionDto.billingServiceId },
         include: { tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' }, take: 1 } },
       });
-      if (!service) throw new BadRequestException('Service de facturation reception introuvable.');
+      if (!service || !service.active) throw new BadRequestException('Service de facturation reception introuvable ou inactif.');
+      const serviceName = this.normalizeText(service.name);
+      if (!serviceName.includes('consultation generale - reception') && !serviceName.includes('consultation specialiste - reception')) {
+        throw new BadRequestException('La réception ne peut facturer que la fiche d’admission généraliste ou spécialiste configurée.');
+      }
       return service;
     }
 
-    const consultationKind = this.normalizeText(createAdmissionDto.consultationKind || createAdmissionDto.admissionType);
-    const keywords = consultationKind.includes('special') || consultationKind.includes('specialiste')
-      ? ['consultation specialiste', 'specialiste']
-      : ['consultation generale', 'generale'];
-
-    const services = await this.prisma.service.findMany({
-      include: { tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' }, take: 1 } },
-    });
-    const service = services.find((item) => {
-      const name = this.normalizeText(item.name);
-      return keywords.some((keyword) => name.includes(keyword));
-    });
-    if (!service) {
-      throw new BadRequestException('Configurez d abord le tarif reception pour la consultation generale et la consultation specialiste.');
-    }
-    return service;
+    throw new BadRequestException('Choisissez un tarif de fiche d’admission configuré par la réception.');
   }
 
   private getActiveServicePrice(service: any) {
@@ -525,7 +514,7 @@ export class PatientsService {
       if (!createAdmissionDto.voucherNumber?.trim() || !createAdmissionDto.voucherIssuer?.trim()) {
         throw new BadRequestException('Le numéro et l’émetteur du bon paramédical sont obligatoires.');
       }
-      if (!resolvedService?.isParamedical) {
+      if (!resolvedService?.active || !resolvedService?.isParamedical) {
         throw new BadRequestException('Le bon paramédical doit cibler un service paramédical actif.');
       }
     }
@@ -610,6 +599,7 @@ export class PatientsService {
         data: {
           patientId: patient.id,
           issuedById: actorId,
+          clinicId: patient.clinicId || receptionistUser?.clinicId || null,
           status: 'PENDING',
           issuedAt: new Date(),
           totalAmount: admissionFee,
@@ -719,6 +709,11 @@ export class PatientsService {
         ],
       },
     });
+
+    // The patient portal account is issued at the first admission, not only
+    // after payment/triage. The credentials are sent solely to the receptionist
+    // who registered this patient; they are never returned by this API.
+    await this.ensurePatientUserAndNotifyReceptionist(result.patient.id);
 
     const notifications = await Promise.all(
       cashierUsers.map((cashier) =>
@@ -863,7 +858,7 @@ export class PatientsService {
     };
 
     this.notificationsGateway.notify('message.received', realtimePayload);
-    await this.prisma.notification.create({
+    const notification = await this.prisma.notification.create({
       data: {
         recipientId: patient.receptionistId,
         patientId: patient.id,
@@ -876,6 +871,7 @@ export class PatientsService {
         relatedId: patientUser.id,
       },
     });
+    this.notificationsGateway.notifyToUser(patient.receptionistId, 'notification.created', notification);
 
     return { patientUser, username: patientUser.username, password };
   }
@@ -1356,7 +1352,9 @@ export class PatientsService {
         consultations: {
           where: { deletedAt: null },
           orderBy: { createdAt: 'desc' },
-          take: 10,
+          // The doctor UI paginates this list client-side (3 cards at a time).
+          // Keep a practical recent window without silently hiding the 11th+ visit.
+          take: 50,
           include: {
             provider: { select: { id: true, displayName: true, firstName: true, lastName: true, specialty: true } },
             prescriptions: { include: { lineItems: { include: { medication: true } } } },

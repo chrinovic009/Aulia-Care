@@ -1764,6 +1764,7 @@ model Invoice {
   monthlySubscriptionInvoices MonthlySubscriptionInvoice[]
   patientVisit                PatientVisit?                @relation("InvoicePatientVisit")
   payments                    Payment[]
+  refundRequests              RefundRequest[]
   subscriptionCharges         SubscriptionCharge[]
   wearableSubscriptions       WearableSubscription[]
 
@@ -1829,6 +1830,240 @@ model Clinic {
   StockLot              StockLot[]
   StockTransaction      StockTransaction[]
   users                 User[]
+  financeBudgets        FinanceBudget[]
+  capitalInvestments    CapitalInvestment[]
+  bankAccounts          BankAccount[]
+  accountingJournal     AccountingJournalEntry[]
+  supportingDocuments   FinanceSupportingDocument[]
+  refundRequests        RefundRequest[]
+}
+
+/// A bank account is configured by Finance, then activated by an administrator.
+/// The complete account number is never exposed by the API after creation.
+model BankAccount {
+  id                      String            @id @default(uuid())
+  clinicId                String
+  bankName                String
+  accountName             String
+  currency                String            @default("CDF")
+  accountNumberCiphertext String
+  accountNumberLast4      String
+  status                  BankAccountStatus @default(PENDING_APPROVAL)
+  openingBalance          Decimal           @default(0) @db.Decimal(14, 2)
+  openingBalanceAt        DateTime          @default(now())
+  createdById             String
+  approvedById            String?
+  approvedAt              DateTime?
+  deactivatedAt           DateTime?
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+  clinic                  Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  statementEntries        BankStatementEntry[]
+  reconciliations         BankReconciliation[]
+
+  @@unique([clinicId, bankName, accountNumberLast4])
+  @@index([clinicId, status])
+}
+
+/// Imported or manually confirmed statement line. Source data is never altered;
+/// reconciliation is represented by a separate record.
+model BankStatementEntry {
+  id                String                @id @default(uuid())
+  bankAccountId     String
+  externalReference String
+  transactionAt     DateTime
+  amount            Decimal               @db.Decimal(14, 2)
+  description       String
+  rawPayload        Json?
+  status            BankStatementStatus   @default(UNMATCHED)
+  importedById      String
+  createdAt         DateTime              @default(now())
+  bankAccount       BankAccount           @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  reconciliations   BankReconciliation[]
+
+  @@unique([bankAccountId, externalReference])
+  @@index([bankAccountId, transactionAt, status])
+}
+
+/// A reconciliation establishes the explicit link between a bank statement line
+/// and one internal movement. It is approved by a second finance actor.
+model BankReconciliation {
+  id                   String                 @id @default(uuid())
+  bankAccountId        String
+  bankStatementEntryId String
+  paymentId            String?
+  supplierPaymentId    String?
+  status               ReconciliationStatus   @default(PENDING_APPROVAL)
+  note                 String?
+  proposedById         String
+  approvedById         String?
+  approvedAt           DateTime?
+  createdAt            DateTime               @default(now())
+  bankAccount          BankAccount            @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  bankStatementEntry   BankStatementEntry     @relation(fields: [bankStatementEntryId], references: [id], onDelete: Restrict)
+
+  @@unique([bankStatementEntryId])
+  @@index([bankAccountId, status])
+}
+
+/// Append-only accounting journal. An entry is balanced only when total debit
+/// equals total credit; posted entries never receive an update or deletion API.
+model AccountingJournalEntry {
+  id            String              @id @default(uuid())
+  clinicId      String
+  reference     String
+  occurredAt    DateTime
+  description   String
+  sourceType    AccountingSourceType
+  sourceId      String?
+  status        AccountingEntryStatus @default(DRAFT)
+  previousHash  String?
+  entryHash     String              @unique
+  createdById   String
+  postedById    String?
+  postedAt      DateTime?
+  createdAt     DateTime            @default(now())
+  clinic        Clinic              @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  lines         AccountingJournalLine[]
+
+  @@unique([clinicId, reference])
+  @@index([clinicId, occurredAt, status])
+}
+
+model AccountingJournalLine {
+  id        String                 @id @default(uuid())
+  entryId   String
+  account   String
+  label     String
+  debit     Decimal                @default(0) @db.Decimal(14, 2)
+  credit    Decimal                @default(0) @db.Decimal(14, 2)
+  createdAt DateTime               @default(now())
+  entry     AccountingJournalEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
+
+  @@index([entryId])
+  @@index([account])
+}
+
+/// A supporting document is immutable metadata. The actual binary must be held
+/// by the approved document-storage provider; its checksum makes replacement detectable.
+model FinanceSupportingDocument {
+  id          String   @id @default(uuid())
+  clinicId    String
+  title       String
+  storageUrl  String
+  sha256      String
+  mimeType    String
+  sizeBytes   Int
+  sourceType  String
+  sourceId    String
+  uploadedById String
+  validatedById String?
+  validatedAt DateTime?
+  retainedUntil DateTime?
+  createdAt   DateTime @default(now())
+  clinic      Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+
+  @@unique([clinicId, sha256])
+  @@index([clinicId, sourceType, sourceId])
+}
+
+/// Credit notes and refunds require a documented request and a second approval.
+model RefundRequest {
+  id             String        @id @default(uuid())
+  clinicId       String
+  invoiceId      String
+  paymentId      String?
+  amount         Decimal       @db.Decimal(14, 2)
+  reason         String
+  status         RefundStatus  @default(PENDING_APPROVAL)
+  requestedById  String
+  approvedById   String?
+  approvedAt     DateTime?
+  executedById   String?
+  executedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  clinic         Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  invoice        Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@index([clinicId, status, createdAt])
+  @@index([invoiceId])
+}
+
+/// Budget approved for one fiscal period. Consumption is recorded as immutable
+/// allocation entries, preserving an auditable finance trail.
+model FinanceBudget {
+  id              String              @id @default(uuid())
+  clinicId        String
+  departmentId    String?
+  name            String
+  fiscalYear      Int
+  type            FinanceBudgetType   @default(OPERATING)
+  allocatedAmount Decimal             @db.Decimal(14, 2)
+  status          FinanceBudgetStatus @default(DRAFT)
+  notes           String?
+  createdById     String?
+  approvedById    String?
+  approvedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  archivedAt      DateTime?
+  clinic          Clinic              @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  allocations     FinanceBudgetAllocation[]
+
+  @@unique([clinicId, departmentId, name, fiscalYear])
+  @@index([clinicId, fiscalYear, status])
+  @@index([departmentId])
+}
+
+/// An auditable expenditure imputation. It can reference an Expense record,
+/// but never mutates the accounting source transaction.
+model FinanceBudgetAllocation {
+  id                    String                  @id @default(uuid())
+  budgetId              String
+  expenseId             String?
+  supplierInvoiceId     String?
+  sourceKind            FinanceAllocationSource
+  sourceReference       String
+  supportingDocumentUrl String?
+  revenuePole           InvoiceType?
+  amount                Decimal                 @db.Decimal(14, 2)
+  label                 String
+  occurredAt            DateTime                @default(now())
+  note                  String?
+  createdById           String?
+  createdAt             DateTime                @default(now())
+  budget                FinanceBudget           @relation(fields: [budgetId], references: [id], onDelete: Restrict)
+  supplierInvoice       SupplierInvoice?        @relation(fields: [supplierInvoiceId], references: [id], onDelete: Restrict)
+
+  @@index([budgetId, occurredAt])
+  @@unique([budgetId, expenseId])
+  @@unique([budgetId, supplierInvoiceId])
+  @@index([supplierInvoiceId])
+  @@index([revenuePole])
+}
+
+/// Capital expenditure plan for heavy equipment and infrastructure.
+model CapitalInvestment {
+  id                   String                  @id @default(uuid())
+  clinicId             String
+  label                String
+  category             String
+  revenuePole          InvoiceType?
+  plannedAmount        Decimal                 @db.Decimal(14, 2)
+  acquiredAmount       Decimal?                @db.Decimal(14, 2)
+  plannedAt            DateTime?
+  acquiredAt           DateTime?
+  usefulLifeMonths     Int?
+  expectedAnnualReturn Decimal?                @db.Decimal(14, 2)
+  status               CapitalInvestmentStatus @default(PLANNED)
+  notes                String?
+  createdById          String?
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  archivedAt           DateTime?
+  clinic               Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId, status, plannedAt])
 }
 
 model Supplier {
@@ -2473,6 +2708,7 @@ model SupplierInvoice {
   purchaseOrder         PurchaseOrder?        @relation(fields: [purchaseOrderId], references: [id])
   supplier              Supplier              @relation(fields: [supplierId], references: [id], onDelete: Cascade)
   SupplierPayment       SupplierPayment[]
+  financeBudgetAllocations FinanceBudgetAllocation[]
 
   @@index([supplierId])
 }
@@ -3242,6 +3478,77 @@ enum MonthlySubscriptionInvoiceStatus {
   ISSUED
   PAID
   CANCELLED
+}
+
+enum FinanceBudgetStatus {
+  DRAFT
+  APPROVED
+  CLOSED
+  ARCHIVED
+}
+
+enum FinanceBudgetType {
+  OPERATING
+  REVENUE_TARGET
+}
+
+enum FinanceAllocationSource {
+  SUPPLIER_INVOICE
+  EXPENSE
+  SUPPORTING_DOCUMENT
+}
+
+enum BankAccountStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum BankStatementStatus {
+  UNMATCHED
+  MATCHED
+  IGNORED
+}
+
+enum ReconciliationStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  REVERSED
+}
+
+enum AccountingSourceType {
+  PAYMENT
+  SUPPLIER_PAYMENT
+  PAYROLL
+  EXPENSE
+  REFUND
+  MANUAL_ADJUSTMENT
+  OPENING_BALANCE
+}
+
+enum AccountingEntryStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+enum RefundStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  EXECUTED
+  CANCELLED
+}
+
+enum CapitalInvestmentStatus {
+  PLANNED
+  APPROVED
+  ACQUIRED
+  IN_SERVICE
+  CANCELLED
+  ARCHIVED
 }
 
 enum PurchaseOrderStatus {

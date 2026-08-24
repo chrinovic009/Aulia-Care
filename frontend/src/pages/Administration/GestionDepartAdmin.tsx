@@ -41,20 +41,29 @@ const institutionalDepartments = [
   { name: "Gynécologie Obtétrique", code: "GYN-OBS", type: "MEDICAL" },
   { name: "Infirmérie", code: "Inf", type: "MEDICAL" },
   { name: "Chirurgie Générale", code: "CHI-GEN", type: "MEDICAL" },
-  { name: "Imagerie & Diagnostics", code: "IMA-DIAG", type: "TECHNICAL" },
-  { name: "Laboratoire Medical", code: "LAB-MED", type: "TECHNICAL" },
+  { name: "Imagerie & Diagnostics", code: "IMA-DIAG", type: "RADIOLOGY" },
+  { name: "Laboratoire Medical", code: "LAB-MED", type: "LABORATORY" },
   { name: "Pharmacie", code: "PHARMA", type: "PHARMACY" },
   { name: "Santé Mentale", code: "SANTE-MENT", type: "MEDICAL" },
   { name: "Rééducation & Kinesitherapie", code: "REED-KINE", type: "MEDICAL" },
   { name: "Urgences & Soins Intensifs", code: "URG-SOINS", type: "MEDICAL" },
   { name: "Unité d'Hospitalisation", code: "HOSP", type: "MEDICAL" },
   { name: "Prevention & Vaccination", code: "PREV-VAC", type: "MEDICAL" },
-  { name: "Administration & Gestion", code: "ADMIN-GEST", type: "ADMINISTRATIVE" }
+  { name: "Administration & Gestion", code: "ADMIN-GEST", type: "ADMINISTRATION" }
+];
+
+const CUSTOM_DEPARTMENT = "__CUSTOM_DEPARTMENT__";
+const departmentTypes: Array<[string, string]> = [
+  ["RECEPTION", "Réception"], ["NURSING", "Soins infirmiers"], ["MEDICAL", "Médical"],
+  ["LABORATORY", "Laboratoire"], ["RADIOLOGY", "Radiologie / imagerie"], ["SURGERY", "Chirurgie"],
+  ["PHARMACY", "Pharmacie"], ["BILLING", "Facturation / caisse"], ["ADMINISTRATION", "Administration / gestion"],
 ];
 
 // Helper global pour normaliser les chaînes de caractères (retire les accents, espaces, etc.)
 const normalize = (v: string) => 
   String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+const suggestedDepartmentCode = (name: string) => normalize(name).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 18).toUpperCase();
 
 // Helper global pour formater proprement le nom complet d'un employé
 const userName = (emp: any) => {
@@ -68,6 +77,7 @@ export default function GestionDepartAdmin() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [departmentForm, setDepartmentForm] = useState({ name: "", code: "", type: "MEDICAL", description: "", isParamedical: false });
+  const [departmentChoice, setDepartmentChoice] = useState("");
   const [unitForm, setUnitForm] = useState({ name: "", departmentId: "", location: "", price: "" });
   const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Department | null>(null);
@@ -95,10 +105,13 @@ export default function GestionDepartAdmin() {
   }, []);
 
   const createDepartment = async () => {
-    if (!departmentForm.name || !departmentForm.code) return;
+    const name = departmentForm.name.trim();
+    const code = departmentForm.code.trim() || suggestedDepartmentCode(name);
+    if (!name || !code) return;
     try {
-      await apiFetch("/administration/departments", { method: "POST", body: JSON.stringify({ ...departmentForm }) });
+      await apiFetch("/administration/departments", { method: "POST", body: JSON.stringify({ ...departmentForm, name, code }) });
       setDepartmentForm({ name: "", code: "", type: "MEDICAL", description: "", isParamedical: false });
+      setDepartmentChoice("");
       await reload();
     } catch (error) {
       console.error("Erreur lors de la création du département :", error);
@@ -176,11 +189,14 @@ export default function GestionDepartAdmin() {
     const name = unitForm.name?.trim() || "";
     if (!name || !unitForm.departmentId) return;
 
-    const normalized = normalize(name);
-    const isInternal = ['caisse', 'secretariat'].includes(normalized);
+    const normalized = normalize(name).replace(/[^a-z0-9]/g, '');
+    const department = departments.find((item) => item.id === unitForm.departmentId);
+    const isInternal = department?.type === 'ADMINISTRATION'
+      || normalize(department?.name || '').includes('administration')
+      || ['reception', 'accueil', 'caisse', 'cashier', 'finance', 'comptabilite', 'secretariat', 'gestion'].some((keyword) => normalized.includes(keyword));
 
     if (!isInternal && (!unitForm.price || Number(unitForm.price) <= 0)) {
-      window.alert('Le tarif est requis pour tous les services sauf Caisse.');
+      window.alert('Le tarif est requis pour les services proposés aux patients. Les unités administratives n’en ont jamais.');
       return;
     }
 
@@ -235,6 +251,11 @@ export default function GestionDepartAdmin() {
   const missingInstitutionalCount = institutionalDepartments.filter((item) =>
     !departments.some((department) => normalize(department.name) === normalize(item.name)),
   ).length;
+  const selectedUnitDepartment = departments.find((department) => department.id === unitForm.departmentId);
+  const unitIsAdministrative = selectedUnitDepartment?.type === 'ADMINISTRATION'
+    || normalize(selectedUnitDepartment?.name || '').includes('administration')
+    || ['reception', 'accueil', 'caisse', 'cashier', 'finance', 'comptabilite', 'secretariat', 'gestion']
+      .some((keyword) => normalize(unitForm.name).replace(/[^a-z0-9]/g, '').includes(keyword));
 
   return (
     <AdminPageShell
@@ -288,7 +309,16 @@ export default function GestionDepartAdmin() {
       <div className="grid gap-6 xl:grid-cols-2">
         <Panel title="Nouveau département">
           <div className="grid gap-3 md:grid-cols-2">
-            <select value={departmentForm.name} onChange={(event) => setDepartmentForm((current) => ({ ...current, name: event.target.value }))} className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white">
+            <select value={departmentChoice} onChange={(event) => {
+              const choice = event.target.value;
+              setDepartmentChoice(choice);
+              if (choice === CUSTOM_DEPARTMENT) {
+                setDepartmentForm((current) => ({ ...current, name: "", code: "" }));
+                return;
+              }
+              const selected = institutionalDepartments.find((department) => department.name === choice);
+              setDepartmentForm((current) => ({ ...current, name: selected?.name || "", code: selected?.code || "", type: selected?.type || current.type }));
+            }} className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white">
               <option value="">-- Sélectionnez un département --</option>
               <option value="Medecine Générale">Médecine Générale</option>
               <option value="Medecine Interne">Medecine Interne</option>
@@ -304,8 +334,10 @@ export default function GestionDepartAdmin() {
               <option value="Unité d'Hospitalisation">Unité d'Hospitalisation</option>
               <option value="Prevention & Vaccination">Prévention & Vaccination</option>
               <option value="Administration & Gestion">Administration & Gestion</option>
+              <option value={CUSTOM_DEPARTMENT}>Autre département à saisir…</option>
             </select>
-            <input value={departmentForm.code} onChange={(event) => setDepartmentForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
+            {departmentChoice === CUSTOM_DEPARTMENT ? <input autoFocus value={departmentForm.name} onChange={(event) => setDepartmentForm((current) => ({ ...current, name: event.target.value, code: current.code || suggestedDepartmentCode(event.target.value) }))} placeholder="Nom du département" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" /> : <input value={departmentForm.code} onChange={(event) => setDepartmentForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />}
+            {departmentChoice === CUSTOM_DEPARTMENT ? <><select value={departmentForm.type} onChange={(event) => setDepartmentForm((current) => ({ ...current, type: event.target.value }))} className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white">{departmentTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><input value={departmentForm.code} onChange={(event) => setDepartmentForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code unique" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" /></> : null}
             <label className="flex items-center gap-2 px-2">
               <input type="checkbox" checked={departmentForm.isParamedical} onChange={(event) => setDepartmentForm((current) => ({ ...current, isParamedical: event.target.checked }))} className="h-4 w-4 rounded border-slate-200 text-slate-900" />
               <span className="text-sm text-slate-700">Département paramédical</span>
@@ -322,7 +354,7 @@ export default function GestionDepartAdmin() {
               {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
             </select>
             <input value={unitForm.name} onChange={(event) => setUnitForm((current) => ({ ...current, name: event.target.value }))} placeholder="Nom de l'unité" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
-            <input value={unitForm.price} onChange={(event) => setUnitForm((current) => ({ ...current, price: event.target.value }))} placeholder="Tarif" type="number" min="0" step="0.01" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
+            {unitIsAdministrative ? <div className="flex min-h-11 items-center rounded-lg border border-aulia-teal/25 bg-aulia-teal/10 px-3 text-sm text-aulia-navy dark:text-teal-100">Unité administrative interne : aucun tarif patient.</div> : <input value={unitForm.price} onChange={(event) => setUnitForm((current) => ({ ...current, price: event.target.value }))} placeholder="Tarif CDF" type="number" min="0" step="0.01" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />}
             <button onClick={createUnit} className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white md:col-span-2"><Plus size={17} /> Ajouter l'unité</button>
           </div>
         </Panel>

@@ -553,7 +553,14 @@ function buildClinicalBulletList(lines: Array<{ label: string; value: string | n
 
 function buildAntecedentsLines(parsedObject: Record<string, any>) {
   const source = parsedObject.medicalHistory as Record<string, unknown> | null;
+  const structured = parsedObject.consultationModule?.structured?.antecedents as Record<string, unknown> | undefined;
   const lines = [
+    { label: "Antecedents medicaux detailles", value: formatStructuredCollection(structured?.medical) },
+    { label: "Antecedents chirurgicaux detailles", value: formatStructuredCollection(structured?.surgical) },
+    { label: "Allergies detaillees", value: formatStructuredCollection(structured?.allergies) },
+    { label: "Habitudes de vie", value: formatStructuredCollection(structured?.habits) },
+    { label: "Sante feminine et pediatrie", value: formatStructuredCollection(structured?.womenHealth) || formatStructuredCollection(structured?.pediatric) },
+    { label: "Antecedents familiaux detailles", value: formatStructuredCollection(structured?.family) },
     { label: "Maladies connues", value: normalizeClinicalValue(source?.knownDiseases || source?.diseases) },
     { label: "Chirurgies", value: normalizeClinicalValue(source?.surgeries) },
     { label: "Allergies", value: normalizeClinicalValue(source?.allergies) },
@@ -566,7 +573,9 @@ function buildAntecedentsLines(parsedObject: Record<string, any>) {
 
 function buildAnamnesisLines(parsedObject: Record<string, any>) {
   const source = parsedObject.currentSymptoms as Record<string, unknown> | null;
+  const structured = parsedObject.consultationModule?.structured?.anamnesis as Record<string, unknown> | undefined;
   const lines = [
+    { label: "Anamnese detaillee", value: formatStructuredRecord(structured) },
     { label: "Début", value: normalizeClinicalValue(source?.onset) },
     { label: "Localisation", value: normalizeClinicalValue(source?.painLocation) },
     { label: "Intensité", value: normalizeClinicalValue(source?.intensity) },
@@ -580,11 +589,13 @@ function buildAnamnesisLines(parsedObject: Record<string, any>) {
 
 function buildClinicalExamLines(parsedObject: Record<string, any>) {
   const examSource = parsedObject.clinicalExam as Record<string, unknown> | null;
+  const physical = parsedObject.consultationModule?.structured?.physical as Record<string, unknown> | undefined;
   const medicationSummary = formatMedicationSummary(parsedObject.medicalHistory?.currentMedications || parsedObject.consultationModule?.currentMedications);
   const lines = [
-    { label: "État général", value: normalizeClinicalValue(examSource?.generalState) },
+    { label: "Examen physique detaille", value: formatStructuredRecord(physical) },
+    { label: "État général", value: normalizeClinicalValue(examSource?.generalState || physical?.generalState || physical?.generalInspection) },
     { label: "Auscultation", value: normalizeClinicalValue(examSource?.auscultation) },
-    { label: "Palpation", value: normalizeClinicalValue(examSource?.palpation) },
+    { label: "Palpations", value: normalizeClinicalValue(examSource?.palpation || physical?.palpations || physical?.dermatological) },
     { label: "Examen ciblé", value: normalizeClinicalValue(examSource?.focusedExam) },
     { label: "Médicaments en cours", value: medicationSummary },
     { label: "Résumé", value: normalizeClinicalValue(examSource?.description) },
@@ -633,6 +644,51 @@ function normalizeClinicalValue(value: unknown): string | null {
   return String(value);
 }
 
+const clinicalFieldLabels: Record<string, string> = {
+  code: "Code", label: "Libellé", name: "Nom", status: "Statut", severity: "Sévérité",
+  onsetDate: "Date de début", endDate: "Date de fin", treatment: "Traitement", notes: "Notes",
+  relationship: "Lien", parentStatus: "Statut du parent", causeOfDeath: "Cause du décès",
+  duration: "Durée", onsetMode: "Mode de début", onsetAt: "Date / heure de début",
+  location: "Localisation", previousTreatmentKnown: "Traitement antérieur", medication: "Médicament",
+  impact: "Impact", symptom: "Symptôme", trigger: "Facteur déclenchant",
+  relievingFactors: "Facteurs soulageants", irradiation: "Irradiation", types: "Types",
+  temporalProfile: "Évolution", generalSymptoms: "Signes généraux", digestiveSymptoms: "Digestif",
+  cardioRespiratorySymptoms: "Cardio-respiratoire", neurologicalSymptoms: "Neurologique",
+  redFlags: "Signes d’alarme", generalState: "État général", palpations: "Palpations",
+  specialist: "Spécialité", specialistNote: "Note du spécialiste", diagnosisLabel: "Diagnostic",
+  disposition: "Orientation", destination: "Service destinataire", urgency: "Urgence",
+  safetyNet: "Consignes d’alerte", followUp: "Suivi", delay: "Délai",
+  nonPharma: "Soins non médicamenteux", therapeuticGoal: "Objectif thérapeutique",
+  followUpOwner: "Responsable du suivi", nextAppointment: "Prochain rendez-vous",
+  appointmentReason: "Motif du rendez-vous", controlTests: "Examens de contrôle",
+  selfMonitoring: "Auto-surveillance", thresholds: "Seuils d’alerte", safetyInstructions: "Consignes",
+  patientInformed: "Patient informé", homeContext: "Contexte à domicile",
+};
+
+function formatStructuredCollection(value: unknown): string | null {
+  if (!Array.isArray(value)) return formatStructuredRecord(value);
+  const parts = value.map((item) => typeof item === "object" && item !== null
+    ? formatStructuredRecord(item)
+    : normalizeClinicalValue(item)).filter(Boolean) as string[];
+  return parts.length ? parts.join(" | ") : null;
+}
+
+function formatStructuredRecord(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return normalizeClinicalValue(value);
+  const parts = Object.entries(value as Record<string, unknown>)
+    .filter(([, entry]) => entry !== "" && entry !== null && entry !== undefined && entry !== false)
+    .map(([key, entry]) => {
+      const formatted = Array.isArray(entry)
+        ? formatStructuredCollection(entry)
+        : typeof entry === "object"
+          ? formatStructuredRecord(entry)
+          : entry === true ? "Oui" : String(entry);
+      return formatted ? `${clinicalFieldLabels[key] || key}: ${formatted}` : null;
+    })
+    .filter(Boolean) as string[];
+  return parts.length ? parts.join(" · ") : null;
+}
+
 function ClinicalConsultation({ consultation, displayId }: { consultation: NonNullable<DoctorPatient["consultations"]>[number]; displayId: string }) {
   const parsed = parseClinicalSummary(consultation.clinicalSummary as any);
 
@@ -657,13 +713,20 @@ function ClinicalConsultation({ consultation, displayId }: { consultation: NonNu
     const examClinical = buildClinicalBulletList(buildClinicalExamLines(parsedObject));
     const diagnostic = buildClinicalBulletList(buildDiagnosticLines(parsedObject, consultation));
     const followUp = buildClinicalBulletList(buildFollowUpLines(parsedObject));
+    const structured = parsedObject.consultationModule?.structured as Record<string, unknown> | undefined;
+    const illness = formatStructuredRecord(structured?.illness);
+    const orientation = formatStructuredRecord(structured?.orientation);
+    const care = formatStructuredRecord(structured?.care);
 
     return (
       <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <Info label="Histoire de la maladie" value={illness || "Non renseignée"} />
         <Info label="Antécédents" value={antecedents} />
         <Info label="Anamnèse" value={anamnese} />
         <Info label="Examen clinique" value={examClinical} />
         <Info label="Diagnostic" value={diagnostic} />
+        <Info label="Orientation" value={orientation || "En attente des résultats ou non renseignée"} />
+        <Info label="Prise en charge" value={care || "Non renseignée"} />
         <Info label="Consignes & Suivi" value={followUp} />
       </div>
     );
@@ -1119,11 +1182,15 @@ async function printPatientRecord(patient: DoctorPatient, position?: number, lab
 
     if (kind === "MEDICAL_CONSULTATION") {
       const rows: string[] = [];
+      const physical = parsed.consultationModule?.structured?.physical || {};
+      const generalState = parsed.clinicalExam?.generalState || physical.generalState || physical.generalInspection;
+      const palpations = parsed.clinicalExam?.palpation || physical.palpations || physical.dermatological;
       if (parsed.diagnosis?.principal) rows.push(toLine("Diagnostic", parsed.diagnosis.principal));
       if (parsed.consultationModule?.orderedExams?.length) rows.push(toLine("Examens demandés", parsed.consultationModule.orderedExams.map((exam: any) => exam.testName).join(", ")));
       const consignesSuivi = [parsed.treatmentPlan?.notes, parsed.followUp?.notes].filter(Boolean).join(" | ");
       if (consignesSuivi) rows.push(toLine("Consignes & Suivi", consignesSuivi));
-      if (parsed.clinicalExam?.generalState) rows.push(toLine("État général", parsed.clinicalExam.generalState));
+      if (generalState) rows.push(toLine("État général", generalState));
+      if (palpations) rows.push(toLine("Palpations", palpations));
       if (parsed.currentSymptoms?.onset) rows.push(toLine("Début des symptômes", parsed.currentSymptoms.onset));
       return rows.length > 0 ? rows.join("") : details || "-";
     }

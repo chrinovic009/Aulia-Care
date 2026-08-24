@@ -29,8 +29,7 @@ export class ImagingService {
     const code = dto.code.trim().toUpperCase();
     const name = dto.name.trim();
     if (!code || !name) throw new BadRequestException('Le code et le nom de l examen sont requis.');
-    return this.prisma.imagingCatalogue.create({
-      data: {
+    const data = {
         code,
         name,
         modality: dto.modality,
@@ -42,8 +41,26 @@ export class ImagingService {
         price: dto.price,
         turnaroundTimeMinutes: dto.turnaroundTimeMinutes ?? null,
         active: dto.active !== false,
-      },
-    });
+      };
+    const existing = await this.prisma.imagingCatalogue.findUnique({ where: { code } });
+    // An archived catalogue item is revived so administrators can recreate a
+    // previously removed examination without violating its unique code.
+    if (existing && (existing.deletedAt || !existing.active)) {
+      return this.prisma.imagingCatalogue.update({ where: { id: existing.id }, data: { ...data, deletedAt: null } });
+    }
+    if (existing) throw new BadRequestException('Un examen d’imagerie actif utilise déjà ce code.');
+    return this.prisma.imagingCatalogue.create({ data });
+  }
+
+  async removeCatalogue(id: string) {
+    const catalogue = await this.prisma.imagingCatalogue.findUnique({ where: { id }, include: { _count: { select: { imagingRequests: true } } } });
+    if (!catalogue) throw new NotFoundException('Examen d’imagerie introuvable.');
+    if (catalogue._count.imagingRequests === 0) {
+      await this.prisma.imagingCatalogue.delete({ where: { id } });
+      return { success: true, id, deleted: true, archived: false };
+    }
+    await this.prisma.imagingCatalogue.update({ where: { id }, data: { active: false, deletedAt: new Date(), code: `${catalogue.code}__ARCHIVED__${id.slice(0, 8)}` } });
+    return { success: true, id, deleted: false, archived: true };
   }
 
   findMachines() {

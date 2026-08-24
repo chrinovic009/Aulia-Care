@@ -33,6 +33,27 @@ const isParamedicalServiceName = (name: string) => {
   return PARAMEDICAL_KEYWORDS.some((keyword) => normalized.includes(keyword));
 };
 
+/** Administrative units organise care but are never billable or selectable as
+ * patient-facing services. This name check is accent/case insensitive and is
+ * complemented by the DepartmentType check below. */
+const isAdministrativeServiceName = (name: string) => {
+  const normalized = String(name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  return ['reception', 'accueil', 'caisse', 'cashier', 'finance', 'comptabilite', 'administration', 'gestion', 'secretariat'].some((keyword) => normalized.includes(keyword));
+};
+
+const isReceptionAdministrativeUnitName = (name: string) => {
+  const normalized = String(name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  return ['reception', 'accueil', 'caisse', 'cashier', 'finance', 'comptabilite', 'secretariat'].some((keyword) => normalized === keyword);
+};
+
 @Injectable()
 export class ServicesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -43,7 +64,17 @@ export class ServicesService {
       : isParamedicalServiceName(data.name);
 
     const { departmentId, ...serviceData } = data;
-    const svc = await this.prisma.service.create({ data: { ...serviceData, isParamedical } as any });
+    const existing = await this.prisma.service.findFirst({
+      where: { name: { equals: data.name.trim(), mode: 'insensitive' } },
+    });
+    if (existing?.active) {
+      throw new BadRequestException('Un service actif porte déjà ce nom.');
+    }
+    // Services that were deactivated during a configuration removal are revived
+    // instead of causing a uniqueness error. Their clinical invoice history stays intact.
+    const svc = existing
+      ? await this.prisma.service.update({ where: { id: existing.id }, data: { ...serviceData, active: true, isParamedical } as any })
+      : await this.prisma.service.create({ data: { ...serviceData, isParamedical } as any });
 
     try {
       if (departmentId) {
@@ -56,9 +87,62 @@ export class ServicesService {
     return svc;
   }
 
+  /** A receptionist may configure only the internal reception units, never a
+   * patient-facing/clinical service and never a tariff. */
+  async createReceptionAdministrativeUnit(data: { name?: string; description?: string }) {
+    const name = String(data?.name || '').trim();
+    if (!isReceptionAdministrativeUnitName(name)) {
+      throw new BadRequestException('La réception peut uniquement créer ou réactiver une unité interne : Réception, Accueil, Caisse, Finance ou Secrétariat.');
+    }
+    const department = await this.prisma.department.findFirst({
+      where: { deletedAt: null, type: 'ADMINISTRATION' },
+      select: { id: true },
+    });
+    if (!department) throw new BadRequestException('Le département Administration & Gestion doit être créé par l’administrateur avant cette action.');
+
+    const existing = await this.prisma.service.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } });
+    const service = existing
+      ? await this.prisma.service.update({ where: { id: existing.id }, data: { active: true, description: data.description?.trim() || existing.description, isParamedical: false } })
+      : await this.prisma.service.create({ data: { name, description: data.description?.trim() || null, active: true, isParamedical: false } });
+
+    await (this.prisma as any).serviceUnit.upsert({
+      where: { departmentId_name: { departmentId: department.id, name } },
+      update: { active: true, deletedAt: null },
+      create: { departmentId: department.id, name, active: true },
+    });
+    await this.prisma.serviceTarif.updateMany({ where: { serviceId: service.id, actif: true }, data: { actif: false, dateFin: new Date() } });
+    return service;
+  }
+
+  /** Reception owns only the two admission fees.  The server fixes both
+   * business identities so a forged client cannot create a third clinical
+   * service or alter any unrelated tariff. */
+  async setReceptionAdmissionFee(data: { kind?: string; price?: number | string; description?: string }) {
+    const kind = String(data?.kind || '').toUpperCase();
+    const definition = kind === 'SPECIALIST'
+      ? { name: 'Consultation specialiste - Reception', label: 'Frais d’admission – consultation spécialiste' }
+      : kind === 'GENERAL'
+        ? { name: 'Consultation generale - Reception', label: 'Frais d’admission – consultation générale' }
+        : null;
+    if (!definition) throw new BadRequestException('Type de frais invalide. Choisissez GENERAL ou SPECIALIST.');
+    const price = Number(data?.price);
+    if (!Number.isFinite(price) || price <= 0) throw new BadRequestException('Le tarif d’admission doit être un montant CDF supérieur à zéro.');
+
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.service.findFirst({ where: { name: { equals: definition.name, mode: 'insensitive' } } });
+      const service = existing
+        ? await tx.service.update({ where: { id: existing.id }, data: { active: true, description: data.description?.trim() || definition.label, isParamedical: false } })
+        : await tx.service.create({ data: { name: definition.name, description: data.description?.trim() || definition.label, active: true, isParamedical: false } });
+      await tx.serviceTarif.updateMany({ where: { serviceId: service.id, actif: true }, data: { actif: false, dateFin: new Date() } });
+      const tarif = await tx.serviceTarif.create({ data: { serviceId: service.id, prix: price, actif: true } });
+      return { kind, service, tarif };
+    });
+  }
+
   async findAll() {
     const [services, serviceUnits] = await Promise.all([
       this.prisma.service.findMany({
+      where: { active: true },
       include: {
         tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' } },
         responsables: { where: { actif: true }, include: { user: true } },
@@ -66,7 +150,7 @@ export class ServicesService {
       },
       orderBy: { name: 'asc' },
       }),
-      this.prisma.serviceUnit.findMany({ include: { department: true } }),
+      this.prisma.serviceUnit.findMany({ where: { active: true, deletedAt: null }, include: { department: true } }),
     ]);
     const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
     return services.map((service) => {
@@ -128,7 +212,7 @@ export class ServicesService {
   async addTarif(dto: any) {
     const service = await this.prisma.service.findUnique({
       where: { id: dto.serviceId },
-      select: { name: true },
+      select: { id: true, name: true },
     });
     if (!service) throw new NotFoundException('Service introuvable');
     const normalizedName = service.name
@@ -136,9 +220,15 @@ export class ServicesService {
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .trim();
-    if (normalizedName.includes('caisse') || normalizedName.includes('cashier')) {
+    const serviceUnit = await this.prisma.serviceUnit.findFirst({
+      where: { name: { equals: service.name, mode: 'insensitive' }, deletedAt: null },
+      include: { department: { select: { type: true, name: true } } },
+    });
+    const isAdministrativeDepartment = serviceUnit?.department?.type === 'ADMINISTRATION'
+      || isAdministrativeServiceName(serviceUnit?.department?.name || '');
+    if (isAdministrativeServiceName(normalizedName) || isAdministrativeDepartment) {
       throw new BadRequestException(
-        'La caisse est un service de validation des paiements et ne peut pas avoir de tarif patient',
+        'Une unité administrative (réception, caisse, finance ou gestion) est interne et ne peut jamais recevoir un tarif patient.',
       );
     }
     return this.prisma.serviceTarif.create({ data: dto });

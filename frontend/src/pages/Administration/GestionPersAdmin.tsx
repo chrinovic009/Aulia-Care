@@ -100,6 +100,43 @@ type HrReport = {
 
 type ClinicBranding = { name?: string; brandDisplayName?: string | null };
 
+type PhoneCountry = "CD" | "AO" | "RW" | "BI" | "ZM";
+
+const phoneCountries: Array<{ code: PhoneCountry; label: string; dial: string; digits: number }> = [
+  { code: "CD", label: "RDC", dial: "+243", digits: 9 },
+  { code: "AO", label: "Angola", dial: "+244", digits: 9 },
+  { code: "RW", label: "Rwanda", dial: "+250", digits: 9 },
+  { code: "BI", label: "Burundi", dial: "+257", digits: 8 },
+  { code: "ZM", label: "Zambie", dial: "+260", digits: 9 },
+];
+
+const emailDomains = ["gmail.com", "icloud.com", "outlook.com", "yahoo.com", "proton.me"];
+
+function calculateAge(dateOfBirth: string) {
+  if (!dateOfBirth) return null;
+  const birth = new Date(`${dateOfBirth}T00:00:00`);
+  if (Number.isNaN(birth.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const beforeBirthday = today.getMonth() < birth.getMonth() || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate());
+  if (beforeBirthday) age -= 1;
+  return age >= 0 ? age : null;
+}
+
+function phoneValidation(countryCode: PhoneCountry, value: string) {
+  const country = phoneCountries.find((item) => item.code === countryCode) || phoneCountries[0];
+  const digits = value.replace(/\D/g, '').replace(/^0+/, '');
+  if (!digits) return { valid: false, message: `Saisissez les ${country.digits} chiffres après ${country.dial}.`, e164: "" };
+  if (digits.length !== country.digits) return { valid: false, message: `${country.label} : ${country.digits} chiffres attendus après ${country.dial}.`, e164: "" };
+  if (country.code === "CD") {
+    const prefixes: Record<string, string> = { "81": "Vodacom", "82": "Vodacom", "83": "Vodacom", "84": "Orange", "85": "Orange", "89": "Orange", "90": "Africell", "91": "Africell", "97": "Airtel", "98": "Airtel", "99": "Airtel" };
+    const network = prefixes[digits.slice(0, 2)];
+    if (!network) return { valid: false, message: "Préfixe mobile RDC non reconnu. Vérifiez le numéro.", e164: "" };
+    return { valid: true, message: `RDC · ${network} (préfixe indicatif)`, e164: `${country.dial}${digits}` };
+  }
+  return { valid: true, message: `${country.label} · numéro valide`, e164: `${country.dial}${digits}` };
+}
+
 const roleFilters: Array<{ key: string; label: string }> = [
   { key: "ALL", label: "Tous" },
   { key: "PHYSICIAN", label: "Medecins" },
@@ -128,13 +165,16 @@ const emptyForm = {
   lastName: "",
   gender: "",
   dateOfBirth: "",
+  phoneCountry: "CD" as PhoneCountry,
   phone: "",
   email: "",
+  emailLocal: "",
+  emailDomain: "gmail.com",
   addressStreet: "",
   addressCity: "",
   addressProvince: "",
   addressCountry: "",
-  nationality: "",
+  nationality: "Congolaise",
   username: "",
   password: "",
   primaryRole: "NURSE" as RoleSlug,
@@ -259,6 +299,9 @@ export default function GestionPersAdmin() {
   const openEdit = (user: AdminUser) => {
     const employee = user.Employee?.[0];
     const contract = employee?.contracts?.[0];
+    const [emailLocal = "", suppliedDomain = "gmail.com"] = (user.email || "").split("@");
+    const phoneCountry = user.phone?.startsWith("+244") ? "AO" : user.phone?.startsWith("+250") ? "RW" : user.phone?.startsWith("+257") ? "BI" : user.phone?.startsWith("+260") ? "ZM" : "CD";
+    const selectedCountry = phoneCountries.find((item) => item.code === phoneCountry) || phoneCountries[0];
     setEditingUser(user);
     setForm({
       ...emptyForm,
@@ -266,8 +309,11 @@ export default function GestionPersAdmin() {
       lastName: user.lastName || "",
       gender: employee?.gender || "",
       dateOfBirth: employee?.dateOfBirth?.slice(0, 10) || "",
-      phone: user.phone || "",
+      phoneCountry,
+      phone: (user.phone || "").replace(selectedCountry.dial, "").replace(/^0+/, ""),
       email: user.email || "",
+      emailLocal,
+      emailDomain: emailDomains.includes(suppliedDomain) ? suppliedDomain : "gmail.com",
       addressStreet: user.addressStreet || "",
       addressCity: user.addressCity || "",
       addressProvince: user.addressProvince || "",
@@ -298,8 +344,9 @@ export default function GestionPersAdmin() {
     const username = buildUsername(next.firstName, next.lastName);
     if (!editingUser && (patch.firstName !== undefined || patch.lastName !== undefined)) {
       next.username = username;
-      if (!next.email) next.email = username ? `${username.replace("_", "")}@gmail.com` : "";
+      if (!next.emailLocal) next.emailLocal = username ? username.replace("_", "") : "";
     }
+    next.email = next.emailLocal && next.emailDomain ? `${next.emailLocal.trim()}@${next.emailDomain}`.toLowerCase() : "";
     setForm(next);
   };
 
@@ -307,6 +354,21 @@ export default function GestionPersAdmin() {
     setIsSaving(true);
     setFormError(null);
     try {
+      const age = calculateAge(form.dateOfBirth);
+      if (age !== null && age < 18) {
+        setFormError("Cet employé ne peut pas être enregistré : il doit avoir au moins 18 ans.");
+        return;
+      }
+      const validatedPhone = phoneValidation(form.phoneCountry, form.phone);
+      if (form.phone.trim() && !validatedPhone.valid) {
+        setFormError(validatedPhone.message);
+        return;
+      }
+      const resolvedEmail = form.emailLocal ? `${form.emailLocal.trim()}@${form.emailDomain}`.toLowerCase() : form.email.trim().toLowerCase();
+      if (!resolvedEmail) {
+        setFormError("Saisissez le nom de l’adresse e-mail puis choisissez son domaine.");
+        return;
+      }
       const displayName = [form.firstName, form.lastName].filter(Boolean).join(" ");
       const requestedUsername = form.username || buildUsername(form.firstName, form.lastName);
       const existingUsernames = users.map((user) => user.username?.toLowerCase()).filter(Boolean);
@@ -327,12 +389,12 @@ export default function GestionPersAdmin() {
         lastName: form.lastName,
         displayName,
         username,
-        email: form.email || `${form.firstName}${form.lastName}@gmail.com`.toLowerCase(),
+        email: resolvedEmail,
         password: editingUser ? form.password || undefined : undefined,
         primaryRole: form.primaryRole,
         isResponsible: form.isResponsible,
         isDepartmentResponsible: form.isResponsible,
-        phone: form.phone || undefined,
+        phone: validatedPhone.e164 || undefined,
         status: form.status,
         specialty: form.specialty || undefined,
         nationality: form.nationality || undefined,
@@ -705,9 +767,9 @@ function EmployeeForm({
             <FormInput label="Postnom" value={form.middleName} onChange={(middleName) => onChange({ middleName })} />
             <FormInput label="Prenom" value={form.firstName} onChange={(firstName) => onChange({ firstName })} />
             <FormSelect label="Sexe" value={form.gender} onChange={(gender) => onChange({ gender })} options={[["", "Non precise"], ["F", "Feminin"], ["M", "Masculin"]]} />
-            <FormInput label="Date de naissance" type="date" value={form.dateOfBirth} onChange={(dateOfBirth) => onChange({ dateOfBirth })} />
-            <FormInput label="Telephone" value={form.phone} onChange={(phone) => onChange({ phone })} />
-            <FormInput label="Email" value={form.email} onChange={(email) => onChange({ email })} />
+            <div><FormInput label="Date de naissance" type="date" value={form.dateOfBirth} onChange={(dateOfBirth) => onChange({ dateOfBirth })} />{calculateAge(form.dateOfBirth) !== null ? <p className={`mt-1 text-xs font-medium ${calculateAge(form.dateOfBirth)! >= 18 ? "text-aulia-teal" : "text-red-600"}`}>{calculateAge(form.dateOfBirth)! >= 18 ? `Âge : ${calculateAge(form.dateOfBirth)} ans` : `Âge : ${calculateAge(form.dateOfBirth)} ans — minimum requis : 18 ans.`}</p> : null}</div>
+            <PhoneField country={form.phoneCountry} value={form.phone} onCountryChange={(phoneCountry) => onChange({ phoneCountry })} onChange={(phone) => onChange({ phone })} />
+            <EmailField local={form.emailLocal} domain={form.emailDomain} onLocalChange={(emailLocal) => onChange({ emailLocal })} onDomainChange={(emailDomain) => onChange({ emailDomain })} />
             <FormInput label="Adresse" value={form.addressStreet} onChange={(addressStreet) => onChange({ addressStreet })} />
             <FormInput label="Nationalite" value={form.nationality} onChange={(nationality) => onChange({ nationality })} />
           </FormSection>
@@ -720,23 +782,44 @@ function EmployeeForm({
             <FormSelect label="Departement RH" value={form.departmentId} onChange={(departmentId) => onChange({ departmentId })} options={[["", "Aucun"], ...departments.map((department) => [department.id, department.name] as [string, string])]} />
             <FormSelect label="Responsable du departement" value={form.isResponsible ? "YES" : "NO"} onChange={(value) => onChange({ isResponsible: value === "YES" })} options={[["NO", "Non"], ["YES", "Oui"]]} />
             <FormSelect label="Statut" value={form.status} onChange={(status) => onChange({ status: status as UserStatus })} options={[["ACTIVE", "Actif"], ["INACTIVE", "Inactif"], ["SUSPENDED", "Suspendu"]]} />
-            <FormInput label="Salaire" type="number" value={form.salary} onChange={(salary) => onChange({ salary })} />
+            <FormInput label="Salaire mensuel (CDF)" type="number" min="0" value={form.salary} onChange={(salary) => onChange({ salary })} />
             <FormSelect label="Frequence paie" value={form.salaryFrequency} onChange={(salaryFrequency) => onChange({ salaryFrequency })} options={[["MONTHLY", "Mensuel"], ["WEEKLY", "Hebdomadaire"], ["DAILY", "Journalier"]]} />
             <FormSelect label="Type de shift" value={form.shiftMode} onChange={(shiftMode) => onChange({ shiftMode: shiftMode as typeof form.shiftMode })} options={[["ROTATION", "Rotation"], ["PERMANENT", "Permanence"]]} />
-            {form.shiftMode === "ROTATION" ? <><FormInput label="Premier jour de jour" type="date" value={form.rotationAnchorAt} onChange={(rotationAnchorAt) => onChange({ rotationAnchorAt })} /><FormInput label="Nombre de jours par phase" type="number" min="1" max="31" value={form.rotationDays} onChange={(rotationDays) => onChange({ rotationDays })} /><div className="sm:col-span-2 rounded-xl border border-aulia-teal/25 bg-aulia-mist p-3 text-xs leading-5 text-aulia-navy dark:bg-slate-900 dark:text-slate-100">Jour : 07:30–17:30, puis le même nombre de nuits : 17:30–07:30, puis le même nombre de jours de repos. Le cycle recommence automatiquement.</div></> : <><FormInput label="Heure de sortie" type="time" min="07:31" value={form.permanentShiftEndTime} onChange={(permanentShiftEndTime) => onChange({ permanentShiftEndTime })} /><div className="rounded-xl border border-aulia-teal/25 bg-aulia-mist p-3 text-xs leading-5 text-aulia-navy dark:bg-slate-900 dark:text-slate-100">Entrée fixe : 07:30, tous les jours. Choisissez uniquement l’heure de sortie.</div></>}
+            {form.shiftMode === "ROTATION" ? <><FormInput label="Premier jour de jour" type="date" value={form.rotationAnchorAt} onChange={(rotationAnchorAt) => onChange({ rotationAnchorAt })} /><FormInput label="Nombre de jours par phase" type="number" min="1" max="31" value={form.rotationDays} onChange={(rotationDays) => onChange({ rotationDays })} /><ShiftPreview anchor={form.rotationAnchorAt} days={Number(form.rotationDays || 0)} /></> : <><FormInput label="Heure de sortie" type="time" min="07:31" value={form.permanentShiftEndTime} onChange={(permanentShiftEndTime) => onChange({ permanentShiftEndTime })} /><div className="rounded-xl border border-aulia-teal/25 bg-aulia-mist p-3 text-xs leading-5 text-aulia-navy dark:bg-slate-900 dark:text-slate-100">Entrée fixe : 07:30, tous les jours. Choisissez uniquement l’heure de sortie.</div></>}
           </FormSection>
         </div>
 
         <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-end sm:p-5">
           {error ? <div className="mr-auto text-sm text-red-600">{error}</div> : null}
           <button onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:text-slate-200">Annuler</button>
-          <button disabled={isSaving || !form.firstName || !form.lastName || !form.primaryRole || (form.shiftMode === "ROTATION" && (!form.rotationAnchorAt || Number(form.rotationDays) < 1))} onClick={onSave} className="rounded-lg bg-aulia-teal px-4 py-2.5 text-sm font-semibold text-white hover:bg-aulia-teal/90 disabled:cursor-not-allowed disabled:opacity-60">
+          <button disabled={isSaving || !form.firstName || !form.lastName || !form.primaryRole || (calculateAge(form.dateOfBirth) !== null && calculateAge(form.dateOfBirth)! < 18) || (form.shiftMode === "ROTATION" && (!form.rotationAnchorAt || Number(form.rotationDays) < 1))} onClick={onSave} className="rounded-lg bg-aulia-teal px-4 py-2.5 text-sm font-semibold text-white hover:bg-aulia-teal/90 disabled:cursor-not-allowed disabled:opacity-60">
             {isSaving ? "Enregistrement..." : "Enregistrer"}
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+function PhoneField({ country, value, onCountryChange, onChange }: { country: PhoneCountry; value: string; onCountryChange: (value: PhoneCountry) => void; onChange: (value: string) => void }) {
+  const validation = phoneValidation(country, value);
+  const selected = phoneCountries.find((item) => item.code === country) || phoneCountries[0];
+  return <label className="text-sm sm:col-span-2"><span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Téléphone professionnel</span><div className="flex gap-2"><select value={country} onChange={(event) => onCountryChange(event.target.value as PhoneCountry)} className="h-10 w-32 rounded-lg border border-slate-200 bg-white px-2 text-sm outline-none focus:border-aulia-teal dark:border-slate-800 dark:bg-slate-950 dark:text-white">{phoneCountries.map((item) => <option key={item.code} value={item.code}>{item.label} {item.dial}</option>)}</select><div className="relative flex-1"><span className="absolute inset-y-0 left-3 flex items-center text-sm text-slate-500">{selected.dial}</span><input inputMode="tel" autoComplete="tel" value={value} onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, selected.digits))} placeholder={`${selected.digits} chiffres`} className={`h-10 w-full rounded-lg border bg-white pl-14 pr-3 text-sm outline-none focus:ring-2 dark:bg-slate-950 dark:text-white ${!value ? "border-slate-200 dark:border-slate-800" : validation.valid ? "border-aulia-teal focus:border-aulia-teal focus:ring-aulia-teal/15" : "border-red-400 focus:border-red-500 focus:ring-red-100"}`} /></div></div><p className={`mt-1 text-xs ${!value ? "text-slate-500" : validation.valid ? "font-medium text-aulia-teal" : "text-red-600"}`}>{validation.message}</p></label>;
+}
+
+function EmailField({ local, domain, onLocalChange, onDomainChange }: { local: string; domain: string; onLocalChange: (value: string) => void; onDomainChange: (value: string) => void }) {
+  return <label className="text-sm sm:col-span-2"><span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">E-mail professionnel</span><div className="flex overflow-hidden rounded-lg border border-slate-200 bg-white focus-within:border-aulia-teal focus-within:ring-2 focus-within:ring-aulia-teal/15 dark:border-slate-800 dark:bg-slate-950"><input value={local} onChange={(event) => onLocalChange(event.target.value.replace(/@.*/, "").replace(/\s/g, ""))} placeholder="nom.prenom" autoComplete="email" className="h-10 min-w-0 flex-1 bg-transparent px-3 text-sm outline-none dark:text-white" /><span className="flex h-10 items-center text-sm text-slate-500">@</span><select value={domain} onChange={(event) => onDomainChange(event.target.value)} className="h-10 max-w-32 border-l border-slate-200 bg-transparent px-2 text-sm outline-none dark:border-slate-800 dark:text-white">{emailDomains.map((item) => <option key={item} value={item}>{item}</option>)}</select></div><p className="mt-1 text-xs text-slate-500">Adresse enregistrée : {local ? `${local}@${domain}` : "à compléter"}</p></label>;
+}
+
+function ShiftPreview({ anchor, days }: { anchor: string; days: number }) {
+  if (!anchor || !Number.isInteger(days) || days < 1) return <div className="sm:col-span-2 rounded-xl border border-aulia-teal/25 bg-aulia-mist p-3 text-xs leading-5 text-aulia-navy dark:bg-slate-900 dark:text-slate-100">Jour : 07:30–17:30, puis le même nombre de nuits : 17:30–07:30, puis repos. Le cycle recommence automatiquement.</div>;
+  const start = new Date(`${anchor}T00:00:00`);
+  const labels = Array.from({ length: Math.min(days * 3, 9) }, (_, index) => {
+    const date = new Date(start); date.setDate(start.getDate() + index);
+    const phase = index < days ? ["Jour", "07:30–17:30", "bg-aulia-teal/10 text-aulia-teal"] : index < days * 2 ? ["Nuit", "17:30–07:30", "bg-aulia-navy/10 text-aulia-navy dark:text-slate-100"] : ["Repos", "Aucune garde", "bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-200"];
+    return <div key={index} className={`rounded-lg px-2 py-2 text-xs ${phase[2]}`}><strong className="block">{date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })} · {phase[0]}</strong><span>{phase[1]}</span></div>;
+  });
+  return <div className="sm:col-span-2 rounded-xl border border-aulia-teal/25 bg-aulia-mist p-3"><p className="text-xs font-semibold text-aulia-navy dark:text-white">Aperçu du cycle automatique</p><div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-3">{labels}</div></div>;
 }
 
 function ProfileDrawer({ user, onClose }: { user: AdminUser; onClose: () => void }) {

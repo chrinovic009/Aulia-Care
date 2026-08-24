@@ -21,6 +21,7 @@ export class MessagesController {
     'RADIOLOGIST',
     'PHARMACIST',
     'CASHIER',
+    'FINANCE',
     'PATIENT',
   )
   findUnread(@Request() req: any) {
@@ -39,6 +40,7 @@ export class MessagesController {
     'RADIOLOGIST',
     'PHARMACIST',
     'CASHIER',
+    'FINANCE',
     'PATIENT',
   )
   findConversation(@Request() req: any, @Param('contactId') contactId: string) {
@@ -57,6 +59,7 @@ export class MessagesController {
     'RADIOLOGIST',
     'PHARMACIST',
     'CASHIER',
+    'FINANCE',
     'PATIENT',
   )
   markRead(@Request() req: any, @Body() body: { senderId: string; messageIds?: string[] }) {

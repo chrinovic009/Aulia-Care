@@ -1,4 +1,0 @@
-ALTER TABLE "Clinic"
-  ADD COLUMN IF NOT EXISTS "brandDisplayName" TEXT,
-  ADD COLUMN IF NOT EXISTS "documentLogoUrl" TEXT,
-  ADD COLUMN IF NOT EXISTS "documentLogoUpdatedAt" TIMESTAMP(3);

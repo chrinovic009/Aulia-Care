@@ -579,6 +579,7 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           issuedById: actorId,
+          clinicId: consultation.clinicId || consultation.patient.clinicId || null,
           type: 'LABORATORY',
           status: 'PENDING',
           totalAmount: examPriceTotal,
@@ -827,6 +828,7 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           issuedById: actorId,
+          clinicId: consultation.clinicId || consultation.patient.clinicId || null,
           type: InvoiceType.RADIOLOGY,
           status: 'PENDING',
           totalAmount: price,
@@ -1027,6 +1029,7 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           issuedById: actorId,
+          clinicId: consultation.clinicId || consultation.patient.clinicId || null,
           type: 'PHARMACY',
           status: 'PENDING',
           totalAmount: total,

@@ -107,10 +107,10 @@ export default function PatientAssignes() {
     loadPatients();
     loadHistory(historyPeriod);
     Promise.all([
-      apiFetch<Array<{ id?: string; primaryRole?: string; displayName?: string; username?: string; firstName?: string; lastName?: string }>>("/users").catch(() => []),
+      apiFetch<Array<{ id?: string; primaryRole?: string; displayName?: string; username?: string; firstName?: string; lastName?: string }>>("/users/physicians/available").catch(() => []),
       fetchServices().catch(() => []),
     ]).then(([users, services]) => {
-      setPhysicians((users || []).filter((user) => user.primaryRole === "PHYSICIAN"));
+      setPhysicians(users || []);
       setServicesCatalog(services || []);
     });
   }, [historyPeriod]);
@@ -624,6 +624,9 @@ export default function PatientAssignes() {
                   className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                 >
                   <option value="">Choisir un medecin</option>
+                  {sortedPhysicians.length === 0 && (
+                    <option value="" disabled>Aucun médecin actif disponible dans votre établissement</option>
+                  )}
                   {sortedPhysicians.map((doctor) => (
                     <option key={doctor.id} value={doctor.id}>
                       {doctor.displayName || `${doctor.firstName || ""} ${doctor.lastName || ""}`.trim() || doctor.username}

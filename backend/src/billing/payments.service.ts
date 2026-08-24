@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import * as bcrypt from 'bcrypt';
+import { createHash } from 'crypto';
 
 @Injectable()
 export class PaymentsService {
@@ -37,9 +38,43 @@ export class PaymentsService {
           reference: createPaymentDto.reference,
           note: createPaymentDto.note,
           paidById: actorId,
+          // Un paiement appartient toujours au même établissement que sa
+          // facture. Le client ne choisit jamais cette valeur.
+          clinicId: invoice.clinicId,
           paidAt: new Date(),
         },
       });
+
+      // Accounting is deliberately created as a balanced DRAFT. A cashier may
+      // collect a payment, but a second Finance/Admin controller must post the
+      // journal entry; a payment never silently becomes a certified bank entry.
+      if (actorId && invoice.clinicId) {
+        const previous = await (prisma as any).accountingJournalEntry.findFirst({
+          where: { clinicId: invoice.clinicId, status: 'POSTED' },
+          orderBy: { postedAt: 'desc' },
+          select: { entryHash: true },
+        });
+        const account = createPaymentDto.method === PaymentMethod.CASH ? '571-CAISSE' : '512-BANQUE-À-RAPPROCHER';
+        const lines = [
+          { account, label: `Encaissement facture ${invoice.id}`, debit: amount, credit: 0 },
+          { account: '411-CLIENTS', label: `Règlement facture ${invoice.id}`, debit: 0, credit: amount },
+        ];
+        const entryHash = createHash('sha256').update(`${previous?.entryHash || ''}|${JSON.stringify({ clinicId: invoice.clinicId, paymentId: payment.id, lines })}`).digest('hex');
+        await (prisma as any).accountingJournalEntry.create({
+          data: {
+            clinicId: invoice.clinicId,
+            reference: `PAY-${payment.id}`,
+            occurredAt: payment.paidAt,
+            description: `Encaissement ${createPaymentDto.method} de la facture ${invoice.id}`,
+            sourceType: 'PAYMENT',
+            sourceId: payment.id,
+            previousHash: previous?.entryHash || null,
+            entryHash,
+            createdById: actorId,
+            lines: { create: lines },
+          },
+        });
+      }
 
       const remainingBalance = Math.max(0, balanceDue - amount);
       const updatedInvoice = await prisma.invoice.update({
@@ -242,6 +277,11 @@ export class PaymentsService {
       this.notificationsGateway.notify('notification.created', notification);
     });
     this.notificationsGateway.notify('patient.updated', result.updatedPatient);
+    if (invoice.clinicId) {
+      // Signal minimal et isolé à l'établissement : l'interface Finance
+      // recharge ses totaux sans recevoir de données de patient par socket.
+      this.notificationsGateway.notifyFinanceClinic(invoice.clinicId, { resource: 'payment' });
+    }
     
     if (result.labRequest) {
       this.notificationsGateway.notify('lab.request.created', result.labRequest);

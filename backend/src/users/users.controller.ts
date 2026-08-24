@@ -30,10 +30,17 @@ export class UsersController {
     'RADIOLOGIST',
     'PHARMACIST',
     'CASHIER',
+    'FINANCE',
     'PATIENT',
   )
   findContacts(@Request() req: any) {
     return this.usersService.findContactsForRole(req.user?.role, req.user?.userId);
+  }
+
+  @Get('physicians/available')
+  @Roles('NURSE', 'PHYSICIAN', 'RECEPTIONIST', 'ADMIN', 'SUPER_ADMIN')
+  findAvailablePhysicians(@Request() req: any) {
+    return this.usersService.findAvailablePhysicians(req.user?.userId);
   }
 
   @Get(':id')

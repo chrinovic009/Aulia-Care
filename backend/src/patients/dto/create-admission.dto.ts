@@ -53,9 +53,11 @@ export class CreateAdmissionDto {
   @IsOptional()
   insuranceNumber?: string;
 
+  // Required only for a paramedical voucher. Standard admissions use the
+  // server-controlled reception fee selected through billingServiceId.
   @IsString()
-  @IsNotEmpty()
-  serviceId!: string;
+  @IsOptional()
+  serviceId?: string;
 
   @IsString()
   @IsNotEmpty()
