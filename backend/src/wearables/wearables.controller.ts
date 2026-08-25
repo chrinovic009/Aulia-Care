@@ -3,11 +3,24 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { WearablesService } from './wearables.service';
+import { CoreConnectedCareService } from './core-connected-care.service';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('wearables')
 export class WearablesController {
-  constructor(private readonly wearables: WearablesService) {}
+  constructor(private readonly wearables: WearablesService, private readonly connectedCare: CoreConnectedCareService) {}
+
+  @Post('patients/:patientId/connected-care-consents')
+  @Roles('PATIENT')
+  grantConnectedCareConsent(@Param('patientId') patientId: string, @Body() body: { purpose?: string }, @Request() req: any) {
+    return this.connectedCare.grantConsent(patientId, String(body?.purpose || '') as any, req.user);
+  }
+
+  @Patch('connected-care-consents/:consentId/revoke')
+  @Roles('PATIENT')
+  revokeConnectedCareConsent(@Param('consentId') consentId: string, @Body() body: { reason?: string }, @Request() req: any) {
+    return this.connectedCare.revokeConsent(consentId, req.user, body?.reason);
+  }
 
   @Post('devices')
   @Roles('SUPER_ADMIN', 'ADMIN')
@@ -64,13 +77,13 @@ export class WearablesController {
   }
 
   @Post('devices/:deviceId/measurements')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
+  @Roles('SUPER_ADMIN')
   ingestMeasurement(@Param('deviceId') deviceId: string, @Body() body: any, @Request() req: any) {
     return this.wearables.ingestMeasurement(deviceId, body, req.user?.userId);
   }
 
   @Post('devices/:deviceId/locations')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
+  @Roles('SUPER_ADMIN')
   ingestLocation(@Param('deviceId') deviceId: string, @Body() body: any, @Request() req: any) {
     return this.wearables.ingestLocation(deviceId, body, req.user?.userId);
   }

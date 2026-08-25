@@ -134,6 +134,8 @@ model User {
   notificationsSent                Notification[]                   @relation("NotificationAuthor")
   notifications                    Notification[]                   @relation("NotificationRecipient")
   parentChildLinks                 ParentChildLink[]                @relation("ParentUser")
+  connectedCareConsentsCreated     ConnectedCareConsent[]
+  platformLayerConfigurations      PlatformLayerConfiguration[]     @relation("PlatformLayerConfigurationUpdatedBy")
   patientPortalProfile             Patient?                         @relation("PatientPortalUser")
   telehealthSessionsAsDoctor       TelehealthSession[]              @relation("TelehealthSessionDoctor")
   telehealthSessionsAsPatient      TelehealthSession[]              @relation("TelehealthSessionPatientUser")
@@ -403,6 +405,7 @@ model Patient {
   wearableMeasurements   WearableMeasurement[]
   wearableSubscriptions  WearableSubscription[]
   telehealthSessions     TelehealthSession[]
+  connectedCareConsents  ConnectedCareConsent[]
 
   @@index([lastName, firstName])
   @@index([dateOfBirth])
@@ -659,6 +662,23 @@ model ParentChildLink {
   @@unique([parentUserId, childPatientId])
   @@index([childPatientId, status])
   @@index([status, expiresAt])
+}
+
+model ConnectedCareConsent {
+  id               String                @id @default(uuid())
+  patientId        String
+  purpose          ConnectedCarePurpose
+  consentReference String                @unique
+  consentedAt      DateTime              @default(now())
+  revokedAt        DateTime?
+  revokedReason    String?
+  createdById      String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  patient          Patient               @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  createdBy        User?                 @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([patientId, purpose, revokedAt])
 }
 
 model Room {
@@ -1838,6 +1858,19 @@ model Clinic {
   refundRequests        RefundRequest[]
 }
 
+model PlatformLayerConfiguration {
+  id                   String       @id @default("default")
+  enabledLayers        AuliaLayer[] @default([CORE])
+  configuredAt         DateTime?
+  configurationVersion Int          @default(1)
+  updatedById          String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  updatedBy            User?        @relation("PlatformLayerConfigurationUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([updatedById])
+}
+
 /// A bank account is configured by Finance, then activated by an administrator.
 /// The complete account number is never exposed by the API after creation.
 model BankAccount {
@@ -2967,6 +3000,7 @@ enum UserStatus {
 }
 
 enum RoleSlug {
+  DEV
   SUPER_ADMIN
   ADMIN
   RECEPTIONIST
@@ -2981,6 +3015,12 @@ enum RoleSlug {
   CASHIER
   PATIENT
   FINANCE
+}
+
+enum AuliaLayer {
+  CORE
+  AI
+  CONNECTED
 }
 
 enum MessageStatus {
@@ -3148,6 +3188,13 @@ enum ParentChildLinkStatus {
   ACTIVE
   REVOKED
   EXPIRED
+}
+
+enum ConnectedCarePurpose {
+  WEARABLES
+  TELEHEALTH
+  MESSAGING
+  LOCATION
 }
 
 enum LabRequestStatus {

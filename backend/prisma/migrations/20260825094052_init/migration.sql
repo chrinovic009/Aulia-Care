@@ -5,7 +5,10 @@ CREATE TYPE "ImagingModality" AS ENUM ('XRAY', 'CT', 'MRI', 'ULTRASOUND', 'INTER
 CREATE TYPE "UserStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'SUSPENDED');
 
 -- CreateEnum
-CREATE TYPE "RoleSlug" AS ENUM ('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'SURGEON', 'ANESTHESIOLOGIST', 'PHARMACIST', 'CASHIER', 'PATIENT', 'FINANCE');
+CREATE TYPE "RoleSlug" AS ENUM ('DEV', 'SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'SURGEON', 'ANESTHESIOLOGIST', 'PHARMACIST', 'CASHIER', 'PATIENT', 'FINANCE');
+
+-- CreateEnum
+CREATE TYPE "AuliaLayer" AS ENUM ('CORE', 'AI', 'CONNECTED');
 
 -- CreateEnum
 CREATE TYPE "MessageStatus" AS ENUM ('SENT', 'DELIVERED', 'READ');
@@ -72,6 +75,9 @@ CREATE TYPE "EmergencyLocationRequestStatus" AS ENUM ('PENDING', 'DISPATCHED', '
 
 -- CreateEnum
 CREATE TYPE "ParentChildLinkStatus" AS ENUM ('PENDING', 'ACTIVE', 'REVOKED', 'EXPIRED');
+
+-- CreateEnum
+CREATE TYPE "ConnectedCarePurpose" AS ENUM ('WEARABLES', 'TELEHEALTH', 'MESSAGING', 'LOCATION');
 
 -- CreateEnum
 CREATE TYPE "LabRequestStatus" AS ENUM ('REQUESTED', 'COLLECTED', 'RECEIVED', 'IN_ANALYSIS', 'TECHNICAL_VALIDATION', 'BIOLOGICAL_VALIDATION', 'AVAILABLE', 'SENT', 'COMPLETED', 'VERIFIED', 'CANCELLED');
@@ -734,6 +740,22 @@ CREATE TABLE "ParentChildLink" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "ParentChildLink_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ConnectedCareConsent" (
+    "id" TEXT NOT NULL,
+    "patientId" TEXT NOT NULL,
+    "purpose" "ConnectedCarePurpose" NOT NULL,
+    "consentReference" TEXT NOT NULL,
+    "consentedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "revokedAt" TIMESTAMP(3),
+    "revokedReason" TEXT,
+    "createdById" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ConnectedCareConsent_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1749,6 +1771,19 @@ CREATE TABLE "Clinic" (
     "deletedAt" TIMESTAMP(3),
 
     CONSTRAINT "Clinic_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PlatformLayerConfiguration" (
+    "id" TEXT NOT NULL DEFAULT 'default',
+    "enabledLayers" "AuliaLayer"[] DEFAULT ARRAY['CORE']::"AuliaLayer"[],
+    "configuredAt" TIMESTAMP(3),
+    "configurationVersion" INTEGER NOT NULL DEFAULT 1,
+    "updatedById" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "PlatformLayerConfiguration_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -2911,6 +2946,12 @@ CREATE INDEX "ParentChildLink_status_expiresAt_idx" ON "ParentChildLink"("status
 CREATE UNIQUE INDEX "ParentChildLink_parentUserId_childPatientId_key" ON "ParentChildLink"("parentUserId", "childPatientId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "ConnectedCareConsent_consentReference_key" ON "ConnectedCareConsent"("consentReference");
+
+-- CreateIndex
+CREATE INDEX "ConnectedCareConsent_patientId_purpose_revokedAt_idx" ON "ConnectedCareConsent"("patientId", "purpose", "revokedAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Room_number_key" ON "Room"("number");
 
 -- CreateIndex
@@ -3170,6 +3211,9 @@ CREATE INDEX "Invoice_clinicId_idx" ON "Invoice"("clinicId");
 
 -- CreateIndex
 CREATE INDEX "Payment_clinicId_idx" ON "Payment"("clinicId");
+
+-- CreateIndex
+CREATE INDEX "PlatformLayerConfiguration_updatedById_idx" ON "PlatformLayerConfiguration"("updatedById");
 
 -- CreateIndex
 CREATE INDEX "BankAccount_clinicId_status_idx" ON "BankAccount"("clinicId", "status");
@@ -3604,6 +3648,12 @@ ALTER TABLE "ParentChildLink" ADD CONSTRAINT "ParentChildLink_childPatientId_fke
 ALTER TABLE "ParentChildLink" ADD CONSTRAINT "ParentChildLink_parentUserId_fkey" FOREIGN KEY ("parentUserId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "ConnectedCareConsent" ADD CONSTRAINT "ConnectedCareConsent_patientId_fkey" FOREIGN KEY ("patientId") REFERENCES "Patient"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ConnectedCareConsent" ADD CONSTRAINT "ConnectedCareConsent_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Room" ADD CONSTRAINT "Room_serviceUnitId_fkey" FOREIGN KEY ("serviceUnitId") REFERENCES "ServiceUnit"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -3935,6 +3985,9 @@ ALTER TABLE "Payment" ADD CONSTRAINT "Payment_invoiceId_fkey" FOREIGN KEY ("invo
 
 -- AddForeignKey
 ALTER TABLE "Payment" ADD CONSTRAINT "Payment_paidById_fkey" FOREIGN KEY ("paidById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PlatformLayerConfiguration" ADD CONSTRAINT "PlatformLayerConfiguration_updatedById_fkey" FOREIGN KEY ("updatedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "BankAccount" ADD CONSTRAINT "BankAccount_clinicId_fkey" FOREIGN KEY ("clinicId") REFERENCES "Clinic"("id") ON DELETE CASCADE ON UPDATE CASCADE;
