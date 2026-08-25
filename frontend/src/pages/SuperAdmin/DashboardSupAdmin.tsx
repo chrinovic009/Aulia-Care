@@ -1,422 +1,54 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../config/api";
-import { documentIdentityLine, documentLegalLine, documentLogoUrl, getClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
+import PageMeta from "../../components/common/PageMeta";
 
-const tabs = ["Vue globale", "Finances", "Performances", "Alertes", "Rapports"];
+type MonthlyPoint = { key: string; label: string; billed: number; collected: number; patientPayments: number; insurancePayments: number };
+type ExecutiveDashboard = {
+  generatedAt: string;
+  disclaimer: string;
+  overview: { activePatients: number; newPatientsToday: number; consultationsToday: number; activeHospitalizations: number; freeBeds: number; totalBeds: number };
+  financial: { billedMonth: number; collectedMonth: number; receivables: number; patientPaymentsMonth: number; insurancePaymentsMonth: number; insuranceOutstanding: number; payrollMonth: number; monthly: MonthlyPoint[] };
+  performance: { services: Array<{ name: string; patients: number; staff: number }>; roles: Array<{ role: string; count: number }> };
+  alerts: Array<{ level: string; category: string; message: string }>;
+  reports: { invoicesInPeriod: number; paymentsInPeriod: number; claimsPending: number; activeStaff: number };
+};
+
+const tabs = ["Vue globale", "Finances", "Performances", "Alertes & rapports"] as const;
+type Tab = (typeof tabs)[number];
+const cdf = (value: number) => `${Number(value || 0).toLocaleString("fr-FR")} CDF`;
+const roleLabel: Record<string, string> = { ADMIN: "Administrateurs", PHYSICIAN: "Médecins", NURSE: "Infirmiers", PHARMACIST: "Pharmaciens", RECEPTIONIST: "Réception", CASHIER: "Caisse", FINANCE: "Finance", RADIOLOGIST: "Radiologie", LAB_MANAGER: "Responsables labo", LAB_TECHNICIAN: "Techniciens labo" };
 
 export default function DashboardSupAdmin() {
-  const [activeTab, setActiveTab] = useState(tabs[0]);
-  const [patients, setPatients] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
-  const [services, setServices] = useState<any[]>([]);
-  const [payments, setPayments] = useState<any[]>([]);
-  const [invoices, setInvoices] = useState<any[]>([]);
-  const [hospitalizations, setHospitalizations] = useState<any[]>([]);
-  const [medications, setMedications] = useState<any[]>([]);
-
+  const [tab, setTab] = useState<Tab>(tabs[0]);
+  const [data, setData] = useState<ExecutiveDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const load = async () => {
-    try {
-      // Fetch consolidated dashboard and reports from backend (no localStorage)
-      const [dashboardData, reportsData, usersData] = await Promise.all([
-        apiFetch<any>("/administration/dashboard").catch(() => ({})),
-        apiFetch<any>("/administration/reports").catch(() => ({})),
-        apiFetch<any[]>("/users").catch(() => []),
-      ]);
-
-      // Use dashboard top-level payload when available
-      if (dashboardData && Object.keys(dashboardData).length) {
-        // dashboard payload contains recent lists and performanceByService
-        setPatients(dashboardData.patients || []);
-        setServices(dashboardData.performanceByService || []);
-        setPayments(dashboardData.recent?.payments || []);
-        setInvoices(dashboardData.recent?.invoices || []);
-        setHospitalizations(dashboardData.recent?.hospitalizations || []);
-        setMedications(reportsData.stocks || reportsData.medications || []);
-      } else {
-        // Fallback to reports for data when dashboard not available
-        setPatients(reportsData.patients || []);
-        setServices(reportsData.services || []);
-        setPayments(reportsData.payments || []);
-        setInvoices(reportsData.invoices || []);
-        setHospitalizations(reportsData.hospitalizations || []);
-        setMedications(reportsData.stocks || reportsData.medications || []);
-      }
-
-      setUsers(usersData || []);
-    } catch (err) {
-      // keep previous state on error
-      console.error("Error loading superadmin dashboard:", err);
-    }
+    setLoading(true); setError(null);
+    try { setData(await apiFetch<ExecutiveDashboard>("/administration/executive-dashboard")); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "La synthèse directionnelle n’a pas pu être chargée."); }
+    finally { setLoading(false); }
   };
-
   useEffect(() => {
-    load();
-    const handler = () => load();
-    window.addEventListener("aulia:patient.created", handler);
-    window.addEventListener("aulia:patient.updated", handler);
-    window.addEventListener("aulia:notification.created", handler);
-    return () => {
-      window.removeEventListener("aulia:patient.created", handler);
-      window.removeEventListener("aulia:patient.updated", handler);
-      window.removeEventListener("aulia:notification.created", handler);
-    };
+    void load(); const refresh = () => void load();
+    window.addEventListener("aulia:realtime.update", refresh); window.addEventListener("aulia:billing.updated", refresh);
+    return () => { window.removeEventListener("aulia:realtime.update", refresh); window.removeEventListener("aulia:billing.updated", refresh); };
   }, []);
-
-  const today = new Date().toISOString().slice(0, 10);
-  const month = new Date().toISOString().slice(0, 7);
-
-  const metrics = useMemo(() => {
-    const paymentsToday = payments.filter((payment) => (payment.paidAt || payment.createdAt || "").slice(0, 10) === today);
-    const paymentsMonth = payments.filter((payment) => (payment.paidAt || payment.createdAt || "").slice(0, 7) === month);
-    const workflow = (status: string) => patients.filter((patient) => patient.workflowStatus === status).length;
-    return {
-      patientsToday: patients.filter((patient) => (patient.createdAt || "").slice(0, 10) === today).length,
-      patientsMonth: patients.filter((patient) => (patient.createdAt || "").slice(0, 7) === month).length,
-      consultationsToday: patients.filter((patient) => (patient.consultations || []).some((item: any) => (item.createdAt || "").slice(0, 10) === today)).length,
-      hospitalized: hospitalizations.filter((item) => item.status === "ADMITTED").length,
-      revenueToday: paymentsToday.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
-      revenueMonth: paymentsMonth.reduce((sum, payment) => sum + Number(payment.amount || 0), 0),
-      unpaid: invoices.reduce((sum, invoice) => sum + Number(invoice.balanceDue || 0), 0),
-      workflow,
-    };
-  }, [hospitalizations, invoices, month, patients, payments, today]);
-
-  // Helper: aggregate amounts by month key YYYY-MM
-  function aggregateByMonth(items: any[], dateKey: string, amountKey: string) {
-    const map: Record<string, number> = {};
-    items.forEach((it) => {
-      const d = (it[dateKey] || it.createdAt || it.paidAt || it.issuedAt || "").slice(0, 7);
-      if (!d) return;
-      map[d] = (map[d] || 0) + Number(it[amountKey] || it.totalAmount || it.amount || 0);
-    });
-    // return sorted array of {month, value}
-    return Object.keys(map)
-      .sort()
-      .map((k) => ({ month: k, value: map[k] }));
-  }
-
-  function getLastMonths(count = 12) {
-    const res: string[] = [];
-    const now = new Date();
-    for (let i = count - 1; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      res.push(d.toISOString().slice(0, 7));
-    }
-    return res;
-  }
-
-  function buildSeriesForMonths(mapData: Array<{ month: string; value: number }>, months: string[]) {
-    const byMonth: Record<string, number> = {};
-    mapData.forEach((m) => { byMonth[m.month] = m.value; });
-    return months.map((m) => ({ month: m, value: byMonth[m] || 0 }));
-  }
-
-  const months = useMemo(() => getLastMonths(12), []);
-  const revenueSeries = useMemo(() => buildSeriesForMonths(aggregateByMonth(invoices, "issuedAt", "totalAmount"), months), [invoices, months]);
-  const paymentsSeries = useMemo(() => buildSeriesForMonths(aggregateByMonth(payments, "paidAt", "amount"), months), [payments, months]);
-  const criticalAlerts = [
-    ...medications.filter((item) => Number(item.stockQuantity || item.quantity || 0) <= Number(item.criticalLevel || 3)).map((item) => `Stock critique: ${item.name}`),
-    ...invoices.filter((invoice) => Number(invoice.balanceDue || 0) > 1000).map((invoice) => `Facture impayee importante: ${Number(invoice.balanceDue).toLocaleString("fr-FR")}`),
-    ...services.filter((service) => !service.responsables?.length).map((service) => `Service sans responsable: ${service.name}`),
-  ];
-
-  const roleLabels: Record<string, string> = {
-    PHYSICIAN: "Médecins",
-    NURSE: "Infirmiers",
-    PHARMACIST: "Pharmaciens",
-    RECEPTIONIST: "Réceptionnistes",
-    CASHIER: "Caissiers",
-    ADMIN: "Administrateurs",
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-        <p className="text-xs font-semibold uppercase text-slate-500">DG de l'hopital</p>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Vue stratégique Aulia Care</h1>
-        <div className="mt-5 flex flex-wrap gap-2">
-          {tabs.map((tab) => (
-            <button key={tab} onClick={() => setActiveTab(tab)} className={`rounded-lg px-4 py-2 text-sm font-semibold ${activeTab === tab ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}>
-              {tab}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-        {activeTab === "Vue globale" && (
-          <div className="grid gap-3 sm:grid-cols-4">
-            <Metric label="Patients aujourd'hui" value={metrics.patientsToday} />
-            <Metric label="Patients ce mois" value={metrics.patientsMonth} />
-            <Metric label="Consultations aujourd'hui" value={metrics.consultationsToday} />
-            <Metric label="Hospitalises" value={metrics.hospitalized} />
-            <Metric label="En attente caisse" value={metrics.workflow("EN_ATTENTE_DE_PAIEMENT")} tone="amber" />
-            <Metric label="En attente infirmier" value={metrics.workflow("EN_ATTENTE_INFIRMERIE")} tone="blue" />
-            <Metric label="En attente medecin" value={metrics.workflow("EN_ATTENTE_MEDECIN")} tone="blue" />
-            <Metric label="Pharmacie" value={metrics.workflow("EN_PHARMACIE")} tone="green" />
-          </div>
-        )}
-
-        {activeTab === "Finances" && (
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Metric label="Encaisse aujourd'hui" value={`${metrics.revenueToday.toLocaleString("fr-FR")} CDF`} tone="green" />
-              <Metric label="Encaisse ce mois" value={`${metrics.revenueMonth.toLocaleString("fr-FR")} CDF`} tone="green" />
-              <Metric label="Factures impayees" value={`${metrics.unpaid.toLocaleString("fr-FR")} CDF`} tone="red" />
-            </div>
-
-            <div id="finances-panel" className="grid gap-4 lg:grid-cols-2">
-              <div id="finances-curves" className="rounded-lg border p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold">Courbes: revenus / paiements (mois)</h3>
-                  <button onClick={() => printSection('finances-curves')} className="text-xs rounded border px-2 py-1">Imprimer</button>
-                </div>
-                <LineChart series={[{ name: 'Revenus', data: revenueSeries }, { name: 'Paiements', data: paymentsSeries }]} />
-              </div>
-
-              <div id="finances-payments" className="rounded-lg border p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold">Paiements patients vs assurances</h3>
-                  <button onClick={() => printSection('finances-payments')} className="text-xs rounded border px-2 py-1">Imprimer</button>
-                </div>
-                <PieChart data={aggregatePaymentsByMethod(payments)} />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === "Performances" && (
-          <div className="space-y-4">
-            <div id="performance-panel" className="rounded-lg border p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold">Performance par service</h3>
-                <button onClick={() => printSection('performance-panel')} className="text-xs rounded border px-2 py-1">Imprimer</button>
-              </div>
-              <BarChart labels={services.map((s:any)=>s.name || '---')} values={services.map((s:any)=>Number((s.patientCount || (s.patients ? s.patients.length : 0)) + (s.staffCount || (s.staff ? s.staff.length : 0)) || 0))} />
-            </div>
-
-            <Table
-              headers={["Role", "Nombre utilisateurs"]}
-              rows={[
-                "ADMIN",
-                "PHYSICIAN",
-                "NURSE",
-                "PHARMACIST",
-                "RECEPTIONIST",
-                "CASHIER",
-              ].map((role) => [
-                roleLabels[role],
-                users.filter((user) => user.primaryRole === role).length,
-              ])}
-            />
-          </div>
-        )}
-
-        {activeTab === "Alertes" && (
-          <div className="space-y-2">
-            {criticalAlerts.length === 0 ? <p className="text-sm text-slate-500">Aucune alerte critique.</p> : criticalAlerts.map((alert) => <div key={alert} className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{alert}</div>)}
-          </div>
-        )}
-
-        {/* Additional sections per request: RH, Pharmacie, Infrastructures, Rapports */}
-        {activeTab === "Rapports" && (
-          <div className="space-y-4">
-            <div id="rh-panel" className="rounded-lg border p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold">Ressources humaines</h3>
-                <button onClick={() => printSection('rh-panel')} className="text-xs rounded border px-2 py-1">Imprimer</button>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Metric label="Effectifs totaux" value={users.length} />
-                <Metric label="Présences (aujourd'hui)" value={users.filter(u=>u.presentToday).length || 0} />
-                <Metric label="Masse salariale" value={`${computePayrollEstimate(users)} CDF`} />
-              </div>
-              <div className="mt-4">
-                <h4 className="font-medium mb-2">Répartition du personnel</h4>
-                <PieChart data={Object.entries(groupByRole(users)).map(([k,v])=>({ label:k, value:v }))} />
-              </div>
-            </div>
-
-            <div id="pharmacy-panel" className="rounded-lg border p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold">Pharmacie & stock</h3>
-                <button onClick={() => printSection('pharmacy-panel')} className="text-xs rounded border px-2 py-1">Imprimer</button>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <h4 className="font-medium">Stocks critiques</h4>
-                  <ul className="list-disc ml-5 mt-2 text-sm text-slate-700">{medications.filter((m)=>Number(m.stockQuantity||m.quantity||0) <= Number(m.criticalLevel||3)).map(m=> <li key={m.id||m.name}>{m.name} — {m.stockQuantity||m.quantity||0}</li>)}</ul>
-                </div>
-                <div>
-                  <h4 className="font-medium">Consommation (derniers mois)</h4>
-                  <BarChart labels={paymentsSeries.map((p:any)=>p.month)} values={paymentsSeries.map((p:any)=>p.value)} />
-                </div>
-              </div>
-            </div>
-
-            <div id="infra-panel" className="rounded-lg border p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold">Infrastructures</h3>
-                <button onClick={() => printSection('infra-panel')} className="text-xs rounded border px-2 py-1">Imprimer</button>
-              </div>
-              <p className="text-sm">Capacité totale salles & lits: {hospitalizations.length}</p>
-              <p className="text-sm">Utilisation (hospitalisations en cours): {metrics.hospitalized}</p>
-            </div>
-          </div>
-        )}
-
-        {activeTab === "Alertes" && (
-          <div className="space-y-2">
-            {criticalAlerts.length === 0 ? <p className="text-sm text-slate-500">Aucune alerte critique.</p> : criticalAlerts.map((alert) => <div key={alert} className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{alert}</div>)}
-          </div>
-        )}
-
-        {activeTab === "Rapports" && (
-          <Table headers={["Rapport", "Base"]} rows={[
-            ["Journalier", "Patients, paiements, consultations"],
-            ["Hebdomadaire", "Activite par service"],
-            ["Mensuel", "Revenus, hospitalisations, stock"],
-            ["Annuel", "Performance globale"],
-          ]} />
-        )}
-      </section>
-    </div>
-  );
+  const largestService = useMemo(() => [...(data?.performance.services || [])].sort((a, b) => b.patients - a.patients)[0], [data]);
+  return <div className="mx-auto w-full max-w-7xl space-y-5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+    <PageMeta title="Direction générale | Aulia Care" description="Pilotage consolidé de l’établissement." />
+    <section className="aulia-card overflow-hidden p-5 sm:p-7"><div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Direction générale</p><h1 className="mt-2 text-2xl font-semibold text-aulia-navy dark:text-white sm:text-3xl">Vue complète de l’établissement</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">Activité, encaissements, créances, capacité, ressources et alertes prioritaires, en langage clair.</p></div><button type="button" onClick={() => void load()} disabled={loading} className="rounded-xl border border-aulia-teal/30 px-4 py-2.5 text-sm font-semibold text-aulia-teal transition hover:bg-aulia-mist disabled:opacity-50 dark:hover:bg-aulia-teal/10">Actualiser les données</button></div><div className="mt-6 flex gap-2 overflow-x-auto pb-1">{tabs.map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === item ? "bg-aulia-teal text-white shadow-sm" : "border border-slate-200 text-slate-600 hover:bg-aulia-mist dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"}`}>{item}</button>)}</div></section>
+    {loading && <section className="aulia-card p-8 text-center text-sm text-slate-500 dark:text-slate-300">Chargement de la synthèse directionnelle…</section>}
+    {error && <section className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200"><p className="font-semibold">Synthèse indisponible</p><p className="mt-1">{error}</p><button type="button" onClick={() => void load()} className="mt-3 rounded-lg bg-red-700 px-3 py-2 font-semibold text-white">Réessayer</button></section>}
+    {!loading && data && <><div>{tab === "Vue globale" && <Overview data={data} largestService={largestService} />}{tab === "Finances" && <Finance data={data} />}{tab === "Performances" && <Performance data={data} />}{tab === "Alertes & rapports" && <AlertsAndReports data={data} />}</div><p className="px-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Mis à jour le {new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(data.generatedAt))}. {data.disclaimer}</p></>}
+  </div>;
 }
 
-function Metric({ label, value, tone = "default" }: { label: string; value: number | string; tone?: "default" | "amber" | "blue" | "green" | "red" }) {
-  const colors = {
-    default: "text-slate-900 dark:text-white",
-    amber: "text-amber-700 dark:text-amber-300",
-    blue: "text-blue-700 dark:text-blue-300",
-    green: "text-emerald-700 dark:text-emerald-300",
-    red: "text-red-700 dark:text-red-300",
-  };
-  return <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950"><p className="text-xs text-slate-500">{label}</p><p className={`mt-2 text-2xl font-semibold ${colors[tone]}`}>{value}</p></div>;
-}
-
-function Table({ headers, rows }: { headers: string[]; rows: Array<Array<React.ReactNode>> }) {
-  return <table className="w-full text-sm"><thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr>{headers.map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={index} className="border-t">{row.map((cell, cellIndex) => <td key={cellIndex} className="px-3 py-2">{cell}</td>)}</tr>)}</tbody></table>;
-}
-
-// Simple SVG LineChart: expects series: [{name, data: [{month, value}]}]
-function LineChart({ series, width = 600, height = 160 }: { series: Array<{ name: string; data: Array<{ month: string; value: number }> }>; width?: number; height?: number }) {
-  const allMonths = Array.from(new Set(series.flatMap(s => s.data.map(d => d.month)))).sort();
-  const max = Math.max(1, ...series.flatMap(s => s.data.map(d => d.value)));
-  const pointsFor = (data: any[]) => data.map(d => ({ x: (allMonths.indexOf(d.month) / Math.max(1, allMonths.length - 1)) * (width - 40) + 20, y: height - (d.value / max) * (height - 30) - 10 }));
-  const pathFor = (pts: any[]) => pts.map((p, i) => `${i===0? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-40">
-      <rect x={0} y={0} width={width} height={height} fill="#fff0" />
-      {series.map((s, idx) => {
-        const pts = pointsFor(s.data);
-        const colors = ['#0A1D3A','#0D9488','#0D9488','#ef4444'];
-        return <path key={s.name} d={pathFor(pts)} fill="none" stroke={colors[idx % colors.length]} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />;
-      })}
-    </svg>
-  );
-}
-
-function BarChart({ labels, values }: { labels: string[]; values: number[] }) {
-  const max = Math.max(1, ...values);
-  const width = Math.max(300, labels.length * 36);
-  return (
-    <div className="w-full overflow-x-auto">
-      <svg viewBox={`0 0 ${width} 140`} className="w-full h-32">
-        {values.map((v, i) => {
-          const x = i * 36 + 8;
-          const h = (v / max) * 90;
-          return <rect key={i} x={x} y={110 - h} width={28} height={h} fill="#0D9488" rx={4} />;
-        })}
-        {/* labels */}
-        {labels.map((l, i) => {
-          const x = i * 36 + 8 + 14;
-          return <text key={i} x={x} y={128} fontSize={10} fill="#475569" textAnchor="middle">{l.length > 10 ? l.slice(0,10)+'…' : l}</text>;
-        })}
-      </svg>
-    </div>
-  );
-}
-
-function PieChart({ data }: { data: Array<{ label: string; value: number }> }) {
-  const total = Math.max(1, data.reduce((s, d) => s + d.value, 0));
-  let angle = 0;
-  const cx = 60, cy = 60, r = 50;
-  const slices = data.map((d, i) => {
-    const portion = d.value / total;
-    const start = angle;
-    const end = angle + portion * Math.PI * 2;
-    angle = end;
-    const x1 = cx + r * Math.cos(start);
-    const y1 = cy + r * Math.sin(start);
-    const x2 = cx + r * Math.cos(end);
-    const y2 = cy + r * Math.sin(end);
-    const large = end - start > Math.PI ? 1 : 0;
-    const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-    const colors = ['#ef4444','#f59e0b','#0D9488','#0A1D3A','#0D9488','#637771'];
-    return <path key={d.label} d={path} fill={colors[i % colors.length]} stroke="#fff" strokeWidth={0.5} />;
-  });
-  return (
-    <div className="flex items-center gap-4">
-      <svg width={120} height={120} viewBox={`0 0 120 120`}>{slices}</svg>
-      <div className="text-sm">
-        {data.map(d => <div key={d.label} className="flex items-center gap-2"><span className="font-medium">{d.label}:</span> <span>{d.value.toLocaleString("fr-FR")}</span></div>)}
-      </div>
-    </div>
-  );
-}
-
-function aggregatePaymentsByMethod(payments: any[]) {
-  const map: Record<string, number> = {};
-  payments.forEach(p => { const m = (p.method || p.paymentMethod || (p.invoice && p.invoice.payerType) || 'Unknown'); map[m] = (map[m] || 0) + Number(p.amount || 0); });
-  return Object.keys(map).map(k => ({ label: k, value: map[k] }));
-}
-
-function groupByRole(users: any[]) {
-  const mapping: Record<string, string> = {
-    ADMIN: 'Administrateur',
-    RECEPTIONIST: 'Receptionniste',
-    NURSE: 'Infirmier',
-    PHYSICIAN: 'Medecin',
-    CASHIER: 'Caissier',
-    PATIENT: 'Patient',
-  };
-  const map: Record<string, number> = {};
-  users.forEach(u => {
-    const r = (u.primaryRole || 'UNKNOWN');
-    if (r === 'SUPER_ADMIN') return; // exclude super admin
-    const label = mapping[r] || r;
-    map[label] = (map[label] || 0) + 1;
-  });
-  return map;
-}
-
-function computePayrollEstimate(users: any[]) {
-  // Best-effort: sum salaries if present, otherwise estimate 0
-  return users.reduce((s, u) => s + Number(u.salary || 0), 0).toLocaleString('fr-FR');
-}
-
-  async function printSection(id: string) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const clinic = await getClinicDocumentBranding();
-    const identity = documentIdentityLine(clinic);
-    const legal = documentLegalLine(clinic);
-    const html = `
-      <div>
-        <div style="display:flex;align-items:center;gap:12px;border-bottom:2px solid #0d9488;padding-bottom:12px;margin-bottom:18px">
-          <img src="${documentLogoUrl(clinic)}" width="48" height="48" style="object-fit:contain" alt="Logo établissement" />
-          <div><h1 style="margin:0;color:#0D9488">${clinic.name}</h1><div style="font-size:12px;color:#475569">${identity || "Document administratif"}</div></div>
-        </div>
-        ${el.innerHTML}
-        <footer style="margin-top:24px;border-top:1px solid #cbd5e1;padding-top:8px;font-size:11px;color:#64748b">${clinic.documentFooter || legal || "Document officiel généré par Aulia Care"}</footer>
-      </div>`;
-    const w = window.open('', '_blank');
-    if (!w) return;
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Impression</title><style>body{font-family:Inter,Arial,Helvetica,sans-serif;padding:20px;color:#111}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}.metric{margin-bottom:12px}</style></head><body>${html}</body></html>`);
-    w.document.close();
-    w.focus();
-    // Delay print slightly to allow rendering
-    setTimeout(() => { w.print(); w.close(); }, 300);
-  }
+function Overview({ data, largestService }: { data: ExecutiveDashboard; largestService?: { name: string; patients: number } }) { return <div className="space-y-5"><section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Kpi label="Patients suivis" value={data.overview.activePatients} detail="Dossiers actifs" /><Kpi label="Nouvelles admissions" value={data.overview.newPatientsToday} detail="Enregistrées aujourd’hui" /><Kpi label="Consultations du jour" value={data.overview.consultationsToday} detail="Activité clinique créée aujourd’hui" /><Kpi label="Hospitalisations en cours" value={data.overview.activeHospitalizations} detail={`${data.overview.freeBeds} lit(s) libre(s) sur ${data.overview.totalBeds}`} tone="teal" /></section><section className="grid gap-4 lg:grid-cols-2"><article className="aulia-card p-5 sm:p-6"><p className="text-xs font-bold uppercase tracking-[.14em] text-aulia-teal">Lecture rapide</p><h2 className="mt-2 text-lg font-semibold text-aulia-navy dark:text-white">Ce qu’il faut retenir aujourd’hui</h2><dl className="mt-5 space-y-3 text-sm"><Insight label="Encaissements du mois" value={cdf(data.financial.collectedMonth)} /><Insight label="Montant à recouvrer" value={cdf(data.financial.receivables)} alert={data.financial.receivables > 0} /><Insight label="Pôle le plus suivi" value={largestService ? `${largestService.name} · ${largestService.patients} patient(s)` : "Aucune activité ventilée"} /></dl></article><article className="aulia-card p-5 sm:p-6"><p className="text-xs font-bold uppercase tracking-[.14em] text-aulia-teal">Capacité de soins</p><h2 className="mt-2 text-lg font-semibold text-aulia-navy dark:text-white">Lits et continuité opérationnelle</h2><div className="mt-6 rounded-2xl bg-aulia-mist p-5 dark:bg-aulia-teal/10"><p className="text-4xl font-semibold text-aulia-navy dark:text-white">{data.overview.freeBeds}<span className="text-base font-medium text-slate-500 dark:text-slate-300"> / {data.overview.totalBeds}</span></p><p className="mt-2 text-sm text-slate-600 dark:text-slate-300">lits immédiatement disponibles. Vérifiez les alertes si la capacité devient nulle.</p></div></article></section></div>; }
+function Finance({ data }: { data: ExecutiveDashboard }) { const max = Math.max(1, ...data.financial.monthly.flatMap((item) => [item.billed, item.collected])); return <div className="space-y-5"><section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Kpi label="Facturé ce mois" value={cdf(data.financial.billedMonth)} detail="Factures émises" /><Kpi label="Réellement encaissé" value={cdf(data.financial.collectedMonth)} detail="Paiements enregistrés" tone="teal" /><Kpi label="Créances à recouvrer" value={cdf(data.financial.receivables)} detail="Solde des factures" tone="amber" /><Kpi label="Assurances en attente" value={cdf(data.financial.insuranceOutstanding)} detail="Demandes non finalisées" tone="red" /></section><section className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(280px,1fr)]"><article className="aulia-card overflow-x-auto p-5 sm:p-6"><h2 className="text-lg font-semibold text-aulia-navy dark:text-white">Facturation et encaissements sur 12 mois</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Bleu : facturé. Vert : encaissé. Une facture n’est pas automatiquement un paiement.</p><div className="mt-6 flex h-56 min-w-[560px] items-end gap-2">{data.financial.monthly.map((item) => <div key={item.key} className="flex h-full min-w-[38px] flex-1 flex-col justify-end gap-1 text-center"><div title={`Facturé : ${cdf(item.billed)}`} style={{ height: `${Math.max(2, item.billed / max * 100)}%` }} className="rounded-t-md bg-aulia-navy/85" /><div title={`Encaissé : ${cdf(item.collected)}`} style={{ height: `${Math.max(2, item.collected / max * 100)}%` }} className="rounded-t-md bg-aulia-teal" /><span className="mt-1 text-[10px] text-slate-500">{item.label}</span></div>)}</div><div className="mt-3 flex gap-5 text-xs text-slate-500"><span>● Bleu : facturé</span><span className="text-aulia-teal">● Vert : encaissé</span></div></article><article className="aulia-card p-5 sm:p-6"><h2 className="text-lg font-semibold text-aulia-navy dark:text-white">Origine des paiements — ce mois</h2><div className="mt-6 space-y-5"><PaymentShare label="Patients / entreprises" value={data.financial.patientPaymentsMonth} total={data.financial.collectedMonth} /><PaymentShare label="Assurances" value={data.financial.insurancePaymentsMonth} total={data.financial.collectedMonth} /><Insight label="Paie traitée ce mois" value={cdf(data.financial.payrollMonth)} /></div></article></section></div>; }
+function Performance({ data }: { data: ExecutiveDashboard }) { return <div className="grid gap-5 xl:grid-cols-2"><article className="aulia-card overflow-hidden"><div className="border-b border-slate-200 p-5 dark:border-slate-800"><h2 className="font-semibold text-aulia-navy dark:text-white">Activité par pôle</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Patients rattachés et effectif actif.</p></div><DataTable headers={["Service", "Patients", "Équipe"]} rows={data.performance.services.map((item) => [item.name, item.patients, item.staff])} empty="Aucun service actif." /></article><article className="aulia-card overflow-hidden"><div className="border-b border-slate-200 p-5 dark:border-slate-800"><h2 className="font-semibold text-aulia-navy dark:text-white">Effectif actif par fonction</h2></div><DataTable headers={["Fonction", "Nombre"]} rows={data.performance.roles.map((item) => [roleLabel[item.role] || item.role, item.count])} empty="Aucun effectif actif." /></article></div>; }
+function AlertsAndReports({ data }: { data: ExecutiveDashboard }) { return <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,1fr)]"><article className="aulia-card overflow-hidden"><div className="border-b border-slate-200 p-5 dark:border-slate-800"><h2 className="font-semibold text-aulia-navy dark:text-white">Alertes nécessitant votre attention</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Une alerte signale un risque opérationnel et demande validation humaine.</p></div><div className="space-y-3 p-5">{data.alerts.length ? data.alerts.map((alert, index) => <div key={`${alert.category}-${index}`} className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/20 dark:bg-amber-500/10"><p className="text-xs font-bold uppercase tracking-wide text-amber-800 dark:text-amber-300">{alert.level} · {alert.category}</p><p className="mt-1 text-sm font-medium text-slate-800 dark:text-slate-100">{alert.message}</p></div>) : <p className="rounded-xl bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-aulia-teal/10 dark:text-aulia-mist">Aucune alerte prioritaire issue des données disponibles.</p>}</div></article><article className="aulia-card p-5 sm:p-6"><h2 className="font-semibold text-aulia-navy dark:text-white">Base des rapports</h2><dl className="mt-5 space-y-4"><Insight label="Factures analysées (12 mois)" value={data.reports.invoicesInPeriod} /><Insight label="Paiements analysés (12 mois)" value={data.reports.paymentsInPeriod} /><Insight label="Dossiers assurance en attente" value={data.reports.claimsPending} alert={data.reports.claimsPending > 0} /><Insight label="Personnel actif" value={data.reports.activeStaff} /></dl></article></div>; }
+function Kpi({ label, value, detail, tone = "navy" }: { label: string; value: number | string; detail: string; tone?: "navy" | "teal" | "amber" | "red" }) { const color = { navy: "text-aulia-navy dark:text-white", teal: "text-aulia-teal dark:text-aulia-mist", amber: "text-amber-700 dark:text-amber-300", red: "text-red-700 dark:text-red-300" }[tone]; return <article className="aulia-card p-5"><p className="text-sm text-slate-500 dark:text-slate-400">{label}</p><p className={`mt-2 text-2xl font-semibold ${color}`}>{value}</p><p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">{detail}</p></article>; }
+function Insight({ label, value, alert = false }: { label: string; value: number | string; alert?: boolean }) { return <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3 last:border-0 last:pb-0 dark:border-slate-800"><dt className="text-slate-600 dark:text-slate-300">{label}</dt><dd className={`text-right font-semibold ${alert ? "text-amber-700 dark:text-amber-300" : "text-aulia-navy dark:text-white"}`}>{value}</dd></div>; }
+function PaymentShare({ label, value, total }: { label: string; value: number; total: number }) { const percent = total > 0 ? Math.round(value / total * 100) : 0; return <div><div className="flex justify-between gap-3 text-sm"><span className="text-slate-600 dark:text-slate-300">{label}</span><span className="font-semibold text-aulia-navy dark:text-white">{cdf(value)} · {percent}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div style={{ width: `${percent}%` }} className="h-full rounded-full bg-aulia-teal" /></div></div>; }
+function DataTable({ headers, rows, empty }: { headers: string[]; rows: Array<Array<string | number>>; empty: string }) { return <div className="overflow-x-auto"><table className="min-w-[420px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-950 dark:text-slate-400"><tr>{headers.map((header) => <th key={header} className="px-5 py-3 font-semibold">{header}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row, index) => <tr key={index} className="border-t border-slate-100 dark:border-slate-800">{row.map((value, cell) => <td key={cell} className="px-5 py-3.5 text-slate-700 dark:text-slate-200">{value}</td>)}</tr>) : <tr><td colSpan={headers.length} className="px-5 py-8 text-center text-slate-500">{empty}</td></tr>}</tbody></table></div>; }

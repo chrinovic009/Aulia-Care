@@ -20,14 +20,18 @@ import {
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 import { useAuth } from "../context/AuthContext";
+import { type AuliaLayer, usePlatformLayers } from "../context/PlatformLayersContext";
 import { apiFetch } from "../config/api";
 import SidebarWidget from "./SidebarWidget";
+import { Modal } from "../components/ui/modal";
 
 type NavItem = {
   name: string;
   icon: React.ReactNode;
   path?: string;
   subItems?: { name: string; path: string; pro?: boolean; new?: boolean }[];
+  layers?: AuliaLayer[];
+  platformOnly?: boolean;
 };
 
 const navItems: NavItem[] = [
@@ -50,11 +54,13 @@ const navItems: NavItem[] = [
     icon: <TimeIcon />,
     name: "Ma montre connectée",
     path: "/montre-connectee",
+    layers: ["CONNECTED"],
   },
   {
     icon: <UserCircleIcon />,
     name: "Mes enfants",
     path: "/enfants",
+    layers: ["CONNECTED"],
   },
   {
     icon: <CalenderIcon />,
@@ -75,6 +81,7 @@ const navItems: NavItem[] = [
     icon: <TimeIcon />,
     name: "Suivi quotidien",
     path: "/suivi-quotidien",
+    layers: ["AI"],
   },
   {
     icon: <ChatIcon />,
@@ -133,6 +140,7 @@ const receptionNavItems: NavItem[] = [
     icon: <BoxCubeIcon />,
     name: "Montres connectées",
     path: "/reception/montres",
+    layers: ["CONNECTED"],
   },
   {
     icon: <BoxCubeIcon />,
@@ -301,7 +309,7 @@ const administrationNavItems: NavItem[] = [
   { icon: <DocsIcon />, name: "Rapports", path: "/administration/rapports" },
   { icon: <TaskIcon />, name: "Stock pharmacie", path: "/administration/stock" },
   { icon: <DocsIcon />, name: "Identité de l'hôpital", path: "/administration/identite" },
-  { icon: <BoxCubeIcon />, name: "Montres Aulia", path: "/administration/montres" },
+  { icon: <BoxCubeIcon />, name: "Montres Aulia", path: "/administration/montres", layers: ["CONNECTED"] },
   { icon: <LockIcon />, name: "Profil admin", path: "/administration/profile" },
 ];
 
@@ -326,8 +334,13 @@ const laboratoryNavItemsFactory = (isLabManager: boolean): NavItem[] => [
 
 const superAdminNavItems: NavItem[] = [
   { icon: <GridIcon />, name: "Dashboard DG", path: "/admin" },
+  { icon: <ChatIcon />, name: "Messages administrateurs", path: "/admin/messages" },
   { icon: <DocsIcon />, name: "Identité de l'hôpital", path: "/admin/identite" },
   { icon: <LockIcon />, name: "Profil super admin", path: "/admin/profile" },
+];
+
+const developerNavItems: NavItem[] = [
+  { icon: <BoxCubeIcon />, name: "Couches Aulia Care", path: "/dev/couches", platformOnly: true },
 ];
 
 const othersItems: NavItem[] = [];
@@ -337,6 +350,10 @@ const AppSidebar: React.FC = () => {
   const location = useLocation();
 
   const { currentUser } = useAuth();
+  const { isEnabled, layers } = usePlatformLayers();
+  const activeSubscriptionLabel = (layers.configured ? layers.enabledLayers : ["CORE", "AI", "CONNECTED"])
+    .map((layer) => ({ CORE: "Aulia Care Core", AI: "Aulia AI", CONNECTED: "Aulia Connected" })[layer])
+    .join(" + ");
   const [clinicBrand, setClinicBrand] = useState<{ name?: string; brandDisplayName?: string | null }>({});
   const isLabManager = Boolean(
     currentUser?.primaryRole === "LAB_MANAGER" ||
@@ -377,6 +394,7 @@ const AppSidebar: React.FC = () => {
   const isPharmacySection = location.pathname.startsWith("/pharmacie");
   const isLaboratorySection = location.pathname.startsWith("/laboratoire");
   const isSuperAdminSection = location.pathname.startsWith("/admin");
+  const isDeveloperSection = location.pathname.startsWith("/dev");
   const activeNavItems = isDoctorSection
     ? doctorNavItems
     : isNurseSection
@@ -397,7 +415,12 @@ const AppSidebar: React.FC = () => {
     ? laboratoryNavItemsFactory(isLabManager)
     : isSuperAdminSection
     ? superAdminNavItems
+    : isDeveloperSection
+    ? developerNavItems
     : navItems;
+  const visibleNavItems = activeNavItems;
+  const [lockedItem, setLockedItem] = useState<NavItem | null>(null);
+  const isLayerLocked = (item: NavItem) => !item.platformOnly && !(item.layers ?? ["CORE"]).every(isEnabled);
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(
     {}
   );
@@ -500,25 +523,45 @@ const AppSidebar: React.FC = () => {
             </button>
           ) : (
             nav.path && (
-              <Link
-                to={nav.path}
+              isLayerLocked(nav) ? (
+              <button
+                type="button"
+                onClick={() => setLockedItem(nav)}
                 className={`menu-item group ${
-                  isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"
+                  "menu-item-inactive"
                 }`}
+                aria-label={`${nav.name} — option non incluse dans cet abonnement`}
               >
                 <span
-                  className={`menu-item-icon-size ${
-                    isActive(nav.path)
-                      ? "menu-item-icon-active"
-                      : "menu-item-icon-inactive"
-                  }`}
+                  className="menu-item-icon-size menu-item-icon-inactive"
                 >
-                  {nav.icon}
+                  <span className="relative inline-flex">{nav.icon}<LockIcon className="absolute -bottom-1.5 -right-1.5 size-3.5 rounded-full bg-white p-0.5 text-amber-500 dark:bg-gray-900" /></span>
                 </span>
                 {(isExpanded || isHovered || isMobileOpen) && (
-                  <span className="menu-item-text">{nav.name}</span>
+                  <><span className="menu-item-text">{nav.name}</span><span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400"><LockIcon className="size-4" /> Premium</span></>
                 )}
-              </Link>
+              </button>
+              ) : (
+                <Link
+                  to={nav.path}
+                  className={`menu-item group ${
+                    isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"
+                  }`}
+                >
+                  <span
+                    className={`menu-item-icon-size ${
+                      isActive(nav.path)
+                        ? "menu-item-icon-active"
+                        : "menu-item-icon-inactive"
+                    }`}
+                  >
+                    {nav.icon}
+                  </span>
+                  {(isExpanded || isHovered || isMobileOpen) && (
+                    <span className="menu-item-text">{nav.name}</span>
+                  )}
+                </Link>
+              )
             )
           )}
           {nav.subItems && (isExpanded || isHovered || isMobileOpen) && (
@@ -581,7 +624,7 @@ const AppSidebar: React.FC = () => {
     </ul>
   );
 
-  return (
+  return (<>
     <aside
       className={`fixed top-16 flex h-[calc(100dvh-4rem)] flex-col px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 transition-all duration-300 ease-in-out z-50 border-r border-gray-200 lg:top-0 lg:h-[100dvh] 
         ${
@@ -648,12 +691,14 @@ const AppSidebar: React.FC = () => {
                     ? "PHARMACIE"
                     : isSuperAdminSection
                     ? "SUPER ADMIN"
+                    : isDeveloperSection
+                    ? "CONFIGURATION DEV"
                     : "PATIENT INTERFACE"
                 ) : (
                   <HorizontaLDots className="size-6" />
                 )}
               </h2>
-              {renderMenuItems(activeNavItems, "main")}
+              {renderMenuItems(visibleNavItems, "main")}
             </div>
             {othersItems.length > 0 && (
               <div className="">
@@ -675,10 +720,22 @@ const AppSidebar: React.FC = () => {
             )}
           </div>
         </nav>
-        {isExpanded || isHovered || isMobileOpen ? <SidebarWidget /> : null}
+        {currentUser?.primaryRole !== "DEV" && (isExpanded || isHovered || isMobileOpen) ? <SidebarWidget /> : null}
       </div>
     </aside>
-  );
+    <Modal isOpen={Boolean(lockedItem)} onClose={() => setLockedItem(null)} className="max-w-lg p-0">
+      <div className="p-6 sm:p-8">
+        <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300"><LockIcon className="size-6" /></div>
+        <p className="mt-5 text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Abonnement actuel · {activeSubscriptionLabel}</p>
+        <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">{lockedItem?.name} n’est pas inclus</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">Cette fonctionnalité nécessite l'abonnement {lockedItem?.layers?.join(" + ")}. Aucun accès ni aucune donnée ne sont ouverts tant que cet abonnement n’est pas active.</p>
+        <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={() => setLockedItem(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Annuler</button>
+          <a href={`mailto:chrinovicnyembo009@gmail.com.local?subject=${encodeURIComponent(`Demande d’activation — ${lockedItem?.name || "Aulia Care"}`)}`} className="rounded-xl bg-aulia-teal px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-aulia-teal/90">Contacter le développeur</a>
+        </div>
+      </div>
+    </Modal>
+  </>);
 };
 
 export default AppSidebar;

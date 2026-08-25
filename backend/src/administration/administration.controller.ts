@@ -148,4 +148,11 @@ export class AdministrationController {
   dashboard() {
     return this.administrationService.dashboard();
   }
+
+  /** Vue consolidée réservée à la direction de la plateforme. */
+  @Get('executive-dashboard')
+  @Roles('SUPER_ADMIN')
+  executiveDashboard() {
+    return this.administrationService.executiveDashboard();
+  }
 }

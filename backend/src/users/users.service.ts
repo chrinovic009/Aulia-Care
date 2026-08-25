@@ -115,6 +115,9 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto, creatorId?: string) {
+    if (dto.primaryRole === RoleSlug.DEV) {
+      throw new BadRequestException('Le rôle DEV ne peut être créé que par le provisionnement local sécurisé.');
+    }
     this.validateEmployeeSchedule(dto);
     this.validateEmployeeIdentity(dto);
     const primaryRole = await this.resolvePrimaryRole(dto);
@@ -305,7 +308,7 @@ export class UsersService {
     const allowedRolesByRole: Partial<Record<RoleSlug | 'PATIENT', ContactRole[]>> = {
       // Administrative accounts do not directly message patients; clinical roles
       // remain the designated communication channel.
-      SUPER_ADMIN: ['ADMIN', 'FINANCE'],
+      SUPER_ADMIN: ['ADMIN'],
 
       // Admin can contact staff, but not patients.
       ADMIN: [
@@ -488,8 +491,8 @@ export class UsersService {
     const recipientRole = String(recipient.primaryRole || '');
 
     // The platform owner has a deliberately narrow channel: only the local admin.
-    if (senderRole === 'SUPER_ADMIN') return ['ADMIN', 'FINANCE'].includes(recipientRole);
-    if (recipientRole === 'SUPER_ADMIN') return ['ADMIN', 'FINANCE'].includes(senderRole);
+    if (senderRole === 'SUPER_ADMIN') return recipientRole === 'ADMIN';
+    if (recipientRole === 'SUPER_ADMIN') return senderRole === 'ADMIN';
     // Local administration may collaborate with staff but never with patient accounts.
     if (senderRole === 'ADMIN') return recipientRole !== 'PATIENT';
     if (recipientRole === 'ADMIN') return senderRole !== 'PATIENT';
@@ -640,6 +643,9 @@ export class UsersService {
   }
 
   async update(id: string, dto: UpdateUserDto) {
+    if (dto.primaryRole === RoleSlug.DEV) {
+      throw new BadRequestException('Le rôle DEV ne peut pas être attribué depuis l’administration.');
+    }
     this.validateEmployeeSchedule(dto);
     this.validateEmployeeIdentity(dto);
     const data: any = { ...dto };

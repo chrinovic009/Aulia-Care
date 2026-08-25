@@ -4,6 +4,11 @@ const prisma = new PrismaClient();
 
 const roleData = [
   {
+    slug: RoleSlug.DEV,
+    name: "Développeur d'installation",
+    description: "Configure les couches Aulia Care de cette installation."
+  },
+  {
     slug: RoleSlug.RECEPTIONIST,
     name: "Réceptionniste",
     description: "Accueille les patients et gère les enregistrements."

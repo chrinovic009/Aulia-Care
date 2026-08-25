@@ -12,6 +12,7 @@ type GuideDefinition = {
 };
 
 const roleLabels: Record<RoleSlug, string> = {
+  DEV: "Développeur d’installation",
   SUPER_ADMIN: "Super administrateur",
   ADMIN: "Administration clinique",
   RECEPTIONIST: "Réception",
@@ -25,9 +26,18 @@ const roleLabels: Record<RoleSlug, string> = {
   PHARMACIST: "Pharmacie",
   PATIENT: "Patient",
   CASHIER: "Caissier",
+  FINANCE: "Finance",
 };
 
 const guideByRole: Record<RoleSlug, GuideDefinition> = {
+  DEV: {
+    title: "Développeur d’installation",
+    description: "Configure les couches Aulia Care autorisées pour cette installation locale.",
+    route: "/dev/couches",
+    tabs: ["Couches Aulia Care"],
+    workflow: ["Sélectionnez Core, puis les capacités IA et Connected nécessaires.", "Vérifiez que les processus serveur correspondants sont activés.", "Validez : les routes et menus non sélectionnés deviennent inaccessibles."],
+    tips: ["Ne partagez jamais le compte DEV.", "Toute modification de couches est enregistrée dans l’audit."],
+  },
   SUPER_ADMIN: {
     title: "Super administrateur",
     description: "Gérez la configuration globale, les profils utilisateur et la supervision de l’établissement.",
@@ -180,6 +190,14 @@ const guideByRole: Record<RoleSlug, GuideDefinition> = {
       "Suivez les historiques de transactions avec la comptabilité.",
     ],
     tips: ["Vérifiez les montants avant validation finale.", "Conservez les justificatifs pour toute réclamation."],
+  },
+  FINANCE: {
+    title: "Finance",
+    description: "Suivez la trésorerie, les budgets et les opérations financières de l’établissement.",
+    route: "/finance",
+    tabs: ["Tableau de bord", "Trésorerie", "Budgets", "Messages", "Profil"],
+    workflow: ["Contrôlez les encaissements et engagements.", "Documentez chaque opération financière.", "Analysez les budgets avant approbation."],
+    tips: ["La trésorerie affichée doit être rapprochée du relevé bancaire.", "Conservez une pièce justificative pour toute imputation."],
   },
 };
 

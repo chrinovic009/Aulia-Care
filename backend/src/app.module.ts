@@ -24,6 +24,15 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { WearablesModule } from './wearables/wearables.module';
 import { ClinicalIntelligenceModule } from './clinical-intelligence/clinical-intelligence.module';
 import { IntelligenceModule } from './intelligence/intelligence.module';
+import { PlatformLayersModule } from './platform/layers/platform-layers.module';
+import { PlatformLayerAccessGuard } from './platform/layers/platform-layer-access.guard';
+
+const clinicalAiModules = process.env.AULIA_ENABLE_CLINICAL_AI === 'false'
+  ? []
+  : [ClinicalIntelligenceModule, IntelligenceModule];
+const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
+  ? []
+  : [WearablesModule];
 
 @Module({
   imports: [
@@ -32,6 +41,7 @@ import { IntelligenceModule } from './intelligence/intelligence.module';
       throttlers: [{ name: 'default', ttl: 60_000, limit: 120, blockDuration: 60_000 }],
     }),
     PrismaModule,
+    PlatformLayersModule,
     AuthModule,
     UsersModule,
     RolesModule,
@@ -50,10 +60,12 @@ import { IntelligenceModule } from './intelligence/intelligence.module';
     MessagesModule,
     NotificationsModule,
     AuditModule,
-    WearablesModule,
-    ClinicalIntelligenceModule,
-    IntelligenceModule,
+    ...connectedCareModules,
+    ...clinicalAiModules,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: PlatformLayerAccessGuard },
+  ],
 })
 export class AppModule {}

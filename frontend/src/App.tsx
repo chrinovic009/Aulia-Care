@@ -4,6 +4,7 @@ import AppLayout from "./layout/AppLayout";
 import { ScrollToTop } from "./components/common/ScrollToTop";
 import AuliaPageLoader from "./components/common/AuliaPageLoader";
 import { RequireAuth, RoleGuard, HomeRedirect } from "./components/auth/RequireAuth";
+import { LayerGuard, LayerRouteGate } from "./components/auth/LayerGuard";
 
 const SignIn = lazy(() => import("./pages/AuthPages/SignIn")); const SignUp = lazy(() => import("./pages/AuthPages/SignUp")); const NotFound = lazy(() => import("./pages/OtherPage/NotFound")); const UserProfiles = lazy(() => import("./pages/UserProfiles")); const Blank = lazy(() => import("./pages/Blank")); const DossierMedical = lazy(() => import("./pages/Patient/DossierMedical")); const SuiviQuotidien = lazy(() => import("./pages/Patient/SuiviQuotidien")); const Messages = lazy(() => import("./pages/Patient/Messages")); const MesTraitements = lazy(() => import("./pages/Patient/MesTraitements")); const HistoriqueMedical = lazy(() => import("./pages/Patient/HistoriqueMedical")); const PatientDashboard = lazy(() => import("./pages/Patient/PatientDashboard")); const PatientAppointments = lazy(() => import("./pages/Patient/PatientAppointments")); const PatientResults = lazy(() => import("./pages/Patient/PatientResults")); const PatientHospitalization = lazy(() => import("./pages/Patient/PatientHospitalization")); const PatientPayments = lazy(() => import("./pages/Patient/PatientPayments")); const MontreConnectee = lazy(() => import("./pages/Patient/MontreConnectee")); const MesEnfants = lazy(() => import("./pages/Patient/MesEnfants"));
 const ReceptionDashboard = lazy(() => import("./pages/Reception/Dashboard")); const ReceptionPatients = lazy(() => import("./pages/Reception/Patients")); const ReceptionAdmission = lazy(() => import("./pages/Reception/Admission")); const ReceptionProfile = lazy(() => import("./pages/Reception/ProfileReception")); const ReceptionMessages = lazy(() => import("./pages/Reception/MessagesReception")); const HospitalisationReception = lazy(() => import("./pages/Reception/HospitalisationReception")); const HistoriqueReception = lazy(() => import("./pages/Reception/HistoriqueReception")); const AbonnementsReception = lazy(() => import("./pages/Reception/AbonnementsReception")); const RendezVousReception = lazy(() => import("./pages/Reception/RendezVousReception")); const CreateReceptionService = lazy(() => import("./pages/Reception/CreateService"));
@@ -16,8 +17,9 @@ const ClinicBrandingPage = lazy(() => import("./pages/Administration/ClinicBrand
 const GestionMontresAulia = lazy(() => import("./pages/Administration/GestionMontresAulia"));
 const DashboardPharmacie = lazy(() => import("./pages/Pharmacie/DashboardPharmacie")); const DelivrancePharmacie = lazy(() => import("./pages/Pharmacie/DelivrancePharmacie")); const HistoriquePharmacie = lazy(() => import("./pages/Pharmacie/HistoriquePharmacie")); const GestionStockPharmacie = lazy(() => import("./pages/Pharmacie/GestionStockPharmacie")); const MessagesPharmacie = lazy(() => import("./pages/Pharmacie/MessagesPharmacie")); const ProfilePharmacie = lazy(() => import("./pages/Pharmacie/ProfilePharmacie"));
 const DashboardLaboratoire = lazy(() => import("./pages/Laboratoire/DashboardLaboratoire")); const CatalogueLab = lazy(() => import("./pages/Laboratoire/CatalogueLab")); const ActivityLab = lazy(() => import("./pages/Laboratoire/ActivityLab")); const ValidationsLab = lazy(() => import("./pages/Laboratoire/ValidationsLab")); const TechniciensLab = lazy(() => import("./pages/Laboratoire/TechniciensLab")); const MessagesLaboratoire = lazy(() => import("./pages/Laboratoire/MessagesLaboratoire")); const ProfileLaboratoire = lazy(() => import("./pages/Laboratoire/ProfileLab"));
-const DashboardSupAdmin = lazy(() => import("./pages/SuperAdmin/DashboardSupAdmin")); const ProfileSupAdmin = lazy(() => import("./pages/SuperAdmin/ProfileSupAdmin")); const Guide = lazy(() => import("./pages/Guide")); const DashboardFinance = lazy(() => import("./pages/Finance/DashboardFinance")); const TresorerieFinance = lazy(() => import("./pages/Finance/TresorerieFinance")); const BudgetsFinance = lazy(() => import("./pages/Finance/BudgetsFinance")); const MessagesFinance = lazy(() => import("./pages/Finance/MessagesFinance")); const ProfileFinance = lazy(() => import("./pages/Finance/ProfileFinance"));
+const DashboardSupAdmin = lazy(() => import("./pages/SuperAdmin/DashboardSupAdmin")); const ProfileSupAdmin = lazy(() => import("./pages/SuperAdmin/ProfileSupAdmin")); const MessagesSupAdmin = lazy(() => import("./pages/SuperAdmin/MessagesSupAdmin")); const Guide = lazy(() => import("./pages/Guide")); const DashboardFinance = lazy(() => import("./pages/Finance/DashboardFinance")); const TresorerieFinance = lazy(() => import("./pages/Finance/TresorerieFinance")); const BudgetsFinance = lazy(() => import("./pages/Finance/BudgetsFinance")); const MessagesFinance = lazy(() => import("./pages/Finance/MessagesFinance")); const ProfileFinance = lazy(() => import("./pages/Finance/ProfileFinance"));
 const DashboardRadio = lazy(() => import("./pages/Radiologie/DashboardRadio")); const WaitingQueueRadio = lazy(() => import("./pages/Radiologie/WaitingQueueRadio")); const WorkflowRadio = lazy(() => import("./pages/Radiologie/WorkflowRadio")); const CatalogueRadio = lazy(() => import("./pages/Radiologie/CatalogueRadio")); const EquipmentRadio = lazy(() => import("./pages/Radiologie/EquipmentRadio")); const SchedulingRadio = lazy(() => import("./pages/Radiologie/SchedulingRadio")); const HistoryRadio = lazy(() => import("./pages/Radiologie/HistoryRadio")); const ReportsRadio = lazy(() => import("./pages/Radiologie/ReportsRadio")); const MessagesRadio = lazy(() => import("./pages/Radiologie/MessagesRadio")); const ProfileRadio = lazy(() => import("./pages/Radiologie/ProfileRadio"));
+const CoucheChoix = lazy(() => import("./pages/Dev/CoucheChoix"));
 
 export default function App() {
   return (
@@ -28,7 +30,7 @@ export default function App() {
         <Suspense fallback={<div className="grid min-h-[45vh] place-items-center text-sm text-slate-500 dark:text-slate-300">Chargement sécurisé de l’espace Aulia Care…</div>}>
         <Routes>
           {/* Dashboard Layout */}
-          <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
+          <Route element={<RequireAuth><LayerRouteGate><AppLayout /></LayerRouteGate></RequireAuth>}>
 
             {/* Page d'erreur */}
             <Route path="/blank" element={<Blank />} />
@@ -43,9 +45,9 @@ export default function App() {
             <Route path="/rendez-vous" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientAppointments /></RoleGuard>} />
             <Route path="/examens-resultats" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientResults /></RoleGuard>} />
             <Route path="/hospitalisation" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientHospitalization /></RoleGuard>} />
-            <Route path="/suivi-quotidien" element={<RoleGuard requiredRoles={["PATIENT"]}><SuiviQuotidien /></RoleGuard>} />
-            <Route path="/montre-connectee" element={<RoleGuard requiredRoles={["PATIENT"]}><MontreConnectee /></RoleGuard>} />
-            <Route path="/enfants" element={<RoleGuard requiredRoles={["PATIENT"]}><MesEnfants /></RoleGuard>} />
+            <Route path="/suivi-quotidien" element={<RoleGuard requiredRoles={["PATIENT"]}><LayerGuard layer="AI"><SuiviQuotidien /></LayerGuard></RoleGuard>} />
+            <Route path="/montre-connectee" element={<RoleGuard requiredRoles={["PATIENT"]}><LayerGuard layer="CONNECTED"><MontreConnectee /></LayerGuard></RoleGuard>} />
+            <Route path="/enfants" element={<RoleGuard requiredRoles={["PATIENT"]}><LayerGuard layer="CONNECTED"><MesEnfants /></LayerGuard></RoleGuard>} />
             <Route path="/messages" element={<RoleGuard requiredRoles={["PATIENT"]}><Messages /></RoleGuard>} />
             <Route path="/historique-medical" element={<RoleGuard requiredRoles={["PATIENT"]}><HistoriqueMedical /></RoleGuard>} />
             <Route path="/paiements" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientPayments /></RoleGuard>} />
@@ -59,7 +61,7 @@ export default function App() {
             <Route path="/reception/rendez-vous" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><RendezVousReception /></RoleGuard>} />
             <Route path="/reception/services" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><CreateReceptionService /></RoleGuard>} />
             <Route path="/reception/abonnements" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><AbonnementsReception /></RoleGuard>} />
-            <Route path="/reception/montres" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><MontresReception /></RoleGuard>} />
+            <Route path="/reception/montres" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><LayerGuard layer="CONNECTED"><MontresReception /></LayerGuard></RoleGuard>} />
             <Route path="/reception/hospitalisations" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><HospitalisationReception /></RoleGuard>} />
             <Route path="/reception/messages" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><ReceptionMessages /></RoleGuard>} />
             <Route path="/reception/historique" element={<RoleGuard requiredRoles={["RECEPTIONIST"]}><HistoriqueReception /></RoleGuard>} />
@@ -125,7 +127,7 @@ export default function App() {
             <Route path="/administration/rapports" element={<RoleGuard requiredRoles={["ADMIN"]}><RapportAdmin /></RoleGuard>} />
             <Route path="/administration/stock" element={<RoleGuard requiredRoles={["ADMIN"]}><GestionStockAdmin /></RoleGuard>} />
             <Route path="/administration/identite" element={<RoleGuard requiredRoles={["ADMIN", "SUPER_ADMIN"]}><ClinicBrandingPage /></RoleGuard>} />
-            <Route path="/administration/montres" element={<RoleGuard requiredRoles={["ADMIN", "SUPER_ADMIN"]}><GestionMontresAulia /></RoleGuard>} />
+            <Route path="/administration/montres" element={<RoleGuard requiredRoles={["ADMIN", "SUPER_ADMIN"]}><LayerGuard layer="CONNECTED"><GestionMontresAulia /></LayerGuard></RoleGuard>} />
             <Route path="/administration/profile" element={<RoleGuard requiredRoles={["ADMIN"]}><ProfilAdmin /></RoleGuard>} />
 
             {/* Pharmacie */}
@@ -149,9 +151,12 @@ export default function App() {
 
             {/* Super Admin */}
             <Route path="/admin" element={<RoleGuard requiredRoles={["SUPER_ADMIN"]}><DashboardSupAdmin /></RoleGuard>} />
+            <Route path="/admin/messages" element={<RoleGuard requiredRoles={["SUPER_ADMIN"]}><MessagesSupAdmin /></RoleGuard>} />
             <Route path="/admin/guide" element={<RoleGuard requiredRoles={["SUPER_ADMIN"]}><Guide /></RoleGuard>} />
             <Route path="/admin/profile" element={<RoleGuard requiredRoles={["SUPER_ADMIN"]}><ProfileSupAdmin /></RoleGuard>} />
             <Route path="/admin/identite" element={<RoleGuard requiredRoles={["SUPER_ADMIN", "ADMIN"]}><ClinicBrandingPage /></RoleGuard>} />
+
+            <Route path="/dev/couches" element={<RoleGuard requiredRoles={["DEV"]}><CoucheChoix /></RoleGuard>} />
 
           </Route>
 

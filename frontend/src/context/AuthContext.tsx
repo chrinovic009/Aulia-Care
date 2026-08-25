@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef } f
 import { getAuthHeaders } from "../config/api";
 
 export type RoleSlug =
+  | "DEV"
   | "SUPER_ADMIN"
   | "ADMIN"
   | "RECEPTIONIST"
@@ -100,7 +101,7 @@ const hasSessionHint = () => {
   return document.cookie.split(";").some((part) => part.trim().startsWith("aulia_csrf_token="));
 };
 
-const knownRoles = new Set<RoleSlug>(['SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'SURGEON', 'ANESTHESIOLOGIST', 'PHARMACIST', 'FINANCE', 'PATIENT', 'CASHIER']);
+const knownRoles = new Set<RoleSlug>(['DEV', 'SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'SURGEON', 'ANESTHESIOLOGIST', 'PHARMACIST', 'FINANCE', 'PATIENT', 'CASHIER']);
 const normalizeAuthenticatedUser = (raw: AuthUser): AuthUser | null => {
   const primaryRole = String(raw.primaryRole || raw.role || '').toUpperCase() as RoleSlug;
   if (!knownRoles.has(primaryRole)) return null;
@@ -109,6 +110,7 @@ const normalizeAuthenticatedUser = (raw: AuthUser): AuthUser | null => {
 
 export function getRedirectPath(role: RoleSlug) {
   const rolePathMap: Record<RoleSlug, string> = {
+    DEV: "/dev/couches",
     RECEPTIONIST: "/reception",
     NURSE: "/nurse",
     PHYSICIAN: "/doctor",
@@ -129,6 +131,7 @@ export function getRedirectPath(role: RoleSlug) {
 
 export function getGuidePath(role: RoleSlug) {
   const guidePathMap: Record<RoleSlug, string> = {
+    DEV: "/dev/couches",
     RECEPTIONIST: "/reception/guide",
     NURSE: "/nurse/guide",
     PHYSICIAN: "/doctor/guide",

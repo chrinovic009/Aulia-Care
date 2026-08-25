@@ -620,4 +620,124 @@ export class AdministrationService {
       },
     };
   }
+
+  /**
+   * Indicateurs de pilotage consolidés. Les chiffres financiers sont calculés
+   * sur les écritures réelles : une facture est facturée, un paiement est
+   * encaissé. Ils ne constituent pas un rapprochement bancaire certifié.
+   */
+  async executiveDashboard() {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const historyStart = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    const ninetyDaysAgo = new Date(now);
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+    const [
+      activePatients,
+      newPatientsToday,
+      consultationsToday,
+      activeHospitalizations,
+      invoices,
+      payments,
+      claims,
+      services,
+      users,
+      rooms,
+      criticalLots,
+      payrollMonth,
+    ] = await Promise.all([
+      (this.prisma as any).patient.count({ where: { deletedAt: null } }),
+      (this.prisma as any).patient.count({ where: { deletedAt: null, createdAt: { gte: today } } }),
+      (this.prisma as any).consultation.count({ where: { deletedAt: null, createdAt: { gte: today } } }),
+      (this.prisma as any).hospitalization.count({ where: { deletedAt: null, status: { in: ['ADMITTED', 'TRANSFERRED'] } } }),
+      (this.prisma as any).invoice.findMany({
+        where: { deletedAt: null, issuedAt: { gte: historyStart } },
+        select: { issuedAt: true, totalAmount: true, balanceDue: true, status: true },
+      }),
+      (this.prisma as any).payment.findMany({
+        where: { deletedAt: null, paidAt: { gte: historyStart } },
+        select: { paidAt: true, amount: true, method: true },
+      }),
+      (this.prisma as any).insuranceClaim.findMany({
+        where: { deletedAt: null },
+        select: { amountClaimed: true, amountApproved: true, status: true, submittedAt: true, createdAt: true },
+      }),
+      (this.prisma as any).service.findMany({
+        where: { active: true },
+        select: { id: true, name: true, _count: { select: { patients: true, staff: true } } },
+        orderBy: { name: 'asc' },
+      }),
+      (this.prisma as any).user.findMany({ where: { deletedAt: null, status: 'ACTIVE' }, select: { primaryRole: true } }),
+      (this.prisma as any).room.findMany({ select: { beds: { select: { status: true } } } }),
+      (this.prisma as any).stockLot.findMany({ where: { quantity: { lte: 3 } }, select: { id: true, quantity: true, medication: { select: { name: true } } }, take: 20 }),
+      (this.prisma as any).payroll.aggregate({ where: { status: { in: ['PROCESSED', 'PAID'] }, periodEnd: { gte: monthStart } }, _sum: { netAmount: true } }),
+    ]);
+
+    const amount = (value: unknown) => Number(value || 0);
+    const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const months = Array.from({ length: 12 }, (_, index) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1);
+      return { key: monthKey(date), label: date.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }) };
+    });
+    const monthly = new Map(months.map((month) => [month.key, { ...month, billed: 0, collected: 0, patientPayments: 0, insurancePayments: 0 }]));
+    invoices.forEach((invoice: any) => {
+      const item = monthly.get(monthKey(new Date(invoice.issuedAt)));
+      if (item) item.billed += amount(invoice.totalAmount);
+    });
+    payments.forEach((payment: any) => {
+      const item = monthly.get(monthKey(new Date(payment.paidAt)));
+      if (!item) return;
+      const paid = amount(payment.amount);
+      item.collected += paid;
+      if (payment.method === 'INSURANCE') item.insurancePayments += paid;
+      else item.patientPayments += paid;
+    });
+
+    const thisMonth = monthly.get(monthKey(now))!;
+    const receivables = invoices.reduce((sum: number, invoice: any) => sum + amount(invoice.balanceDue), 0);
+    const insuranceOutstanding = claims
+      .filter((claim: any) => ['DRAFT', 'SUBMITTED', 'IN_REVIEW'].includes(claim.status))
+      .reduce((sum: number, claim: any) => sum + Math.max(0, amount(claim.amountClaimed) - amount(claim.amountApproved)), 0);
+    const overdueClaims = claims.filter((claim: any) => ['DRAFT', 'SUBMITTED', 'IN_REVIEW'].includes(claim.status) && new Date(claim.submittedAt || claim.createdAt) < ninetyDaysAgo);
+    const beds = rooms.flatMap((room: any) => room.beds);
+    const freeBeds = beds.filter((bed: any) => bed.status === 'FREE').length;
+    const roleCounts = users.reduce((result: Record<string, number>, user: any) => {
+      const role = String(user.primaryRole || 'NON_ATTRIBUÉ');
+      result[role] = (result[role] || 0) + 1;
+      return result;
+    }, {});
+
+    return {
+      generatedAt: now.toISOString(),
+      disclaimer: 'Les encaissements proviennent des paiements enregistrés. La trésorerie bancaire doit être rapprochée dans le module Finance.',
+      overview: { activePatients, newPatientsToday, consultationsToday, activeHospitalizations, freeBeds, totalBeds: beds.length },
+      financial: {
+        billedMonth: thisMonth.billed,
+        collectedMonth: thisMonth.collected,
+        receivables,
+        patientPaymentsMonth: thisMonth.patientPayments,
+        insurancePaymentsMonth: thisMonth.insurancePayments,
+        insuranceOutstanding,
+        payrollMonth: amount(payrollMonth._sum.netAmount),
+        monthly: Array.from(monthly.values()),
+      },
+      performance: {
+        services: services.map((service: any) => ({ name: service.name, patients: service._count.patients, staff: service._count.staff })),
+        roles: Object.entries(roleCounts).map(([role, count]) => ({ role, count })),
+      },
+      alerts: [
+        ...criticalLots.map((lot: any) => ({ level: 'CRITIQUE', category: 'Stock', message: `${lot.medication?.name || 'Médicament'} : seulement ${lot.quantity} unité(s) disponible(s).` })),
+        ...overdueClaims.map((claim: any) => ({ level: 'ÉLEVÉE', category: 'Créance assurance', message: `Une demande assurance dépasse 90 jours sans décision.` })),
+        ...(freeBeds === 0 ? [{ level: 'ÉLEVÉE', category: 'Capacité', message: 'Aucun lit disponible actuellement.' }] : []),
+      ],
+      reports: {
+        invoicesInPeriod: invoices.length,
+        paymentsInPeriod: payments.length,
+        claimsPending: claims.filter((claim: any) => ['DRAFT', 'SUBMITTED', 'IN_REVIEW'].includes(claim.status)).length,
+        activeStaff: users.length,
+      },
+    };
+  }
 }

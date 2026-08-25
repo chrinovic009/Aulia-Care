@@ -201,12 +201,15 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   }
 
   @SubscribeMessage('message.typing')
-  handleTyping(
+  async handleTyping(
     @MessageBody() payload: { senderId?: string; recipientId?: string; isTyping?: boolean },
     @ConnectedSocket() client: Socket,
   ) {
     const senderId = client.data.userId as string | undefined;
     if (!senderId || !payload?.recipientId) return;
+    if (!await this.usersService.isDirectMessagingAllowed(senderId, payload.recipientId)) {
+      throw new WsException('Destinataire non autorisé');
+    }
 
     this.server.to(this.userRoom(payload.recipientId)).emit('message.typing', {
       senderId,
