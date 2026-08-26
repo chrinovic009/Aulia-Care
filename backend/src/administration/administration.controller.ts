@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { AdministrationService } from './administration.service';
 import { UpdateClinicBrandingDto } from './dto/update-clinic-branding.dto';
+import { UpdateClinicOperationalPolicyDto } from './dto/update-clinic-operational-policy.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('administration')
@@ -20,6 +21,18 @@ export class AdministrationController {
   @Roles('SUPER_ADMIN', 'ADMIN')
   updateClinicBranding(@Request() req: any, @Body() body: UpdateClinicBrandingDto) {
     return this.administrationService.updateClinicBranding(req.user?.userId, body);
+  }
+
+  @Get('clinic-operational-policy')
+  @Roles('ADMIN')
+  clinicOperationalPolicy(@Request() req: any) {
+    return this.administrationService.getClinicOperationalPolicy(req.user?.userId);
+  }
+
+  @Patch('clinic-operational-policy')
+  @Roles('ADMIN')
+  updateClinicOperationalPolicy(@Request() req: any, @Body() body: UpdateClinicOperationalPolicyDto) {
+    return this.administrationService.updateClinicOperationalPolicy(req.user?.userId, body);
   }
 
   @Get('departments')
