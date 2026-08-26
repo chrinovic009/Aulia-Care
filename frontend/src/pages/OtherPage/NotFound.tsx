@@ -6,8 +6,8 @@ export default function NotFound() {
   return (
     <>
       <PageMeta
-        title="React.js 404 Dashboard | Aulia Care - React.js Admin Dashboard Template"
-        description="This is React.js 404 Dashboard page for Aulia Care - React.js Tailwind CSS Admin Dashboard Template"
+        title="Aulia Care - 404 Non trouvé"
+        description="La page que vous recherchez n'a pas été trouvée sur Aulia Care"
       />
       <div className="relative flex flex-col items-center justify-center min-h-screen p-6 overflow-hidden z-1">
         <GridShape />

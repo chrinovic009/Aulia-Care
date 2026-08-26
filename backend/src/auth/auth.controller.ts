@@ -128,6 +128,7 @@ export class AuthController {
 
   // 🔓 PUBLIC - Renouvellement du token
   @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000, blockDuration: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @Post('refresh')
   async refresh(
@@ -180,20 +181,36 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
+  @Get('security-status')
+  securityStatus(@CurrentUser() user: any) {
+    return this.authService.getSecurityStatus(user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('lock-session')
+  async lockSession(@CurrentUser() user: any) {
+    await this.authService.lockCurrentSession(user.userId, user.sessionId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
   @Patch('profile')
   async updateProfile(@CurrentUser() user: any, @Body() payload: UpdateUserDto): Promise<CurrentUserResponseDto> {
     return this.authService.updateProfile(user.userId, payload) as Promise<CurrentUserResponseDto>;
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000, blockDuration: 15 * 60_000 } })
   @Post('change-pin')
   async changePin(@CurrentUser() user: any, @Body() body: ChangePinDto) {
     return this.authService.changePin(user.userId, body.currentPin, body.nextPin);
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000, blockDuration: 15 * 60_000 } })
   @Post('verify-pin')
   async verifyPin(@CurrentUser() user: any, @Body() body: VerifyPinDto) {
-    return this.authService.verifyPin(user.userId, body.pin);
+    return this.authService.verifyPin(user.userId, body.pin, user.sessionId);
   }
 }

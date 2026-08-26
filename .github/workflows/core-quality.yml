@@ -12,6 +12,25 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aulia
+          POSTGRES_PASSWORD: aulia_ci_password
+          POSTGRES_DB: aulia_core_ci
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U aulia -d aulia_core_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://aulia:aulia_ci_password@localhost:5432/aulia_core_ci?schema=public
+      TEST_DATABASE_URL: postgresql://aulia:aulia_ci_password@localhost:5432/aulia_core_ci?schema=public
+      JWT_SECRET: test_access_secret_only_for_ci
+      JWT_REFRESH_SECRET: test_refresh_secret_only_for_ci
+      CORS_ORIGIN: http://localhost:5173
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,10 +43,17 @@ jobs:
         run: npx prisma validate --schema backend/prisma/schema.prisma
       - name: Generate Prisma client
         run: npx prisma generate --schema backend/prisma/schema.prisma
+      - name: Apply migrations to isolated PostgreSQL
+        run: npx prisma migrate deploy --schema backend/prisma/schema.prisma
       - name: Lint
         run: npm run lint
+      - name: Typecheck frontend and backend
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Integration tests
+        run: npm run test:integration
+      - name: E2E database readiness
+        run: npm run test:e2e
       - name: Build frontend and backend
         run: npm run build
-
-# No automated test command exists yet in package.json. It must be added before
-# this workflow can truthfully report unit or E2E coverage.

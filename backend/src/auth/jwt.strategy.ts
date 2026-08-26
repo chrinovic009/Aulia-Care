@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(configService: ConfigService, private readonly prisma: PrismaService) {
     super({
+      passReqToCallback: true,
       jwtFromRequest: ExtractJwt.fromExtractors([
         (request) => String(request?.headers?.cookie || '')
           .split(';')
@@ -21,7 +22,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: any) {
+  async validate(request: any, payload: any) {
     // Rejeter les refresh tokens dans le JWT strategy
     if (payload.type === 'refresh') {
       throw new Error('Invalid token type');
@@ -57,9 +58,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
     const session = await this.prisma.session.findFirst({
       where: { id: payload.sid, userId: user.id, status: 'ACTIVE', expiresAt: { gt: new Date() } },
-      select: { id: true },
+      select: { id: true, pinLockedAt: true },
     });
     if (!session) throw new UnauthorizedException('Session expirée ou révoquée');
+    const path = String(request?.path || request?.originalUrl || '');
+    const pinGatePath = ['/api/auth/security-status', '/api/auth/lock-session', '/api/auth/verify-pin', '/api/auth/logout', '/api/auth/logout-all'];
+    if (session.pinLockedAt && !pinGatePath.some((allowed) => path.startsWith(allowed))) {
+      throw new UnauthorizedException('Session verrouillée : saisissez votre code PIN pour continuer.');
+    }
 
     return {
       userId: user.id,
