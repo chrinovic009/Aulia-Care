@@ -45,7 +45,7 @@ function getRoomLabel(record: HospitalizationRecord) {
 }
 
 const escapePrintHtml = (value: unknown) => String(value ?? "—")
-  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#039;");
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 
 async function printHospitalizationRecord(record: HospitalizationRecord, timeline: HospitalizationTimelineEvent[]) {
   const printWindow = window.open("", "_blank", "width=900,height=760");

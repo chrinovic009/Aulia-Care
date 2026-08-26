@@ -36,19 +36,19 @@ export class HospitalizationsController {
   @Get('nurse/followed')
   @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
   nurseFollowed(@Request() req: any) {
-    return this.hospitalizationsService.getNurseHospitalizations(req.user?.userId);
+    return this.hospitalizationsService.getNurseHospitalizations(req.user);
   }
 
   @Get('nurse/available')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
-  availableNurses(@Query('serviceUnitId') serviceUnitId?: string) {
-    return this.hospitalizationsService.getAvailableNurses(serviceUnitId);
+  availableNurses(@Query('serviceUnitId') serviceUnitId: string | undefined, @Request() req: any) {
+    return this.hospitalizationsService.getAvailableNurses(serviceUnitId, req.user);
   }
 
   @Get('nurse/rounds')
   @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
   nurseRounds(@Request() req: any) {
-    return this.hospitalizationsService.getNurseRounds(req.user?.userId);
+    return this.hospitalizationsService.getNurseRounds(req.user);
   }
 
   @Patch('nurse/care-tasks/:taskId')

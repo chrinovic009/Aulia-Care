@@ -407,7 +407,7 @@ export default function PrescriptionsMedecin() {
                   <div className="rounded-2xl border border-aulia-teal/20 bg-aulia-mist/50 p-4 text-sm text-aulia-navy dark:bg-aulia-teal/10 dark:text-aulia-mist">
                     Les nouvelles ordonnances sont créées depuis la consultation médicale, dans l’étape <strong>Ordonnance</strong>. Cette page présente uniquement les prescriptions du patient.
                   </div>
-                  {false && <Panel title="Nouvelle prescription">
+                  {selectedConsultation?.id === "__legacy_prescription_panel_disabled__" && <Panel title="Nouvelle prescription">
                     <Select
                       label="Consultation"
                       value={selectedConsultation.id}

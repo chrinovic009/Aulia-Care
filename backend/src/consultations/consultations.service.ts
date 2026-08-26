@@ -84,10 +84,18 @@ export class ConsultationsService {
 
   async create(createConsultationDto: CreateConsultationDto, actorId?: string) {
     if (!actorId) throw new ForbiddenException('Médecin authentifié requis.');
-    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { primaryRole: true } });
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { primaryRole: true, clinicId: true, deletedAt: true, status: true },
+    });
     if (actor?.primaryRole !== 'PHYSICIAN') throw new ForbiddenException('Seul un médecin peut ouvrir une consultation.');
+    if (!actor.clinicId || actor.deletedAt || actor.status !== 'ACTIVE') {
+      throw new ForbiddenException('Le médecin doit être actif et rattaché à un établissement.');
+    }
 
-    const appointment = await this.prisma.appointment.findUnique({ where: { id: createConsultationDto.appointmentId } });
+    const appointment = await this.prisma.appointment.findFirst({
+      where: { id: createConsultationDto.appointmentId, clinicId: actor.clinicId, deletedAt: null },
+    });
     if (!appointment || appointment.patientId !== createConsultationDto.patientId) {
       throw new BadRequestException('Le rendez-vous sélectionné ne correspond pas au patient.');
     }
@@ -95,11 +103,31 @@ export class ConsultationsService {
       throw new BadRequestException('Ce rendez-vous ne peut pas être ouvert en consultation.');
     }
 
+    const patient = await this.prisma.patient.findFirst({
+      where: { id: createConsultationDto.patientId, clinicId: actor.clinicId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!patient) throw new ForbiddenException('Patient non accessible dans cet établissement.');
+
     const consultation = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.consultation.findUnique({ where: { appointmentId: createConsultationDto.appointmentId } });
       if (existing) throw new BadRequestException('Une consultation existe déjà pour ce rendez-vous.');
       const created = await tx.consultation.create({
-        data: { ...createConsultationDto, providerId: actorId } as any,
+        // Provider, clinic and encounter links are server-owned, never client input.
+        data: {
+          patientId: patient.id,
+          appointmentId: appointment.id,
+          hospitalizationId: createConsultationDto.hospitalizationId || null,
+          providerId: actorId,
+          clinicId: actor.clinicId,
+          status: createConsultationDto.status || ConsultationStatus.IN_PROGRESS,
+          encounterType: createConsultationDto.encounterType,
+          chiefComplaint: createConsultationDto.chiefComplaint,
+          clinicalSummary: createConsultationDto.clinicalSummary,
+          diagnosis: createConsultationDto.diagnosis,
+          assessment: createConsultationDto.assessment,
+          plan: createConsultationDto.plan,
+        },
       });
       await tx.appointment.update({ where: { id: createConsultationDto.appointmentId }, data: { status: 'CHECKED_IN' } });
       await (tx as any).patientVisit.updateMany({
@@ -124,15 +152,15 @@ export class ConsultationsService {
    */
   async openForPatient(dto: OpenPatientConsultationDto, actorId?: string) {
     if (!actorId) throw new ForbiddenException('Médecin authentifié requis.');
-    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { primaryRole: true } });
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { primaryRole: true, clinicId: true } });
     if (actor?.primaryRole !== 'PHYSICIAN') throw new ForbiddenException('Seul un médecin peut ouvrir une consultation.');
+    if (!actor.clinicId) throw new ForbiddenException('Le médecin doit être rattaché à un établissement.');
 
-    const actorClinic = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } });
     const patient = await this.prisma.patient.findFirst({
       where: {
         id: dto.patientId,
         deletedAt: null,
-        ...(actorClinic?.clinicId ? { clinicId: actorClinic.clinicId } : {}),
+        clinicId: actor.clinicId,
         OR: [
           { consultations: { some: { providerId: actorId, deletedAt: null } } },
           { hospitalizations: { some: { physicianId: actorId, deletedAt: null } } },
@@ -160,6 +188,7 @@ export class ConsultationsService {
       const appointment = await tx.appointment.create({
         data: {
           patientId: dto.patientId,
+          clinicId: actor.clinicId,
           requestedById: actorId,
           scheduledAt: new Date(),
           durationMinutes: 30,
@@ -172,6 +201,7 @@ export class ConsultationsService {
           patientId: dto.patientId,
           appointmentId: appointment.id,
           providerId: actorId,
+          clinicId: actor.clinicId,
           status: ConsultationStatus.DRAFT,
           chiefComplaint: dto.chiefComplaint?.trim() || null,
         },
