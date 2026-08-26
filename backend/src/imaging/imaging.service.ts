@@ -105,6 +105,9 @@ export class ImagingService {
     if (request.status !== status && !allowedTransitions[request.status]?.includes(status)) {
       throw new BadRequestException(`Transition radiologique interdite : ${request.status} vers ${status}.`);
     }
+    if (['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'VERIFIED'].includes(status)) {
+      await this.assertRequestPaid(id);
+    }
     return this.prisma.imagingRequest.update({ where: { id }, data: { status, ...(status === 'COMPLETED' ? { completedAt: new Date() } : {}) }, include: { patient: true, report: true } });
   }
 
@@ -304,6 +307,7 @@ export class ImagingService {
 
   async saveReport(id: string, body: { findings: string; impression: string; recommendations?: string; verified?: boolean }, interpretedById?: string) {
     await this.findOne(id);
+    await this.assertRequestPaid(id);
     if (!body.findings?.trim() || !body.impression?.trim()) throw new BadRequestException('Les constatations et la conclusion sont obligatoires.');
     return this.prisma.$transaction(async (tx) => {
       const report = await tx.imagingReport.upsert({
@@ -314,5 +318,19 @@ export class ImagingService {
       await tx.imagingRequest.update({ where: { id }, data: { status: body.verified ? 'VERIFIED' : 'COMPLETED', completedAt: new Date() } });
       return report;
     });
+  }
+
+  private async assertRequestPaid(imagingRequestId: string) {
+    const invoice = await this.prisma.invoice.findFirst({
+      where: {
+        type: 'RADIOLOGY',
+        remarks: { contains: `ImagingRequest:${imagingRequestId}` },
+      },
+      orderBy: { issuedAt: 'desc' },
+      select: { status: true },
+    });
+    if (!invoice || invoice.status !== 'PAID') {
+      throw new BadRequestException('Cet examen d’imagerie ne peut pas être programmé ou réalisé avant validation du paiement.');
+    }
   }
 }

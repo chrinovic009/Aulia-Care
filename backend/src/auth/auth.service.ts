@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -68,6 +68,20 @@ export class AuthService {
   async login(user: { id: string; email: string; username: string; displayName: string; primaryRole: string | null; status?: string }) {
     const accessToken = this.signAccessToken(user);
     const refreshToken = this.signRefreshToken(user);
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: now } }),
+      this.prisma.session.create({
+        data: {
+          userId: user.id,
+          // The raw token is never persisted.  A hash is sufficient for an
+          // auditable session trail and future selective revocation.
+          tokenHash: await bcrypt.hash(refreshToken, 10),
+          lastSeenAt: now,
+          expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+        },
+      }),
+    ]);
 
     return {
       accessToken,
@@ -81,6 +95,34 @@ export class AuthService {
         status: user.status,
       },
     };
+  }
+
+  async logout(userId?: string) {
+    if (!userId) return;
+    await this.prisma.session.updateMany({
+      where: { userId, status: 'ACTIVE' },
+      data: { status: 'REVOKED', lastSeenAt: new Date() },
+    });
+  }
+
+  async changePin(userId: string, currentPin: string, nextPin: string) {
+    if (!/^\d{4,6}$/.test(nextPin)) {
+      throw new BadRequestException('Le nouveau code PIN doit contenir entre 4 et 6 chiffres.');
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !(await bcrypt.compare(currentPin, user.passwordHash))) {
+      throw new UnauthorizedException('Le code PIN actuel est incorrect.');
+    }
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(nextPin, 12) } });
+    return { ok: true };
+  }
+
+  async verifyPin(userId: string, pin: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } });
+    if (!user || !(await bcrypt.compare(pin, user.passwordHash))) {
+      throw new UnauthorizedException('Code PIN incorrect.');
+    }
+    return { ok: true };
   }
 
   async refreshAccessToken(token?: string) {

@@ -56,6 +56,7 @@ type AdminUser = {
   bio?: string | null;
   createdAt?: string;
   lastLoginAt?: string | null;
+  Session?: Array<{ createdAt?: string; lastSeenAt?: string | null; status?: string }>;
   generatedPassword?: string;
   Employee?: Array<{
     gender?: string | null;
@@ -223,6 +224,7 @@ export default function GestionPersAdmin() {
     user: AdminUser;
     type: "SUSPEND" | "INACTIVE" | "ACTIVE" | "DELETE";
   }>(null);
+  const [responsibilityReplacement, setResponsibilityReplacement] = useState<null | { departmentId: string; userId: string; name: string }>(null);
 
   const load = async () => {
     setIsLoading(true);
@@ -438,14 +440,23 @@ export default function GestionPersAdmin() {
       }
 
       // If admin marked user as department responsible, call backend endpoint to persist it
-      if (!editingUser && form.isResponsible && form.departmentId) {
+      if (form.isResponsible && form.departmentId) {
         try {
           await apiFetch(`/administration/departments/${form.departmentId}/responsables`, {
             method: 'POST',
             body: JSON.stringify({ userId: saved.id, principal: true }),
           });
         } catch (err: any) {
-          setFormError(err?.message || 'Erreur lors de l\'assignation du responsable de département');
+          const message = String(err?.body?.message || err?.message || '');
+          if (message.toLowerCase().includes('responsable')) {
+            setResponsibilityReplacement({
+              departmentId: form.departmentId,
+              userId: saved.id,
+              name: saved.displayName || `${saved.firstName || ''} ${saved.lastName || ''}`.trim(),
+            });
+            return;
+          }
+          setFormError(message || 'Erreur lors de l\'assignation du responsable de département');
           return;
         }
       }
@@ -485,6 +496,21 @@ export default function GestionPersAdmin() {
     await changeStatus(user, type === "ACTIVE" ? "ACTIVE" : type === "SUSPEND" ? "SUSPENDED" : "INACTIVE");
   };
 
+  const printEmployeeList = () => {
+    const rows = visibleUsers.map((user) => `<tr><td>${user.displayName || `${user.firstName} ${user.lastName}`}</td><td>${roleLabel(user)}</td><td>${user.phone || "—"}</td><td>${user.email}</td><td>${user.status || "—"}</td><td>${formatDate(user.lastLoginAt)}</td></tr>`).join("");
+    // A named, same-origin print surface is required: some browsers return an
+    // unusable blank window when `noopener` is passed as a feature string.
+    const printWindow = window.open("", "aulia-personnel-print", "width=1100,height=800");
+    if (!printWindow) {
+      setFormError("L’impression a été bloquée par le navigateur. Autorisez les fenêtres contextuelles puis réessayez.");
+      return;
+    }
+    printWindow.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Personnel — ${clinicName}</title><style>body{font-family:Arial,sans-serif;color:#0A1D3A;padding:28px}h1{color:#0D9488;margin:0 0 5px}p{color:#475569}table{width:100%;border-collapse:collapse;margin-top:22px;font-size:12px}th,td{border:1px solid #cbd5e1;padding:9px;text-align:left}th{background:#e6fffb;color:#0A1D3A}@media print{body{padding:0}}</style></head><body><h1>${clinicName}</h1><p>Liste officielle du personnel · éditée le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date())}</p><table><thead><tr><th>Employé</th><th>Fonction</th><th>Téléphone</th><th>E-mail</th><th>Statut</th><th>Dernière connexion</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    window.setTimeout(() => printWindow.print(), 250);
+  };
+
   return (
     <AdminPageShell
       title="Personnel"
@@ -494,7 +520,7 @@ export default function GestionPersAdmin() {
           <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700">
             <Plus size={17} /> Ajouter un employe
           </button>
-          <button className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-white/[0.03] dark:text-slate-200">
+          <button onClick={printEmployeeList} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-800 dark:bg-white/[0.03] dark:text-slate-200">
             <Download size={17} /> Exporter
           </button>
         </>
@@ -552,7 +578,7 @@ export default function GestionPersAdmin() {
             roleLabel(user),
             getServiceName(user) || "-",
             <EmployeeStatusBadge key="status" status={user.status} />,
-            formatDate(user.lastLoginAt),
+            <span key="session" className="text-xs leading-5">Connexion : {formatDate(user.lastLoginAt)}<br />Déconnexion : {user.Session?.[0]?.status === "REVOKED" ? formatDate(user.Session[0]?.lastSeenAt) : "En cours / non connue"}</span>,
             <div key="actions" className="flex flex-wrap gap-1.5">
               <button onClick={() => setSelectedUser(user)} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300" title="Voir profil"><Eye size={16} /></button>
               <button onClick={() => openEdit(user)} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300" title="Modifier"><Pencil size={16} /></button>
@@ -647,7 +673,68 @@ export default function GestionPersAdmin() {
         />
       ) : null}
       {createdCredential ? <GeneratedCredentialModal credential={createdCredential} onClose={() => setCreatedCredential(null)} /> : null}
+      {responsibilityReplacement ? (
+        <DepartmentResponsibleReplacementModal
+          replacement={responsibilityReplacement}
+          onCancel={() => setResponsibilityReplacement(null)}
+          onConfirm={async () => {
+            try {
+              await apiFetch(`/administration/departments/${responsibilityReplacement.departmentId}/responsables`, {
+                method: "POST",
+                body: JSON.stringify({
+                  userId: responsibilityReplacement.userId,
+                  principal: true,
+                  replaceExistingPrincipal: true,
+                }),
+              });
+              setResponsibilityReplacement(null);
+              setShowForm(false);
+              setEditingUser(null);
+              await load();
+            } catch (err: any) {
+              setFormError(err?.body?.message || err?.message || "Le remplacement du responsable a échoué.");
+              setResponsibilityReplacement(null);
+            }
+          }}
+        />
+      ) : null}
     </AdminPageShell>
+  );
+}
+
+function DepartmentResponsibleReplacementModal({
+  replacement,
+  onCancel,
+  onConfirm,
+}: {
+  replacement: { name: string };
+  onCancel: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const [isReplacing, setIsReplacing] = useState(false);
+  const confirm = async () => {
+    setIsReplacing(true);
+    try {
+      await onConfirm();
+    } finally {
+      setIsReplacing(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6">
+      <section role="dialog" aria-modal="true" aria-labelledby="replace-department-head" className="w-full max-w-md rounded-2xl border border-aulia-teal/30 bg-white p-5 shadow-2xl dark:border-aulia-teal/30 dark:bg-slate-950 sm:p-6">
+        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-aulia-teal/10 text-xl text-aulia-teal">↺</div>
+        <h2 id="replace-department-head" className="mt-4 text-lg font-bold text-aulia-navy dark:text-white">Remplacer le responsable ?</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+          Un responsable principal est déjà désigné. Confirmer attribuera ce rôle à <strong>{replacement.name || "cet employé"}</strong> et destituera l’ancien responsable, sans supprimer son compte ni son affectation.
+        </p>
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onCancel} disabled={isReplacing} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-900">Annuler</button>
+          <button type="button" onClick={() => void confirm()} disabled={isReplacing} className="rounded-lg bg-aulia-teal px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-aulia-teal/90 disabled:cursor-wait disabled:opacity-60">{isReplacing ? "Remplacement…" : "Oui, remplacer"}</button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -845,7 +932,8 @@ function ProfileDrawer({ user, onClose }: { user: AdminUser; onClose: () => void
           <Info label="Adresse" value={[user.addressStreet, user.addressCity, user.addressProvince].filter(Boolean).join(", ") || "-"} />
           <Info label="Nationalite" value={user.nationality || "-"} />
           <Info label="Date de creation" value={formatDate(user.createdAt)} />
-          <Info label="Derniere connexion" value={formatDate(user.lastLoginAt)} />
+          <Info label="Dernière connexion" value={formatDate(user.lastLoginAt)} />
+          <Info label="Dernière déconnexion" value={user.Session?.[0]?.status === "REVOKED" ? formatDate(user.Session[0]?.lastSeenAt) : "Session en cours ou non connue"} />
           <Info label="Statut" value={<EmployeeStatusBadge status={user.status} />} />
           <Info label="Salaire" value={contract?.salary ? formatMoney(contract.salary) : "-"} />
         </div>

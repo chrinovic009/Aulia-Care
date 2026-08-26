@@ -241,7 +241,9 @@ export class UsersService {
 
   findAll() {
     return this.prisma.user.findMany({
-      where: { deletedAt: null },
+      // DEV is an installation account, never a member of the hospital staff
+      // directory and must not appear in any administrative list or export.
+      where: { deletedAt: null, primaryRole: { not: RoleSlug.DEV } },
       select: {
         id: true,
         email: true,
@@ -262,6 +264,11 @@ export class UsersService {
         bio: true,
         status: true,
         lastLoginAt: true,
+        Session: {
+          select: { createdAt: true, lastSeenAt: true, status: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
         createdAt: true,
         Employee: {
           include: {
@@ -334,7 +341,7 @@ export class UsersService {
       CASHIER: staffRoles,
       // Finance collaborates with all staff and both administration levels,
       // while patient conversations remain restricted to the care pathway.
-      FINANCE: [...staffRoles, RoleSlug.ADMIN, RoleSlug.SUPER_ADMIN],
+      FINANCE: [...staffRoles, RoleSlug.ADMIN],
       PATIENT: ['RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER'],
     };
 
@@ -389,6 +396,7 @@ export class UsersService {
             middleName: true,
             phone: true,
             email: true,
+            portalUserId: true,
             workflowStatus: true,
             priority: true,
           },
@@ -396,23 +404,6 @@ export class UsersService {
           take: 100,
         })
       : [];
-
-    const patientUsersByEmail = new Map(
-      includePatients
-        ? (
-            await this.prisma.user.findMany({
-              where: {
-                deletedAt: null,
-                status: 'ACTIVE',
-                email: {
-                  in: patients.map((patient) => patient.email).filter((email): email is string => Boolean(email)),
-                },
-              },
-              select: { id: true, email: true },
-            })
-          ).map((user) => [user.email.toLowerCase(), user.id])
-        : [],
-    );
 
     let contacts = [
       ...staff.map((user) => ({
@@ -424,8 +415,8 @@ export class UsersService {
         phone: user.phone,
         email: user.email,
       })),
-      ...patients.filter((patient) => Boolean(patient.email && patientUsersByEmail.get(patient.email.toLowerCase()))).map((patient) => ({
-        id: patientUsersByEmail.get(patient.email!.toLowerCase())!,
+      ...patients.filter((patient) => Boolean(patient.portalUserId)).map((patient) => ({
+        id: patient.portalUserId!,
         patientId: patient.id,
         type: 'PATIENT',
         name: [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(' '),
@@ -456,21 +447,14 @@ export class UsersService {
     if (!relation) return [];
     const patients = await this.prisma.patient.findMany({
       where: { deletedAt: null, ...relation },
-      select: { id: true, firstName: true, middleName: true, lastName: true, email: true, phone: true, workflowStatus: true, priority: true },
+      select: { id: true, firstName: true, middleName: true, lastName: true, email: true, phone: true, portalUserId: true, workflowStatus: true, priority: true },
       orderBy: { updatedAt: 'desc' },
       take: 100,
     });
-    const emails = patients.map((patient) => patient.email).filter((email): email is string => Boolean(email));
-    if (!emails.length) return [];
-    const patientUsers = await this.prisma.user.findMany({
-      where: { deletedAt: null, status: 'ACTIVE', primaryRole: RoleSlug.PATIENT, email: { in: emails } },
-      select: { id: true, email: true },
-    });
-    const accountByEmail = new Map(patientUsers.map((account) => [account.email.toLowerCase(), account.id]));
     return patients
-      .filter((patient) => Boolean(patient.email && accountByEmail.get(patient.email.toLowerCase())))
+      .filter((patient) => Boolean(patient.portalUserId))
       .map((patient) => ({
-        id: accountByEmail.get(patient.email!.toLowerCase())!,
+        id: patient.portalUserId!,
         patientId: patient.id,
         type: 'PATIENT' as const,
         name: [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(' '),
@@ -541,19 +525,10 @@ export class UsersService {
 
   private async findPatientCareTeamContacts(userId?: string) {
     if (!userId) return [];
-    const account = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, phone: true, firstName: true, lastName: true },
-    });
-    if (!account) return [];
     const patient = await this.prisma.patient.findFirst({
       where: {
         deletedAt: null,
-        OR: [
-          account.email ? { email: account.email } : undefined,
-          account.phone ? { phone: account.phone } : undefined,
-          { firstName: { equals: account.firstName, mode: 'insensitive' }, lastName: { equals: account.lastName, mode: 'insensitive' } },
-        ].filter(Boolean) as any,
+        portalUserId: userId,
       },
       select: {
         receptionistId: true,

@@ -1,6 +1,11 @@
-import { IsDateString, IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsEmail, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateAdmissionDto {
+  /** Existing patient explicitly selected for a new reception visit. */
+  @IsUUID()
+  @IsOptional()
+  existingPatientId?: string;
+
   @IsString()
   @IsNotEmpty()
   firstName!: string;

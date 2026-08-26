@@ -170,12 +170,15 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   }
 
   @SubscribeMessage('message.read')
-  handleMessageRead(
+  async handleMessageRead(
     @MessageBody() payload: { readerId?: string; senderId?: string; messageIds?: string[] },
     @ConnectedSocket() client: Socket,
   ) {
     const readerId = client.data.userId as string | undefined;
     if (!readerId || !payload?.senderId) return;
+    if (!await this.usersService.isDirectMessagingAllowed(readerId, payload.senderId)) {
+      throw new WsException('Expéditeur non autorisé');
+    }
 
     if (payload.messageIds?.length) {
       this.prisma.chatMessage
@@ -414,9 +417,10 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     }
 
     if (String(user.primaryRole || '').toUpperCase() === 'PATIENT') {
-      const ownPatient = user.email
-        ? await this.prisma.patient.findUnique({ where: { email: user.email }, select: { id: true } })
-        : null;
+      const ownPatient = await this.prisma.patient.findFirst({
+        where: { portalUserId: userId, deletedAt: null },
+        select: { id: true },
+      });
       if (ownPatient) client.join(this.patientRoom(ownPatient.id));
       const children = await this.prisma.parentChildLink.findMany({
         where: { parentUserId: userId, status: 'ACTIVE', revokedAt: null },

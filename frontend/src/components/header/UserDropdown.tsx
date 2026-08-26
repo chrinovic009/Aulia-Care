@@ -3,9 +3,17 @@ import Avatar from "../ui/avatar/Avatar";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { apiFetch } from "../../config/api";
+import { setSessionLockMinutes } from "../auth/SessionLock";
 
 export default function UserDropdown() {
   const [isOpen, setIsOpen] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(false);
+  const [currentPin, setCurrentPin] = useState("");
+  const [nextPin, setNextPin] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [lockMinutes, setLockMinutes] = useState("15");
+  const [securityError, setSecurityError] = useState<string | null>(null);
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -20,6 +28,16 @@ export default function UserDropdown() {
 
   function closeDropdown() {
     setIsOpen(false);
+  }
+  async function saveSecurity() {
+    if (!currentUser?.id) return;
+    if (!/^\d{4,6}$/.test(nextPin) || nextPin !== confirmation) { setSecurityError("Le nouveau PIN doit contenir 4 à 6 chiffres identiques dans les deux champs."); return; }
+    try {
+      setSecurityError(null);
+      await apiFetch("/auth/change-pin", { method: "POST", body: JSON.stringify({ currentPin, nextPin }) });
+      setSessionLockMinutes(currentUser.id, Number(lockMinutes));
+      setCurrentPin(""); setNextPin(""); setConfirmation(""); setSecurityOpen(false);
+    } catch (reason) { setSecurityError(reason instanceof Error ? reason.message : "La modification du PIN a échoué."); }
   }
   return (
     <div className="relative">
@@ -76,6 +94,12 @@ export default function UserDropdown() {
         </div>
 
         <button
+          onClick={() => { closeDropdown(); setSecurityOpen(true); }}
+          className="mt-3 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          Sécurité et code PIN
+        </button>
+        <button
           onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2 mt-3 w-full text-left font-medium text-gray-700 rounded-lg group text-theme-sm hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
         >
@@ -97,6 +121,29 @@ export default function UserDropdown() {
           Se déconnecter
         </button>
       </Dropdown>
+      {securityOpen && (
+        <div className="fixed inset-0 z-[100000] grid place-items-center overflow-y-auto bg-slate-950/60 p-4">
+          <section role="dialog" aria-modal="true" className="my-auto w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-950">
+            <p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Sécurité personnelle</p>
+            <h2 className="mt-2 text-xl font-bold text-aulia-navy dark:text-white">Modifier votre code PIN</h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Saisissez votre mot de passe initial ou votre PIN actuel, puis choisissez un nouveau code de 4 à 6 chiffres.</p>
+            <div className="mt-5 space-y-3">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">Mot de passe initial ou PIN actuel
+                <input autoComplete="current-password" type="password" value={currentPin} onChange={(event) => setCurrentPin(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900 dark:text-white" />
+              </label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">Nouveau PIN
+                <input inputMode="numeric" autoComplete="new-password" type="password" maxLength={6} value={nextPin} onChange={(event) => setNextPin(event.target.value.replace(/\D/g, ""))} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900 dark:text-white" />
+              </label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">Confirmer le PIN
+                <input inputMode="numeric" autoComplete="new-password" type="password" maxLength={6} value={confirmation} onChange={(event) => setConfirmation(event.target.value.replace(/\D/g, ""))} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900 dark:text-white" />
+              </label>
+            </div>
+            <label className="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-200">Verrouillage automatique<select value={lockMinutes} onChange={(event) => setLockMinutes(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900 dark:text-white">{[[5,"5 minutes"],[10,"10 minutes"],[15,"15 minutes"],[20,"20 minutes"],[30,"30 minutes"],[60,"1 heure"],[300,"5 heures"],[480,"8 heures"]].map(([value,label]) => <option key={String(value)} value={String(value)}>{String(label)}</option>)}</select></label>
+            {securityError && <p className="mt-3 text-sm text-red-600 dark:text-red-300">{securityError}</p>}
+            <div className="mt-6 flex justify-end gap-2"><button type="button" onClick={() => setSecurityOpen(false)} className="rounded-xl border border-slate-300 px-4 py-2 font-semibold dark:border-slate-700 dark:text-white">Annuler</button><button type="button" onClick={() => void saveSecurity()} className="rounded-xl bg-aulia-teal px-4 py-2 font-semibold text-white">Enregistrer</button></div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

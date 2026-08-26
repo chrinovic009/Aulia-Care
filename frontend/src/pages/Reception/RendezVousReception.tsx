@@ -6,6 +6,9 @@ import { getAuthHeaders } from "../../config/api";
 
 const statusColor: Record<string, string> = {
   "En attente": "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  "Confirmé · en attente": "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
+  "Reçu · en consultation": "bg-aulia-mist text-aulia-teal dark:bg-aulia-teal/20 dark:text-aulia-mist",
+  "Consultation effectuée": "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
   Confirmé: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
   Refusé: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   Reprogrammé: "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200",
@@ -47,6 +50,11 @@ function toReceptionRequest(appointment: any): ReceptionRequest {
       : rawStatus === "CONFIRMED" ? "Confirmé"
         : rawStatus === "CANCELLED" ? "Refusé"
           : "En attente";
+  const receptionStatus = rawStatus === "COMPLETED" || consultationStatus === "FINALIZED"
+    ? "Consultation effectuée"
+    : rawStatus === "CHECKED_IN" || consultationStatus === "IN_PROGRESS"
+      ? "Reçu · en consultation"
+      : rawStatus === "CONFIRMED" ? "Confirmé · en attente" : status;
   return {
     ...appointment,
     patientName: [patient.lastName, patient.firstName].filter(Boolean).join(" ") || "Patient non renseigné",
@@ -54,7 +62,7 @@ function toReceptionRequest(appointment: any): ReceptionRequest {
     doctorRequested: appointment.provider?.displayName || "À affecter",
     dateRequested: appointment.scheduledAt ? new Date(appointment.scheduledAt).toLocaleString("fr-CD") : "Non planifié",
     requestedOn: appointment.scheduledAt,
-    status,
+    status: receptionStatus,
     appointmentStatus: rawStatus,
     priority: appointment.priority || "Normale",
     phone: patient.phone || "—",

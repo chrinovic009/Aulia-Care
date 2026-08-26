@@ -328,13 +328,16 @@ export class PatientsService {
 
   async findOneForDoctor(id: string, doctorId?: string) {
     if (!doctorId) throw new ForbiddenException('Médecin non identifié.');
+    const doctor = await this.prisma.user.findUnique({ where: { id: doctorId }, select: { clinicId: true } });
     const isInCareTeam = await this.prisma.patient.count({
       where: {
         id,
         deletedAt: null,
+        ...(doctor?.clinicId ? { clinicId: doctor.clinicId } : {}),
         OR: [
           { consultations: { some: { providerId: doctorId, deletedAt: null } } },
           { hospitalizations: { some: { physicianId: doctorId, deletedAt: null } } },
+          { workflowStatus: PatientWorkflowStatus.EN_ATTENTE_MEDECIN },
         ],
       },
     });
@@ -351,18 +354,35 @@ export class PatientsService {
       throw new NotFoundException('Utilisateur introuvable');
     }
 
-    const patient = await this.prisma.patient.findFirst({
-      where: {
-        deletedAt: null,
-        OR: [
-          user.email ? { email: user.email } : undefined,
-          user.phone ? { phone: user.phone } : undefined,
-          {
-            firstName: { equals: user.firstName, mode: 'insensitive' },
-            lastName: { equals: user.lastName, mode: 'insensitive' },
-          },
-        ].filter(Boolean) as any,
-      },
+    let portalPatient = await this.prisma.patient.findFirst({
+      where: { deletedAt: null, portalUserId: userId },
+      select: { id: true },
+    });
+
+    // Controlled one-time repair for legacy accounts. It never relies on a
+    // name or phone number: an exact, unique e-mail match is the only allowed
+    // migration path and is permanently converted to the direct relation.
+    if (!portalPatient && user.email) {
+      const candidates = await this.prisma.patient.findMany({
+        where: { deletedAt: null, portalUserId: null, email: user.email.trim().toLowerCase() },
+        select: { id: true },
+        take: 2,
+      });
+      if (candidates.length === 1) {
+        portalPatient = await this.prisma.patient.update({
+          where: { id: candidates[0].id },
+          data: { portalUserId: userId },
+          select: { id: true },
+        });
+      }
+    }
+
+    if (!portalPatient) {
+      throw new NotFoundException('Aucun dossier patient n’est explicitement lié à ce compte. Contactez la réception.');
+    }
+
+    const patient = await this.prisma.patient.findUnique({
+      where: { id: portalPatient.id },
       include: {
         receptionist: {
           select: { id: true, displayName: true, firstName: true, lastName: true },
@@ -462,6 +482,7 @@ export class PatientsService {
     if (!actorId) throw new ForbiddenException('Une admission doit être réalisée par une réceptionniste authentifiée.');
     const email = normalizeEmail(createAdmissionDto.email);
     const phone = normalizePhone(createAdmissionDto.phone);
+    const existingPatientId = String(createAdmissionDto.existingPatientId || '').trim() || null;
     const { firstName, lastName } = createAdmissionDto.fullName
       ? splitFullName(createAdmissionDto.fullName)
       : { firstName: createAdmissionDto.firstName || '', lastName: createAdmissionDto.lastName || '' };
@@ -489,7 +510,15 @@ export class PatientsService {
       });
     }
 
-    if (conflicts.length > 0) {
+    const selectedExistingPatient = existingPatientId
+      ? await this.prisma.patient.findFirst({ where: { id: existingPatientId, deletedAt: null } })
+      : null;
+
+    if (existingPatientId && !selectedExistingPatient) {
+      throw new NotFoundException('Le patient choisi pour cette réadmission est introuvable ou archivé.');
+    }
+
+    if (!selectedExistingPatient && conflicts.length > 0) {
       const existing = await this.prisma.patient.findFirst({ where: { OR: conflicts } });
       if (existing) {
         throw new ConflictException('Un patient existe déjà avec le même email, téléphone ou nom/date de naissance.');
@@ -537,6 +566,10 @@ export class PatientsService {
       select: { clinicId: true },
     });
 
+    if (selectedExistingPatient?.clinicId && receptionistUser?.clinicId && selectedExistingPatient.clinicId !== receptionistUser.clinicId) {
+      throw new ForbiddenException('Ce patient appartient à un autre établissement.');
+    }
+
     // 🟢 CORRECTION DE L'ERREUR : Déclaration de la variable manquante
     // Company subscriptions are admitted only through SubscriptionsService, which links a verified employee.
     const isCorporateSubscriber = false;
@@ -583,7 +616,20 @@ export class PatientsService {
           };
         }
 
-      const patient = await prisma.patient.create({ data: admissionData });
+      const patient = selectedExistingPatient
+        ? await prisma.patient.update({
+            where: { id: selectedExistingPatient.id },
+            data: {
+              // Never overwrite a known patient's identity or clinical record at reception.
+              receptionistId: actorId,
+              workflowStatus: admissionData.workflowStatus,
+              admissionType: createAdmissionDto.admissionType,
+              priority: createAdmissionDto.priority || selectedExistingPatient.priority,
+              arrivalAt: new Date(),
+              ...(resolvedService ? { serviceId: resolvedService.id } : {}),
+            },
+          })
+        : await prisma.patient.create({ data: admissionData });
       if (isParamedicalVoucher) {
         await prisma.paramedicalVoucher.create({
           data: {
@@ -621,7 +667,7 @@ export class PatientsService {
           totalAmount: admissionFee,
         },
       });
-      await (prisma as any).patientVisit.create({
+      const visit = await (prisma as any).patientVisit.create({
         data: {
           patientId: patient.id,
           receptionistId: actorId,
@@ -633,6 +679,7 @@ export class PatientsService {
           status: isCorporateSubscriber ? 'ORIENTED' : 'AWAITING_PAYMENT',
           arrivedAt: patient.arrivalAt || new Date(),
           metadata: {
+            isReturningPatient: Boolean(selectedExistingPatient),
             consultationKind: isSpecialist ? 'SPECIALIST' : 'GENERAL',
             voucherNumber: createAdmissionDto.voucherNumber || null,
             invoiceId: invoice.id,
@@ -640,11 +687,12 @@ export class PatientsService {
         },
       });
 
-      return { patient, invoice };
+      return { patient, invoice, visit };
     });
 
     // compute age and persist admission metadata as a MedicalHistory entry
-    const dob = createAdmissionDto.dateOfBirth ? new Date(createAdmissionDto.dateOfBirth) : null;
+    const dobValue = selectedExistingPatient?.dateOfBirth || (createAdmissionDto.dateOfBirth ? new Date(createAdmissionDto.dateOfBirth) : null);
+    const dob = dobValue ? new Date(dobValue) : null;
     const age = dob ? Math.floor((Date.now() - dob.getTime()) / (1000 * 60 * 60 * 24 * 365.25)) : null;
 
     // Resolve receptionist name from provided form value or user record
@@ -688,8 +736,8 @@ export class PatientsService {
         actorId,
         patientId: result.patient.id,
         action: AuditAction.CREATE,
-        entity: 'Patient',
-        entityId: result.patient.id,
+        entity: selectedExistingPatient ? 'PatientVisit' : 'Patient',
+        entityId: selectedExistingPatient ? result.visit.id : result.patient.id,
         summary: 'Admission enregistrée et facture créée.',
         metadata: {
           admissionType: createAdmissionDto.admissionType,
@@ -703,6 +751,7 @@ export class PatientsService {
 
     const cashierUsers = await this.prisma.user.findMany({
       where: {
+        ...(result.patient.clinicId ? { clinicId: result.patient.clinicId } : {}),
         OR: [
           { primaryRole: 'CASHIER' },
           { roles: { some: { role: { slug: 'CASHIER' } } } },
@@ -713,7 +762,9 @@ export class PatientsService {
     // The patient portal account is issued at the first admission, not only
     // after payment/triage. The credentials are sent solely to the receptionist
     // who registered this patient; they are never returned by this API.
-    await this.ensurePatientUserAndNotifyReceptionist(result.patient.id);
+    if (!selectedExistingPatient) {
+      await this.ensurePatientUserAndNotifyReceptionist(result.patient.id);
+    }
 
     const notifications = await Promise.all(
       cashierUsers.map((cashier) =>
@@ -740,6 +791,8 @@ export class PatientsService {
     return {
       patient: result.patient,
       invoice: result.invoice,
+      visit: result.visit,
+      isReturningPatient: Boolean(selectedExistingPatient),
       message: isCorporateSubscriber
         ? 'Admission enregistrée pour abonné entreprise. Paiement géré par la société et non requis immédiatement.'
         : 'Admission enregistrée et facture créée. Le caissier a été notifié.',
@@ -824,6 +877,17 @@ export class PatientsService {
           addressCity: patient.city,
         },
       }));
+
+    const linkedPatient = await this.prisma.patient.findFirst({
+      where: { portalUserId: patientUser.id },
+      select: { id: true },
+    });
+    if (linkedPatient && linkedPatient.id !== patient.id) {
+      throw new ConflictException('Le compte portail trouvé est déjà lié à un autre dossier patient.');
+    }
+    if (patient.portalUserId !== patientUser.id) {
+      await this.prisma.patient.update({ where: { id: patient.id }, data: { portalUserId: patientUser.id } });
+    }
 
     if (!patient.receptionistId) {
       return { patientUser, username: patientUser.username, password };
@@ -1322,14 +1386,18 @@ export class PatientsService {
   async getPatientsVisibleToDoctors(doctorId?: string, requestedPage?: number, requestedLimit?: number) {
     if (!doctorId) return [];
 
+    const doctor = await this.prisma.user.findUnique({ where: { id: doctorId }, select: { clinicId: true } });
+
     const page = Number.isFinite(requestedPage) && requestedPage! > 0 ? Math.floor(requestedPage!) : 1;
     const limit = Number.isFinite(requestedLimit) && requestedLimit! > 0 ? Math.min(Math.floor(requestedLimit!), 25) : 10;
     const paginate = Number.isFinite(requestedPage) || Number.isFinite(requestedLimit);
     const where: Prisma.PatientWhereInput = {
       deletedAt: null,
+      ...(doctor?.clinicId ? { clinicId: doctor.clinicId } : {}),
       OR: [
         { consultations: { some: { providerId: doctorId, deletedAt: null } } },
         { hospitalizations: { some: { physicianId: doctorId, deletedAt: null } } },
+        { workflowStatus: PatientWorkflowStatus.EN_ATTENTE_MEDECIN },
       ],
     };
 

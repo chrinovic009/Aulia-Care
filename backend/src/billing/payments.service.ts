@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, AuditAction, PatientWorkflowStatus, PaymentMethod } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
@@ -18,6 +18,14 @@ export class PaymentsService {
 
     if (!invoice) {
       throw new NotFoundException('Facture introuvable');
+    }
+
+    if (actorId) {
+      const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true, primaryRole: true } });
+      if (!actor) throw new ForbiddenException('Utilisateur de caisse introuvable.');
+      if (actor.primaryRole !== 'SUPER_ADMIN' && actor.clinicId && invoice.clinicId && actor.clinicId !== invoice.clinicId) {
+        throw new ForbiddenException('Cette facture appartient à un autre établissement.');
+      }
     }
 
     if (invoice.status === 'PAID') {
@@ -97,7 +105,7 @@ export class PaymentsService {
           ? PatientWorkflowStatus.EN_PHARMACIE
           : invoice.type === 'LABORATORY' || normalizedServiceName.includes('laboratoire')
             ? PatientWorkflowStatus.EN_LABORATOIRE
-            : normalizedServiceName.includes('radio') || normalizedServiceName.includes('imagerie')
+            : invoice.type === 'RADIOLOGY' || normalizedServiceName.includes('radio') || normalizedServiceName.includes('imagerie')
               ? PatientWorkflowStatus.EN_RADIOLOGIE
               : invoice.type === 'SERVICE'
                 ? PatientWorkflowStatus.EN_ATTENTE_MEDECIN
@@ -109,6 +117,15 @@ export class PaymentsService {
           workflowStatus: nextWorkflowStatus,
         },
       });
+
+      // The visit linked to the invoice leaves the reception-payment stage
+      // only after the balance is settled.
+      if (remainingBalance === 0) {
+        await (prisma as any).patientVisit.updateMany({
+          where: { invoiceId: invoice.id, status: 'AWAITING_PAYMENT' },
+          data: { status: 'ORIENTED', orientedAt: new Date() },
+        });
+      }
 
       const patientUserAccess = await this.ensurePatientUserAccess(prisma, updatedPatient);
 
@@ -134,7 +151,9 @@ export class PaymentsService {
       }
 
       let receptionistMessage = null;
-      if (updatedPatient.receptionistId) {
+      // Credentials are issued only once, at the first admission. A payment
+      // must never silently reset a patient's password.
+      if (patientUserAccess.isNew && updatedPatient.receptionistId) {
         const accessText = [
           `Acces patient crees pour ${updatedPatient.firstName} ${updatedPatient.lastName}.`,
           `Nom utilisateur: ${patientUserAccess.username}`,
@@ -171,7 +190,13 @@ export class PaymentsService {
         });
       }
 
-      const targetRole = invoice.type === 'PHARMACY' ? 'PHARMACIST' : invoice.type === 'LABORATORY' ? 'LAB_TECHNICIAN' : 'NURSE';
+      const targetRole = invoice.type === 'PHARMACY'
+        ? 'PHARMACIST'
+        : invoice.type === 'LABORATORY'
+          ? 'LAB_TECHNICIAN'
+          : invoice.type === 'RADIOLOGY'
+            ? 'RADIOLOGIST'
+            : 'NURSE';
       const serviceUserIds = invoice.type === 'SERVICE'
         ? [
             ...(invoice.patient?.service?.responsables || []).map((item: any) => item.userId || item.user?.id),
@@ -180,6 +205,7 @@ export class PaymentsService {
         : [];
       const targetUsers = remainingBalance > 0 ? [] : await prisma.user.findMany({
         where: {
+          ...(invoice.clinicId ? { clinicId: invoice.clinicId } : {}),
           ...(serviceUserIds.length ? { id: { in: serviceUserIds } } : {}),
           OR: serviceUserIds.length
             ? undefined
@@ -214,6 +240,11 @@ export class PaymentsService {
 
       // Si labRequest n'a pas été trouvé via le match des remarques, on tente d'utiliser celui trouvé via externalReference
       const finalLabRequest = labRequest || labRequestByInvoice;
+      const imagingRequestByInvoice = invoice.type === 'RADIOLOGY'
+        ? await prisma.imagingRequest.findFirst({
+            where: { id: invoice.remarks?.match(/ImagingRequest:([a-zA-Z0-9-]+)/)?.[1] || '__missing__', deletedAt: null },
+          })
+        : null;
 
       const notifications = await Promise.all(
         targetUsers.map((user) =>
@@ -223,17 +254,29 @@ export class PaymentsService {
               type: 'ALERT',
               status: 'UNREAD',
               priority: 'HIGH',
-              title: invoice.type === 'PHARMACY' ? 'Prescription payee' : invoice.type === 'LABORATORY' ? 'Examen laboratoire paye' : 'Patient pret pour infirmerie',
+              title: invoice.type === 'PHARMACY'
+                ? 'Prescription payee'
+                : invoice.type === 'LABORATORY'
+                  ? 'Examen laboratoire paye'
+                  : invoice.type === 'RADIOLOGY'
+                    ? 'Examen d imagerie paye'
+                    : 'Patient pret pour infirmerie',
               message:
                 invoice.type === 'PHARMACY'
                   ? `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} a paye sa prescription et attend la pharmacie.`
                   : invoice.type === 'LABORATORY'
                     ? `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} a paye son examen laboratoire. Vous pouvez traiter la demande.`
+                    : invoice.type === 'RADIOLOGY'
+                      ? `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} a paye son examen d imagerie. Vous pouvez le programmer.`
                     : invoice.type === 'SERVICE'
                       ? `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} a paye ${invoice.patient?.service?.name || 'le service demande'} et attend votre prise en charge.`
                     : `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} est en attente de l'infirmerie apres paiement.`,
-              relatedEntity: invoice.type === 'LABORATORY' ? 'LabRequest' : 'Patient',
-              relatedId: invoice.type === 'LABORATORY' ? finalLabRequest?.id || invoice.id : updatedPatient.id,
+              relatedEntity: invoice.type === 'LABORATORY' ? 'LabRequest' : invoice.type === 'RADIOLOGY' ? 'ImagingRequest' : 'Patient',
+              relatedId: invoice.type === 'LABORATORY'
+                ? finalLabRequest?.id || invoice.id
+                : invoice.type === 'RADIOLOGY'
+                  ? imagingRequestByInvoice?.id || invoice.id
+                  : updatedPatient.id,
               sendAt: new Date(),
             },
           }),
@@ -266,11 +309,12 @@ export class PaymentsService {
             hospitalizationId: hospitalization?.id,
             patientUserId: patientUserAccess.user.id,
             labRequestId: finalLabRequest?.id,
+            imagingRequestId: imagingRequestByInvoice?.id,
           },
         },
       });
 
-      return { payment, updatedInvoice, updatedPatient, notifications, hospitalization, receptionistMessage, labRequest: finalLabRequest };
+      return { payment, updatedInvoice, updatedPatient, notifications, hospitalization, receptionistMessage, labRequest: finalLabRequest, imagingRequest: imagingRequestByInvoice };
     });
 
     result.notifications.forEach((notification) => {
@@ -285,6 +329,9 @@ export class PaymentsService {
     
     if (result.labRequest) {
       this.notificationsGateway.notify('lab.request.created', result.labRequest);
+    }
+    if (result.imagingRequest) {
+      this.notificationsGateway.notify('imaging.request.paid', { id: result.imagingRequest.id, clinicId: invoice.clinicId });
     }
 
     if (result.receptionistMessage) {
@@ -330,10 +377,16 @@ export class PaymentsService {
     const passwordHash = await bcrypt.hash(password, 10);
 
     if (existing) {
+      const linkedPatient = await prisma.patient.findFirst({
+        where: { portalUserId: existing.id },
+        select: { id: true },
+      });
+      if (linkedPatient && linkedPatient.id !== patient.id) {
+        throw new BadRequestException('Le compte portail trouvé est déjà lié à un autre dossier patient.');
+      }
       const updated = await prisma.user.update({
         where: { id: existing.id },
         data: {
-          passwordHash,
           primaryRole: 'PATIENT',
           firstName: patient.firstName,
           lastName: patient.lastName,
@@ -345,10 +398,12 @@ export class PaymentsService {
           status: 'ACTIVE',
         },
       });
+      await prisma.patient.update({ where: { id: patient.id }, data: { portalUserId: updated.id } });
       return {
         user: updated,
         username: updated.username,
-        password,
+        password: null,
+        isNew: false,
       };
     }
 
@@ -370,7 +425,8 @@ export class PaymentsService {
       },
     });
 
-    return { user, username, password };
+    await prisma.patient.update({ where: { id: patient.id }, data: { portalUserId: user.id } });
+    return { user, username, password, isNew: true };
   }
 
   private normalizeUsername(value: string) {
@@ -393,8 +449,13 @@ export class PaymentsService {
     return username;
   }
 
-  async findAll() {
+  async findAll(actorId?: string) {
+    const actor = actorId
+      ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true, primaryRole: true } })
+      : null;
+    const where = actor?.primaryRole === 'SUPER_ADMIN' || !actor?.clinicId ? {} : { clinicId: actor.clinicId };
     const payments = await this.prisma.payment.findMany({
+      where,
       include: {
         invoice: {
           select: {

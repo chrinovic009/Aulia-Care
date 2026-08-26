@@ -728,7 +728,7 @@ const AppSidebar: React.FC = () => {
         <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300"><LockIcon className="size-6" /></div>
         <p className="mt-5 text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Abonnement actuel · {activeSubscriptionLabel}</p>
         <h2 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">{lockedItem?.name} n’est pas inclus</h2>
-        <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">Cette fonctionnalité nécessite l'abonnement {lockedItem?.layers?.join(" + ")}. Aucun accès ni aucune donnée ne sont ouverts tant que cet abonnement n’est pas active.</p>
+        <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">Cette fonctionnalité nécessite l'abonnement {lockedItem?.layers?.join(" + ")}. Aucun accès ni aucune donnée ne sera ouvert tant que cet abonnement n’est pas activée.</p>
         <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button type="button" onClick={() => setLockedItem(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Annuler</button>
           <a href={`mailto:chrinovicnyembo009@gmail.com.local?subject=${encodeURIComponent(`Demande d’activation — ${lockedItem?.name || "Aulia Care"}`)}`} className="rounded-xl bg-aulia-teal px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-aulia-teal/90">Contacter le développeur</a>

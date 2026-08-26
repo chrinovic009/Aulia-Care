@@ -102,6 +102,10 @@ export class ConsultationsService {
         data: { ...createConsultationDto, providerId: actorId } as any,
       });
       await tx.appointment.update({ where: { id: createConsultationDto.appointmentId }, data: { status: 'CHECKED_IN' } });
+      await (tx as any).patientVisit.updateMany({
+        where: { appointmentId: createConsultationDto.appointmentId, status: { in: ['REGISTERED', 'ORIENTED'] } },
+        data: { status: 'IN_CONSULTATION', orientedAt: new Date() },
+      });
       await tx.patient.update({ where: { id: createConsultationDto.patientId }, data: { workflowStatus: PatientWorkflowStatus.EN_CONSULTATION } });
       return created;
     });
@@ -123,8 +127,18 @@ export class ConsultationsService {
     const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { primaryRole: true } });
     if (actor?.primaryRole !== 'PHYSICIAN') throw new ForbiddenException('Seul un médecin peut ouvrir une consultation.');
 
+    const actorClinic = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } });
     const patient = await this.prisma.patient.findFirst({
-      where: { id: dto.patientId, deletedAt: null, consultations: { some: { providerId: actorId } } },
+      where: {
+        id: dto.patientId,
+        deletedAt: null,
+        ...(actorClinic?.clinicId ? { clinicId: actorClinic.clinicId } : {}),
+        OR: [
+          { consultations: { some: { providerId: actorId, deletedAt: null } } },
+          { hospitalizations: { some: { physicianId: actorId, deletedAt: null } } },
+          { workflowStatus: PatientWorkflowStatus.EN_ATTENTE_MEDECIN },
+        ],
+      },
       select: { id: true },
     });
     if (!patient) throw new ForbiddenException('Ce patient n’est pas visible par ce médecin.');
@@ -162,6 +176,29 @@ export class ConsultationsService {
           chiefComplaint: dto.chiefComplaint?.trim() || null,
         },
       });
+      const receptionVisit = await (tx as any).patientVisit.findFirst({
+        where: { patientId: dto.patientId, appointmentId: null, status: 'ORIENTED' },
+        orderBy: { arrivedAt: 'desc' },
+        select: { id: true },
+      });
+      if (receptionVisit) {
+        await (tx as any).patientVisit.update({
+          where: { id: receptionVisit.id },
+          data: { appointmentId: appointment.id, status: 'IN_CONSULTATION', orientedAt: new Date() },
+        });
+      } else {
+        await (tx as any).patientVisit.create({
+          data: {
+            patientId: dto.patientId,
+            clinicId: (await tx.patient.findUnique({ where: { id: dto.patientId }, select: { clinicId: true } }))?.clinicId || null,
+            appointmentId: appointment.id,
+            visitType: 'CONSULTATION_NON_PROGRAMMEE',
+            reason: dto.chiefComplaint?.trim() || 'Consultation clinique ouverte par le médecin',
+            status: 'IN_CONSULTATION',
+            orientedAt: new Date(),
+          },
+        });
+      }
       await tx.patient.update({ where: { id: dto.patientId }, data: { workflowStatus: PatientWorkflowStatus.EN_CONSULTATION } });
       return created;
     });
@@ -449,6 +486,10 @@ export class ConsultationsService {
 
     if (normalizedStatus === ConsultationStatus.FINALIZED) {
       await this.prisma.appointment.update({ where: { id: updated.appointmentId }, data: { status: 'COMPLETED' } });
+      await (this.prisma as any).patientVisit.updateMany({
+        where: { appointmentId: updated.appointmentId, status: 'IN_CONSULTATION' },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
     }
 
     // A draft is visible through its consultation only. It is not duplicated in
@@ -687,6 +728,7 @@ export class ConsultationsService {
 
     const cashiers = await this.prisma.user.findMany({
       where: {
+        ...(consultation.clinicId || consultation.patient?.clinicId ? { clinicId: consultation.clinicId || consultation.patient?.clinicId } : {}),
         OR: [
           { primaryRole: 'CASHIER' as any },
           { roles: { some: { role: { slug: 'CASHIER' as any } } } },
@@ -893,6 +935,7 @@ export class ConsultationsService {
 
     const cashiers = await this.prisma.user.findMany({
       where: {
+        ...(consultation.clinicId || consultation.patient?.clinicId ? { clinicId: consultation.clinicId || consultation.patient?.clinicId } : {}),
         OR: [
           { primaryRole: 'CASHIER' as any },
           { roles: { some: { role: { slug: 'CASHIER' as any } } } },
@@ -1173,6 +1216,10 @@ export class ConsultationsService {
       });
       await tx.consultationNote.create({
         data: { consultationId: id, authorId: actorId || null, noteType: 'ARCHIVED_BY_ADMIN', content: 'Consultation annulée et archivée administrativement ; aucune donnée clinique n’a été effacée.' },
+      });
+      await (tx as any).patientVisit.updateMany({
+        where: { appointmentId: consultation.appointmentId, status: { in: ['REGISTERED', 'ORIENTED', 'IN_CONSULTATION'] } },
+        data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: 'Consultation annulée et archivée.' },
       });
     });
     return { archived: true };

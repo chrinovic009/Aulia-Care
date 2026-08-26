@@ -12,6 +12,7 @@ import { registerSW } from "virtual:pwa-register";
 import { installCsrfFetchInterceptor } from "./config/csrfFetch.ts";
 import { ActionFeedbackProvider } from "./components/common/ActionFeedbackProvider.tsx";
 import { PlatformLayersProvider } from "./context/PlatformLayersContext.tsx";
+import SessionLock from "./components/auth/SessionLock.tsx";
 
 installCsrfFetchInterceptor();
 
@@ -28,6 +29,7 @@ createRoot(document.getElementById("root")!).render(
             <ActionFeedbackProvider>
               <AppWrapper>
                 <App />
+                <SessionLock />
               </AppWrapper>
             </ActionFeedbackProvider>
           </RealtimeProvider>
