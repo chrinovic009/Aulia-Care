@@ -3,6 +3,7 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
+  UnauthorizedException,
   Patch,
   Post,
   Get,
@@ -22,6 +23,8 @@ import { Public } from './public.decorator';
 import { CurrentUser } from './current-user.decorator';
 import { CurrentUserResponseDto } from './dto/current-user-response.dto';
 import { UpdateUserDto } from '../users/dto/update-user.dto';
+import { ChangePinDto } from './dto/change-pin.dto';
+import { VerifyPinDto } from './dto/verify-pin.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -108,10 +111,7 @@ export class AuthController {
     );
 
     if (!user) {
-      return {
-        statusCode: HttpStatus.UNAUTHORIZED,
-        message: 'Identifiants invalides',
-      };
+      throw new UnauthorizedException('Identifiants invalides');
     }
 
     const session = await this.authService.login({
@@ -148,7 +148,15 @@ export class AuthController {
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   async logout(@CurrentUser() user: any, @Res({ passthrough: true }) response: Response) {
-    await this.authService.logout(user?.userId);
+    await this.authService.logoutCurrentSession(user?.userId, user?.sessionId);
+    this.clearSessionCookies(response);
+  }
+
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('logout-all')
+  @UseGuards(JwtAuthGuard)
+  async logoutAll(@CurrentUser() user: any, @Res({ passthrough: true }) response: Response) {
+    await this.authService.logoutAllSessions(user?.userId);
     this.clearSessionCookies(response);
   }
 
@@ -179,13 +187,13 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('change-pin')
-  async changePin(@CurrentUser() user: any, @Body() body: { currentPin?: string; nextPin?: string }) {
-    return this.authService.changePin(user.userId, String(body?.currentPin || ''), String(body?.nextPin || ''));
+  async changePin(@CurrentUser() user: any, @Body() body: ChangePinDto) {
+    return this.authService.changePin(user.userId, body.currentPin, body.nextPin);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('verify-pin')
-  async verifyPin(@CurrentUser() user: any, @Body() body: { pin?: string }) {
-    return this.authService.verifyPin(user.userId, String(body?.pin || ''));
+  async verifyPin(@CurrentUser() user: any, @Body() body: VerifyPinDto) {
+    return this.authService.verifyPin(user.userId, body.pin);
   }
 }

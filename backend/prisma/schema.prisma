@@ -61,6 +61,11 @@ model User {
   firstName                        String
   lastName                         String
   passwordHash                     String
+  /// PIN de réauthentification de session. Il ne remplace jamais le mot de passe.
+  pinHash                          String?
+  pinUpdatedAt                     DateTime?
+  pinFailedAttempts                Int                              @default(0)
+  pinLockedUntil                   DateTime?
   status                           UserStatus                       @default(ACTIVE)
   primaryRole                      RoleSlug?
   specialty                        String?
@@ -2964,6 +2969,8 @@ model Session {
   lastSeenAt DateTime?
   expiresAt  DateTime?
   status     SessionStatus @default(ACTIVE)
+  revokedAt  DateTime?
+  revocationReason String?
   createdAt  DateTime      @default(now())
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 

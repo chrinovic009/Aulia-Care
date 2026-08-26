@@ -149,12 +149,15 @@ export class HospitalizationsService {
   /** Nurses actually on duty now, with their live active workload.
    * The roster is based on registered Employee/Shift records; it never infers availability from a name alone.
    */
-  async getAvailableNurses(serviceUnitId?: string) {
+  async getAvailableNurses(serviceUnitId?: string, currentUser?: any) {
+    const scope = await this.clinicScope(currentUser);
+    const clinicId = scope.patient.clinicId;
     const nurses = await this.prisma.user.findMany({
       where: {
         status: 'ACTIVE',
         primaryRole: 'NURSE',
-        Employee: { some: { status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) } },
+        clinicId,
+        Employee: { some: { status: 'ACTIVE', clinicId, ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) } },
       },
       select: { id: true, displayName: true, firstName: true, lastName: true, specialty: true },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
@@ -182,18 +185,21 @@ export class HospitalizationsService {
 
   async create(createHospitalizationDto: CreateHospitalizationDto, actorId?: string) {
     if (!actorId) throw new ForbiddenException('Médecin authentifié requis.');
-    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { primaryRole: true } });
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { primaryRole: true, clinicId: true } });
     if (actor?.primaryRole !== 'PHYSICIAN') throw new ForbiddenException('Seul le médecin responsable peut hospitaliser.');
-    const sourceConsultation = await this.prisma.consultation.findUnique({ where: { id: createHospitalizationDto.consultationId } });
+    if (!actor.clinicId) throw new ForbiddenException('Le médecin doit être rattaché à un établissement.');
+    const sourceConsultation = await this.prisma.consultation.findFirst({ where: { id: createHospitalizationDto.consultationId, clinicId: actor.clinicId, deletedAt: null } });
     if (!sourceConsultation || sourceConsultation.patientId !== createHospitalizationDto.patientId || sourceConsultation.providerId !== actorId) {
       throw new BadRequestException('La consultation source doit appartenir au patient et au médecin connecté.');
     }
+    const patient = await this.prisma.patient.findFirst({ where: { id: createHospitalizationDto.patientId, clinicId: actor.clinicId, deletedAt: null }, select: { id: true } });
+    if (!patient) throw new ForbiddenException('Patient hors établissement ou introuvable.');
     const created = await this.prisma.$transaction(async (tx) => {
       const bedId = createHospitalizationDto.bedId;
       let assignedBed: any = null;
 
       if (bedId) {
-        assignedBed = await tx.bed.findUnique({ where: { id: bedId } });
+        assignedBed = await tx.bed.findFirst({ where: { id: bedId, room: { serviceUnit: { clinicId: actor.clinicId } } } });
         if (!assignedBed) {
           throw new BadRequestException('Le lit selectionne est introuvable');
         }
@@ -221,14 +227,14 @@ export class HospitalizationsService {
         await (tx as any).hospitalizationNurseAssignment.createMany({ data: requestedAssignments.map((assignment) => ({ ...assignment, hospitalizationId: hospitalization.id, assignedById: createHospitalizationDto.physicianId || null })) });
       }
 
-      if (assignedBed) {
-        await tx.bed.update({
-          where: { id: bedId },
-          data: {
-            status: 'OCCUPIED',
-            hospitalizationId: hospitalization.id,
-          },
+      if (assignedBed && bedId) {
+        const claimed = await tx.bed.updateMany({
+          where: { id: bedId, status: 'FREE', hospitalizationId: null },
+          data: { status: 'OCCUPIED', hospitalizationId: hospitalization.id },
         });
+        if (claimed.count !== 1) {
+          throw new BadRequestException('Le lit sélectionné vient d’être attribué à un autre patient.');
+        }
       }
 
       await tx.patient.update({
@@ -268,12 +274,11 @@ export class HospitalizationsService {
   }
 
   private async clinicScope(currentUser?: any) {
-    const role = String(currentUser?.primaryRole || currentUser?.role || '').toUpperCase();
-    if (role === 'SUPER_ADMIN') return {};
     const actorId = currentUser?.userId || currentUser?.id;
     if (!actorId) throw new ForbiddenException('Utilisateur authentifié requis.');
     const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } });
-    return actor?.clinicId ? { patient: { clinicId: actor.clinicId } } : {};
+    if (!actor?.clinicId) throw new ForbiddenException('Utilisateur non rattaché à un établissement.');
+    return { patient: { clinicId: actor.clinicId } };
   }
 
   async findAll(currentUser?: any, requestedLimit = 100) {
@@ -287,9 +292,11 @@ export class HospitalizationsService {
     });
   }
 
-  async getNurseHospitalizations(userId?: string) {
+  async getNurseHospitalizations(currentUser?: any) {
+    const userId = currentUser?.userId || currentUser?.id;
+    const scope = await this.clinicScope(currentUser);
     const hospitalizations = await this.prisma.hospitalization.findMany({
-      where: { status: { in: ['ADMITTED', 'TRANSFERRED'] } },
+      where: { ...scope, status: { in: ['ADMITTED', 'TRANSFERRED'] } },
       include: {
         ...this.hospitalizationInclude,
         patient: {
@@ -317,9 +324,10 @@ export class HospitalizationsService {
       }));
   }
 
-  async getNurseRounds(userId?: string) {
+  async getNurseRounds(currentUser?: any) {
+    const userId = currentUser?.userId || currentUser?.id;
     if (!userId) throw new ForbiddenException('Utilisateur authentifié requis.');
-    const hospitalizations = await this.getNurseHospitalizations(userId);
+    const hospitalizations = await this.getNurseHospitalizations(currentUser);
     const now = new Date();
     const byId = new Map(hospitalizations.map((item: any) => [item.id, item]));
     if (!byId.size) return [];
@@ -566,8 +574,10 @@ export class HospitalizationsService {
     };
   }
 
-  async getRoomInventory(_currentUser?: any) {
+  async getRoomInventory(currentUser?: any) {
+    const scope = await this.clinicScope(currentUser);
     const rooms = await this.prisma.room.findMany({
+      where: { serviceUnit: { clinicId: scope.patient.clinicId } },
       include: {
         serviceUnit: true,
         beds: {

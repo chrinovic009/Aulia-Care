@@ -474,7 +474,7 @@ export default function ExamensMedecin() {
                   <div className="rounded-2xl border border-aulia-teal/20 bg-aulia-mist/50 p-4 text-sm text-aulia-navy dark:bg-aulia-teal/10 dark:text-aulia-mist">
                     Les nouvelles demandes sont créées depuis la consultation médicale, dans l’étape <strong>Examens complémentaires</strong>. Cette page présente uniquement les demandes et leurs résultats.
                   </div>
-                  {false && <Panel title="Nouvelle demande">
+                  {selectedConsultation?.id === "__legacy_exam_panel_disabled__" && <Panel title="Nouvelle demande">
                     <Select
                       label="Consultation"
                       value={selectedConsultation.id}

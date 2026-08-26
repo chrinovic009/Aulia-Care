@@ -50,8 +50,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Compte inactif ou suspendu');
     }
 
+    // Access tokens are bound to a persisted session. This makes a targeted
+    // logout effective immediately instead of waiting for token expiration.
+    if (typeof payload.sid !== 'string') {
+      throw new UnauthorizedException('Session manquante');
+    }
+    const session = await this.prisma.session.findFirst({
+      where: { id: payload.sid, userId: user.id, status: 'ACTIVE', expiresAt: { gt: new Date() } },
+      select: { id: true },
+    });
+    if (!session) throw new UnauthorizedException('Session expirée ou révoquée');
+
     return {
       userId: user.id,
+      sessionId: session.id,
       email: payload.email,
       username: payload.username,
       role: user.primaryRole,

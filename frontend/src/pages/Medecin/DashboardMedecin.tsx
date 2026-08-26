@@ -1334,7 +1334,7 @@ export default function DashboardMedecin() {
                     </div>
                   ) : null}
 
-                  {false && <>
+                  {consultationModule.consultationMode === "__legacy_disabled__" && <>
                   <SectionBox title="Motif, triage et plainte principale">
                     <FormInput label="Motif de consultation" value={consultationModule.chiefComplaint} onChange={(value) => { setConsultationModule((current) => ({ ...current, chiefComplaint: value })); setClinicalForm((currentForm) => ({ ...currentForm, chiefComplaint: value })); }} />
                     <div className="mt-3 grid gap-3 md:grid-cols-2">

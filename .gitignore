@@ -54,6 +54,9 @@ temp/
 tmp/
 temp_*.cjs
 coverage/
+.tsc_modified_output.txt
+temp.txt
+tmp_*.py
 
 # Misc
 .secrets/
