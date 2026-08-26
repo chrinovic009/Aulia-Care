@@ -120,6 +120,7 @@ export class AdministrationService {
       departmentId: string;
       userId: string;
       principal?: boolean;
+      replaceExistingPrincipal?: boolean;
     }[],
   ) {
     const created = [];
@@ -149,6 +150,23 @@ export class AdministrationService {
       const existing = await this.prisma.departmentResponsable.findFirst({
         where: { departmentId: it.departmentId, userId: it.userId },
       });
+
+      if (it.principal) {
+        const currentPrincipal = await this.prisma.departmentResponsable.findFirst({
+          where: { departmentId: it.departmentId, principal: true, actif: true, userId: { not: it.userId } },
+          include: { user: { select: { displayName: true, firstName: true, lastName: true } } },
+        });
+        if (currentPrincipal && !it.replaceExistingPrincipal) {
+          const principalName = currentPrincipal.user?.displayName || `${currentPrincipal.user?.firstName || ''} ${currentPrincipal.user?.lastName || ''}`.trim();
+          throw new BadRequestException(`Un responsable est déjà désigné${principalName ? ` : ${principalName}` : ''}. Confirmez son remplacement pour poursuivre.`);
+        }
+        if (currentPrincipal) {
+          await this.prisma.departmentResponsable.update({
+            where: { id: currentPrincipal.id },
+            data: { principal: false, actif: true },
+          });
+        }
+      }
 
       const rec = existing
         ? await this.prisma.departmentResponsable.update({

@@ -400,7 +400,7 @@ const Admission: React.FC = () => {
       window.alert("Choisissez le service paramédical actif indiqué sur le bon avant d'enregistrer l'admission.");
       return;
     }
-    if (!isVoucherAdmission && conflictPatient) {
+    if (!isVoucherAdmission && !existingPatient && conflictPatient) {
       window.alert(`Un patient existe déjà avec le même nom, téléphone ou email. Vérifiez son dossier avant de créer une admission.`);
       return;
     }
@@ -415,6 +415,7 @@ const Admission: React.FC = () => {
       );
 
       const result = await createPatientAdmission({
+        existingPatientId: existingPatient?.id || undefined,
         firstName: safeFirstName,
         lastName: safeLastName,
         gender: form.gender || "O",
@@ -517,15 +518,13 @@ const Admission: React.FC = () => {
                   </div>
                 ) : null}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
-                  <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="S">Abonné</option>
-                    <option value="P">Particulier</option>
-                  </select>
+                  <input type="hidden" value="P" />
+                  <div className="rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 dark:border-slate-600 dark:bg-slate-800 dark:text-gray-200">Particulier</div>
                   <input placeholder="Nom complet" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   {suggestions.length > 0 && (
                     <div className="absolute bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded mt-1 max-h-48 overflow-auto z-50 w-full">
                       {suggestions.slice(0, 8).map((s) => (
-                        <div key={s.id} onClick={() => { setExistingPatient(s); setForm((f:any) => ({ ...f, name: `${s.firstName} ${s.lastName}`, phone: s.phone || f.phone, email: s.email || f.email })); setSuggestions([]); }} className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-slate-800 cursor-pointer text-sm">
+                        <div key={s.id} onClick={() => { setExistingPatient(s); setForm((f:any) => ({ ...f, name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" ") || s.name || f.name, phone: s.phone || f.phone, email: s.email || f.email, gender: s.gender || f.gender, dob: s.dateOfBirth ? String(s.dateOfBirth).slice(0, 10) : f.dob, address: s.address || f.address, profession: s.profession || f.profession, nationality: s.nationality || f.nationality })); setSuggestions([]); }} className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-slate-800 cursor-pointer text-sm">
                           <div className="font-medium text-gray-900 dark:text-white">{s.firstName} {s.lastName}</div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">{s.phone || s.email || ''}</div>
                         </div>
@@ -705,16 +704,14 @@ const Admission: React.FC = () => {
               
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Médecin:</span> {existingPatient ? existingPatient.doctor : form.doctor}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Priorité:</span> {existingPatient ? existingPatient.priority : form.priority}</div>
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Assurance:</span> {existingPatient ? (existingPatient.insurance?.company ? '✅ Validée' : '—') : (form.insurance.company ? '✅ Validée' : '—')}</div>
             </div>
 
             <div className="mt-4 space-y-2">
               <button
                 onClick={handleSaveClick}
-                disabled={!!existingPatient}
-                className={`w-full rounded px-3 py-2 font-medium text-sm transition ${existingPatient ? "bg-gray-300 text-gray-600 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"}`}
+                className="w-full rounded bg-aulia-teal px-3 py-2 font-medium text-sm text-white transition hover:bg-aulia-teal/90 focus:outline-none focus:ring-2 focus:ring-aulia-teal focus:ring-offset-2 dark:focus:ring-offset-slate-900"
               >
-                Enregistrer & Envoyer
+                {existingPatient ? "Enregistrer la réadmission" : "Enregistrer & Envoyer"}
               </button>
               <button onClick={resetForm} className="w-full rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 px-3 py-2 font-medium hover:bg-gray-50 dark:hover:bg-slate-800 transition text-sm">Annuler</button>
             </div>

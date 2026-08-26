@@ -32,7 +32,7 @@ export class MessagesService {
   }
 
   async findUnread(userId: string) {
-    return this.prisma.chatMessage.findMany({
+    const unread = await this.prisma.chatMessage.findMany({
       where: {
         recipientId: userId,
         status: { in: ['SENT', 'DELIVERED'] },
@@ -44,9 +44,15 @@ export class MessagesService {
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
+    const allowed = await Promise.all(unread.map(async (message) => ({
+      message,
+      permitted: await this.usersService.isDirectMessagingAllowed(userId, message.senderId),
+    })));
+    return allowed.filter((item) => item.permitted).map((item) => item.message);
   }
 
   async markRead(userId: string, senderId: string, messageIds?: string[]) {
+    await this.assertConversationAllowed(userId, senderId);
     return this.prisma.chatMessage.updateMany({
       where: {
         recipientId: userId,

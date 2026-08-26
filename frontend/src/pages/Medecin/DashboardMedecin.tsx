@@ -11,6 +11,7 @@ import {
   openConsultationForPatient,
 } from "../../api/doctor";
 import { useAuth } from "../../context/AuthContext";
+import { usePlatformLayers } from "../../context/PlatformLayersContext";
 import { DoctorTelehealthCall } from "../../components/telehealth/TelehealthCall";
 import { ClinicalConsultationWorkspace, createInitialStructuredConsultation, type StructuredConsultation } from "./ClinicalConsultationWorkspace";
 import { ConsultationExamOrder, ConsultationPrescriptionOrder } from "./ConsultationOrders";
@@ -304,6 +305,9 @@ export default function DashboardMedecin() {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const { isEnabled } = usePlatformLayers();
+  const aiEnabled = isEnabled("AI");
+  const [aiFeatureNotice, setAiFeatureNotice] = useState<"VOICE" | "TELEHEALTH" | null>(null);
   const isConsultationPage = location.pathname.includes("/doctor/consultations");
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<DoctorPatient | null>(null);
@@ -1273,7 +1277,7 @@ export default function DashboardMedecin() {
                       </div>
                       <button
                         type="button"
-                        onClick={toggleVoiceAssistant}
+                        onClick={() => { if (aiEnabled) toggleVoiceAssistant(); else setAiFeatureNotice("VOICE"); }}
                         className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${
                           isVoiceListening
                             ? "bg-red-600 text-white hover:bg-red-700"
@@ -1281,7 +1285,7 @@ export default function DashboardMedecin() {
                         }`}
                       >
                         {isVoiceListening ? <MicOff size={16} /> : <Mic size={16} />}
-                        {isVoiceListening ? "Desactiver" : "Activer l'assistance vocale"}
+                        {!aiEnabled ? "🔒 Assistance vocale · Aulia AI" : isVoiceListening ? "Desactiver" : "Activer l'assistance vocale"}
                       </button>
                     </div>
                     {voiceMessage && <p className="mt-3 text-xs font-medium text-blue-800 dark:text-blue-100">{voiceMessage}</p>}
@@ -1295,7 +1299,7 @@ export default function DashboardMedecin() {
 
                   <SectionBox title="Mode de consultation">
                     <div className="grid gap-3 md:grid-cols-3">
-                      <FormSelect label="Mode" value={consultationModule.consultationMode} onChange={(value) => void changeConsultationMode(value)} options={[['PRESENTIAL','Présentiel'], ['TELECONSULTATION','Télésanté'], ['HOME_VISIT','Visite à domicile'], ['EMERGENCY','Urgence']]} />
+                      <FormSelect label="Mode" value={consultationModule.consultationMode} onChange={(value) => { if (!aiEnabled && value === "TELECONSULTATION") { setAiFeatureNotice("TELEHEALTH"); return; } void changeConsultationMode(value); }} options={[['PRESENTIAL','Présentiel'], ['TELECONSULTATION', aiEnabled ? 'Télésanté' : '🔒 Télésanté'], ['HOME_VISIT','Visite à domicile'], ['EMERGENCY','Urgence']]} />
                       <FormSelect label="Mode d'arrivée" value={consultationModule.arrivalMode} onChange={(value) => setConsultationModule((current) => ({ ...current, arrivalMode: value }))} options={[['SPONTANEOUS','Spontané'], ['AMBULATORY','Ambulatoire'], ['REFERRED','Orienté'], ['EMERGENCY_TRANSFER','Transfert urgence']]} />
                       <FormSelect label="Priorité de triage" value={consultationModule.triagePriority} onChange={(value) => setConsultationModule((current) => ({ ...current, triagePriority: value }))} options={[['GREEN','Normal'], ['YELLOW','Prioritaire'], ['RED','Urgent']]} />
                     </div>
@@ -1508,6 +1512,7 @@ export default function DashboardMedecin() {
           )}
         </section>
       </div>
+      {aiFeatureNotice && <div className="fixed inset-0 z-[100000] grid place-items-center bg-slate-950/60 p-4"><section role="dialog" aria-modal="true" className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-950"><p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Aulia Care AI</p><h2 className="mt-2 text-xl font-bold text-aulia-navy dark:text-white">Fonctionnalité non incluse dans Aulia Care Core</h2><p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{aiFeatureNotice === "VOICE" ? "L’assistance vocale clinique" : "La télésanté sécurisée"} nécessite l’activation de l'abonnement Aulia Care AI.</p><button type="button" onClick={() => setAiFeatureNotice(null)} className="mt-6 rounded-xl bg-aulia-teal px-4 py-2 font-semibold text-white">Retour</button></section></div>}
     </div>
   );
 }

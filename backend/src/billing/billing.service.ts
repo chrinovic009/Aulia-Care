@@ -486,8 +486,15 @@ export class BillingService {
 
   async findInvoices(userId?: string) {
     const clinicId = await this.financeClinicId(userId);
+    // Legacy rows without clinicId are readable only in a confirmed
+    // single-clinic installation.  This preserves isolation as soon as more
+    // than one establishment exists.
+    const clinicCount = await (this.prisma as any).clinic.count();
+    const invoiceScope = clinicCount === 1
+      ? { OR: [{ clinicId }, { clinicId: null }] }
+      : { clinicId };
     const invoices = await this.prisma.invoice.findMany({
-      where: { clinicId, deletedAt: null },
+      where: { ...invoiceScope, deletedAt: null },
       include: {
         patient: {
           select: {

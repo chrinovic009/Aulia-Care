@@ -12,8 +12,8 @@ export class PaymentsController {
 
   @Get()
   @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
-  findAll() {
-    return this.paymentsService.findAll();
+  findAll(@Request() req: any) {
+    return this.paymentsService.findAll(req.user?.userId);
   }
 
   @Post()

@@ -144,10 +144,11 @@ export class AuthController {
     return { ok: true };
   }
 
-  @Public()
   @HttpCode(HttpStatus.NO_CONTENT)
   @Post('logout')
-  logout(@Res({ passthrough: true }) response: Response) {
+  @UseGuards(JwtAuthGuard)
+  async logout(@CurrentUser() user: any, @Res({ passthrough: true }) response: Response) {
+    await this.authService.logout(user?.userId);
     this.clearSessionCookies(response);
   }
 
@@ -174,5 +175,17 @@ export class AuthController {
   @Patch('profile')
   async updateProfile(@CurrentUser() user: any, @Body() payload: UpdateUserDto): Promise<CurrentUserResponseDto> {
     return this.authService.updateProfile(user.userId, payload) as Promise<CurrentUserResponseDto>;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('change-pin')
+  async changePin(@CurrentUser() user: any, @Body() body: { currentPin?: string; nextPin?: string }) {
+    return this.authService.changePin(user.userId, String(body?.currentPin || ''), String(body?.nextPin || ''));
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('verify-pin')
+  async verifyPin(@CurrentUser() user: any, @Body() body: { pin?: string }) {
+    return this.authService.verifyPin(user.userId, String(body?.pin || ''));
   }
 }

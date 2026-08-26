@@ -175,7 +175,11 @@ export const apiFetch = async <T = any>(
     // renew once through the HttpOnly refresh cookie, then replay the exact
     // request with the freshly-issued CSRF value. Auth endpoints never retry
     // themselves, preventing a refresh loop.
-    if (response.status === 401 && !endpoint.startsWith("/auth/")) {
+    // Only the endpoints that establish or destroy a session must never be
+    // replayed. Protected auth actions (PIN change/verification, profile)
+    // still need the normal one-time refresh after an idle access token.
+    const canRefresh = !["/auth/login", "/auth/refresh", "/auth/logout", "/auth/csrf"].includes(endpoint);
+    if (response.status === 401 && canRefresh) {
       const refresh = await fetch(buildUrl("/auth/refresh"), {
         method: "POST",
         credentials: "include",

@@ -81,6 +81,10 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
   const [onlineUsers, setOnlineUsers] = useState<Record<string, boolean>>({});
   const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({});
   const typingTimerRef = useRef<number | null>(null);
+  // A message must be acknowledged once only.  The conversation is refreshed
+  // several times (socket + HTTP), therefore state alone cannot protect the
+  // endpoint from duplicate PATCH requests.
+  const readAcknowledgedIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const loadContacts = async () => {
@@ -109,6 +113,10 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
       const incoming = (event as CustomEvent<RealtimeMessage>).detail;
       if (!incoming || incoming.senderId === currentUser?.id) return;
 
+      // Never create a contact from a socket payload. The server-delivered
+      // contact directory remains the UI authority for private conversations.
+      if (!contacts.some((contact) => contact.id === incoming.senderId)) return;
+
       setMessages((current) => {
         if (current.some((item) => item.id === incoming.id)) return current;
         return [
@@ -127,13 +135,8 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
       });
 
       setContacts((current) => {
-        const known = current.find((contact) => contact.id === incoming.senderId);
-        const contact: MessageContact = known || {
-          id: incoming.senderId,
-          type: "USER",
-          name: incoming.senderName || "Nouveau contact",
-          role: "CONTACT",
-        };
+        const contact = current.find((item) => item.id === incoming.senderId);
+        if (!contact) return current;
         return orderContactsByActivity([
           {
             ...contact,
@@ -156,21 +159,27 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
 
     window.addEventListener("aulia:message.received", handleIncoming);
     return () => window.removeEventListener("aulia:message.received", handleIncoming);
-  }, [currentUser?.id, selectedContact?.id, socket]);
+  }, [contacts, currentUser?.id, selectedContact?.id, socket]);
 
   useEffect(() => {
     if (!selectedContact || !currentUser?.id) return;
     window.dispatchEvent(new CustomEvent("aulia:messages.read", { detail: { contactId: selectedContact.id } }));
     const unreadIds = messages
       .filter((chatMessage) => chatMessage.contactId === selectedContact.id && chatMessage.from === "contact")
-      .map((chatMessage) => chatMessage.id);
+      .map((chatMessage) => chatMessage.id)
+      .filter((messageId) => !readAcknowledgedIdsRef.current.has(messageId));
     if (unreadIds.length > 0) {
+      unreadIds.forEach((messageId) => readAcknowledgedIdsRef.current.add(messageId));
       socket?.emit("message.read", {
         readerId: currentUser.id,
         senderId: selectedContact.id,
         messageIds: unreadIds,
       });
-      markMessagesRead(selectedContact.id, unreadIds).catch(() => undefined);
+      markMessagesRead(selectedContact.id, unreadIds).catch(() => {
+        // Permit a later retry only if the request itself failed.  The UI keeps
+        // the conversation readable and never hammers the API in a render loop.
+        unreadIds.forEach((messageId) => readAcknowledgedIdsRef.current.delete(messageId));
+      });
     }
     setContacts((current) => current.map((contact) => contact.id === selectedContact.id ? { ...contact, unreadCount: 0 } : contact));
   }, [currentUser?.id, messages, selectedContact, socket]);
@@ -188,7 +197,9 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
           ...mapped,
         ]);
       })
-      .catch(() => undefined);
+      .catch((reason) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : "Impossible de charger cette conversation autorisée.");
+      });
 
     return () => {
       cancelled = true;
@@ -262,6 +273,10 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
 
   const sendMessage = () => {
     if (!selectedContact || !message.trim() || !currentUser) return;
+    if (!socket) {
+      setError("La connexion sécurisée de messagerie est indisponible. Le message n’a pas été envoyé.");
+      return;
+    }
     const text = message.trim();
     const sentAt = new Date().toISOString();
     const optimisticId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -281,7 +296,7 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
       ? { ...contact, lastMessageAt: sentAt, lastMessagePreview: text, unreadCount: 0 }
       : contact,
     )));
-    socket?.emit(
+    socket.emit(
       "message.send",
       {
         id: optimisticId,
@@ -293,8 +308,12 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
         text,
         sentAt,
       },
-      (response: { status?: ChatMessage["status"] } | undefined) => {
-        if (!response?.status) return;
+      (response: { status?: ChatMessage["status"]; error?: string } | undefined) => {
+        if (!response?.status) {
+          setMessages((current) => current.filter((chatMessage) => chatMessage.id !== optimisticId));
+          setError(response?.error || "Le message n’a pas été accepté par le serveur.");
+          return;
+        }
         setMessages((current) =>
           current.map((chatMessage) =>
             chatMessage.id === optimisticId ? { ...chatMessage, status: response.status } : chatMessage,

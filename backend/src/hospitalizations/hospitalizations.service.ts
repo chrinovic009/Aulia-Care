@@ -38,7 +38,7 @@ export class HospitalizationsService {
         employee: {
           userId,
           status: 'ACTIVE',
-          ...(serviceUnitId ? { serviceUnitId } : {}),
+          ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}),
         },
       },
       include: { employee: { include: { user: true, serviceUnit: true } } },
@@ -48,7 +48,7 @@ export class HospitalizationsService {
 
     // A rotation is used only when no explicit Shift overrides it.
     const employee = await this.prisma.employee.findFirst({
-      where: { userId, status: 'ACTIVE', ...(serviceUnitId ? { serviceUnitId } : {}) },
+      where: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) },
       include: { user: true, serviceUnit: true },
     });
     if (!employee || employee.shiftPattern === 'MANUAL') return null;
@@ -90,6 +90,36 @@ export class HospitalizationsService {
     return null;
   }
 
+  /** Returns the planned day or night coverage for today, including a night
+   * guard that begins later today. Hospitalisation assignment must not hide a
+   * valid night nurse merely because it is currently 10:00. */
+  private async scheduledShiftForCoverage(userId: string, coverage: 'DAY' | 'NIGHT', serviceUnitId?: string | null) {
+    const now = new Date();
+    const day = new Date(now); day.setHours(0, 0, 0, 0);
+    const start = new Date(day);
+    start.setHours(coverage === 'DAY' ? 7 : 17, coverage === 'DAY' ? 30 : 30, 0, 0);
+    const end = new Date(day);
+    if (coverage === 'DAY') end.setHours(17, 30, 0, 0);
+    else { end.setDate(end.getDate() + 1); end.setHours(7, 30, 0, 0); }
+    const explicit = await this.prisma.shift.findFirst({
+      where: { employee: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) }, startAt: { lte: start }, endAt: { gte: end } },
+      include: { employee: { include: { user: true, serviceUnit: true } } },
+      orderBy: { startAt: 'desc' },
+    });
+    if (explicit) return explicit;
+    const employee = await this.prisma.employee.findFirst({ where: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) }, include: { user: true, serviceUnit: true } });
+    if (!employee || employee.shiftPattern === 'MANUAL') return null;
+    if (employee.shiftPattern === 'PERMANENT_DAY') return coverage === 'DAY' ? { startAt: start, end, employee } : null;
+    if (!employee.rotationAnchorAt) return null;
+    const anchor = new Date(employee.rotationAnchorAt); anchor.setHours(0, 0, 0, 0);
+    const dayIndex = Math.floor((day.getTime() - anchor.getTime()) / 86_400_000);
+    if (dayIndex < 0) return null;
+    const days = Math.min(31, Math.max(1, employee.rotationDays || 3));
+    const phase = dayIndex % (days * 3);
+    const matches = coverage === 'DAY' ? phase < days : phase >= days && phase < days * 2;
+    return matches ? { startAt: start, endAt: end, employee } : null;
+  }
+
   private async buildNurseAccess(hospitalization: any, userId?: string | null) {
     if (!userId) {
       return { mode: 'READ_ONLY', canWrite: false, reason: 'Utilisateur non identifie' };
@@ -124,29 +154,28 @@ export class HospitalizationsService {
       where: {
         status: 'ACTIVE',
         primaryRole: 'NURSE',
-        Employee: { some: { status: 'ACTIVE', ...(serviceUnitId ? { serviceUnitId } : {}) } },
+        Employee: { some: { status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) } },
       },
       select: { id: true, displayName: true, firstName: true, lastName: true, specialty: true },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
 
-    const available = await Promise.all(nurses.map(async (nurse) => {
-      const shift = await this.activeShiftForUser(nurse.id, serviceUnitId);
+    const available = await Promise.all(nurses.flatMap((nurse) => (['DAY', 'NIGHT'] as const).map(async (coverage) => {
+      const shift = await this.scheduledShiftForCoverage(nurse.id, coverage, serviceUnitId);
       if (!shift) return null;
       const activePatients = await (this.prisma as any).hospitalizationNurseAssignment.count({
         where: { nurseId: nurse.id, releasedAt: null, hospitalization: { status: { in: ['ADMITTED', 'TRANSFERRED'] } } },
       });
-      const hour = shift.startAt.getHours();
       return {
         ...nurse,
-        coverage: hour >= 17 || hour < 7 ? 'NIGHT' : 'DAY',
+        coverage,
         shiftStartAt: shift.startAt,
         shiftEndAt: shift.endAt,
         activePatients,
         remainingCapacity: Math.max(0, 5 - activePatients),
         available: activePatients < 5,
       };
-    }));
+    })));
 
     return available.filter(Boolean);
   }
@@ -181,10 +210,8 @@ export class HospitalizationsService {
       for (const assignment of requestedAssignments) {
         const nurse = await tx.user.findFirst({ where: { id: assignment.nurseId, status: 'ACTIVE', primaryRole: 'NURSE' } });
         if (!nurse) throw new BadRequestException(`Infirmier ${assignment.coverage === 'DAY' ? 'de jour' : 'de nuit'} indisponible.`);
-        const activeShift = await this.activeShiftForUser(assignment.nurseId, hospitalizationData.serviceUnitId);
-        if (!activeShift) throw new BadRequestException(`L'infirmier ${assignment.coverage === 'DAY' ? 'de jour' : 'de nuit'} n'est pas en shift actif.`);
-        const actualCoverage = activeShift.startAt.getHours() >= 17 || activeShift.startAt.getHours() < 7 ? 'NIGHT' : 'DAY';
-        if (actualCoverage !== assignment.coverage) throw new BadRequestException(`Cet infirmier n'est pas disponible pour la couverture ${assignment.coverage === 'DAY' ? 'de jour' : 'de nuit'}.`);
+        const scheduledShift = await this.scheduledShiftForCoverage(assignment.nurseId, assignment.coverage, hospitalizationData.serviceUnitId);
+        if (!scheduledShift) throw new BadRequestException(`Cet infirmier n'est pas planifié pour la couverture ${assignment.coverage === 'DAY' ? 'de jour' : 'de nuit'} aujourd'hui.`);
         const activeLoad = await (tx as any).hospitalizationNurseAssignment.count({ where: { nurseId: assignment.nurseId, releasedAt: null, hospitalization: { status: { in: ['ADMITTED', 'TRANSFERRED'] } } } });
         if (activeLoad >= 5) throw new BadRequestException('Cet infirmier a déjà atteint la limite de 5 patients hospitalisés.');
       }
