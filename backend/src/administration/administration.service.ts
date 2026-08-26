@@ -1,6 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateClinicBrandingDto } from './dto/update-clinic-branding.dto';
+import { UpdateClinicOperationalPolicyDto } from './dto/update-clinic-operational-policy.dto';
+import { isValidClockTime, isValidIanaTimezone, SYSTEM_MAX_NURSE_PATIENT_CAPACITY } from '../core/operational-policy';
 
 @Injectable()
 export class AdministrationService {
@@ -9,6 +12,107 @@ export class AdministrationService {
   private readonly departmentTypes = new Set([
     'RECEPTION', 'NURSING', 'MEDICAL', 'LABORATORY', 'RADIOLOGY', 'SURGERY', 'PHARMACY', 'BILLING', 'ADMINISTRATION',
   ]);
+
+  private async requireClinicAdministrator(userId?: string) {
+    if (!userId) throw new ForbiddenException('Administrateur authentifié requis.');
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, clinicId: true, primaryRole: true, deletedAt: true, status: true },
+    });
+    if (!user || user.deletedAt || user.status !== 'ACTIVE' || user.primaryRole !== 'ADMIN' || !user.clinicId) {
+      throw new ForbiddenException('Seul un administrateur rattaché à cet établissement peut modifier cette configuration.');
+    }
+    return user;
+  }
+
+  async getClinicOperationalPolicy(userId?: string) {
+    const admin = await this.requireClinicAdministrator(userId);
+    return this.prisma.clinic.findUniqueOrThrow({
+      where: { id: admin.clinicId },
+      select: {
+        id: true,
+        timezone: true,
+        dayShiftStart: true,
+        dayShiftEnd: true,
+        nightShiftStart: true,
+        nightShiftEnd: true,
+        defaultNursePatientCapacity: true,
+        autoNurseRelayEnabled: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  async updateClinicOperationalPolicy(userId: string | undefined, dto: UpdateClinicOperationalPolicyDto) {
+    const admin = await this.requireClinicAdministrator(userId);
+    const before = await this.prisma.clinic.findUniqueOrThrow({
+      where: { id: admin.clinicId },
+      select: {
+        timezone: true,
+        dayShiftStart: true,
+        dayShiftEnd: true,
+        nightShiftStart: true,
+        nightShiftEnd: true,
+        defaultNursePatientCapacity: true,
+        autoNurseRelayEnabled: true,
+      },
+    });
+    if (dto.timezone !== undefined && !isValidIanaTimezone(dto.timezone)) {
+      throw new BadRequestException('La timezone doit être un identifiant IANA valide, par exemple Africa/Lubumbashi.');
+    }
+    for (const [field, value] of Object.entries({
+      dayShiftStart: dto.dayShiftStart,
+      dayShiftEnd: dto.dayShiftEnd,
+      nightShiftStart: dto.nightShiftStart,
+      nightShiftEnd: dto.nightShiftEnd,
+    })) {
+      if (value !== undefined && !isValidClockTime(value)) {
+        throw new BadRequestException(`${field} doit respecter le format HH:mm.`);
+      }
+    }
+    if (dto.defaultNursePatientCapacity !== undefined && (
+      !Number.isInteger(dto.defaultNursePatientCapacity)
+      || dto.defaultNursePatientCapacity < 1
+      || dto.defaultNursePatientCapacity > SYSTEM_MAX_NURSE_PATIENT_CAPACITY
+    )) {
+      throw new BadRequestException(`La capacité doit être un entier entre 1 et ${SYSTEM_MAX_NURSE_PATIENT_CAPACITY}.`);
+    }
+
+    const data: Prisma.ClinicUpdateInput = {
+      ...(dto.timezone !== undefined ? { timezone: dto.timezone } : {}),
+      ...(dto.dayShiftStart !== undefined ? { dayShiftStart: dto.dayShiftStart } : {}),
+      ...(dto.dayShiftEnd !== undefined ? { dayShiftEnd: dto.dayShiftEnd } : {}),
+      ...(dto.nightShiftStart !== undefined ? { nightShiftStart: dto.nightShiftStart } : {}),
+      ...(dto.nightShiftEnd !== undefined ? { nightShiftEnd: dto.nightShiftEnd } : {}),
+      ...(dto.defaultNursePatientCapacity !== undefined ? { defaultNursePatientCapacity: dto.defaultNursePatientCapacity } : {}),
+      ...(dto.autoNurseRelayEnabled !== undefined ? { autoNurseRelayEnabled: dto.autoNurseRelayEnabled } : {}),
+    };
+    const auditAfter = {
+      ...(dto.timezone !== undefined ? { timezone: dto.timezone } : {}),
+      ...(dto.dayShiftStart !== undefined ? { dayShiftStart: dto.dayShiftStart } : {}),
+      ...(dto.dayShiftEnd !== undefined ? { dayShiftEnd: dto.dayShiftEnd } : {}),
+      ...(dto.nightShiftStart !== undefined ? { nightShiftStart: dto.nightShiftStart } : {}),
+      ...(dto.nightShiftEnd !== undefined ? { nightShiftEnd: dto.nightShiftEnd } : {}),
+      ...(dto.defaultNursePatientCapacity !== undefined ? { defaultNursePatientCapacity: dto.defaultNursePatientCapacity } : {}),
+      ...(dto.autoNurseRelayEnabled !== undefined ? { autoNurseRelayEnabled: dto.autoNurseRelayEnabled } : {}),
+      reason: dto.reason?.trim() || null,
+    };
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const clinic = await tx.clinic.update({ where: { id: admin.clinicId }, data });
+      await tx.auditTrail.create({
+        data: {
+          actorId: admin.id,
+          entity: 'CLINIC_OPERATIONAL_POLICY',
+          entityId: admin.clinicId,
+          action: 'UPDATE',
+          before,
+          after: auditAfter,
+        },
+      });
+      return clinic;
+    });
+    return updated;
+  }
 
   private validateDepartmentInput(data: any) {
     const name = String(data?.name || '').trim();

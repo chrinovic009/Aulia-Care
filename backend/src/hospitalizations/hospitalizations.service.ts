@@ -7,37 +7,17 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateNursingCareTaskDto } from './dto/create-nursing-care-task.dto';
 import { UpdateNursingCareTaskDto } from './dto/update-nursing-care-task.dto';
 import { RecordMedicationAdministrationDto } from './dto/record-medication-administration.dto';
-import { parseClockTime, resolveNursePatientCapacity } from '../core/operational-policy';
-import { clinicDate, clinicDateFromSerial, clinicDaySerial, clinicMinuteOfDay, clinicWallClockToUtc } from '../core/clinic-time';
+import { AuthenticatedActor, ClinicContextService } from '../core/clinic-context.service';
+import { NurseSchedulingService } from './nurse-scheduling.service';
 
 @Injectable()
 export class HospitalizationsService {
-  constructor(private readonly prisma: PrismaService, private readonly notifications: NotificationsService) {}
-
-  /** The unit override wins; invalid legacy values fall back to a safe default. */
-  private async nurseCapacity(clinicId: string, serviceUnitId?: string | null): Promise<number> {
-    const [clinic, unit] = await Promise.all([
-      this.prisma.clinic.findUnique({ where: { id: clinicId }, select: { defaultNursePatientCapacity: true } }),
-      serviceUnitId
-        ? this.prisma.serviceUnit.findFirst({ where: { id: serviceUnitId, clinicId, deletedAt: null }, select: { nursePatientCapacity: true } })
-        : Promise.resolve(null),
-    ]);
-    return resolveNursePatientCapacity(unit?.nursePatientCapacity, clinic?.defaultNursePatientCapacity);
-  }
-
-  private async shiftClockForUser(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { clinic: { select: { timezone: true, dayShiftStart: true, dayShiftEnd: true, nightShiftStart: true, nightShiftEnd: true } } },
-    });
-    return {
-      timezone: user?.clinic?.timezone || 'Africa/Lubumbashi',
-      dayStart: parseClockTime(user?.clinic?.dayShiftStart, '07:30'),
-      dayEnd: parseClockTime(user?.clinic?.dayShiftEnd, '17:30'),
-      nightStart: parseClockTime(user?.clinic?.nightShiftStart, '17:30'),
-      nightEnd: parseClockTime(user?.clinic?.nightShiftEnd, '07:30'),
-    };
-  }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+    private readonly clinicContext: ClinicContextService,
+    private readonly nurseScheduling: NurseSchedulingService,
+  ) {}
 
   private hospitalizationInclude = {
     patient: true,
@@ -55,118 +35,6 @@ export class HospitalizationsService {
     },
   } as const;
 
-  private async activeShiftForUser(userId?: string | null, serviceUnitId?: string | null) {
-    if (!userId) return null;
-    const now = new Date();
-    const clock = await this.shiftClockForUser(userId);
-    const registeredShift = await this.prisma.shift.findFirst({
-      where: {
-        startAt: { lte: now },
-        endAt: { gte: now },
-        employee: {
-          userId,
-          status: 'ACTIVE',
-          ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}),
-        },
-      },
-      include: { employee: { include: { user: true, serviceUnit: true } } },
-      orderBy: { startAt: 'desc' },
-    });
-    if (registeredShift) return registeredShift;
-
-    // A rotation is used only when no explicit Shift overrides it.
-    const employee = await this.prisma.employee.findFirst({
-      where: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) },
-      include: { user: true, serviceUnit: true },
-    });
-    if (!employee || employee.shiftPattern === 'MANUAL') return null;
-
-    const today = clinicDate(now, clock.timezone);
-    const todaySerial = clinicDaySerial(today);
-    const minuteOfDay = clinicMinuteOfDay(now, clock.timezone);
-    const isPermanentDay = employee.shiftPattern === 'PERMANENT_DAY';
-    if (!isPermanentDay && !employee.rotationAnchorAt) return null;
-    const anchor = clinicDate(employee.rotationAnchorAt || now, clock.timezone);
-    const dayIndex = todaySerial - clinicDaySerial(anchor);
-    // The configured anchor is day 1. A rota must never grant access before it.
-    if (!isPermanentDay && dayIndex < 0) return null;
-    const rotationDays = Math.min(31, Math.max(1, employee.rotationDays || 3));
-    const cycleDays = rotationDays * 3;
-    const phase = ((dayIndex % cycleDays) + cycleDays) % cycleDays;
-    const previousPhase = (((dayIndex - 1) % cycleDays) + cycleDays) % cycleDays;
-    const [permanentEndHour, permanentEndMinute] = String(employee.permanentShiftEndTime || `${clock.dayEnd.hour.toString().padStart(2, '0')}:${clock.dayEnd.minute.toString().padStart(2, '0')}`)
-      .split(':')
-      .map((value) => Number(value));
-    const permanentEndMinutes = Number.isInteger(permanentEndHour) && Number.isInteger(permanentEndMinute)
-      ? permanentEndHour * 60 + permanentEndMinute
-      : clock.dayEnd.hour * 60 + clock.dayEnd.minute;
-
-    const dayStartMinutes = clock.dayStart.hour * 60 + clock.dayStart.minute;
-    const nightStartMinutes = clock.nightStart.hour * 60 + clock.nightStart.minute;
-    const nightEndMinutes = clock.nightEnd.hour * 60 + clock.nightEnd.minute;
-    if ((isPermanentDay || phase < rotationDays) && minuteOfDay >= dayStartMinutes && minuteOfDay < permanentEndMinutes) {
-      return {
-        startAt: clinicWallClockToUtc(today, clock.dayStart.hour, clock.dayStart.minute, clock.timezone),
-        endAt: clinicWallClockToUtc(today, Math.floor(permanentEndMinutes / 60), permanentEndMinutes % 60, clock.timezone),
-        employee,
-      };
-    }
-    const isNightDay = !isPermanentDay && phase >= rotationDays && phase < rotationDays * 2;
-    const continuesPreviousNight = !isPermanentDay && previousPhase >= rotationDays && previousPhase < rotationDays * 2;
-    if ((isNightDay && minuteOfDay >= nightStartMinutes) || (continuesPreviousNight && minuteOfDay < nightEndMinutes)) {
-      const startDate = clinicDateFromSerial(todaySerial + (minuteOfDay < nightEndMinutes ? -1 : 0));
-      const endDate = clinicDateFromSerial(todaySerial + (minuteOfDay < nightEndMinutes ? 0 : 1));
-      return {
-        startAt: clinicWallClockToUtc(startDate, clock.nightStart.hour, clock.nightStart.minute, clock.timezone),
-        endAt: clinicWallClockToUtc(endDate, clock.nightEnd.hour, clock.nightEnd.minute, clock.timezone),
-        employee,
-      };
-    }
-    return null;
-  }
-
-  /** Returns the planned day or night coverage for today, including a night
-   * guard that begins later today. Hospitalisation assignment must not hide a
-   * valid night nurse merely because it is currently 10:00. */
-  private async scheduledShiftForCoverage(userId: string, coverage: 'DAY' | 'NIGHT', serviceUnitId?: string | null) {
-    const now = new Date();
-    const clock = await this.shiftClockForUser(userId);
-    const day = clinicDate(now, clock.timezone);
-    const daySerial = clinicDaySerial(day);
-    const startClock = coverage === 'DAY' ? clock.dayStart : clock.nightStart;
-    const endClock = coverage === 'DAY' ? clock.dayEnd : clock.nightEnd;
-    const start = clinicWallClockToUtc(day, startClock.hour, startClock.minute, clock.timezone);
-    const end = clinicWallClockToUtc(coverage === 'DAY' ? day : clinicDateFromSerial(daySerial + 1), endClock.hour, endClock.minute, clock.timezone);
-    const explicit = await this.prisma.shift.findFirst({
-      where: { employee: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) }, startAt: { lte: start }, endAt: { gte: end } },
-      include: { employee: { include: { user: true, serviceUnit: true } } },
-      orderBy: { startAt: 'desc' },
-    });
-    if (explicit) return explicit;
-    const employee = await this.prisma.employee.findFirst({ where: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) }, include: { user: true, serviceUnit: true } });
-    if (!employee || employee.shiftPattern === 'MANUAL') return null;
-    if (employee.shiftPattern === 'PERMANENT_DAY') {
-      if (coverage !== 'DAY') return null;
-      const permanentEnd = parseClockTime(
-        employee.permanentShiftEndTime,
-        `${clock.dayEnd.hour.toString().padStart(2, '0')}:${clock.dayEnd.minute.toString().padStart(2, '0')}`,
-      );
-      return {
-        startAt: start,
-        endAt: clinicWallClockToUtc(day, permanentEnd.hour, permanentEnd.minute, clock.timezone),
-        employee,
-      };
-    }
-    if (!employee.rotationAnchorAt) return null;
-    const anchor = clinicDate(employee.rotationAnchorAt, clock.timezone);
-    const dayIndex = daySerial - clinicDaySerial(anchor);
-    if (dayIndex < 0) return null;
-    const days = Math.min(31, Math.max(1, employee.rotationDays || 3));
-    const phase = dayIndex % (days * 3);
-    const matches = coverage === 'DAY' ? phase < days : phase >= days && phase < days * 2;
-    return matches ? { startAt: start, endAt: end, employee } : null;
-  }
-
   private async buildNurseAccess(hospitalization: any, userId?: string | null) {
     if (!userId) {
       return { mode: 'READ_ONLY', canWrite: false, reason: 'Utilisateur non identifie' };
@@ -175,8 +43,8 @@ export class HospitalizationsService {
     const assignments = hospitalization.nurseAssignments || [];
     const assignedToCoverage = assignments.some((assignment: any) => assignment.nurseId === userId && !assignment.releasedAt);
     const [assignedShift, currentShift] = await Promise.all([
-      this.activeShiftForUser(hospitalization.nurseInChargeId, hospitalization.serviceUnitId),
-      this.activeShiftForUser(userId, hospitalization.serviceUnitId),
+      this.nurseScheduling.activeShiftForUser(hospitalization.nurseInChargeId, hospitalization.serviceUnitId),
+      this.nurseScheduling.activeShiftForUser(userId, hospitalization.serviceUnitId),
     ]);
 
     if (hospitalization.nurseInChargeId === userId || assignedToCoverage) {
@@ -186,11 +54,56 @@ export class HospitalizationsService {
       return { mode: 'WRITE', canWrite: true, reason: 'Infirmier responsable en shift actif' };
     }
 
-    if (!assignedShift && assignments.length === 0 && currentShift) {
-      return { mode: 'WRITE', canWrite: true, reason: 'Relai automatique: responsable hors shift' };
+    const clinicId = hospitalization.patient?.clinicId;
+    const relayEnabled = clinicId
+      ? await this.prisma.clinic.findFirst({
+          where: { id: clinicId, autoNurseRelayEnabled: true },
+          select: { id: true },
+        })
+      : null;
+
+    if (!assignedShift && assignments.length === 0 && currentShift && relayEnabled) {
+      return {
+        mode: 'WRITE',
+        canWrite: true,
+        automaticRelay: true,
+        reason: 'Relai automatique autorisé par la politique de l’établissement.',
+      };
     }
 
-    return { mode: 'READ_ONLY', canWrite: false, reason: 'Lecture clinique autorisee' };
+    return {
+      mode: 'READ_ONLY',
+      canWrite: false,
+      reason: !assignedShift && assignments.length === 0 && currentShift
+        ? 'Relai automatique désactivé par la politique de l’établissement.'
+        : 'Lecture clinique autorisee',
+    };
+  }
+
+  /** A relay is never inferred silently: the first write performed under the
+   * explicit clinic policy leaves a minimal, non-clinical audit trail. */
+  private async auditAutomaticNurseRelay(
+    hospitalization: { id: string; patientId: string; patient?: { clinicId?: string | null } },
+    nurseId: string | undefined,
+    access: { automaticRelay?: boolean },
+    action: string,
+  ) {
+    if (!nurseId || !access.automaticRelay) return;
+    await this.prisma.auditTrail.create({
+      data: {
+        actorId: nurseId,
+        entity: 'HOSPITALIZATION',
+        entityId: hospitalization.id,
+        action: 'ACCESS',
+        after: {
+          event: 'NURSE_RELAY_ASSUMED',
+          hospitalizationId: hospitalization.id,
+          patientId: hospitalization.patientId,
+          clinicId: hospitalization.patient?.clinicId ?? null,
+          writeAction: action,
+        },
+      },
+    });
   }
 
   /** Nurses actually on duty now, with their live active workload.
@@ -210,13 +123,23 @@ export class HospitalizationsService {
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
 
-    const capacity = await this.nurseCapacity(clinicId, serviceUnitId);
+    const capacity = await this.nurseScheduling.nurseCapacity(clinicId, serviceUnitId);
+    const workloadRows = nurses.length
+      ? await this.prisma.hospitalizationNurseAssignment.groupBy({
+          by: ['nurseId'],
+          where: {
+            nurseId: { in: nurses.map((nurse) => nurse.id) },
+            releasedAt: null,
+            hospitalization: { patient: { clinicId }, status: { in: ['ADMITTED', 'TRANSFERRED'] } },
+          },
+          _count: { _all: true },
+        })
+      : [];
+    const workloads = new Map(workloadRows.map((row) => [row.nurseId, row._count._all]));
     const available = await Promise.all(nurses.flatMap((nurse) => (['DAY', 'NIGHT'] as const).map(async (coverage) => {
-      const shift = await this.scheduledShiftForCoverage(nurse.id, coverage, serviceUnitId);
+      const shift = await this.nurseScheduling.scheduledShiftForCoverage(nurse.id, coverage, serviceUnitId);
       if (!shift) return null;
-      const activePatients = await this.prisma.hospitalizationNurseAssignment.count({
-        where: { nurseId: nurse.id, releasedAt: null, hospitalization: { patient: { clinicId }, status: { in: ['ADMITTED', 'TRANSFERRED'] } } },
-      });
+      const activePatients = workloads.get(nurse.id) ?? 0;
       return {
         ...nurse,
         coverage,
@@ -272,7 +195,7 @@ export class HospitalizationsService {
       if (dayNurseId && dayNurseId === nightNurseId) {
         throw new BadRequestException('Les couvertures de jour et de nuit doivent être attribuées à deux infirmiers distincts.');
       }
-      const capacity = await this.nurseCapacity(actor.clinicId, hospitalizationData.serviceUnitId);
+      const capacity = await this.nurseScheduling.nurseCapacity(actor.clinicId, hospitalizationData.serviceUnitId);
       for (const assignment of requestedAssignments) {
         const nurse = await tx.user.findFirst({
           where: {
@@ -284,7 +207,7 @@ export class HospitalizationsService {
           },
         });
         if (!nurse) throw new BadRequestException(`Infirmier ${assignment.coverage === 'DAY' ? 'de jour' : 'de nuit'} indisponible.`);
-        const scheduledShift = await this.scheduledShiftForCoverage(assignment.nurseId, assignment.coverage, hospitalizationData.serviceUnitId);
+        const scheduledShift = await this.nurseScheduling.scheduledShiftForCoverage(assignment.nurseId, assignment.coverage, hospitalizationData.serviceUnitId);
         if (!scheduledShift) throw new BadRequestException(`Cet infirmier n'est pas planifié pour la couverture ${assignment.coverage === 'DAY' ? 'de jour' : 'de nuit'} aujourd'hui.`);
         const activeLoad = await tx.hospitalizationNurseAssignment.count({ where: { nurseId: assignment.nurseId, releasedAt: null, hospitalization: { patient: { clinicId: actor.clinicId }, status: { in: ['ADMITTED', 'TRANSFERRED'] } } } });
         if (activeLoad >= capacity) throw new BadRequestException(`Cet infirmier a déjà atteint la limite configurée de ${capacity} patients hospitalisés.`);
@@ -354,12 +277,9 @@ export class HospitalizationsService {
     return created;
   }
 
-  private async clinicScope(currentUser?: any) {
-    const actorId = currentUser?.userId || currentUser?.id;
-    if (!actorId) throw new ForbiddenException('Utilisateur authentifié requis.');
-    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } });
-    if (!actor?.clinicId) throw new ForbiddenException('Utilisateur non rattaché à un établissement.');
-    return { patient: { clinicId: actor.clinicId } };
+  private async clinicScope(currentUser?: AuthenticatedActor) {
+    const clinicId = await this.clinicContext.requireActorClinic(currentUser);
+    return { patient: { clinicId } };
   }
 
   async findAll(currentUser?: any, requestedLimit = 100) {
@@ -459,6 +379,7 @@ export class HospitalizationsService {
     if (!access.canWrite || (!isAssigned && task.assignedNurseId !== null)) {
       throw new ForbiddenException('Cette tâche n’est pas attribuée à l’infirmier connecté ou son shift est inactif.');
     }
+    await this.auditAutomaticNurseRelay(task.hospitalization, userId, access, 'NURSING_CARE_TASK_UPDATED');
     const observation = dto.observation?.trim();
     const escalationReason = dto.escalationReason?.trim();
     if (dto.status === 'COMPLETED' && !observation) {
@@ -516,6 +437,7 @@ export class HospitalizationsService {
     if (!access.canWrite) {
       throw new ForbiddenException('Ecriture non autorisee pour cette hospitalisation');
     }
+    await this.auditAutomaticNurseRelay(hospitalization, userId, access, 'NURSE_ROUND_RECORDED');
 
     const action = body?.action || 'observation';
     const kind =
@@ -582,6 +504,7 @@ export class HospitalizationsService {
     const hospitalization = await this.findOne(id);
     const access = await this.buildNurseAccess(hospitalization, userId);
     if (!access.canWrite || !userId) throw new ForbiddenException('Administration non autorisée pour cette hospitalisation.');
+    await this.auditAutomaticNurseRelay(hospitalization, userId, access, 'MEDICATION_ADMINISTRATION_RECORDED');
     const line = await this.prisma.prescriptionLine.findFirst({ where: { id: dto.prescriptionLineId, prescription: { patientId: hospitalization.patientId, status: { in: ['PRESCRIBED', 'PARTIALLY_DISPENSED'] } } } });
     if (!line) throw new BadRequestException('Prescription active introuvable pour ce patient.');
     if (dto.status !== 'ADMINISTERED' && !dto.reason?.trim()) throw new BadRequestException('Un motif est obligatoire pour une dose refusée, suspendue ou manquée.');
@@ -737,19 +660,53 @@ export class HospitalizationsService {
     return updated;
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
-    await this.prisma.hospitalization.delete({ where: { id } });
+  async remove(id: string, actorId?: string) {
+    if (!actorId) throw new ForbiddenException('Administrateur authentifié requis.');
+    const clinicId = await this.clinicContext.requireUserClinic(actorId);
+    const hospitalization = await this.prisma.hospitalization.findFirst({
+      where: { id, patient: { clinicId }, deletedAt: null },
+      include: { bed: { select: { id: true } } },
+    });
+    if (!hospitalization) throw new NotFoundException('Hospitalisation introuvable dans cet établissement.');
+
+    // A clinical admission is never physically deleted. Cancellation releases
+    // operational resources while preserving the medico-legal record.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.hospitalization.update({
+        where: { id },
+        data: { status: 'CANCELLATION_REQUESTED', dischargeReason: hospitalization.dischargeReason || 'Annulation administrative demandée' },
+      });
+      if (hospitalization.bed?.id) {
+        await tx.bed.updateMany({
+          where: { id: hospitalization.bed.id, hospitalizationId: id, status: 'OCCUPIED' },
+          data: { status: 'FREE', hospitalizationId: null },
+        });
+      }
+      await tx.hospitalizationNurseAssignment.updateMany({
+        where: { hospitalizationId: id, releasedAt: null },
+        data: { releasedAt: new Date() },
+      });
+      await tx.auditTrail.create({
+        data: {
+          actorId,
+          entity: 'HOSPITALIZATION',
+          entityId: id,
+          action: 'UPDATE',
+          before: { status: hospitalization.status, bedId: hospitalization.bed?.id || null },
+          after: { status: 'CANCELLATION_REQUESTED', resourcesReleased: true, clinicId },
+        },
+      });
+    });
     try {
       await this.notifications.createAndEmit({
-        title: `Hospitalisation supprimée`,
-        body: `Hospitalisation ${id} supprimée`,
+        title: 'Annulation d’hospitalisation demandée',
+        body: 'Les ressources associées ont été libérées ; le dossier reste archivé.',
         relatedEntity: 'hospitalization',
         relatedId: id,
         type: 'SYSTEM',
         priority: 'MEDIUM',
       });
     } catch {}
-    return { deleted: true };
+    return { cancelled: true, archived: true };
   }
 }

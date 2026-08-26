@@ -1843,6 +1843,8 @@ model Clinic {
   /// Operational defaults; timestamps remain stored in UTC.
   timezone              String             @default("Africa/Lubumbashi")
   defaultNursePatientCapacity Int           @default(5)
+  /// Explicit policy: disabled by default. Missing nurse assignment never grants write access.
+  autoNurseRelayEnabled Boolean             @default(false)
   dayShiftStart         String             @default("07:30")
   dayShiftEnd           String             @default("17:30")
   nightShiftStart       String             @default("17:30")

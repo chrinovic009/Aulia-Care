@@ -3,10 +3,12 @@ import { HospitalizationsService } from './hospitalizations.service';
 import { HospitalizationsController } from './hospitalizations.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ClinicContextService } from '../core/clinic-context.service';
+import { NurseSchedulingService } from './nurse-scheduling.service';
 
 @Module({
   imports: [PrismaModule, NotificationsModule],
-  providers: [HospitalizationsService],
+  providers: [HospitalizationsService, ClinicContextService, NurseSchedulingService],
   controllers: [HospitalizationsController],
 })
 export class HospitalizationsModule {}

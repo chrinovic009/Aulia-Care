@@ -16,37 +16,37 @@ export class HospitalizationsController {
   constructor(private readonly hospitalizationsService: HospitalizationsService) {}
 
   @Get('search')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
+  @Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
   search(@Query('q') q: string, @Request() req: any) {
     return this.hospitalizationsService.search(q || '', req.user);
   }
 
   @Get('stats')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
+  @Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
   stats(@Request() req: any) {
     return this.hospitalizationsService.getStats(req.user);
   }
 
   @Get('rooms')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
+  @Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
   rooms(@Request() req: any) {
     return this.hospitalizationsService.getRoomInventory(req.user);
   }
 
   @Get('nurse/followed')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
+  @Roles('ADMIN', 'NURSE', 'PHYSICIAN')
   nurseFollowed(@Request() req: any) {
     return this.hospitalizationsService.getNurseHospitalizations(req.user);
   }
 
   @Get('nurse/available')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
+  @Roles('ADMIN', 'PHYSICIAN')
   availableNurses(@Query('serviceUnitId') serviceUnitId: string | undefined, @Request() req: any) {
     return this.hospitalizationsService.getAvailableNurses(serviceUnitId, req.user);
   }
 
   @Get('nurse/rounds')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
+  @Roles('ADMIN', 'NURSE', 'PHYSICIAN')
   nurseRounds(@Request() req: any) {
     return this.hospitalizationsService.getNurseRounds(req.user);
   }
@@ -58,7 +58,7 @@ export class HospitalizationsController {
   }
 
   @Post(':id/nurse-rounds')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE')
+  @Roles('ADMIN', 'NURSE')
   recordNurseRound(@Param('id') id: string, @Body() body: RecordNurseRoundDto, @Request() req: any) {
     return this.hospitalizationsService.recordNurseRound(id, req.user?.userId, body);
   }
@@ -76,19 +76,19 @@ export class HospitalizationsController {
   }
 
   @Get(':id/timeline')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
+  @Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
   timeline(@Param('id') id: string, @Request() req: any) {
     return this.hospitalizationsService.getTimeline(id, req.user);
   }
 
   @Get()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
+  @Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
   findAll(@Request() req: any, @Query('limit') limit?: string) {
     return this.hospitalizationsService.findAll(req.user, Number(limit) || 100);
   }
 
   @Get(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
+  @Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
   findOne(@Param('id') id: string, @Request() req: any) {
     return this.hospitalizationsService.findOneForActor(id, req.user);
   }
@@ -106,8 +106,8 @@ export class HospitalizationsController {
   }
 
   @Delete(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN')
-  remove(@Param('id') id: string) {
-    return this.hospitalizationsService.remove(id);
+  @Roles('ADMIN')
+  remove(@Param('id') id: string, @Request() req: { user?: { userId?: string } }) {
+    return this.hospitalizationsService.remove(id, req.user?.userId);
   }
 }
