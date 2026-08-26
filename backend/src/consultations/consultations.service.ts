@@ -108,6 +108,20 @@ export class ConsultationsService {
       select: { id: true },
     });
     if (!patient) throw new ForbiddenException('Patient non accessible dans cet établissement.');
+    if (createConsultationDto.hospitalizationId) {
+      const hospitalization = await this.prisma.hospitalization.findFirst({
+        where: {
+          id: createConsultationDto.hospitalizationId,
+          patientId: patient.id,
+          deletedAt: null,
+          status: { in: ['ADMITTED', 'TRANSFERRED'] },
+        },
+        select: { id: true, patient: { select: { clinicId: true } } },
+      });
+      if (!hospitalization || hospitalization.patient.clinicId !== actor.clinicId) {
+        throw new BadRequestException('L’hospitalisation sélectionnée ne correspond pas à ce patient dans votre établissement.');
+      }
+    }
 
     const consultation = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.consultation.findUnique({ where: { appointmentId: createConsultationDto.appointmentId } });
@@ -238,9 +252,15 @@ export class ConsultationsService {
     return consultation;
   }
 
-  findAll(actorId?: string, actorRole?: string) {
+  async findAll(actorId?: string, actorRole?: string) {
+    if (!actorId) throw new ForbiddenException('Utilisateur non identifié.');
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } });
+    if (!actor?.clinicId) throw new ForbiddenException('Utilisateur non rattaché à un établissement.');
     return this.prisma.consultation.findMany({
-      where: actorRole === 'PHYSICIAN' ? { providerId: actorId } : undefined,
+      where: {
+        clinicId: actor.clinicId,
+        ...(actorRole === 'PHYSICIAN' ? { providerId: actorId } : {}),
+      },
       include: {
         patient: true,
         provider: true,
@@ -276,10 +296,13 @@ export class ConsultationsService {
    */
   async findDraftsForPhysician(actorId?: string) {
     if (!actorId) throw new ForbiddenException('Médecin non identifié.');
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } });
+    if (!actor?.clinicId) throw new ForbiddenException('Médecin non rattaché à un établissement.');
 
     const visiblePatients = await this.prisma.patient.findMany({
       where: {
         deletedAt: null,
+        clinicId: actor.clinicId,
         OR: [
           { consultations: { some: { providerId: actorId, deletedAt: null } } },
           { hospitalizations: { some: { physicianId: actorId, deletedAt: null } } },
@@ -325,10 +348,13 @@ export class ConsultationsService {
     if (!consultation || consultation.deletedAt || (consultation.status !== ConsultationStatus.DRAFT && consultation.status !== ConsultationStatus.IN_PROGRESS)) {
       throw new NotFoundException('Brouillon introuvable.');
     }
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } });
+    if (!actor?.clinicId || consultation.clinicId !== actor.clinicId) throw new ForbiddenException('Accès à ce brouillon non autorisé.');
     const canRead = await this.prisma.patient.count({
       where: {
         id: consultation.patientId,
         deletedAt: null,
+        clinicId: actor.clinicId,
         OR: [
           { consultations: { some: { providerId: actorId, deletedAt: null } } },
           { hospitalizations: { some: { physicianId: actorId, deletedAt: null } } },
@@ -373,6 +399,11 @@ export class ConsultationsService {
     if (!consultation) {
       throw new NotFoundException('Consultation introuvable');
     }
+    if (!actorId) throw new ForbiddenException('Utilisateur non identifié.');
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } });
+    if (!actor?.clinicId || consultation.clinicId !== actor.clinicId) {
+      throw new ForbiddenException('Accès à cette consultation non autorisé.');
+    }
     if (actorRole === 'PHYSICIAN' && consultation.providerId !== actorId) {
       throw new ForbiddenException('Accès à cette consultation non autorisé.');
     }
@@ -380,7 +411,7 @@ export class ConsultationsService {
   }
 
   async update(id: string, updateConsultationDto: UpdateConsultationDto, actorId?: string) {
-    const consultation = await this.findOne(id);
+    const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
     if (consultation.status === ConsultationStatus.FINALIZED) {
       throw new BadRequestException('Consultation finalisée : utilisez la procédure d’avenant documentée.');
@@ -399,7 +430,7 @@ export class ConsultationsService {
   }
 
   async saveTelehealthTranscript(id: string, sessionId: string, entries: TelehealthTranscriptEntryDto[], actorId?: string) {
-    const consultation = await this.findOne(id);
+    const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
     if (consultation.status === ConsultationStatus.FINALIZED) {
       throw new BadRequestException('Une consultation finalisée ne peut pas recevoir de transcription sans avenant.');
@@ -450,7 +481,7 @@ export class ConsultationsService {
   }
 
   async saveClinicalSections(id: string, dto: ClinicalSectionsDto, actorId?: string) {
-    const consultation = await this.findOne(id);
+    const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
     const amendmentReason = dto.amendmentReason?.trim();
     const isAmendment = consultation.status === ConsultationStatus.FINALIZED;
@@ -558,7 +589,7 @@ export class ConsultationsService {
   }
 
   async createLabRequest(id: string, dto: CreateLabRequestDto, actorId?: string) {
-    const consultation = await this.findOne(id);
+    const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
     const request = await this.prisma.$transaction(async (tx) => {
       const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
@@ -799,7 +830,7 @@ export class ConsultationsService {
   }
 
   async createImagingRequest(id: string, dto: CreateImagingRequestDto, actorId?: string) {
-    const consultation = await this.findOne(id);
+    const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
 
     const request = await this.prisma.$transaction(async (tx) => {
@@ -1040,7 +1071,7 @@ export class ConsultationsService {
   }
 
   async createPrescription(id: string, dto: CreatePrescriptionDto, actorId?: string) {
-    const consultation = await this.findOne(id);
+    const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
     const lines = Array.isArray(dto.lines) ? dto.lines : [];
     if (!lines.length) {
@@ -1153,7 +1184,7 @@ export class ConsultationsService {
   }
 
   async updatePrescription(consultationId: string, prescriptionId: string, dto: CreatePrescriptionDto, actorId?: string) {
-    const consultation = await this.findOne(consultationId);
+    const consultation = await this.findOne(consultationId, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
 
     const prescription = await this.prisma.prescription.findUnique({
@@ -1235,7 +1266,7 @@ export class ConsultationsService {
   }
 
   async remove(id: string, actorId?: string) {
-    const consultation = await this.findOne(id);
+    const consultation = await this.findOne(id, actorId);
     if (consultation.status === ConsultationStatus.FINALIZED) {
       throw new BadRequestException('Une consultation finalisée est un document médical : elle ne peut pas être supprimée. Créez un avenant ou une annulation motivée.');
     }

@@ -34,3 +34,12 @@ Les tokens préexistants sans `sid` sont volontairement refusés : après la mis
 `SessionLock` protège l’affichage local après inactivité. Ce n’est pas une
 frontière d’autorisation : le backend reste l’autorité et vérifie toujours la
 session, le rôle et les règles métier.
+# Authentification — garanties actuelles
+
+`passwordHash` sert uniquement au mot de passe de connexion. `pinHash` sert uniquement au déverrouillage local et au PIN personnel ; un changement de PIN ne réécrit jamais le mot de passe.
+
+Après cinq erreurs de PIN, le compte est verrouillé quinze minutes. Le compteur est conservé pendant le verrouillage pour l’audit, puis remis à zéro après une vérification réussie. Les mots de passe, PIN, jetons bruts et hashes ne sont jamais placés dans le journal d’audit.
+
+Chaque JWT porte un `sid` de session. Une requête protégée est refusée si cette session a été révoquée ou expirée. La déconnexion normale révoque une seule session ; la déconnexion globale révoque les sessions actives de l’utilisateur.
+
+La rotation de refresh token remplace le hash stocké. Sans historique des refresh tokens consommés, une détection complète de réutilisation d’un ancien refresh token n’est pas encore possible ; l’application refuse toutefois le token ancien. Une table d’historique dédiée serait nécessaire pour révoquer automatiquement la session en cas de réutilisation.

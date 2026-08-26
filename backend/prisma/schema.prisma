@@ -217,6 +217,8 @@ model ServiceUnit {
   location         String?
   contactNumber    String?
   active           Boolean           @default(true)
+  /// Optional local override. When null, the clinic default is applied.
+  nursePatientCapacity Int?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   deletedAt        DateTime?
@@ -1838,6 +1840,13 @@ model Clinic {
   country               String?
   documentFooter        String?
   status                String             @default("ACTIVE")
+  /// Operational defaults; timestamps remain stored in UTC.
+  timezone              String             @default("Africa/Lubumbashi")
+  defaultNursePatientCapacity Int           @default(5)
+  dayShiftStart         String             @default("07:30")
+  dayShiftEnd           String             @default("17:30")
+  nightShiftStart       String             @default("17:30")
+  nightShiftEnd         String             @default("07:30")
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
   deletedAt             DateTime?
@@ -2971,10 +2980,25 @@ model Session {
   status     SessionStatus @default(ACTIVE)
   revokedAt  DateTime?
   revocationReason String?
+  pinLockedAt DateTime?
+  pinVerifiedAt DateTime?
   createdAt  DateTime      @default(now())
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHistory SessionRefreshTokenHistory[]
 
   @@index([userId, status])
+}
+
+/// Stores only bcrypt hashes of consumed refresh tokens. It permits replay
+/// detection without ever persisting a raw bearer credential.
+model SessionRefreshTokenHistory {
+  id        String   @id @default(uuid())
+  sessionId String
+  tokenHash String
+  consumedAt DateTime @default(now())
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, consumedAt])
 }
 
 /// == Sécurité supplémentaire ==

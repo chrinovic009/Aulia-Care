@@ -70,7 +70,7 @@ export class ConsultationsController {
   }
 
   @Post(':id/clinical-sections')
-  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  @Roles('PHYSICIAN')
   saveClinicalSections(@Param('id') id: string, @Body() body: ClinicalSectionsDto, @Request() req: any) {
     return this.consultationsService.saveClinicalSections(id, body, req.user?.userId);
   }
@@ -82,25 +82,25 @@ export class ConsultationsController {
   }
 
   @Post(':id/lab-requests')
-  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  @Roles('PHYSICIAN')
   createLabRequest(@Param('id') id: string, @Body() body: CreateLabRequestDto, @Request() req: any) {
     return this.consultationsService.createLabRequest(id, body, req.user?.userId);
   }
 
   @Post(':id/imaging-requests')
-  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  @Roles('PHYSICIAN')
   createImagingRequest(@Param('id') id: string, @Body() body: CreateImagingRequestDto, @Request() req: any) {
     return this.consultationsService.createImagingRequest(id, body, req.user?.userId);
   }
 
   @Post(':id/prescriptions')
-  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  @Roles('PHYSICIAN')
   createPrescription(@Param('id') id: string, @Body() body: CreatePrescriptionDto, @Request() req: any) {
     return this.consultationsService.createPrescription(id, body, req.user?.userId);
   }
 
   @Patch(':id/prescriptions/:prescriptionId')
-  @Roles('SUPER_ADMIN', 'PHYSICIAN')
+  @Roles('PHYSICIAN')
   updatePrescription(
     @Param('id') id: string,
     @Param('prescriptionId') prescriptionId: string,

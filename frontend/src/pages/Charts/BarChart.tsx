@@ -7,8 +7,8 @@ export default function BarChart() {
   return (
     <div>
       <PageMeta
-        title="React.js Chart Dashboard | Aulia Care - React.js Admin Dashboard Template"
-        description="This is React.js Chart Dashboard page for Aulia Care - React.js Tailwind CSS Admin Dashboard Template"
+        title="Aulia Care - Administrateur"
+        description="Administrer vos données sur Aulia Care"
       />
       <PageBreadcrumb pageTitle="Bar Chart" />
       <div className="space-y-6">

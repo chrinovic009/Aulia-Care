@@ -161,7 +161,7 @@ export class AuthService {
     return { ok: true };
   }
 
-  async verifyPin(userId: string, pin: string) {
+  async verifyPin(userId: string, pin: string, sessionId?: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { pinHash: true, pinLockedUntil: true } });
     if (!user?.pinHash) throw new UnauthorizedException('Configurez d’abord votre code PIN dans Sécurité personnelle.');
     if (user.pinLockedUntil && user.pinLockedUntil > new Date()) {
@@ -171,15 +171,39 @@ export class AuthService {
       await this.recordPinFailure(userId);
       throw new UnauthorizedException('Code PIN incorrect.');
     }
-    await this.prisma.user.update({ where: { id: userId }, data: { pinFailedAttempts: 0, pinLockedUntil: null } });
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { pinFailedAttempts: 0, pinLockedUntil: null } }),
+      ...(sessionId ? [this.prisma.session.updateMany({
+        where: { id: sessionId, userId, status: 'ACTIVE' },
+        data: { pinLockedAt: null, pinVerifiedAt: new Date(), lastSeenAt: new Date() },
+      })] : []),
+    ]);
+    await this.audit(userId, 'AUTH_PIN', sessionId || userId, { event: 'PIN_VERIFIED' });
     return { ok: true };
+  }
+
+  async lockCurrentSession(userId: string, sessionId?: string) {
+    if (!sessionId) throw new UnauthorizedException('Session manquante.');
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { pinHash: true } });
+    if (!user?.pinHash) return { locked: false, hasPin: false };
+    const locked = await this.prisma.session.updateMany({
+      where: { id: sessionId, userId, status: 'ACTIVE' },
+      data: { pinLockedAt: new Date() },
+    });
+    if (!locked.count) throw new UnauthorizedException('Session expirée ou révoquée.');
+    await this.audit(userId, 'AUTH_SESSION', sessionId, { event: 'SESSION_PIN_LOCKED' });
+    return { locked: true, hasPin: true };
   }
 
   private async recordPinFailure(userId: string) {
     const user = await this.prisma.user.update({ where: { id: userId }, data: { pinFailedAttempts: { increment: 1 } }, select: { pinFailedAttempts: true } });
+    await this.audit(userId, 'AUTH_PIN', userId, { event: 'PIN_FAILED', attempts: user.pinFailedAttempts });
     if (user.pinFailedAttempts >= 5) {
-      await this.prisma.user.update({ where: { id: userId }, data: { pinFailedAttempts: 0, pinLockedUntil: new Date(Date.now() + 15 * 60 * 1000) } });
-      await this.audit(userId, 'AUTH_PIN', userId, { event: 'PIN_LOCKED', reason: 'FAILED_ATTEMPTS' });
+      const lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+      // Keep the count for post-incident review. It is reset only after a
+      // successful PIN verification, never when the lock is applied.
+      await this.prisma.user.update({ where: { id: userId }, data: { pinLockedUntil: lockedUntil } });
+      await this.audit(userId, 'AUTH_PIN', userId, { event: 'PIN_LOCKED', reason: 'FAILED_ATTEMPTS', attempts: user.pinFailedAttempts, lockedUntil: lockedUntil.toISOString() });
     }
   }
 
@@ -206,7 +230,25 @@ export class AuthService {
       const session = await this.prisma.session.findFirst({
         where: { id: sessionId, userId: payload.sub, status: 'ACTIVE', expiresAt: { gt: new Date() } },
       });
-      if (!session || !(await bcrypt.compare(token, session.tokenHash))) {
+      if (!session) {
+        throw new UnauthorizedException('Session refresh révoquée ou expirée');
+      }
+      const currentTokenMatches = await bcrypt.compare(token, session.tokenHash);
+      if (!currentTokenMatches) {
+        const consumedTokens = await this.prisma.sessionRefreshTokenHistory.findMany({
+          where: { sessionId },
+          select: { tokenHash: true },
+          orderBy: { consumedAt: 'desc' },
+          take: 50,
+        });
+        const replayed = (await Promise.all(consumedTokens.map((entry) => bcrypt.compare(token, entry.tokenHash)))).some(Boolean);
+        if (replayed) {
+          await this.prisma.session.update({
+            where: { id: sessionId },
+            data: { status: 'REVOKED', revokedAt: new Date(), revocationReason: 'REFRESH_TOKEN_REUSE' },
+          });
+          await this.audit(payload.sub, 'AUTH_SESSION', sessionId, { event: 'REFRESH_REUSE_DETECTED' });
+        }
         throw new UnauthorizedException('Session refresh révoquée ou expirée');
       }
       const user = await this.prisma.user.findUnique({
@@ -219,7 +261,10 @@ export class AuthService {
 
       const accessToken = this.signAccessToken(user, sessionId);
       const refreshToken = this.signRefreshToken(user, sessionId);
-      await this.prisma.session.update({ where: { id: sessionId }, data: { tokenHash: await bcrypt.hash(refreshToken, 10), lastSeenAt: new Date() } });
+      await this.prisma.$transaction([
+        this.prisma.sessionRefreshTokenHistory.create({ data: { sessionId, tokenHash: session.tokenHash } }),
+        this.prisma.session.update({ where: { id: sessionId }, data: { tokenHash: await bcrypt.hash(refreshToken, 10), lastSeenAt: new Date() } }),
+      ]);
       return { accessToken, refreshToken };
     } catch (error) {
       throw new UnauthorizedException('Invalid refresh token');
@@ -279,6 +324,20 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  /** Exposes no secret: the client only needs to know whether a PIN challenge
+   * is applicable for an already authenticated session. */
+  async getSecurityStatus(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { pinHash: true, pinLockedUntil: true },
+    });
+    if (!user) throw new UnauthorizedException('Session utilisateur introuvable.');
+    return {
+      hasPin: Boolean(user.pinHash),
+      pinLockedUntil: user.pinLockedUntil?.toISOString() ?? null,
+    };
   }
 
   async updateProfile(id: string, dto: UpdateUserDto) {

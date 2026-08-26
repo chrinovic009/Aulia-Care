@@ -239,6 +239,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
         return;
       }
+      // Restore is deliberately different from a fresh password login.  Lock
+      // the persistent server session before exposing the account to routes,
+      // so a reload cannot race clinical API calls ahead of the PIN overlay.
+      const security = await fetch(`${API_BASE_URL}/auth/security-status`, {
+        credentials: "include",
+        signal: controller.signal,
+      });
+      if (!security.ok) {
+        setError("Impossible de vérifier la sécurité de la session.");
+        setCurrentUser(null);
+        return;
+      }
+      const securityState = await security.json() as { hasPin?: boolean };
+      if (securityState.hasPin) {
+        const lock = await fetch(`${API_BASE_URL}/auth/lock-session`, {
+          method: "POST",
+          credentials: "include",
+          headers: getAuthHeaders(),
+          signal: controller.signal,
+        });
+        if (!lock.ok) {
+          setError("Impossible de verrouiller la session restaurée.");
+          setCurrentUser(null);
+          return;
+        }
+      }
       setCurrentUser(profile);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -322,6 +348,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setRestrictedAccount(profile);
         return profile;
       }
+      // A password login is already a strong authentication event.  The lock
+      // screen consumes this one-use marker so it does not immediately ask for
+      // the PIN again; a later reload has no marker and must be unlocked.
+      sessionStorage.setItem(`aulia.fresh-auth.${profile.id}`, "1");
       setCurrentUser(profile);
       return profile;
     } catch (err) {
@@ -341,6 +371,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       headers: getAuthHeaders(),
       credentials: "include",
     });
+    if (currentUser?.id) sessionStorage.removeItem(`aulia.fresh-auth.${currentUser.id}`);
     setCurrentUser(null);
     setError(null);
   };

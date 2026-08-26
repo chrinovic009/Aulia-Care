@@ -9,8 +9,8 @@ export default function Images() {
   return (
     <>
       <PageMeta
-        title="React.js Images Dashboard | Aulia Care - React.js Admin Dashboard Template"
-        description="This is React.js Images page for Aulia Care - React.js Tailwind CSS Admin Dashboard Template"
+        title="Aulia Care - Images"
+        description="Vos images sur Aulia Care"
       />
       <PageBreadcrumb pageTitle="Images" />
       <div className="space-y-5 sm:space-y-6">
