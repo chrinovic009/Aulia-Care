@@ -26,10 +26,18 @@ export class AuthService {
   }
 
   async validateUser(identifier: string, password: string) {
-    const normalized = identifier.trim().toLowerCase();
+    const rawIdentifier = identifier.trim();
+    const normalized = rawIdentifier.toLowerCase();
     const user = await this.prisma.user.findFirst({
       where: {
-        OR: [{ email: normalized }, { username: normalized }],
+        // The sign-in screen explicitly accepts an employee matricule. It must
+        // therefore be resolved server-side, never merely labelled that way.
+        OR: [
+          { email: normalized },
+          { username: normalized },
+          { Employee: { some: { employeeNumber: rawIdentifier } } },
+          { Employee: { some: { employeeNumber: rawIdentifier.toUpperCase() } } },
+        ],
         deletedAt: null,
         status: 'ACTIVE',
       },

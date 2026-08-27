@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateClinicBrandingDto } from './dto/update-clinic-branding.dto';
 import { UpdateClinicOperationalPolicyDto } from './dto/update-clinic-operational-policy.dto';
+import { CreateRoomDto, UpdateRoomDto } from './dto/room.dto';
 import { isValidClockTime, isValidIanaTimezone, SYSTEM_MAX_NURSE_PATIENT_CAPACITY } from '../core/operational-policy';
 
 @Injectable()
@@ -399,54 +400,77 @@ export class AdministrationService {
     return { ...created, billable: department.type !== 'ADMINISTRATION' };
   }
 
-  rooms() {
-    return Promise.all([
-      (this.prisma as any).room.findMany({
-        include: {
-          serviceUnit: { include: { department: true } },
-          beds: { include: { hospitalization: { include: { patient: true } } } },
-        },
+  async rooms(actorId?: string) {
+    const clinic = await this.requireClinicAdministrator(actorId);
+    const [rooms, operatingRooms] = await Promise.all([
+      this.prisma.room.findMany({
+        where: { serviceUnit: { clinicId: clinic.clinicId } },
+        include: { serviceUnit: { include: { department: true } }, beds: { include: { hospitalization: { include: { patient: true } } } }, staffAssignments: { where: { active: true }, include: { user: { select: { id: true, firstName: true, lastName: true, primaryRole: true } } } } },
         orderBy: { number: 'asc' },
       }),
-      (this.prisma as any).operatingRoom.findMany({
-        where: { deletedAt: null },
-        include: { surgeries: { orderBy: { scheduledAt: 'desc' }, take: 10 } },
-        orderBy: { name: 'asc' },
-      }),
-    ]).then(([rooms, operatingRooms]) => ({ rooms, operatingRooms }));
+      this.prisma.operatingRoom.findMany({ where: { deletedAt: null }, include: { surgeries: { orderBy: { scheduledAt: 'desc' }, take: 10 } }, orderBy: { name: 'asc' } }),
+    ]);
+    return { rooms, operatingRooms };
   }
 
-  createRoom(data: any) {
-    return (this.prisma as any).room.create({
-      data: {
-        number: data.number,
-        serviceUnitId: data.serviceUnitId,
-        status: data.status ?? 'AVAILABLE',
+  /** Personnel que l'administrateur peut affecter à une salle de son établissement.
+   *  Cette liste est volontairement bornée au tenant courant : elle ne réutilise pas
+   *  l'annuaire global des utilisateurs. */
+  async roomStaff(actorId?: string) {
+    const clinic = await this.requireClinicAdministrator(actorId);
+    return this.prisma.user.findMany({
+      where: {
+        clinicId: clinic.clinicId,
+        status: 'ACTIVE',
+        deletedAt: null,
+        primaryRole: { in: ['PHYSICIAN', 'NURSE', 'RECEPTIONIST', 'LAB_MANAGER', 'LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST'] },
       },
-      include: { beds: true, serviceUnit: true },
+      select: { id: true, firstName: true, lastName: true, displayName: true, primaryRole: true },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
     });
   }
 
-  async updateRoom(id: string, data: any) {
-    const existing = await (this.prisma as any).room.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('Salle introuvable');
+  private async validateRoomMembers(clinicId: string, staffUserIds: string[] = []) {
+    if (!staffUserIds.length) return;
+    const found = await this.prisma.user.findMany({ where: { id: { in: staffUserIds }, clinicId, status: 'ACTIVE', deletedAt: null }, select: { id: true } });
+    if (found.length !== staffUserIds.length) throw new BadRequestException('Chaque personnel affecté doit être actif et rattaché au même établissement.');
+  }
 
-    return (this.prisma as any).room.update({
-      where: { id },
-      data: {
-        number: data.number ?? existing.number,
-        serviceUnitId: data.serviceUnitId ?? existing.serviceUnitId,
-        status: data.status ?? existing.status,
-      },
-      include: { beds: true, serviceUnit: true },
+  async createRoom(data: CreateRoomDto, actorId?: string) {
+    const clinic = await this.requireClinicAdministrator(actorId);
+    const serviceUnit = await this.prisma.serviceUnit.findFirst({ where: { id: data.serviceUnitId, clinicId: clinic.clinicId, active: true, deletedAt: null }, select: { id: true } });
+    if (!serviceUnit) throw new BadRequestException('Unité de service introuvable ou hors établissement.');
+    await this.validateRoomMembers(clinic.clinicId, data.staffUserIds);
+    return this.prisma.room.create({
+      data: { number: data.number.trim(), name: data.name.trim(), location: data.location.trim(), serviceUnitId: serviceUnit.id, staffAssignments: data.staffUserIds?.length ? { createMany: { data: data.staffUserIds.map((userId) => ({ userId })) } } : undefined },
+      include: { beds: true, serviceUnit: true, staffAssignments: { include: { user: { select: { id: true, firstName: true, lastName: true, primaryRole: true } } } } },
     });
   }
 
-  async removeRoom(id: string) {
-    const existing = await (this.prisma as any).room.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('Salle introuvable');
+  async updateRoom(id: string, data: UpdateRoomDto, actorId?: string) {
+    const clinic = await this.requireClinicAdministrator(actorId);
+    const existing = await this.prisma.room.findFirst({ where: { id, serviceUnit: { clinicId: clinic.clinicId } }, select: { id: true, serviceUnitId: true } });
+    if (!existing) throw new NotFoundException('Salle introuvable dans cet établissement.');
+    if (data.serviceUnitId) {
+      const unit = await this.prisma.serviceUnit.findFirst({ where: { id: data.serviceUnitId, clinicId: clinic.clinicId, active: true, deletedAt: null }, select: { id: true } });
+      if (!unit) throw new BadRequestException('Unité de service introuvable ou inactive.');
+    }
+    await this.validateRoomMembers(clinic.clinicId, data.staffUserIds);
+    return this.prisma.$transaction(async (tx) => {
+      if (data.staffUserIds) {
+        await tx.roomStaffAssignment.updateMany({ where: { roomId: id, userId: { notIn: data.staffUserIds }, active: true }, data: { active: false, releasedAt: new Date() } });
+        for (const userId of data.staffUserIds) await tx.roomStaffAssignment.upsert({ where: { roomId_userId: { roomId: id, userId } }, create: { roomId: id, userId }, update: { active: true, releasedAt: null } });
+      }
+      return tx.room.update({ where: { id }, data: { number: data.number?.trim(), name: data.name?.trim(), location: data.location?.trim(), serviceUnitId: data.serviceUnitId }, include: { beds: true, serviceUnit: true, staffAssignments: { where: { active: true }, include: { user: { select: { id: true, firstName: true, lastName: true, primaryRole: true } } } } } });
+    });
+  }
 
-    await (this.prisma as any).room.delete({ where: { id } });
+  async removeRoom(id: string, actorId?: string) {
+    const clinic = await this.requireClinicAdministrator(actorId);
+    const existing = await this.prisma.room.findFirst({ where: { id, serviceUnit: { clinicId: clinic.clinicId } }, include: { beds: true } });
+    if (!existing) throw new NotFoundException('Salle introuvable dans cet établissement.');
+    if (existing.beds.some((bed) => bed.status === 'OCCUPIED')) throw new BadRequestException('Une salle avec un lit occupé ne peut pas être supprimée.');
+    await this.prisma.room.delete({ where: { id } });
     return { success: true, id };
   }
 

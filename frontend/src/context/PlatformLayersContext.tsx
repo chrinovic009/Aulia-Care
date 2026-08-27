@@ -70,9 +70,10 @@ export function PlatformLayersProvider({ children }: { children: React.ReactNode
   const value = useMemo(() => ({
     layers,
     isLoading,
-    // Core is intentionally permanent: IA and Connected extend it but never
-    // remove the hospital system's essential navigation.
-    isEnabled: (layer: AuliaLayer) => layer === "CORE" || !layers.configured || layers.enabledLayers.includes(layer),
+    // Core is intentionally permanent. Optional layers must fail closed: a
+    // loading, expired-session or network error must never reveal AI/Connected
+    // functionality simply because the configuration could not be read.
+    isEnabled: (layer: AuliaLayer) => layer === "CORE" || (layers.configured && layers.enabledLayers.includes(layer)),
     refresh,
     save,
   }), [layers, isLoading, refresh, save]);

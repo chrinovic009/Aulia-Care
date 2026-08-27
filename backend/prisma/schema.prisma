@@ -108,6 +108,7 @@ model User {
   hospitalizationsAsNurse          Hospitalization[]                @relation("HospitalizationNurse")
   hospitalizationsAsPhysician      Hospitalization[]                @relation("HospitalizationPhysician")
   hospitalizationNurseAssignments  HospitalizationNurseAssignment[]
+  roomAssignments                  RoomStaffAssignment[]
   imagingReportsInterpreted        ImagingReport[]                  @relation("ImagingReportInterpreter")
   imagingReportsRadiologist        ImagingReport[]                  @relation("ImagingReportRadiologist")
   imagingRequestsRequested         ImagingRequest[]                 @relation("ImagingRequestRequester")
@@ -691,6 +692,10 @@ model ConnectedCareConsent {
 model Room {
   id            String      @id @default(uuid())
   number        String      @unique
+  /// Human-facing designation used for patient orientation announcements.
+  name          String?
+  /// Physical location or address inside the establishment.
+  location      String?
   serviceUnitId String
   status        RoomStatus  @default(AVAILABLE)
   createdAt     DateTime    @default(now())
@@ -699,7 +704,24 @@ model Room {
   sourceNode    String?
   version       Int         @default(1)
   beds          Bed[]
+  staffAssignments RoomStaffAssignment[]
   serviceUnit   ServiceUnit @relation(fields: [serviceUnitId], references: [id])
+}
+
+/// Active personnel linked to a physical room. The relation is explicit so a
+/// public-address call never guesses a clinician’s destination.
+model RoomStaffAssignment {
+  id           String   @id @default(uuid())
+  roomId       String
+  userId       String
+  active       Boolean  @default(true)
+  assignedAt   DateTime @default(now())
+  releasedAt   DateTime?
+  room         Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([userId, active])
 }
 
 model Bed {
@@ -2886,14 +2908,25 @@ model Attendance {
   id         String           @id @default(uuid())
   employeeId String
   shiftId    String?
+  /// Planned window captured at clock-in. It preserves the rota in force at
+  /// that time, so punctuality reports remain auditable after later rota edits.
+  plannedStartAt DateTime?
+  plannedEndAt   DateTime?
   clockInAt  DateTime?
   clockOutAt DateTime?
   status     AttendanceStatus @default(PRESENT)
+  handoverState String         @default("OPEN")
+  departureReminderAt DateTime?
+  departureReminderMinutes Int?
+  departureDeferredCount Int   @default(0)
+  departureReason String?
   createdAt  DateTime         @default(now())
   employee   Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   shift      Shift?           @relation(fields: [shiftId], references: [id])
 
   @@index([employeeId])
+  @@index([employeeId, plannedEndAt])
+  @@index([plannedEndAt, clockOutAt])
 }
 
 model LeaveRequest {
@@ -2969,6 +3002,7 @@ model LoginAttempt {
   user       User?       @relation(fields: [userId], references: [id])
 
   @@index([userId])
+  @@index([occurredAt])
 }
 
 model Session {
@@ -2989,6 +3023,7 @@ model Session {
   refreshTokenHistory SessionRefreshTokenHistory[]
 
   @@index([userId, status])
+  @@index([expiresAt, status])
 }
 
 /// Stores only bcrypt hashes of consumed refresh tokens. It permits replay

@@ -5,6 +5,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { AdministrationService } from './administration.service';
 import { UpdateClinicBrandingDto } from './dto/update-clinic-branding.dto';
 import { UpdateClinicOperationalPolicyDto } from './dto/update-clinic-operational-policy.dto';
+import { CreateRoomDto, UpdateRoomDto } from './dto/room.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('administration')
@@ -79,27 +80,33 @@ export class AdministrationController {
   }
 
   @Get('rooms')
-  @Roles('SUPER_ADMIN', 'ADMIN')
-  rooms() {
-    return this.administrationService.rooms();
+  @Roles('ADMIN')
+  rooms(@Request() req: any) {
+    return this.administrationService.rooms(req.user?.userId);
+  }
+
+  @Get('room-staff')
+  @Roles('ADMIN')
+  roomStaff(@Request() req: any) {
+    return this.administrationService.roomStaff(req.user?.userId);
   }
 
   @Post('rooms')
-  @Roles('SUPER_ADMIN', 'ADMIN')
-  createRoom(@Body() body: any) {
-    return this.administrationService.createRoom(body);
+  @Roles('ADMIN')
+  createRoom(@Request() req: any, @Body() body: CreateRoomDto) {
+    return this.administrationService.createRoom(body, req.user?.userId);
   }
 
   @Patch('rooms/:id')
-  @Roles('SUPER_ADMIN', 'ADMIN')
-  updateRoom(@Param('id') id: string, @Body() body: any) {
-    return this.administrationService.updateRoom(id, body);
+  @Roles('ADMIN')
+  updateRoom(@Param('id') id: string, @Request() req: any, @Body() body: UpdateRoomDto) {
+    return this.administrationService.updateRoom(id, body, req.user?.userId);
   }
 
   @Delete('rooms/:id')
-  @Roles('SUPER_ADMIN', 'ADMIN')
-  deleteRoom(@Param('id') id: string) {
-    return this.administrationService.removeRoom(id);
+  @Roles('ADMIN')
+  deleteRoom(@Param('id') id: string, @Request() req: any) {
+    return this.administrationService.removeRoom(id, req.user?.userId);
   }
 
   @Post('beds')

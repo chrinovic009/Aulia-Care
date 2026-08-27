@@ -92,13 +92,14 @@ const clearLegacyBrowserTokens = () => {
   }
 };
 
-// The access and refresh cookies are HttpOnly on purpose and cannot be read by
-// React. The CSRF cookie is merely a non-secret session hint: without it there
-// is no browser session to restore, so calling /me then /refresh only produces
-// avoidable 401 noise on the sign-in screen.
-const hasSessionHint = () => {
-  if (typeof document === "undefined") return false;
-  return document.cookie.split(";").some((part) => part.trim().startsWith("aulia_csrf_token="));
+const clearExpiredSessionCookies = async () => {
+  // CSRF is intentionally not used as a session hint: it is also issued to a
+  // visitor before a public login. The server clears every cookie path safely.
+  await fetch(`${API_BASE_URL}/auth/clear-expired-session`, {
+    method: "POST",
+    credentials: "include",
+    headers: getAuthHeaders(),
+  }).catch(() => undefined);
 };
 
 const knownRoles = new Set<RoleSlug>(['DEV', 'SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'LAB_TECHNICIAN', 'LAB_MANAGER', 'RADIOLOGIST', 'SURGEON', 'ANESTHESIOLOGIST', 'PHARMACIST', 'FINANCE', 'PATIENT', 'CASHIER']);
@@ -179,7 +180,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     clearLegacyBrowserTokens();
 
-    if (!hasSessionHint()) {
+    const hint = await fetch(`${API_BASE_URL}/auth/session-hint`, { credentials: "include" })
+      .then(async (response) => response.ok ? response.json() as Promise<{ hasSession?: boolean }> : { hasSession: false })
+      .catch(() => ({ hasSession: false }));
+    if (!hint.hasSession) {
       setCurrentUser(null);
       setIsLoading(false);
       return;
@@ -214,13 +218,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!res.ok) {
         if (res.status === 401) {
-          // A stale CSRF hint must not make every later page load retry an
-          // already-expired session. Ask the server to clear all cookie scopes.
-          await fetch(`${API_BASE_URL}/auth/logout`, {
-            method: "POST",
-            credentials: "include",
-            headers: getAuthHeaders(),
-          }).catch(() => undefined);
+          // The session is already invalid. Clear its browser cookies without
+          // calling the protected logout endpoint a second time.
+          await clearExpiredSessionCookies();
           setCurrentUser(null);
         }
         setIsLoading(false);

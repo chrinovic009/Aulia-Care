@@ -18,7 +18,7 @@ export class ConsultationsController {
   constructor(private readonly consultationsService: ConsultationsService) {}
 
   @Get()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
+  @Roles('ADMIN', 'PHYSICIAN')
   findAll(@Request() req: any) {
     return this.consultationsService.findAll(req.user?.userId, req.user?.role);
   }
@@ -46,7 +46,7 @@ export class ConsultationsController {
   }
 
   @Get(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
+  @Roles('ADMIN', 'PHYSICIAN')
   findOne(@Param('id') id: string, @Request() req: any) {
     return this.consultationsService.findOne(id, req.user?.userId, req.user?.role);
   }
@@ -111,7 +111,7 @@ export class ConsultationsController {
   }
 
   @Delete(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN')
+  @Roles('ADMIN')
   remove(@Param('id') id: string, @Request() req: any) {
     return this.consultationsService.remove(id, req.user?.userId);
   }

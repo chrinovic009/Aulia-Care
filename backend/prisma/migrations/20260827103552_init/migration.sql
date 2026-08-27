@@ -325,6 +325,10 @@ CREATE TABLE "User" (
     "firstName" TEXT NOT NULL,
     "lastName" TEXT NOT NULL,
     "passwordHash" TEXT NOT NULL,
+    "pinHash" TEXT,
+    "pinUpdatedAt" TIMESTAMP(3),
+    "pinFailedAttempts" INTEGER NOT NULL DEFAULT 0,
+    "pinLockedUntil" TIMESTAMP(3),
     "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE',
     "primaryRole" "RoleSlug",
     "specialty" TEXT,
@@ -396,6 +400,7 @@ CREATE TABLE "ServiceUnit" (
     "location" TEXT,
     "contactNumber" TEXT,
     "active" BOOLEAN NOT NULL DEFAULT true,
+    "nursePatientCapacity" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -762,6 +767,8 @@ CREATE TABLE "ConnectedCareConsent" (
 CREATE TABLE "Room" (
     "id" TEXT NOT NULL,
     "number" TEXT NOT NULL,
+    "name" TEXT,
+    "location" TEXT,
     "serviceUnitId" TEXT NOT NULL,
     "status" "RoomStatus" NOT NULL DEFAULT 'AVAILABLE',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -771,6 +778,18 @@ CREATE TABLE "Room" (
     "version" INTEGER NOT NULL DEFAULT 1,
 
     CONSTRAINT "Room_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "RoomStaffAssignment" (
+    "id" TEXT NOT NULL,
+    "roomId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "active" BOOLEAN NOT NULL DEFAULT true,
+    "assignedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "releasedAt" TIMESTAMP(3),
+
+    CONSTRAINT "RoomStaffAssignment_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1766,6 +1785,13 @@ CREATE TABLE "Clinic" (
     "country" TEXT,
     "documentFooter" TEXT,
     "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+    "timezone" TEXT NOT NULL DEFAULT 'Africa/Lubumbashi',
+    "defaultNursePatientCapacity" INTEGER NOT NULL DEFAULT 5,
+    "autoNurseRelayEnabled" BOOLEAN NOT NULL DEFAULT false,
+    "dayShiftStart" TEXT NOT NULL DEFAULT '07:30',
+    "dayShiftEnd" TEXT NOT NULL DEFAULT '17:30',
+    "nightShiftStart" TEXT NOT NULL DEFAULT '17:30',
+    "nightShiftEnd" TEXT NOT NULL DEFAULT '07:30',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -2672,9 +2698,16 @@ CREATE TABLE "Attendance" (
     "id" TEXT NOT NULL,
     "employeeId" TEXT NOT NULL,
     "shiftId" TEXT,
+    "plannedStartAt" TIMESTAMP(3),
+    "plannedEndAt" TIMESTAMP(3),
     "clockInAt" TIMESTAMP(3),
     "clockOutAt" TIMESTAMP(3),
     "status" "AttendanceStatus" NOT NULL DEFAULT 'PRESENT',
+    "handoverState" TEXT NOT NULL DEFAULT 'OPEN',
+    "departureReminderAt" TIMESTAMP(3),
+    "departureReminderMinutes" INTEGER,
+    "departureDeferredCount" INTEGER NOT NULL DEFAULT 0,
+    "departureReason" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Attendance_pkey" PRIMARY KEY ("id")
@@ -2761,9 +2794,23 @@ CREATE TABLE "Session" (
     "lastSeenAt" TIMESTAMP(3),
     "expiresAt" TIMESTAMP(3),
     "status" "SessionStatus" NOT NULL DEFAULT 'ACTIVE',
+    "revokedAt" TIMESTAMP(3),
+    "revocationReason" TEXT,
+    "pinLockedAt" TIMESTAMP(3),
+    "pinVerifiedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Session_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "SessionRefreshTokenHistory" (
+    "id" TEXT NOT NULL,
+    "sessionId" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL,
+    "consumedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "SessionRefreshTokenHistory_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -2953,6 +3000,12 @@ CREATE INDEX "ConnectedCareConsent_patientId_purpose_revokedAt_idx" ON "Connecte
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Room_number_key" ON "Room"("number");
+
+-- CreateIndex
+CREATE INDEX "RoomStaffAssignment_userId_active_idx" ON "RoomStaffAssignment"("userId", "active");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "RoomStaffAssignment_roomId_userId_key" ON "RoomStaffAssignment"("roomId", "userId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Bed_hospitalizationId_key" ON "Bed"("hospitalizationId");
@@ -3483,6 +3536,12 @@ CREATE INDEX "Shift_employeeId_startAt_idx" ON "Shift"("employeeId", "startAt");
 CREATE INDEX "Attendance_employeeId_idx" ON "Attendance"("employeeId");
 
 -- CreateIndex
+CREATE INDEX "Attendance_employeeId_plannedEndAt_idx" ON "Attendance"("employeeId", "plannedEndAt");
+
+-- CreateIndex
+CREATE INDEX "Attendance_plannedEndAt_clockOutAt_idx" ON "Attendance"("plannedEndAt", "clockOutAt");
+
+-- CreateIndex
 CREATE INDEX "LeaveRequest_employeeId_status_idx" ON "LeaveRequest"("employeeId", "status");
 
 -- CreateIndex
@@ -3501,7 +3560,16 @@ CREATE INDEX "PasswordHistory_userId_idx" ON "PasswordHistory"("userId");
 CREATE INDEX "LoginAttempt_userId_idx" ON "LoginAttempt"("userId");
 
 -- CreateIndex
+CREATE INDEX "LoginAttempt_occurredAt_idx" ON "LoginAttempt"("occurredAt");
+
+-- CreateIndex
 CREATE INDEX "Session_userId_status_idx" ON "Session"("userId", "status");
+
+-- CreateIndex
+CREATE INDEX "Session_expiresAt_status_idx" ON "Session"("expiresAt", "status");
+
+-- CreateIndex
+CREATE INDEX "SessionRefreshTokenHistory_sessionId_consumedAt_idx" ON "SessionRefreshTokenHistory"("sessionId", "consumedAt");
 
 -- CreateIndex
 CREATE INDEX "PasswordResetToken_userId_idx" ON "PasswordResetToken"("userId");
@@ -3655,6 +3723,12 @@ ALTER TABLE "ConnectedCareConsent" ADD CONSTRAINT "ConnectedCareConsent_createdB
 
 -- AddForeignKey
 ALTER TABLE "Room" ADD CONSTRAINT "Room_serviceUnitId_fkey" FOREIGN KEY ("serviceUnitId") REFERENCES "ServiceUnit"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RoomStaffAssignment" ADD CONSTRAINT "RoomStaffAssignment_roomId_fkey" FOREIGN KEY ("roomId") REFERENCES "Room"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RoomStaffAssignment" ADD CONSTRAINT "RoomStaffAssignment_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Bed" ADD CONSTRAINT "Bed_hospitalizationId_fkey" FOREIGN KEY ("hospitalizationId") REFERENCES "Hospitalization"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -4264,6 +4338,9 @@ ALTER TABLE "LoginAttempt" ADD CONSTRAINT "LoginAttempt_userId_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "Session" ADD CONSTRAINT "Session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SessionRefreshTokenHistory" ADD CONSTRAINT "SessionRefreshTokenHistory_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "Session"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "PasswordResetToken" ADD CONSTRAINT "PasswordResetToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

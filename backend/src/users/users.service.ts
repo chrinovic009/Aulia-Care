@@ -1,7 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PatientWorkflowStatus, RoleSlug } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { clinicDate, clinicDateFromSerial, clinicDaySerial, clinicMinuteOfDay, clinicWallClockToUtc } from '../core/clinic-time';
+import { parseClockTime } from '../core/operational-policy';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
@@ -9,6 +11,25 @@ import * as bcrypt from 'bcrypt';
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async requireAdminClinic(actorId?: string) {
+    if (!actorId) throw new ForbiddenException('Administrateur authentifié requis.');
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { id: true, clinicId: true, primaryRole: true, status: true, deletedAt: true },
+    });
+    if (!actor || actor.deletedAt || actor.status !== 'ACTIVE' || actor.primaryRole !== RoleSlug.ADMIN || !actor.clinicId) {
+      throw new ForbiddenException('Seul un administrateur actif rattaché à une clinique peut gérer les employés.');
+    }
+    return actor;
+  }
+
+  private async requireSameClinicUser(id: string, actorId?: string) {
+    const actor = await this.requireAdminClinic(actorId);
+    const target = await this.prisma.user.findFirst({ where: { id, clinicId: actor.clinicId, deletedAt: null } });
+    if (!target) throw new NotFoundException('Employé introuvable dans votre clinique.');
+    return { actor, target };
+  }
 
   private normalize(value?: string | null) {
     return String(value || '')
@@ -40,6 +61,25 @@ export class UsersService {
       },
       orderBy: [{ displayName: 'asc' }, { lastName: 'asc' }],
     });
+  }
+
+  /** Minimal location exposed to the connected staff member for a patient call.
+   * It is never a directory of other staff locations. */
+  async findMyWorkLocation(userId?: string) {
+    if (!userId) throw new NotFoundException('Utilisateur authentifié requis.');
+    const assignment = await this.prisma.roomStaffAssignment.findFirst({
+      where: { userId, active: true, user: { status: 'ACTIVE', deletedAt: null } },
+      select: { room: { select: { id: true, number: true, name: true, location: true, serviceUnit: { select: { name: true } } } } },
+      orderBy: { assignedAt: 'desc' },
+    });
+    if (!assignment?.room) return null;
+    return {
+      roomId: assignment.room.id,
+      roomName: assignment.room.name || assignment.room.number,
+      roomNumber: assignment.room.number,
+      location: assignment.room.location || assignment.room.serviceUnit.name,
+      service: assignment.room.serviceUnit.name,
+    };
   }
 
   private async resolvePrimaryRole(dto: {
@@ -114,6 +154,68 @@ export class UsersService {
     }
   }
 
+  /** Resolves the employee's effective rota at the moment of clock-in. The
+   * returned window is stored on Attendance so reports do not change when a
+   * manager later modifies the rotation. */
+  private async resolvePlannedShift(employee: { id: string; shiftPattern: string; rotationAnchorAt: Date | null; rotationDays: number; permanentShiftEndTime: string | null; clinicId: string | null }, now = new Date()) {
+    const explicit = await this.prisma.shift.findFirst({
+      where: { employeeId: employee.id, startAt: { lte: now }, endAt: { gte: now } },
+      select: { id: true, startAt: true, endAt: true }, orderBy: { startAt: 'desc' },
+    });
+    if (explicit) return explicit;
+    if (employee.shiftPattern === 'MANUAL' || !employee.clinicId) return null;
+    const clinic = await this.prisma.clinic.findUnique({
+      where: { id: employee.clinicId },
+      select: { timezone: true, dayShiftStart: true, dayShiftEnd: true, nightShiftStart: true, nightShiftEnd: true },
+    });
+    if (!clinic) return null;
+    const timezone = clinic.timezone || 'Africa/Lubumbashi';
+    const dayStart = parseClockTime(clinic.dayShiftStart, '07:30');
+    const dayEnd = parseClockTime(clinic.dayShiftEnd, '17:30');
+    const nightStart = parseClockTime(clinic.nightShiftStart, '17:30');
+    const nightEnd = parseClockTime(clinic.nightShiftEnd, '07:30');
+    const localDay = clinicDate(now, timezone);
+    const daySerial = clinicDaySerial(localDay);
+    const minute = clinicMinuteOfDay(now, timezone);
+    const dayStartMinute = dayStart.hour * 60 + dayStart.minute;
+    const dayEndMinute = dayEnd.hour * 60 + dayEnd.minute;
+    const nightStartMinute = nightStart.hour * 60 + nightStart.minute;
+    const nightEndMinute = nightEnd.hour * 60 + nightEnd.minute;
+    const window = (startDay: typeof localDay, start: { hour: number; minute: number }, endDay: typeof localDay, end: { hour: number; minute: number }) => ({
+      id: null as string | null,
+      startAt: clinicWallClockToUtc(startDay, start.hour, start.minute, timezone),
+      endAt: clinicWallClockToUtc(endDay, end.hour, end.minute, timezone),
+    });
+    if (employee.shiftPattern === 'PERMANENT_DAY') {
+      const permanentEnd = parseClockTime(employee.permanentShiftEndTime, `${String(dayEnd.hour).padStart(2, '0')}:${String(dayEnd.minute).padStart(2, '0')}`);
+      const permanentEndMinute = permanentEnd.hour * 60 + permanentEnd.minute;
+      return minute >= dayStartMinute && minute < permanentEndMinute
+        ? window(localDay, dayStart, localDay, permanentEnd)
+        : null;
+    }
+    if (!employee.rotationAnchorAt) return null;
+    const anchorSerial = clinicDaySerial(clinicDate(employee.rotationAnchorAt, timezone));
+    const index = daySerial - anchorSerial;
+    if (index < 0) return null;
+    const phaseDays = Math.min(31, Math.max(1, employee.rotationDays || 3));
+    const cycle = phaseDays * 3;
+    const phase = ((index % cycle) + cycle) % cycle;
+    const previous = (((index - 1) % cycle) + cycle) % cycle;
+    if (phase < phaseDays && minute >= dayStartMinute && minute < dayEndMinute) {
+      return window(localDay, dayStart, localDay, dayEnd);
+    }
+    const isNight = phase >= phaseDays && phase < phaseDays * 2;
+    const previousNight = previous >= phaseDays && previous < phaseDays * 2;
+    if ((isNight && minute >= nightStartMinute) || (previousNight && minute < nightEndMinute)) {
+      const startsYesterday = minute < nightEndMinute;
+      return window(
+        clinicDateFromSerial(daySerial + (startsYesterday ? -1 : 0)), nightStart,
+        clinicDateFromSerial(daySerial + (startsYesterday ? 0 : 1)), nightEnd,
+      );
+    }
+    return null;
+  }
+
   async create(dto: CreateUserDto, creatorId?: string) {
     if (dto.primaryRole === RoleSlug.DEV) {
       throw new BadRequestException('Le rôle DEV ne peut être créé que par le provisionnement local sécurisé.');
@@ -121,14 +223,12 @@ export class UsersService {
     this.validateEmployeeSchedule(dto);
     this.validateEmployeeIdentity(dto);
     const primaryRole = await this.resolvePrimaryRole(dto);
-    const creator = creatorId
-      ? await this.prisma.user.findUnique({ where: { id: creatorId }, select: { clinicId: true } })
-      : null;
-    const clinic = creator?.clinicId
+    const creator = await this.requireAdminClinic(creatorId);
+    const clinic = creator.clinicId
       ? await this.prisma.clinic.findUnique({ where: { id: creator.clinicId }, select: { name: true, brandDisplayName: true } })
       : null;
     const position = await this.prisma.user.count({
-      where: { deletedAt: null, primaryRole, ...(creator?.clinicId ? { clinicId: creator.clinicId } : {}) },
+      where: { deletedAt: null, primaryRole, clinicId: creator.clinicId },
     }) + 1;
     const generatedPassword = dto.password ? undefined : this.makeInitialStaffPassword(clinic?.brandDisplayName || clinic?.name || 'Aulia Care', primaryRole || RoleSlug.NURSE, dto.firstName, dto.lastName, position);
     const passwordHash = await bcrypt.hash(dto.password || generatedPassword!, 10);
@@ -156,7 +256,7 @@ export class UsersService {
           lastName: dto.lastName,
           passwordHash,
           primaryRole,
-          clinicId: creator?.clinicId ?? null,
+          clinicId: creator.clinicId,
 
           specialty: dto.specialty ?? null,
           phone: dto.phone ?? null,
@@ -239,11 +339,12 @@ export class UsersService {
     }
   }
 
-  findAll() {
+  async findAll(actorId?: string) {
+    const actor = await this.requireAdminClinic(actorId);
     return this.prisma.user.findMany({
       // DEV is an installation account, never a member of the hospital staff
       // directory and must not appear in any administrative list or export.
-      where: { deletedAt: null, primaryRole: { not: RoleSlug.DEV } },
+      where: { deletedAt: null, clinicId: actor.clinicId, primaryRole: { not: RoleSlug.DEV } },
       select: {
         id: true,
         email: true,
@@ -605,19 +706,19 @@ export class UsersService {
     return role ? labels[role] || role : 'Contact';
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, actorId?: string) {
+    const target = actorId
+      ? (await this.requireSameClinicUser(id, actorId)).target
+      : await this.prisma.user.findUnique({ where: { id } });
     const user = await this.prisma.user.findUnique({
-      where: { id },
+      where: { id: target.id },
     });
-
-    if (!user) {
-      throw new NotFoundException('Utilisateur introuvable');
-    }
 
     return user;
   }
 
-  async update(id: string, dto: UpdateUserDto) {
+  async update(id: string, dto: UpdateUserDto, actorId?: string) {
+    const { actor } = await this.requireSameClinicUser(id, actorId);
     if (dto.primaryRole === RoleSlug.DEV) {
       throw new BadRequestException('Le rôle DEV ne peut pas être attribué depuis l’administration.');
     }
@@ -740,43 +841,129 @@ export class UsersService {
       }
     }
 
-    return this.findOne(id);
+    return this.findOne(id, actor.id);
   }
 
   async clockIn(userId: string) {
-    const employee = await this.prisma.employee.findFirst({ where: { userId } });
+    const employee = await this.prisma.employee.findFirst({
+      where: { userId, status: 'ACTIVE' },
+      select: { id: true, clinicId: true, shiftPattern: true, rotationAnchorAt: true, rotationDays: true, permanentShiftEndTime: true },
+    });
     if (!employee) throw new NotFoundException('Employe introuvable');
-    const today = new Date().toISOString().slice(0, 10);
+    const now = new Date();
     const existing = await this.prisma.attendance.findFirst({
       where: {
         employeeId: employee.id,
-        createdAt: { gte: new Date(`${today}T00:00:00.000Z`) },
+        clockOutAt: null,
       },
+      orderBy: { createdAt: 'desc' },
     });
     if (existing) {
-      return this.prisma.attendance.update({ where: { id: existing.id }, data: { clockInAt: existing.clockInAt ?? new Date(), status: 'PRESENT' } });
+      return this.prisma.attendance.update({ where: { id: existing.id }, data: { clockInAt: existing.clockInAt ?? now, status: 'PRESENT' } });
     }
-    return this.prisma.attendance.create({ data: { employeeId: employee.id, clockInAt: new Date(), status: 'PRESENT' } });
+    const planned = await this.resolvePlannedShift(employee, now);
+    const late = planned ? now.getTime() > planned.startAt.getTime() + 5 * 60_000 : false;
+    return this.prisma.attendance.create({
+      data: {
+        employeeId: employee.id,
+        shiftId: planned?.id || undefined,
+        plannedStartAt: planned?.startAt,
+        plannedEndAt: planned?.endAt,
+        clockInAt: now,
+        status: late ? 'LATE' : 'PRESENT',
+      },
+    });
   }
 
   async clockOut(userId: string) {
     const employee = await this.prisma.employee.findFirst({ where: { userId } });
     if (!employee) throw new NotFoundException('Employe introuvable');
-    const today = new Date().toISOString().slice(0, 10);
     const attendance = await this.prisma.attendance.findFirst({
       where: {
         employeeId: employee.id,
-        createdAt: { gte: new Date(`${today}T00:00:00.000Z`) },
+        clockOutAt: null,
       },
       orderBy: { createdAt: 'desc' },
     });
     if (!attendance) {
-      return this.prisma.attendance.create({ data: { employeeId: employee.id, clockInAt: new Date(), clockOutAt: new Date(), status: 'PRESENT' } });
+      return this.prisma.attendance.create({ data: { employeeId: employee.id, clockInAt: new Date(), clockOutAt: new Date(), status: 'PRESENT', handoverState: 'COMPLETED' } });
     }
-    return this.prisma.attendance.update({ where: { id: attendance.id }, data: { clockOutAt: new Date() } });
+    return this.prisma.attendance.update({ where: { id: attendance.id }, data: { clockOutAt: new Date(), handoverState: 'COMPLETED' } });
   }
 
-  async remove(id: string) {
+  async getShiftHandover(userId: string) {
+    const employee = await this.prisma.employee.findFirst({ where: { userId, status: 'ACTIVE' }, select: { id: true } });
+    if (!employee) return { applicable: false, due: false };
+    const attendance = await this.prisma.attendance.findFirst({
+      where: { employeeId: employee.id, clockOutAt: null, plannedEndAt: { not: null } },
+      orderBy: { plannedEndAt: 'desc' },
+    });
+    if (!attendance?.plannedEndAt) return { applicable: true, due: false };
+    const now = new Date();
+    const due = attendance.plannedEndAt <= now && (!attendance.departureReminderAt || attendance.departureReminderAt <= now);
+    return {
+      applicable: true,
+      due,
+      attendanceId: attendance.id,
+      plannedEndAt: attendance.plannedEndAt,
+      reminderAt: attendance.departureReminderAt,
+      deferredCount: attendance.departureDeferredCount,
+    };
+  }
+
+  async decideShiftHandover(userId: string, input: { decision: 'LEAVE' | 'REMIND'; reminderMinutes?: number; reason?: string }) {
+    const employee = await this.prisma.employee.findFirst({ where: { userId, status: 'ACTIVE' }, select: { id: true, clinicId: true } });
+    if (!employee) throw new NotFoundException('Employé introuvable.');
+    const attendance = await this.prisma.attendance.findFirst({
+      where: { employeeId: employee.id, clockOutAt: null, plannedEndAt: { lte: new Date() } },
+      orderBy: { plannedEndAt: 'desc' },
+    });
+    if (!attendance) throw new BadRequestException('Aucune relève arrivée à échéance ne demande votre décision.');
+    const now = new Date();
+    if (input.decision === 'LEAVE') {
+      const result = await this.prisma.attendance.update({ where: { id: attendance.id }, data: { clockOutAt: now, handoverState: 'COMPLETED', departureReminderAt: null, departureReason: input.reason?.trim() || null } });
+      await this.prisma.auditTrail.create({ data: { actorId: userId, entity: 'Attendance', entityId: attendance.id, action: 'UPDATE', after: { event: 'SHIFT_HANDOVER_COMPLETED', clinicId: employee.clinicId, plannedEndAt: attendance.plannedEndAt.toISOString(), clockOutAt: now.toISOString() } } });
+      return { action: 'LEAVE' as const, attendance: result };
+    }
+    const minutes = Number(input.reminderMinutes);
+    if (![5, 10, 15].includes(minutes)) throw new BadRequestException('Le rappel doit être fixé à 5, 10 ou 15 minutes.');
+    const reminderAt = new Date(now.getTime() + minutes * 60_000);
+    const result = await this.prisma.attendance.update({ where: { id: attendance.id }, data: { handoverState: 'DEFERRED', departureReminderAt: reminderAt, departureReminderMinutes: minutes, departureDeferredCount: { increment: 1 }, departureReason: input.reason?.trim() || null } });
+    await this.prisma.auditTrail.create({ data: { actorId: userId, entity: 'Attendance', entityId: attendance.id, action: 'UPDATE', after: { event: 'SHIFT_HANDOVER_DEFERRED', clinicId: employee.clinicId, reminderMinutes: minutes, reminderAt: reminderAt.toISOString() } } });
+    return { action: 'REMIND' as const, reminderAt, attendance: result };
+  }
+
+  async getAttendanceSummary(actorId: string, requestedDays?: number) {
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } });
+    if (!actor?.clinicId) throw new BadRequestException('Administrateur non rattaché à un établissement.');
+    const days = Math.min(90, Math.max(1, Number(requestedDays) || 30));
+    const since = new Date(Date.now() - days * 86_400_000);
+    const entries = await this.prisma.attendance.findMany({
+      where: { createdAt: { gte: since }, employee: { clinicId: actor.clinicId } },
+      select: { id: true, clockInAt: true, clockOutAt: true, plannedStartAt: true, plannedEndAt: true, handoverState: true, departureDeferredCount: true, employee: { select: { firstName: true, lastName: true, user: { select: { displayName: true } } } } },
+      orderBy: { createdAt: 'desc' }, take: 1000,
+    });
+    const row = (entry: typeof entries[number]) => {
+      const name = entry.employee.user?.displayName || `${entry.employee.firstName} ${entry.employee.lastName}`;
+      const lateMinutes = entry.clockInAt && entry.plannedStartAt ? Math.max(0, Math.round((entry.clockInAt.getTime() - entry.plannedStartAt.getTime()) / 60_000)) : 0;
+      const earlyMinutes = entry.clockInAt && entry.plannedStartAt ? Math.max(0, Math.round((entry.plannedStartAt.getTime() - entry.clockInAt.getTime()) / 60_000)) : 0;
+      const effectiveOut = entry.clockOutAt || new Date();
+      const overrunMinutes = entry.plannedEndAt ? Math.max(0, Math.round((effectiveOut.getTime() - entry.plannedEndAt.getTime()) / 60_000)) : 0;
+      return { attendanceId: entry.id, name, lateMinutes, earlyMinutes, overrunMinutes, handoverState: entry.handoverState, deferrals: entry.departureDeferredCount, plannedEndAt: entry.plannedEndAt, clockOutAt: entry.clockOutAt };
+    };
+    const rows = entries.map(row);
+    return {
+      days,
+      totals: { attendances: rows.length, late: rows.filter((item) => item.lateMinutes > 0).length, early: rows.filter((item) => item.earlyMinutes > 0).length, openOverruns: rows.filter((item) => item.overrunMinutes > 0 && !item.clockOutAt).length },
+      latest: rows.slice(0, 10),
+      mostLate: [...rows].filter((item) => item.lateMinutes > 0).sort((a, b) => b.lateMinutes - a.lateMinutes).slice(0, 10),
+      earliest: [...rows].filter((item) => item.earlyMinutes > 0).sort((a, b) => b.earlyMinutes - a.earlyMinutes).slice(0, 10),
+      longestWaiting: [...rows].filter((item) => item.overrunMinutes > 0).sort((a, b) => b.overrunMinutes - a.overrunMinutes).slice(0, 10),
+    };
+  }
+
+  async remove(id: string, actorId?: string) {
+    await this.requireSameClinicUser(id, actorId);
     await this.prisma.user.delete({ where: { id } });
     return { deleted: true };
   }

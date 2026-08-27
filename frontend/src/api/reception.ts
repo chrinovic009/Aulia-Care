@@ -326,7 +326,20 @@ const fetchDbJson = async <T>(path: string): Promise<T> => {
     credentials: "include",
   });
   if (!response.ok) {
-    throw new Error(`DB request failed (${response.status}): ${response.statusText}`);
+    // Keep the server's safe, actionable error message.  Collapsing every
+    // failure to "Forbidden" made a missing clinic membership look like a
+    // database outage and sent reception staff in the wrong direction.
+    let detail = response.statusText || "Erreur inconnue";
+    try {
+      const payload: unknown = await response.json();
+      if (payload && typeof payload === "object" && "message" in payload) {
+        const message = (payload as { message?: unknown }).message;
+        detail = Array.isArray(message) ? message.join(" · ") : String(message || detail);
+      }
+    } catch {
+      // A non-JSON error body is still represented by the HTTP status text.
+    }
+    throw new Error(`Requête refusée (${response.status}) : ${detail}`);
   }
   return response.json() as Promise<T>;
 };

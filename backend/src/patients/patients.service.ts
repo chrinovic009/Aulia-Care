@@ -326,6 +326,25 @@ export class PatientsService {
     return patient;
   }
 
+  /** Lecture administrative d'un dossier : elle reste strictement tenant-scopée.
+   * Les règles de prise en charge propres au médecin restent dans
+   * `findOneForDoctor`. */
+  async findOneForActor(id: string, actorId?: string) {
+    if (!actorId) throw new ForbiddenException('Utilisateur authentifié requis.');
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { clinicId: true, deletedAt: true, status: true },
+    });
+    if (!actor || actor.deletedAt || actor.status !== 'ACTIVE' || !actor.clinicId) {
+      throw new ForbiddenException('Utilisateur actif rattaché à un établissement requis.');
+    }
+    const belongsToClinic = await this.prisma.patient.count({
+      where: { id, clinicId: actor.clinicId, deletedAt: null },
+    });
+    if (!belongsToClinic) throw new NotFoundException('Patient introuvable dans cet établissement.');
+    return this.findOne(id);
+  }
+
   async findOneForDoctor(id: string, doctorId?: string) {
     if (!doctorId) throw new ForbiddenException('Médecin non identifié.');
     const doctor = await this.prisma.user.findUnique({ where: { id: doctorId }, select: { clinicId: true } });
