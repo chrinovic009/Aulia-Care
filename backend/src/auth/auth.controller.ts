@@ -170,6 +170,28 @@ export class AuthController {
     this.setCsrfCookie(response);
   }
 
+  /** A CSRF cookie is not proof of authentication: it is also issued before a
+   * public login. This minimal endpoint lets the SPA decide whether restoring
+   * a cookie session is useful without provoking a visible 401 on /auth/me. */
+  @Public()
+  @Get('session-hint')
+  sessionHint(@Req() request: Request) {
+    return {
+      hasSession: Boolean(
+        this.readCookie(request, 'aulia_access_token') || this.readCookie(request, 'aulia_refresh_token'),
+      ),
+    };
+  }
+
+  /** Clears only browser cookies after an already-invalid session. It is still
+   * covered by the global double-submit CSRF middleware when cookies exist. */
+  @Public()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('clear-expired-session')
+  clearExpiredSession(@Res({ passthrough: true }) response: Response) {
+    this.clearSessionCookies(response);
+  }
+
   // 🔒 PROTÉGÉ - Récupérer le profil actuel (user complet)
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)

@@ -14,49 +14,49 @@ export class PatientsController {
   constructor(private readonly patientsService: PatientsService) {}
 
   @Get()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  @Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
   findAll(@Request() req: any, @Query('page') page?: string, @Query('limit') limit?: string) {
     return this.patientsService.findAll(req.user, Number(page), Number(limit));
   }
 
   @Get('search')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  @Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
   search(@Query('email') email?: string, @Query('phone') phone?: string, @Query('name') name?: string, @Request() req?: any) {
     return this.patientsService.search({ email, phone, name }, req?.user);
   }
 
   @Get('cashier/awaiting-payment')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
+  @Roles('ADMIN', 'CASHIER')
   getPatientsAwaitingPayment() {
     return this.patientsService.getPatientsAwaitingPayment();
   }
 
   @Get('nurse/awaiting-vitals')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE')
+  @Roles('ADMIN', 'NURSE')
   getPatientsAwaitingNurseVitals() {
     return this.patientsService.getPatientsAwaitingNurseVitals();
   }
 
   @Get('nurse/orientation-history')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE')
+  @Roles('ADMIN', 'NURSE')
   getNurseOrientationHistory(@Query('period') period: 'today' | 'yesterday' | 'week' | 'all' = 'today') {
     return this.patientsService.getNurseOrientationHistory(period);
   }
 
   @Get('doctor/assigned')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
+  @Roles('ADMIN', 'PHYSICIAN')
   getPatientsAssignedToDoctor(@Request() req: any) {
     return this.patientsService.getPatientsAssignedToDoctor(req.user?.userId);
   }
 
   @Get('doctor/visible')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
+  @Roles('ADMIN', 'PHYSICIAN')
   getPatientsVisibleToDoctors(@Request() req: any, @Query('page') page?: string, @Query('limit') limit?: string) {
     return this.patientsService.getPatientsVisibleToDoctors(req.user?.userId, Number(page), Number(limit));
   }
 
   @Get('reception-visits')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
+  @Roles('ADMIN', 'RECEPTIONIST')
   getReceptionVisits(@Query('limit') limit: string | undefined, @Request() req: any) {
     return this.patientsService.getReceptionVisits(req.user?.userId, Number(limit) || 100);
   }
@@ -74,34 +74,34 @@ export class PatientsController {
   }
 
   @Post(':id/vital-signs')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE')
+  @Roles('ADMIN', 'NURSE')
   recordVitalSigns(@Param('id') id: string, @Body() dto: RecordVitalSignsDto, @Request() req: any) {
     return this.patientsService.recordVitalSigns(id, dto, req.user?.userId);
   }
 
   @Get(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
+  @Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
   findOne(@Param('id') id: string, @Request() req: any) {
     if (req.user?.primaryRole === 'PHYSICIAN' || req.user?.role === 'PHYSICIAN') {
       return this.patientsService.findOneForDoctor(id, req.user.userId);
     }
-    return this.patientsService.findOne(id);
+    return this.patientsService.findOneForActor(id, req.user?.userId);
   }
 
   @Post('admissions')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
+  @Roles('ADMIN', 'RECEPTIONIST')
   createAdmission(@Body() createAdmissionDto: CreateAdmissionDto, @Request() req: any) {
     return this.patientsService.createAdmission(createAdmissionDto, req.user?.userId);
   }
 
   @Patch(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
+  @Roles('ADMIN', 'RECEPTIONIST')
   update(@Param('id') id: string, @Body() updatePatientDto: UpdatePatientDto, @Request() req: any) {
     return this.patientsService.update(id, updatePatientDto, req.user);
   }
 
   @Delete(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN')
+  @Roles('ADMIN')
   remove(@Param('id') id: string) {
     return this.patientsService.remove(id);
   }

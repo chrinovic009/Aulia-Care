@@ -100,6 +100,8 @@ type HrReport = {
 };
 
 type ClinicBranding = { name?: string; brandDisplayName?: string | null };
+type AttendanceSummaryRow = { attendanceId: string; name: string; lateMinutes: number; earlyMinutes: number; overrunMinutes: number; deferrals: number; clockOutAt?: string | null };
+type AttendanceSummary = { days: number; totals: { attendances: number; late: number; early: number; openOverruns: number }; mostLate: AttendanceSummaryRow[]; earliest: AttendanceSummaryRow[]; longestWaiting: AttendanceSummaryRow[] };
 
 type PhoneCountry = "CD" | "AO" | "RW" | "BI" | "ZM";
 
@@ -209,6 +211,7 @@ export default function GestionPersAdmin() {
   const [services, setServices] = useState<ServiceRecord[]>([]);
   const [departments, setDepartments] = useState<DepartmentRecord[]>([]);
   const [hrReport, setHrReport] = useState<HrReport>({});
+  const [attendanceSummary, setAttendanceSummary] = useState<AttendanceSummary | null>(null);
   const [clinicName, setClinicName] = useState("Aulia Care");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("ALL");
@@ -229,18 +232,20 @@ export default function GestionPersAdmin() {
   const load = async () => {
     setIsLoading(true);
     try {
-      const [usersData, servicesData, departmentsData, hrData, branding] = await Promise.all([
+      const [usersData, servicesData, departmentsData, hrData, branding, attendanceData] = await Promise.all([
         apiFetch<AdminUser[]>("/users").catch(() => []),
         apiFetch<ServiceRecord[]>("/services").catch(() => []),
         apiFetch<DepartmentRecord[]>("/administration/departments").catch(() => []),
         apiFetch<HrReport>("/administration/reports").catch(() => ({})),
         apiFetch<ClinicBranding>("/administration/clinic-branding").catch(() => ({ name: "Aulia Care" })),
+        apiFetch<AttendanceSummary>("/users/attendance/summary?days=30").catch(() => null),
       ]);
       setUsers(usersData.filter((user) => user.primaryRole !== "SUPER_ADMIN" && user.primaryRole !== "ADMIN"));
       setServices(servicesData);
       setDepartments(departmentsData);
       setHrReport(hrData);
       setClinicName(branding.brandDisplayName || branding.name || "Aulia Care");
+      setAttendanceSummary(attendanceData);
     } finally {
       setIsLoading(false);
     }
@@ -535,6 +540,20 @@ export default function GestionPersAdmin() {
         <StatCard icon={<ShieldCheck size={20} />} label="Pharmaciens" value={stats.pharmacists} tone="green" />
         <StatCard icon={<Building2 size={20} />} label="Services actifs" value={services.filter((service) => service.active !== false).length} tone="slate" />
       </div>
+
+      <Panel title="Ponctualité et relèves · 30 derniers jours" subtitle="Calculé depuis les fenêtres de shift enregistrées au pointage. Une sortie dépassée sans déconnexion reste visible.">
+        <div className="grid gap-4 sm:grid-cols-4">
+          <StatCard label="Pointages" value={attendanceSummary?.totals.attendances ?? 0} icon={<UsersRound size={18} />} />
+          <StatCard label="Arrivées tardives" value={attendanceSummary?.totals.late ?? 0} icon={<BriefcaseBusiness size={18} />} />
+          <StatCard label="Arrivées anticipées" value={attendanceSummary?.totals.early ?? 0} icon={<ShieldCheck size={18} />} />
+          <StatCard label="Relèves en attente" value={attendanceSummary?.totals.openOverruns ?? 0} icon={<UserRound size={18} />} />
+        </div>
+        <div className="mt-5 grid gap-5 xl:grid-cols-3">
+          <AttendanceRanking title="Retards les plus importants" empty="Aucun retard enregistré." rows={attendanceSummary?.mostLate || []} value={(item) => `${item.lateMinutes} min de retard`} />
+          <AttendanceRanking title="Arrivées les plus anticipées" empty="Aucune arrivée anticipée enregistrée." rows={attendanceSummary?.earliest || []} value={(item) => `${item.earlyMinutes} min avant le shift`} />
+          <AttendanceRanking title="Dépassements de poste" empty="Aucun dépassement enregistré." rows={attendanceSummary?.longestWaiting || []} value={(item) => `${item.overrunMinutes} min après la sortie${item.deferrals ? ` · ${item.deferrals} rappel(s)` : ""}`} />
+        </div>
+      </Panel>
 
       <Panel title="Annuaire du personnel" subtitle="Recherche, filtres rapides et actions operationnelles.">
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -896,6 +915,10 @@ function PhoneField({ country, value, onCountryChange, onChange }: { country: Ph
 
 function EmailField({ local, domain, onLocalChange, onDomainChange }: { local: string; domain: string; onLocalChange: (value: string) => void; onDomainChange: (value: string) => void }) {
   return <label className="text-sm sm:col-span-2"><span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">E-mail professionnel</span><div className="flex overflow-hidden rounded-lg border border-slate-200 bg-white focus-within:border-aulia-teal focus-within:ring-2 focus-within:ring-aulia-teal/15 dark:border-slate-800 dark:bg-slate-950"><input value={local} onChange={(event) => onLocalChange(event.target.value.replace(/@.*/, "").replace(/\s/g, ""))} placeholder="nom.prenom" autoComplete="email" className="h-10 min-w-0 flex-1 bg-transparent px-3 text-sm outline-none dark:text-white" /><span className="flex h-10 items-center text-sm text-slate-500">@</span><select value={domain} onChange={(event) => onDomainChange(event.target.value)} className="h-10 max-w-32 border-l border-slate-200 bg-transparent px-2 text-sm outline-none dark:border-slate-800 dark:text-white">{emailDomains.map((item) => <option key={item} value={item}>{item}</option>)}</select></div><p className="mt-1 text-xs text-slate-500">Adresse enregistrée : {local ? `${local}@${domain}` : "à compléter"}</p></label>;
+}
+
+function AttendanceRanking({ title, empty, rows, value }: { title: string; empty: string; rows: AttendanceSummaryRow[]; value: (row: AttendanceSummaryRow) => string }) {
+  return <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800"><div className="border-b border-slate-100 px-4 py-3 text-sm font-bold text-aulia-navy dark:border-slate-800 dark:text-white">{title}</div><div className="max-h-64 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">{rows.length ? rows.map((item) => <div key={item.attendanceId} className="flex items-center justify-between gap-3 px-4 py-3 text-sm"><span className="font-medium text-slate-800 dark:text-slate-100">{item.name}</span><span className="shrink-0 text-xs font-semibold text-aulia-teal">{value(item)}</span></div>) : <p className="px-4 py-5 text-sm text-slate-500">{empty}</p>}</div></div>;
 }
 
 function ShiftPreview({ anchor, days }: { anchor: string; days: number }) {

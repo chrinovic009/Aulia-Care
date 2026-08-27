@@ -351,7 +351,9 @@ const AppSidebar: React.FC = () => {
 
   const { currentUser } = useAuth();
   const { isEnabled, layers } = usePlatformLayers();
-  const activeSubscriptionLabel = (layers.configured ? layers.enabledLayers : ["CORE", "AI", "CONNECTED"])
+  // Before the installation configuration is available, never advertise an
+  // optional layer as active. This mirrors the fail-closed route/API policy.
+  const activeSubscriptionLabel = (layers.configured ? layers.enabledLayers : ["CORE"])
     .map((layer) => ({ CORE: "Aulia Care Core", AI: "Aulia AI", CONNECTED: "Aulia Connected" })[layer])
     .join(" + ");
   const [clinicBrand, setClinicBrand] = useState<{ name?: string; brandDisplayName?: string | null }>({});

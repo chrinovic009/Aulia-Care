@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSpeechNotifications } from '../hooks/useSpeechNotifications';
 import RealtimePageBoundary from "../components/common/RealtimePageBoundary";
 import { PatientTelehealthOverlay } from "../components/telehealth/TelehealthCall";
+import { ShiftHandoverPrompt } from "../components/staff/ShiftHandoverPrompt";
 
 const LayoutContent: React.FC = () => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
@@ -25,6 +26,7 @@ const LayoutContent: React.FC = () => {
         } ${isMobileOpen ? "ml-0" : ""}`}
       >
         <AppHeader />
+        <ShiftHandoverPrompt />
         {currentUser?.primaryRole === "PATIENT" && <PatientTelehealthOverlay />}
         <div className="aulia-content-frame mx-auto w-full min-w-0 max-w-[1680px] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           <RealtimePageBoundary><Outlet /></RealtimePageBoundary>

@@ -310,6 +310,7 @@ export default function DashboardMedecin() {
   const [aiFeatureNotice, setAiFeatureNotice] = useState<"VOICE" | "TELEHEALTH" | null>(null);
   const isConsultationPage = location.pathname.includes("/doctor/consultations");
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
+  const [workLocation, setWorkLocation] = useState<{ roomName: string; roomNumber: string; location: string; service: string } | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<DoctorPatient | null>(null);
   const [openedDraft, setOpenedDraft] = useState<{ id: string; status: string; chiefComplaint?: string | null; clinicalSummary?: string | null; createdAt: string; updatedAt?: string; provider?: { id?: string; displayName?: string | null; firstName?: string | null; lastName?: string | null } | null } | null>(null);
   const [query, setQuery] = useState("");
@@ -370,6 +371,13 @@ export default function DashboardMedecin() {
   const [diagnosisDescription, setDiagnosisDescription] = useState("");
   const [consignesDescription, setConsignesDescription] = useState("");
   const [consultationModule, setConsultationModule] = useState<ConsultationModuleState>(createInitialConsultationModule);
+
+  useEffect(() => {
+    if (!currentUser?.id) { setWorkLocation(null); return; }
+    void apiFetch<{ roomName: string; roomNumber: string; location: string; service: string } | null>("/users/me/work-location")
+      .then(setWorkLocation)
+      .catch(() => setWorkLocation(null));
+  }, [currentUser?.id]);
 
   useEffect(() => {
     setHistoryDescription(summarizeHistory(clinicalForm, consultationModule));
@@ -587,6 +595,11 @@ export default function DashboardMedecin() {
   };
 
   const changeConsultationMode = async (value: string) => {
+    if (value === "TELECONSULTATION" && !aiEnabled) {
+      setTelehealthReady(false);
+      setAiFeatureNotice("TELEHEALTH");
+      return;
+    }
     if (value !== "TELECONSULTATION") {
       setTelehealthReady(false);
       setConsultationModule((current) => ({ ...current, consultationMode: value }));
@@ -962,6 +975,11 @@ export default function DashboardMedecin() {
 
   // 🟢 AJOUT DE LA MÉTHODE MANQUANTE : toggleVoiceAssistant
   const toggleVoiceAssistant = () => {
+    if (!aiEnabled) {
+      setIsVoiceListening(false);
+      setAiFeatureNotice("VOICE");
+      return;
+    }
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
@@ -1033,6 +1051,15 @@ export default function DashboardMedecin() {
     setIsVoiceListening(true);
   };
 
+  // A subscription can be changed while this page is still open. In that
+  // case an already selected premium mode must stop immediately rather than
+  // leaving a live telehealth component on a Core-only installation.
+  useEffect(() => {
+    if (aiEnabled || consultationModule.consultationMode !== "TELECONSULTATION") return;
+    setTelehealthReady(false);
+    setConsultationModule((current) => ({ ...current, consultationMode: "PRESENTIAL", telehealthTranscript: [] }));
+  }, [aiEnabled, consultationModule.consultationMode]);
+
   const aiSuggestions = useMemo(() => {
     const complaintText = `${consultationModule.chiefComplaint} ${consultationModule.hpiDescription}`.toLowerCase();
     const diagnoses = [] as Array<{ codeICD: string; label: string; certaintyLevel: "PRESUMPTION" | "CONFIRMED" | "CHRONIC" }>;
@@ -1093,7 +1120,10 @@ export default function DashboardMedecin() {
 
   const callPatient = (patient: DoctorPatient) => {
     const doctorName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : 'le médecin';
-    const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, le docteur ${doctorName} vous attend au cabinet. Veuillez vous présenter immédiatement.`;
+    const destination = workLocation
+      ? `${workLocation.roomName}, ${workLocation.location}`
+      : 'au cabinet de consultation indiqué à l’accueil';
+    const text = `Patient ${patient.firstName || ''} ${patient.lastName || ''}, le docteur ${doctorName} vous attend à ${destination}. Veuillez vous présenter immédiatement.`;
     if ('speechSynthesis' in window) {
       const speakWithVoice = (voices: SpeechSynthesisVoice[]) => {
         const frenchVoice = findFrenchVoice(voices);

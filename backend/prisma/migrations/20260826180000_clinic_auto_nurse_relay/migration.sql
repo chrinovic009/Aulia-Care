@@ -1,2 +1,0 @@
-ALTER TABLE "Clinic"
-ADD COLUMN IF NOT EXISTS "autoNurseRelayEnabled" BOOLEAN NOT NULL DEFAULT false;

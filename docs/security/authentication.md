@@ -43,3 +43,10 @@ Après cinq erreurs de PIN, le compte est verrouillé quinze minutes. Le compteu
 Chaque JWT porte un `sid` de session. Une requête protégée est refusée si cette session a été révoquée ou expirée. La déconnexion normale révoque une seule session ; la déconnexion globale révoque les sessions actives de l’utilisateur.
 
 La rotation de refresh token remplace le hash stocké. Sans historique des refresh tokens consommés, une détection complète de réutilisation d’un ancien refresh token n’est pas encore possible ; l’application refuse toutefois le token ancien. Une table d’historique dédiée serait nécessaire pour révoquer automatiquement la session en cas de réutilisation.
+# Rétention des journaux de sécurité
+
+La commande `npm run maintenance:security-retention` est conçue pour être
+planifiée une fois par jour par l’exploitant. Elle conserve les connexions
+réussies 90 jours, les échecs 365 jours et ne supprime les historiques de
+refresh que lorsque la session est révoquée ou expirée depuis plus de 90 jours.
+Elle ne stocke ni mot de passe, ni PIN, ni jeton brut.

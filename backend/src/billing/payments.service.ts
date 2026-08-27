@@ -22,8 +22,8 @@ export class PaymentsService {
 
     if (actorId) {
       const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true, primaryRole: true } });
-      if (!actor) throw new ForbiddenException('Utilisateur de caisse introuvable.');
-      if (actor.primaryRole !== 'SUPER_ADMIN' && actor.clinicId && invoice.clinicId && actor.clinicId !== invoice.clinicId) {
+      if (!actor?.clinicId) throw new ForbiddenException('Utilisateur de caisse rattaché à un établissement requis.');
+      if (invoice.clinicId && actor.clinicId !== invoice.clinicId) {
         throw new ForbiddenException('Cette facture appartient à un autre établissement.');
       }
     }
@@ -453,7 +453,8 @@ export class PaymentsService {
     const actor = actorId
       ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true, primaryRole: true } })
       : null;
-    const where = actor?.primaryRole === 'SUPER_ADMIN' || !actor?.clinicId ? {} : { clinicId: actor.clinicId };
+    if (!actor?.clinicId) throw new ForbiddenException('Utilisateur de caisse rattaché à un établissement requis.');
+    const where = { clinicId: actor.clinicId };
     const payments = await this.prisma.payment.findMany({
       where,
       include: {

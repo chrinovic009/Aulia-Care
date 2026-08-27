@@ -11,13 +11,13 @@ export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Get()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
+  @Roles('ADMIN', 'CASHIER')
   findAll(@Request() req: any) {
     return this.paymentsService.findAll(req.user?.userId);
   }
 
   @Post()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
+  @Roles('ADMIN', 'CASHIER')
   create(@Body() createPaymentDto: CreatePaymentDto, @Request() req: any) {
     return this.paymentsService.createPayment(createPaymentDto, req.user?.userId);
   }
