@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { isOperationalRole } from '../core/tenant-roles';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -35,6 +36,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         status: true,
         deletedAt: true,
         primaryRole: true,
+        clinicId: true,
         serviceResponsabilites: {
           where: { actif: true },
           include: { service: true },
@@ -49,6 +51,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (!user || user.deletedAt || user.status !== 'ACTIVE') {
       throw new UnauthorizedException('Compte inactif ou suspendu');
+    }
+    if (isOperationalRole(user.primaryRole) && !user.clinicId) {
+      // Fail closed. An old account is repaired by the explicit tenant tool;
+      // it must never receive an unscoped clinical or financial session.
+      throw new UnauthorizedException('Compte institutionnel non rattaché à un établissement. Contactez le Super Admin.');
     }
 
     // Access tokens are bound to a persisted session. This makes a targeted
@@ -73,6 +80,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: payload.email,
       username: payload.username,
       role: user.primaryRole,
+      clinicId: user.clinicId,
       serviceResponsabilites: user.serviceResponsabilites,
       // CORRIGÉ : Utilisation du bon nom de propriété sans "as any"
       departmentResponsibilities: user.departmentResponsibilities,

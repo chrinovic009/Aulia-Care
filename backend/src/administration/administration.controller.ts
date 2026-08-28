@@ -19,7 +19,7 @@ export class AdministrationController {
   }
 
   @Patch('clinic-branding')
-  @Roles('SUPER_ADMIN', 'ADMIN')
+  @Roles('SUPER_ADMIN')
   updateClinicBranding(@Request() req: any, @Body() body: UpdateClinicBrandingDto) {
     return this.administrationService.updateClinicBranding(req.user?.userId, body);
   }

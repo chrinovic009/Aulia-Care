@@ -6,6 +6,7 @@ import { clinicDate, clinicDateFromSerial, clinicDaySerial, clinicMinuteOfDay, c
 import { parseClockTime } from '../core/operational-policy';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { isStaffRole } from '../core/tenant-roles';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -20,6 +21,18 @@ export class UsersService {
     });
     if (!actor || actor.deletedAt || actor.status !== 'ACTIVE' || actor.primaryRole !== RoleSlug.ADMIN || !actor.clinicId) {
       throw new ForbiddenException('Seul un administrateur actif rattaché à une clinique peut gérer les employés.');
+    }
+    return actor;
+  }
+
+  private async requireSuperAdminClinic(actorId?: string) {
+    if (!actorId) throw new ForbiddenException('Super Admin authentifié requis.');
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { id: true, clinicId: true, primaryRole: true, status: true, deletedAt: true },
+    });
+    if (!actor || actor.deletedAt || actor.status !== 'ACTIVE' || actor.primaryRole !== RoleSlug.SUPER_ADMIN || !actor.clinicId) {
+      throw new ForbiddenException('Seul le Super Admin actif de cet établissement peut créer un administrateur.');
     }
     return actor;
   }
@@ -41,16 +54,21 @@ export class UsersService {
 
   /** Limited, clinic-scoped directory used for the nurse's vital-sign routing. */
   async findAvailablePhysicians(actorId?: string) {
-    const actor = actorId
-      ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true } })
-      : null;
+    if (!actorId) throw new ForbiddenException('Utilisateur authentifié requis.');
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { clinicId: true, status: true, deletedAt: true },
+    });
+    if (!actor || actor.deletedAt || actor.status !== 'ACTIVE' || !actor.clinicId) {
+      throw new ForbiddenException('Utilisateur non rattaché à un établissement actif.');
+    }
 
     return this.prisma.user.findMany({
       where: {
         primaryRole: RoleSlug.PHYSICIAN,
         status: 'ACTIVE',
         deletedAt: null,
-        ...(actor?.clinicId ? { clinicId: actor.clinicId } : {}),
+        clinicId: actor.clinicId,
       },
       select: {
         id: true,
@@ -87,11 +105,11 @@ export class UsersService {
     departmentId?: string | null;
     isResponsible?: boolean;
     isDepartmentResponsible?: boolean;
-  }) {
+  }, clinicId: string) {
     if (!dto.departmentId) return dto.primaryRole;
 
-    const department = await this.prisma.department.findUnique({
-      where: { id: dto.departmentId },
+    const department = await this.prisma.department.findFirst({
+      where: { id: dto.departmentId, clinicId, deletedAt: null },
       select: { name: true },
     });
     if (!department) {
@@ -216,14 +234,34 @@ export class UsersService {
     return null;
   }
 
+  private async validateTenantAssignments(clinicId: string, input: { departmentId?: string | null; serviceUnitId?: string | null }) {
+    const [department, serviceUnit] = await Promise.all([
+      input.departmentId
+        ? this.prisma.department.findFirst({ where: { id: input.departmentId, clinicId, deletedAt: null }, select: { id: true } })
+        : Promise.resolve(null),
+      input.serviceUnitId
+        ? this.prisma.serviceUnit.findFirst({ where: { id: input.serviceUnitId, clinicId, active: true, deletedAt: null }, select: { id: true, departmentId: true } })
+        : Promise.resolve(null),
+    ]);
+    if (input.departmentId && !department) throw new BadRequestException('Le département sélectionné ne fait pas partie de votre établissement.');
+    if (input.serviceUnitId && !serviceUnit) throw new BadRequestException('L’unité de service sélectionnée ne fait pas partie de votre établissement ou est inactive.');
+    if (input.departmentId && serviceUnit && serviceUnit.departmentId !== input.departmentId) {
+      throw new BadRequestException('L’unité de service sélectionnée ne correspond pas au département choisi.');
+    }
+  }
+
   async create(dto: CreateUserDto, creatorId?: string) {
     if (dto.primaryRole === RoleSlug.DEV) {
       throw new BadRequestException('Le rôle DEV ne peut être créé que par le provisionnement local sécurisé.');
     }
     this.validateEmployeeSchedule(dto);
     this.validateEmployeeIdentity(dto);
-    const primaryRole = await this.resolvePrimaryRole(dto);
     const creator = await this.requireAdminClinic(creatorId);
+    const primaryRole = await this.resolvePrimaryRole(dto, creator.clinicId);
+    if (!isStaffRole(primaryRole)) {
+      throw new ForbiddenException('Un administrateur peut créer uniquement du personnel opérationnel de son établissement.');
+    }
+    await this.validateTenantAssignments(creator.clinicId, dto);
     const clinic = creator.clinicId
       ? await this.prisma.clinic.findUnique({ where: { id: creator.clinicId }, select: { name: true, brandDisplayName: true } })
       : null;
@@ -277,6 +315,10 @@ export class UsersService {
           status: dto.status ?? 'ACTIVE',
           Employee: {
             create: {
+              // The User and Employee are created atomically by Prisma.  Their
+              // tenant id is written from the authenticated ADMIN, never from
+              // the browser payload.
+              clinicId: creator.clinicId,
               firstName: dto.firstName,
               lastName: dto.lastName,
               hireDate: new Date(),
@@ -321,6 +363,15 @@ export class UsersService {
           departmentResponsibilities: { include: { department: true } },
         },
       });
+      await this.prisma.auditTrail.create({
+        data: {
+          actorId: creator.id,
+          entity: 'USER',
+          entityId: user.id,
+          action: 'CREATE',
+          after: { event: 'STAFF_CREATED', clinicId: creator.clinicId, targetUserId: user.id, role: primaryRole },
+        },
+      });
       return generatedPassword ? { ...user, generatedPassword } : user;
     } catch (error: any) {
       if (
@@ -334,6 +385,61 @@ export class UsersService {
         if (target.includes('email')) {
           throw new BadRequestException('L\'email existe déjà. Choisissez-en un autre.');
         }
+      }
+      throw error;
+    }
+  }
+
+  /** Institutional hierarchy: SUPER_ADMIN → ADMIN.  This is intentionally a
+   * dedicated workflow, not a permissive variant of POST /users. */
+  async createAdmin(dto: CreateUserDto, creatorId?: string) {
+    const creator = await this.requireSuperAdminClinic(creatorId);
+    if (dto.primaryRole && dto.primaryRole !== RoleSlug.ADMIN) {
+      throw new ForbiddenException('Un Super Admin ne peut créer ici qu’un compte ADMIN.');
+    }
+    this.validateEmployeeIdentity(dto);
+    const email = dto.email.trim().toLowerCase();
+    const username = dto.username.trim().toLowerCase();
+    const displayName = dto.displayName.trim() || `${dto.firstName.trim()} ${dto.lastName.trim()}`.trim();
+    const passwordHash = await bcrypt.hash(dto.password || this.makeInitialStaffPassword('ADM', RoleSlug.ADMIN, dto.firstName, dto.lastName, 1), 12);
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const role = await tx.role.upsert({
+          where: { slug: RoleSlug.ADMIN },
+          create: { slug: RoleSlug.ADMIN, name: 'Administrateur établissement', description: 'Administre le personnel et les paramètres de son établissement.' },
+          update: {},
+        });
+        const user = await tx.user.create({
+          data: {
+            email,
+            username,
+            displayName,
+            firstName: dto.firstName.trim(),
+            lastName: dto.lastName.trim(),
+            passwordHash,
+            primaryRole: RoleSlug.ADMIN,
+            clinicId: creator.clinicId,
+            phone: dto.phone ?? null,
+            nationality: dto.nationality ?? null,
+            roles: { create: { roleId: role.id, active: true } },
+          },
+          select: { id: true, email: true, username: true, displayName: true, primaryRole: true, clinicId: true },
+        });
+        await tx.auditTrail.create({
+          data: {
+            actorId: creator.id,
+            entity: 'USER',
+            entityId: user.id,
+            action: 'CREATE',
+            after: { event: 'ADMIN_CREATED', clinicId: creator.clinicId, targetUserId: user.id, role: RoleSlug.ADMIN },
+          },
+        });
+        return user;
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new BadRequestException('Cet e-mail ou ce nom d’utilisateur est déjà utilisé.');
       }
       throw error;
     }
@@ -738,7 +844,10 @@ export class UsersService {
         departmentId: dto.departmentId !== undefined ? dto.departmentId || undefined : existing?.Employee?.[0]?.departmentId,
         isResponsible: dto.isResponsible,
         isDepartmentResponsible: dto.isDepartmentResponsible,
-      });
+      }, actor.clinicId);
+      if (!isStaffRole(data.primaryRole)) {
+        throw new ForbiddenException('Le rôle cible doit rester un rôle opérationnel de votre établissement.');
+      }
     }
 
     if (dto.password) {
@@ -747,6 +856,7 @@ export class UsersService {
     }
 
     for (const key of [
+      'clinicId',
       'gender',
       'dateOfBirth',
       'position',
@@ -783,6 +893,11 @@ export class UsersService {
     if (dto.salaryFrequency !== undefined) contractData.frequency = dto.salaryFrequency;
     if (dto.contractType !== undefined) contractData.type = dto.contractType as any;
 
+    await this.validateTenantAssignments(actor.clinicId, {
+      departmentId: dto.departmentId,
+      serviceUnitId: dto.serviceUnitId,
+    });
+
     if (data.email) data.email = data.email.toLowerCase();
     if (data.username) data.username = data.username.toLowerCase();
 
@@ -798,6 +913,7 @@ export class UsersService {
             where: { id: user.Employee[0].id },
             data: {
               ...employeeData,
+              clinicId: actor.clinicId,
               firstName: data.firstName ?? user.firstName,
               lastName: data.lastName ?? user.lastName,
             },
@@ -805,6 +921,7 @@ export class UsersService {
         : await this.prisma.employee.create({
             data: {
               userId: id,
+              clinicId: actor.clinicId,
               firstName: data.firstName ?? user.firstName,
               lastName: data.lastName ?? user.lastName,
               hireDate: new Date(),

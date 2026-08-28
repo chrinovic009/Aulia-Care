@@ -1848,6 +1848,8 @@ model Clinic {
   id                    String             @id @default(uuid())
   name                  String
   brandDisplayName      String?
+  establishmentType     EstablishmentType  @default(CLINIC)
+  provisioningStatus    ClinicProvisioningStatus @default(DRAFT)
   documentLogoUrl       String?
   documentLogoUpdatedAt DateTime?
   legalName             String?
@@ -1857,9 +1859,13 @@ model Clinic {
   nationalIdNumber      String?
   phone                 String?
   email                 String?
+  website               String?
   address               String?
   city                  String?
+  province              String?
+  neighborhood          String?
   country               String?
+  currency              String             @default("CDF")
   documentFooter        String?
   status                String             @default("ACTIVE")
   /// Operational defaults; timestamps remain stored in UTC.
@@ -1894,16 +1900,19 @@ model Clinic {
   accountingJournal     AccountingJournalEntry[]
   supportingDocuments   FinanceSupportingDocument[]
   refundRequests        RefundRequest[]
+  layerConfiguration    PlatformLayerConfiguration?
 }
 
 model PlatformLayerConfiguration {
-  id                   String       @id @default("default")
+  id                   String       @id @default(uuid())
+  clinicId             String?      @unique
   enabledLayers        AuliaLayer[] @default([CORE])
   configuredAt         DateTime?
   configurationVersion Int          @default(1)
   updatedById          String?
   createdAt            DateTime     @default(now())
   updatedAt            DateTime     @updatedAt
+  clinic               Clinic?      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   updatedBy            User?        @relation("PlatformLayerConfigurationUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@index([updatedById])
@@ -3089,6 +3098,28 @@ enum AuliaLayer {
   CORE
   AI
   CONNECTED
+}
+
+/// The codebase keeps the historical "Clinic" tenant name, while supporting
+/// every establishment form sold by Aulia Care.
+enum EstablishmentType {
+  HOSPITAL
+  CLINIC
+  POLYCLINIC
+  MEDICAL_CENTER
+  DIAGNOSTIC_CENTER
+  HEALTH_CENTER
+  OTHER
+}
+
+/// Persisted provisioning steps prevent a first institutional account from
+/// being created before identity and licensed layers are configured.
+enum ClinicProvisioningStatus {
+  DRAFT
+  IDENTITY_CONFIGURED
+  LAYERS_CONFIGURED
+  SUPER_ADMIN_CREATED
+  ACTIVE
 }
 
 enum MessageStatus {

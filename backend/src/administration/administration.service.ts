@@ -125,36 +125,29 @@ export class AdministrationService {
   }
 
   async getClinicBranding(userId?: string) {
-    const user = userId ? await (this.prisma as any).user.findUnique({
+    if (!userId) throw new ForbiddenException('Utilisateur authentifié requis.');
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { clinicId: true, email: true, Employee: { select: { clinicId: true }, take: 1 } },
-    }) : null;
-    // Some legacy staff accounts are linked through Employee rather than User.
-    // They must receive their hospital branding too, without being allowed to edit it.
-    const linkedPatient = !user?.clinicId && user?.email
-      ? await this.prisma.patient.findFirst({ where: { email: user.email, deletedAt: null }, select: { clinicId: true } })
-      : null;
-    let clinicId = user?.clinicId || user?.Employee?.[0]?.clinicId || linkedPatient?.clinicId;
-    // A local installation with exactly one active establishment is safe to
-    // resolve for legacy accounts which predate clinic links. In a multi-site
-    // database there is deliberately no fallback, preventing tenant leakage.
-    if (!clinicId) {
-      const clinics = await (this.prisma as any).clinic.findMany({ where: { deletedAt: null, status: 'ACTIVE' }, select: { id: true }, take: 2 });
-      if (clinics.length === 1) clinicId = clinics[0].id;
-    }
-    if (!clinicId) return { name: 'Aulia Care', brandDisplayName: null, documentLogoUrl: null };
-    const clinic = await (this.prisma as any).clinic.findUnique({
-      where: { id: clinicId },
-      select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true, legalName: true, registrationNumber: true, rccmNumber: true, taxNumber: true, nationalIdNumber: true, phone: true, email: true, address: true, city: true, country: true, documentFooter: true },
+      select: { clinicId: true, status: true, deletedAt: true },
     });
-    return clinic || { name: 'Aulia Care', brandDisplayName: null, documentLogoUrl: null };
+    if (!user || user.deletedAt || user.status !== 'ACTIVE' || !user.clinicId) {
+      throw new ForbiddenException('Utilisateur non rattaché à un établissement actif.');
+    }
+    const clinic = await this.prisma.clinic.findFirst({
+      where: { id: user.clinicId, deletedAt: null },
+      select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true, legalName: true, registrationNumber: true, rccmNumber: true, taxNumber: true, nationalIdNumber: true, phone: true, email: true, website: true, address: true, city: true, province: true, neighborhood: true, country: true, currency: true, documentFooter: true, timezone: true, establishmentType: true },
+    });
+    if (!clinic) throw new ForbiddenException('Établissement introuvable ou archivé.');
+    return clinic;
   }
 
   async updateClinicBranding(userId: string | undefined, data: UpdateClinicBrandingDto) {
     const user = userId
       ? await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, clinicId: true, primaryRole: true } })
       : null;
-    if (!user) throw new BadRequestException('Session administrateur introuvable. Reconnectez-vous puis réessayez.');
+    if (!user || user.primaryRole !== 'SUPER_ADMIN' || !user.clinicId) {
+      throw new ForbiddenException('Seul le Super Admin rattaché à son établissement peut modifier son identité.');
+    }
     const brandDisplayName = data.brandDisplayName?.trim();
     if (brandDisplayName !== undefined && (brandDisplayName.length < 2 || brandDisplayName.length > 100)) {
       throw new BadRequestException('Le nom affiché doit contenir entre 2 et 100 caractères.');
@@ -163,40 +156,9 @@ export class AdministrationService {
     if (documentLogoUrl && documentLogoUrl.length > 700_000) {
       throw new BadRequestException('Le logo est trop volumineux. Utilisez une image optimisée de moins de 500 Ko.');
     }
-    // First setup: an ADMIN owns the initial clinic record and is attached to it
-    // atomically. The browser never supplies a clinic id, preventing an admin
-    // from attaching their account to another establishment.
-    if (!user.clinicId) {
-      if (!['ADMIN', 'SUPER_ADMIN'].includes(String(user.primaryRole || ''))) {
-        throw new BadRequestException('Seul un administrateur peut initialiser un établissement.');
-      }
-      const clinicName = brandDisplayName || 'Établissement Aulia Care';
-      return this.prisma.$transaction(async (tx) => {
-        const clinic = await (tx as any).clinic.create({
-          data: {
-            name: clinicName,
-            brandDisplayName: brandDisplayName || clinicName,
-            ...(data.documentLogoUrl !== undefined ? { documentLogoUrl, documentLogoUpdatedAt: new Date() } : {}),
-            ...(data.legalName !== undefined ? { legalName: data.legalName.trim() || null } : {}),
-            ...(data.registrationNumber !== undefined ? { registrationNumber: data.registrationNumber.trim() || null } : {}),
-            ...(data.rccmNumber !== undefined ? { rccmNumber: data.rccmNumber.trim() || null } : {}),
-            ...(data.taxNumber !== undefined ? { taxNumber: data.taxNumber.trim() || null } : {}),
-            ...(data.nationalIdNumber !== undefined ? { nationalIdNumber: data.nationalIdNumber.trim() || null } : {}),
-            ...(data.phone !== undefined ? { phone: data.phone.trim() || null } : {}),
-            ...(data.email !== undefined ? { email: data.email.trim().toLowerCase() || null } : {}),
-            ...(data.address !== undefined ? { address: data.address.trim() || null } : {}),
-            ...(data.city !== undefined ? { city: data.city.trim() || null } : {}),
-            ...(data.country !== undefined ? { country: data.country.trim() || null } : {}),
-            ...(data.documentFooter !== undefined ? { documentFooter: data.documentFooter.trim() || null } : {}),
-          },
-          select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true, legalName: true, registrationNumber: true, rccmNumber: true, taxNumber: true, nationalIdNumber: true, phone: true, email: true, address: true, city: true, country: true, documentFooter: true },
-        });
-        await tx.user.update({ where: { id: user.id }, data: { clinicId: clinic.id } });
-        return clinic;
-      });
-    }
-
-    return (this.prisma as any).clinic.update({
+    const before = await this.prisma.clinic.findUniqueOrThrow({ where: { id: user.clinicId } });
+    return this.prisma.$transaction(async (tx) => {
+      const clinic = await tx.clinic.update({
       where: { id: user.clinicId },
       data: {
         // `name` is the canonical establishment name used by older print
@@ -217,6 +179,18 @@ export class AdministrationService {
         ...(data.documentFooter !== undefined ? { documentFooter: data.documentFooter.trim() || null } : {}),
       },
       select: { id: true, name: true, brandDisplayName: true, documentLogoUrl: true, documentLogoUpdatedAt: true, legalName: true, registrationNumber: true, rccmNumber: true, taxNumber: true, nationalIdNumber: true, phone: true, email: true, address: true, city: true, country: true, documentFooter: true },
+      });
+      await tx.auditTrail.create({
+        data: {
+          actorId: user.id,
+          entity: 'CLINIC',
+          entityId: user.clinicId,
+          action: 'UPDATE',
+          before: { clinicId: before.id, name: before.name, brandDisplayName: before.brandDisplayName },
+          after: { event: 'CLINIC_IDENTITY_UPDATED', clinicId: user.clinicId, name: clinic.name, brandDisplayName: clinic.brandDisplayName },
+        },
+      });
+      return clinic;
     });
   }
 

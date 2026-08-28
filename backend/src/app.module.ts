@@ -26,6 +26,7 @@ import { ClinicalIntelligenceModule } from './clinical-intelligence/clinical-int
 import { IntelligenceModule } from './intelligence/intelligence.module';
 import { PlatformLayersModule } from './platform/layers/platform-layers.module';
 import { PlatformLayerAccessGuard } from './platform/layers/platform-layer-access.guard';
+import { PlatformProvisioningModule } from './platform/provisioning/platform-provisioning.module';
 
 const clinicalAiModules = process.env.AULIA_ENABLE_CLINICAL_AI === 'false'
   ? []
@@ -42,6 +43,7 @@ const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
     }),
     PrismaModule,
     PlatformLayersModule,
+    PlatformProvisioningModule,
     AuthModule,
     UsersModule,
     RolesModule,
