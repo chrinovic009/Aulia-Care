@@ -62,6 +62,12 @@ export class UsersController {
     return this.usersService.create(createUserDto, req.user?.userId);
   }
 
+  @Post('super-admin/admins')
+  @Roles('SUPER_ADMIN')
+  createAdmin(@Body() createUserDto: CreateUserDto, @Request() req: any) {
+    return this.usersService.createAdmin(createUserDto, req.user?.userId);
+  }
+
   @Patch(':id')
   @Roles('SUPER_ADMIN', 'ADMIN')
   update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto, @Request() req: any) {
