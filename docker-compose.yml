@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aulia-care-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: aulia_care
+      POSTGRES_USER: aulia
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - aulia_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aulia -d aulia_care"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - aulia-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: aulia-care-redis
+    restart: unless-stopped
+
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--requirepass",
+        "${REDIS_PASSWORD}"
+      ]
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - aulia_redis_data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - aulia-network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.dev
+
+    container_name: aulia-care-frontend
+    restart: unless-stopped
+
+    ports:
+      - "5173:5173"
+
+    environment:
+      NODE_ENV: development
+      AULIA_BACKEND_URL: http://host.docker.internal:3000
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    networks:
+      - aulia-network
+
+volumes:
+  aulia_postgres_data:
+  aulia_redis_data:
+
+networks:
+  aulia-network:
+    driver: bridge
