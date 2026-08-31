@@ -290,6 +290,7 @@ export class AuthService {
         firstName: true,
         lastName: true,
         primaryRole: true,
+        clinicId: true,
         phone: true,
         specialty: true,
         nationality: true,

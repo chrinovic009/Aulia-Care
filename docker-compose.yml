@@ -53,6 +53,111 @@ services:
     networks:
       - aulia-network
 
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+
+    container_name: aulia-care-backend
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    env_file:
+      - ./backend/.env
+
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+
+      DATABASE_URL: postgresql://aulia:${POSTGRES_PASSWORD}@postgres:5432/aulia_care?schema=public
+
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+
+      CORS_ORIGIN: http://localhost:5173,http://127.0.0.1:5173
+
+      # Docker DNS, never localhost: each service is an independent process.
+      AULIA_CLINICAL_AI_URL: http://clinical-ai:3100
+
+    volumes:
+      - ./backend:/app/backend
+      - /app/node_modules
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      redis:
+        condition: service_healthy
+
+      clinical-ai:
+        condition: service_started
+
+    networks:
+      - aulia-network
+
+  # Independently deployable clinical intelligence process. It exposes no host
+  # port: only Core can invoke its versioned, secret-protected contract.
+  clinical-ai:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+
+    container_name: aulia-care-ai-service
+    restart: unless-stopped
+    command: npm run dev:clinical-ai
+
+    env_file:
+      - ./backend/.env
+
+    environment:
+      NODE_ENV: development
+      CLINICAL_AI_PORT: 3100
+
+    volumes:
+      - ./backend:/app/backend
+      - /app/node_modules
+
+    expose:
+      - "3100"
+
+    networks:
+      - aulia-network
+
+  # Connected Care remains a separate gateway. It communicates with Core only
+  # through the versioned ingestion contract and an integration secret.
+  connected-care:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+
+    container_name: aulia-care-connected-service
+    restart: unless-stopped
+    command: npm run dev:connected-care
+
+    env_file:
+      - ./backend/.env
+
+    environment:
+      NODE_ENV: development
+      CONNECTED_CARE_PORT: 3200
+      AULIA_CORE_CONNECTED_CARE_URL: http://backend:3000/api
+
+    volumes:
+      - ./backend:/app/backend
+      - /app/node_modules
+
+    depends_on:
+      backend:
+        condition: service_started
+
+    expose:
+      - "3200"
+
+    networks:
+      - aulia-network
+
   frontend:
     build:
       context: .
@@ -66,13 +171,16 @@ services:
 
     environment:
       NODE_ENV: development
-      AULIA_BACKEND_URL: http://host.docker.internal:3000
+      AULIA_BACKEND_URL: http://backend:3000
+      CHOKIDAR_USEPOLLING: "true"
+
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/node_modules
 
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      backend:
+        condition: service_started
 
     networks:
       - aulia-network

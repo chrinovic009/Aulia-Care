@@ -42,7 +42,7 @@ export class PlatformProvisioningService {
     return clinic;
   }
 
-  private identityData(dto: CreateProvisionedClinicDto | UpdateProvisionedClinicDto): Prisma.ClinicUncheckedUpdateInput {
+  private identityData(dto: CreateProvisionedClinicDto | UpdateProvisionedClinicDto) {
     if (dto.timezone !== undefined && !isValidIanaTimezone(dto.timezone)) {
       throw new BadRequestException('La timezone doit être un identifiant IANA valide, par exemple Africa/Lubumbashi.');
     }
@@ -97,6 +97,22 @@ export class PlatformProvisioningService {
         },
       });
       return clinic;
+    });
+  }
+
+  /** Platform registry. DEV can see institution metadata and provisioning
+   * progress, never clinical records. */
+  async listClinics(actorId: string | undefined) {
+    await this.requireDev(actorId);
+    return this.prisma.clinic.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true, name: true, brandDisplayName: true, establishmentType: true,
+        status: true, provisioningStatus: true, timezone: true, updatedAt: true,
+        layerConfiguration: { select: { enabledLayers: true, configuredAt: true } },
+        users: { where: { primaryRole: RoleSlug.SUPER_ADMIN, deletedAt: null }, select: { id: true }, take: 1 },
+      },
+      orderBy: { updatedAt: 'desc' },
     });
   }
 

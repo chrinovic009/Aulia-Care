@@ -38,45 +38,45 @@ export class AdministrationController {
 
   @Get('departments')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN', 'RECEPTIONIST')
-  departments() {
-    return this.administrationService.departments();
+  departments(@Request() req: any) {
+    return this.administrationService.departments(req.user?.userId);
   }
 
   @Get('service-units')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')
-  serviceUnits() {
-    return this.administrationService.serviceUnits();
+  serviceUnits(@Request() req: any) {
+    return this.administrationService.serviceUnits(req.user?.userId);
   }
 
   @Post('departments/:id/responsables')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  addDepartmentResponsables(@Param('id') id: string, @Body() body: any) {
+  addDepartmentResponsables(@Param('id') id: string, @Body() body: any, @Request() req: any) {
     const items = Array.isArray(body) ? body : [body];
-    return this.administrationService.addDepartmentResponsables(items.map((it) => ({ ...it, departmentId: id })));
+    return this.administrationService.addDepartmentResponsables(items.map((it) => ({ ...it, departmentId: id })), req.user?.userId);
   }
 
   @Post('departments')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  createDepartment(@Body() body: any) {
-    return this.administrationService.createDepartment(body);
+  createDepartment(@Body() body: any, @Request() req: any) {
+    return this.administrationService.createDepartment(body, req.user?.userId);
   }
 
   @Patch('departments/:id')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  updateDepartment(@Param('id') id: string, @Body() body: any) {
-    return this.administrationService.updateDepartment(id, body);
+  updateDepartment(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+    return this.administrationService.updateDepartment(id, body, req.user?.userId);
   }
 
   @Delete('departments/:id')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  deleteDepartment(@Param('id') id: string) {
-    return this.administrationService.removeDepartment(id);
+  deleteDepartment(@Param('id') id: string, @Request() req: any) {
+    return this.administrationService.removeDepartment(id, req.user?.userId);
   }
 
   @Post('service-units')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  createServiceUnit(@Body() body: any) {
-    return this.administrationService.createServiceUnit(body);
+  createServiceUnit(@Body() body: any, @Request() req: any) {
+    return this.administrationService.createServiceUnit(body, req.user?.userId);
   }
 
   @Get('rooms')

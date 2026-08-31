@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Outfit:wght@100..900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap");
 
 @import "tailwindcss";
 
@@ -6,7 +6,9 @@
 
 @theme {
   --font-*: initial;
-  --font-outfit: Montserrat, Outfit, sans-serif;
+  /* Montserrat is the Aulia Care reference typeface. Keep the historical
+     utility name so legacy pages inherit it without a component rewrite. */
+  --font-outfit: Montserrat, Arial, sans-serif;
 
   --breakpoint-*: initial;
   --breakpoint-2xsm: 375px;
@@ -396,6 +398,22 @@
 
 .aulia-field:focus {
   border-color: var(--aulia-teal);
+}
+
+.aulia-input {
+  width: 100%;
+  border: 1px solid var(--aulia-border);
+  border-radius: 0.75rem;
+  background: var(--aulia-surface-raised);
+  padding: 0.625rem 0.75rem;
+  color: var(--aulia-ink);
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.aulia-input:focus {
+  border-color: var(--aulia-teal);
+  box-shadow: 0 0 0 3px rgb(13 148 136 / 18%);
 }
 
 .dark .aulia-notification-panel {

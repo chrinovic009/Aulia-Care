@@ -21,6 +21,11 @@ export class PlatformProvisioningController {
     return this.provisioning.createClinic(req.user?.userId, dto);
   }
 
+  @Get('clinics')
+  listClinics(@Request() req: { user?: { userId?: string } }) {
+    return this.provisioning.listClinics(req.user?.userId);
+  }
+
   @Get('clinics/:clinicId')
   getClinic(@Request() req: { user?: { userId?: string } }, @Param('clinicId') clinicId: string) {
     return this.provisioning.getClinic(req.user?.userId, clinicId);

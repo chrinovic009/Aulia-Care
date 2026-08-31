@@ -15,8 +15,8 @@ export type PlatformLayers = {
 
 const fallback: PlatformLayers = {
   configured: false,
-  enabledLayers: ["CORE"],
-  availableLayers: ["CORE"],
+  enabledLayers: [],
+  availableLayers: ["CORE", "AI", "CONNECTED"],
   configurationVersion: 0,
   configuredAt: null,
   updatedAt: null,
@@ -27,7 +27,6 @@ type PlatformLayersContextValue = {
   isLoading: boolean;
   isEnabled: (layer: AuliaLayer) => boolean;
   refresh: () => Promise<void>;
-  save: (enabledLayers: AuliaLayer[]) => Promise<PlatformLayers>;
 };
 
 const PlatformLayersContext = createContext<PlatformLayersContextValue | undefined>(undefined);
@@ -57,26 +56,14 @@ export function PlatformLayersProvider({ children }: { children: React.ReactNode
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const save = useCallback(async (enabledLayers: AuliaLayer[]) => {
-    const saved = await apiFetch<PlatformLayers>("/platform/layers", {
-      method: "PUT",
-      body: JSON.stringify({ layers: enabledLayers }),
-    });
-    setLayers(saved);
-    window.dispatchEvent(new CustomEvent("aulia:platform-layers-updated", { detail: saved }));
-    return saved;
-  }, []);
-
   const value = useMemo(() => ({
     layers,
     isLoading,
-    // Core is intentionally permanent. Optional layers must fail closed: a
-    // loading, expired-session or network error must never reveal AI/Connected
-    // functionality simply because the configuration could not be read.
-    isEnabled: (layer: AuliaLayer) => layer === "CORE" || (layers.configured && layers.enabledLayers.includes(layer)),
+    // A missing, expired or unreadable configuration must never reveal a
+    // product. All three layers are explicit entitlements of the clinic.
+    isEnabled: (layer: AuliaLayer) => layers.configured && layers.enabledLayers.includes(layer),
     refresh,
-    save,
-  }), [layers, isLoading, refresh, save]);
+  }), [layers, isLoading, refresh]);
 
   return <PlatformLayersContext.Provider value={value}>{children}</PlatformLayersContext.Provider>;
 }

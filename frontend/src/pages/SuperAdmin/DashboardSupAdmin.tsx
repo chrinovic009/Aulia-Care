@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../config/api";
 import PageMeta from "../../components/common/PageMeta";
+import AdminManagement from "./AdminManagement";
 
 type MonthlyPoint = { key: string; label: string; billed: number; collected: number; patientPayments: number; insurancePayments: number };
 type ExecutiveDashboard = {
@@ -13,7 +14,7 @@ type ExecutiveDashboard = {
   reports: { invoicesInPeriod: number; paymentsInPeriod: number; claimsPending: number; activeStaff: number };
 };
 
-const tabs = ["Vue globale", "Finances", "Performances", "Alertes & rapports"] as const;
+const tabs = ["Vue globale", "Finances", "Performances", "Alertes & rapports", "Administrateurs"] as const;
 type Tab = (typeof tabs)[number];
 const cdf = (value: number) => `${Number(value || 0).toLocaleString("fr-FR")} CDF`;
 const roleLabel: Record<string, string> = { ADMIN: "Administrateurs", PHYSICIAN: "Médecins", NURSE: "Infirmiers", PHARMACIST: "Pharmaciens", RECEPTIONIST: "Réception", CASHIER: "Caisse", FINANCE: "Finance", RADIOLOGIST: "Radiologie", LAB_MANAGER: "Responsables labo", LAB_TECHNICIAN: "Techniciens labo" };
@@ -38,9 +39,10 @@ export default function DashboardSupAdmin() {
   return <div className="mx-auto w-full max-w-7xl space-y-5 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
     <PageMeta title="Direction générale | Aulia Care" description="Pilotage consolidé de l’établissement." />
     <section className="aulia-card overflow-hidden p-5 sm:p-7"><div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Direction générale</p><h1 className="mt-2 text-2xl font-semibold text-aulia-navy dark:text-white sm:text-3xl">Vue complète de l’établissement</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">Activité, encaissements, créances, capacité, ressources et alertes prioritaires, en langage clair.</p></div><button type="button" onClick={() => void load()} disabled={loading} className="rounded-xl border border-aulia-teal/30 px-4 py-2.5 text-sm font-semibold text-aulia-teal transition hover:bg-aulia-mist disabled:opacity-50 dark:hover:bg-aulia-teal/10">Actualiser les données</button></div><div className="mt-6 flex gap-2 overflow-x-auto pb-1">{tabs.map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === item ? "bg-aulia-teal text-white shadow-sm" : "border border-slate-200 text-slate-600 hover:bg-aulia-mist dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"}`}>{item}</button>)}</div></section>
-    {loading && <section className="aulia-card p-8 text-center text-sm text-slate-500 dark:text-slate-300">Chargement de la synthèse directionnelle…</section>}
-    {error && <section className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200"><p className="font-semibold">Synthèse indisponible</p><p className="mt-1">{error}</p><button type="button" onClick={() => void load()} className="mt-3 rounded-lg bg-red-700 px-3 py-2 font-semibold text-white">Réessayer</button></section>}
-    {!loading && data && <><div>{tab === "Vue globale" && <Overview data={data} largestService={largestService} />}{tab === "Finances" && <Finance data={data} />}{tab === "Performances" && <Performance data={data} />}{tab === "Alertes & rapports" && <AlertsAndReports data={data} />}</div><p className="px-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Mis à jour le {new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(data.generatedAt))}. {data.disclaimer}</p></>}
+    {tab !== "Administrateurs" && loading && <section className="aulia-card p-8 text-center text-sm text-slate-500 dark:text-slate-300">Chargement de la synthèse directionnelle…</section>}
+    {tab !== "Administrateurs" && error && <section className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200"><p className="font-semibold">Synthèse indisponible</p><p className="mt-1">{error}</p><button type="button" onClick={() => void load()} className="mt-3 rounded-lg bg-red-700 px-3 py-2 font-semibold text-white">Réessayer</button></section>}
+    {tab === "Administrateurs" && <AdminManagement />}
+    {!loading && data && tab !== "Administrateurs" && <><div>{tab === "Vue globale" && <Overview data={data} largestService={largestService} />}{tab === "Finances" && <Finance data={data} />}{tab === "Performances" && <Performance data={data} />}{tab === "Alertes & rapports" && <AlertsAndReports data={data} />}</div><p className="px-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Mis à jour le {new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(data.generatedAt))}. {data.disclaimer}</p></>}
   </div>;
 }
 

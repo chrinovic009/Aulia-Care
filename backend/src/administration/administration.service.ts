@@ -26,6 +26,32 @@ export class AdministrationService {
     return user;
   }
 
+  /** Administration configuration may be managed by the local ADMIN or the
+   * institutional SUPER_ADMIN, but always inside their own immutable tenant. */
+  private async requireClinicManager(userId?: string) {
+    if (!userId) throw new ForbiddenException('Administrateur authentifié requis.');
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, clinicId: true, primaryRole: true, deletedAt: true, status: true },
+    });
+    if (!user || user.deletedAt || user.status !== 'ACTIVE' || !user.clinicId || !['ADMIN', 'SUPER_ADMIN'].includes(String(user.primaryRole))) {
+      throw new ForbiddenException('Configuration limitée aux responsables de leur établissement.');
+    }
+    return user;
+  }
+
+  private async requireClinicMember(userId?: string) {
+    if (!userId) throw new ForbiddenException('Utilisateur authentifié requis.');
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, clinicId: true, primaryRole: true, deletedAt: true, status: true },
+    });
+    if (!user || user.deletedAt || user.status !== 'ACTIVE' || !user.clinicId || user.primaryRole === 'DEV') {
+      throw new ForbiddenException('Utilisateur non rattaché à un établissement actif.');
+    }
+    return user;
+  }
+
   async getClinicOperationalPolicy(userId?: string) {
     const admin = await this.requireClinicAdministrator(userId);
     return this.prisma.clinic.findUniqueOrThrow({
@@ -201,7 +227,9 @@ export class AdministrationService {
       principal?: boolean;
       replaceExistingPrincipal?: boolean;
     }[],
+    actorId?: string,
   ) {
+    const actor = await this.requireClinicManager(actorId);
     const created = [];
 
     const allowedChiefRoles = [
@@ -219,8 +247,12 @@ export class AdministrationService {
     ];
 
     for (const it of items) {
-      const user = await this.prisma.user.findUnique({ where: { id: it.userId } });
+      const [user, department] = await Promise.all([
+        this.prisma.user.findFirst({ where: { id: it.userId, clinicId: actor.clinicId, deletedAt: null } }),
+        this.prisma.department.findFirst({ where: { id: it.departmentId, clinicId: actor.clinicId, deletedAt: null } }),
+      ]);
       if (!user) throw new BadRequestException('Utilisateur introuvable');
+      if (!department) throw new NotFoundException('Département introuvable dans cet établissement.');
 
       if (user.primaryRole && !allowedChiefRoles.includes(user.primaryRole)) {
         throw new BadRequestException('Cet utilisateur ne peut pas être responsable de département');
@@ -262,9 +294,10 @@ export class AdministrationService {
     return created;
   }
 
-  departments() {
-    return (this.prisma as any).department.findMany({
-      where: { deletedAt: null },
+  async departments(actorId?: string) {
+    const actor = await this.requireClinicMember(actorId);
+    return this.prisma.department.findMany({
+      where: { clinicId: actor.clinicId, deletedAt: null },
       include: {
         services: { // <-- Assure-toi que c'est bien "services" dans ton schema.prisma
           where: { deletedAt: null },
@@ -279,9 +312,10 @@ export class AdministrationService {
     });
   }
 
-  serviceUnits() {
-    return (this.prisma as any).serviceUnit.findMany({
-      where: { deletedAt: null },
+  async serviceUnits(actorId?: string) {
+    const actor = await this.requireClinicMember(actorId);
+    return this.prisma.serviceUnit.findMany({
+      where: { clinicId: actor.clinicId, deletedAt: null },
       include: {
         department: true,
         rooms: { include: { beds: true } },
@@ -291,15 +325,16 @@ export class AdministrationService {
     });
   }
 
-  async createDepartment(data: any) {
+  async createDepartment(data: any, actorId?: string) {
+    const actor = await this.requireClinicManager(actorId);
     const normalized = this.validateDepartmentInput(data);
     if (!data.type) {
       throw new BadRequestException("Le champ 'type' (DepartmentType) est requis pour créer un département.");
     }
 
     try {
-      return await (this.prisma as any).department.create({
-        data: { name: normalized.name, code: normalized.code, type: normalized.type, description: data.description ?? null, isParamedical: data.isParamedical ?? false },
+      return await this.prisma.department.create({
+        data: { clinicId: actor.clinicId, name: normalized.name, code: normalized.code, type: normalized.type as never, description: data.description ?? null, isParamedical: data.isParamedical ?? false },
       });
     } catch (error: any) {
       if (error?.code === 'P2002') throw new ConflictException('Un département actif utilise déjà ce nom ou ce code.');
@@ -307,8 +342,9 @@ export class AdministrationService {
     }
   }
 
-  async updateDepartment(id: string, data: any) {
-    const existing = await (this.prisma as any).department.findFirst({ where: { id, deletedAt: null } });
+  async updateDepartment(id: string, data: any, actorId?: string) {
+    const actor = await this.requireClinicManager(actorId);
+    const existing = await this.prisma.department.findFirst({ where: { id, clinicId: actor.clinicId, deletedAt: null } });
     if (!existing) {
       throw new NotFoundException('Département introuvable');
     }
@@ -318,31 +354,32 @@ export class AdministrationService {
       code: data.code ?? existing.code,
       type: data.type ?? existing.type,
     });
-    return (this.prisma as any).department.update({
+    return this.prisma.department.update({
       where: { id },
       data: {
         name: normalized.name,
         code: normalized.code,
-        type: normalized.type,
+        type: normalized.type as never,
         description: data.description ?? existing.description,
         isParamedical: data.isParamedical ?? existing.isParamedical,
       },
     });
   }
 
-  async removeDepartment(id: string) {
-    const existing = await (this.prisma as any).department.findFirst({ where: { id, deletedAt: null } });
+  async removeDepartment(id: string, actorId?: string) {
+    const actor = await this.requireClinicManager(actorId);
+    const existing = await this.prisma.department.findFirst({ where: { id, clinicId: actor.clinicId, deletedAt: null } });
     if (!existing) {
       throw new NotFoundException('Département introuvable');
     }
 
     const [units, employees, responsables] = await Promise.all([
-      (this.prisma as any).serviceUnit.count({ where: { departmentId: id, deletedAt: null } }),
-      (this.prisma as any).employee.count({ where: { departmentId: id } }),
-      (this.prisma as any).departmentResponsable.count({ where: { departmentId: id } }),
+      this.prisma.serviceUnit.count({ where: { departmentId: id, clinicId: actor.clinicId, deletedAt: null } }),
+      this.prisma.employee.count({ where: { departmentId: id, clinicId: actor.clinicId } }),
+      this.prisma.departmentResponsable.count({ where: { departmentId: id, user: { clinicId: actor.clinicId } } }),
     ]);
     if (units === 0 && employees === 0 && responsables === 0) {
-      await (this.prisma as any).department.delete({ where: { id } });
+      await this.prisma.department.delete({ where: { id } });
       return { success: true, id, deleted: true, archived: false };
     }
 
@@ -350,27 +387,28 @@ export class AdministrationService {
     // and free its name/code for a later legitimate recreation.
     const archivedAt = new Date();
     const suffix = `__ARCHIVED__${id.slice(0, 8)}`;
-    await (this.prisma as any).$transaction(async (tx: any) => {
-      await tx.serviceUnit.updateMany({ where: { departmentId: id, deletedAt: null }, data: { deletedAt: archivedAt, active: false } });
-      await tx.employee.updateMany({ where: { departmentId: id }, data: { departmentId: null } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.serviceUnit.updateMany({ where: { departmentId: id, clinicId: actor.clinicId, deletedAt: null }, data: { deletedAt: archivedAt, active: false } });
+      await tx.employee.updateMany({ where: { departmentId: id, clinicId: actor.clinicId }, data: { departmentId: null } });
       await tx.departmentResponsable.deleteMany({ where: { departmentId: id } });
       await tx.department.update({ where: { id }, data: { deletedAt: archivedAt, name: `${existing.name}${suffix}`, code: `${existing.code}${suffix}` } });
     });
     return { success: true, id, deleted: false, archived: true };
   }
 
-  async createServiceUnit(data: any) {
+  async createServiceUnit(data: any, actorId?: string) {
+    const actor = await this.requireClinicManager(actorId);
     const department = await this.prisma.department.findFirst({
-      where: { id: data.departmentId, deletedAt: null },
+      where: { id: data.departmentId, clinicId: actor.clinicId, deletedAt: null },
       select: { id: true, type: true, name: true },
     });
     if (!department) throw new NotFoundException('Département introuvable.');
     const name = String(data.name || '').trim();
     if (!name) throw new BadRequestException('Le nom de l’unité est obligatoire.');
-    const prior = await (this.prisma as any).serviceUnit.findFirst({ where: { departmentId: department.id, name } });
+    const prior = await this.prisma.serviceUnit.findFirst({ where: { departmentId: department.id, clinicId: actor.clinicId, name } });
     const created = prior
-      ? await (this.prisma as any).serviceUnit.update({ where: { id: prior.id }, data: { deletedAt: null, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true } })
-      : await (this.prisma as any).serviceUnit.create({ data: { name, departmentId: department.id, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true } });
+      ? await this.prisma.serviceUnit.update({ where: { id: prior.id }, data: { deletedAt: null, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true } })
+      : await this.prisma.serviceUnit.create({ data: { clinicId: actor.clinicId, name, departmentId: department.id, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true } });
     return { ...created, billable: department.type !== 'ADMINISTRATION' };
   }
 

@@ -2,6 +2,7 @@ import { ChangeEvent, useEffect, useState } from "react";
 import PageMeta from "../../components/common/PageMeta";
 import { apiFetch } from "../../config/api";
 import { setClinicDocumentBrandingCache } from "../../utils/clinicDocumentBranding";
+import { useAuth } from "../../context/AuthContext";
 
 type ClinicBranding = {
   name: string;
@@ -27,6 +28,8 @@ const emptyIdentity = {
 };
 
 export default function ClinicBrandingPage() {
+  const { currentUser } = useAuth();
+  const canEdit = currentUser?.primaryRole === "SUPER_ADMIN";
   const [branding, setBranding] = useState<ClinicBranding | null>(null);
   const [name, setName] = useState("");
   const [logo, setLogo] = useState<string | null>(null);
@@ -57,6 +60,10 @@ export default function ClinicBrandingPage() {
   };
 
   const save = async () => {
+    if (!canEdit) {
+      setMessage("Lecture seule : seul le Super Admin de l’établissement peut modifier son identité.");
+      return;
+    }
     setSaving(true); setMessage(null);
     try {
       const saved = await apiFetch<ClinicBranding>("/administration/clinic-branding", { method: "PATCH", body: JSON.stringify({ brandDisplayName: name, documentLogoUrl: logo, ...identity }) });
@@ -76,7 +83,7 @@ export default function ClinicBrandingPage() {
       <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">Aulia Care reste la plateforme. Les informations ci-dessous identifient votre établissement sur les documents officiels : nom, logo, coordonnées et numéros légaux.</p>
     </section>
     <section className="grid gap-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-[1fr_260px] sm:p-7">
-      <div className="space-y-5">
+      <fieldset disabled={!canEdit} className="space-y-5 disabled:opacity-75">
         <label className="block"><span className="text-sm font-semibold text-slate-800 dark:text-white">Nom affiché de l’établissement</span><input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder={branding?.name || "Ex. Clinique Saint-Raphaël"} className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-aulia-teal dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
         <label className="block"><span className="text-sm font-semibold text-slate-800 dark:text-white">Dénomination légale</span><input value={identity.legalName} onChange={(e) => setIdentity((current) => ({ ...current, legalName: e.target.value }))} maxLength={160} placeholder="Nom légal de l’établissement" className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-aulia-teal dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
         <label className="block"><span className="text-sm font-semibold text-slate-800 dark:text-white">Logo des documents officiels</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={selectLogo} className="mt-2 block w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-aulia-mist file:px-3 file:py-2 file:font-semibold file:text-aulia-navy dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-white" /><span className="mt-2 block text-xs text-slate-500">PNG, JPEG ou WebP · 500 Ko maximum. Il peut être remplacé ou supprimé à tout moment.</span></label>
@@ -93,7 +100,7 @@ export default function ClinicBrandingPage() {
         <label className="block"><span className="text-sm font-semibold text-slate-800 dark:text-white">Pied de page documentaire</span><textarea value={identity.documentFooter} onChange={(e) => setIdentity((current) => ({ ...current, documentFooter: e.target.value }))} maxLength={500} placeholder="Ex. Document confidentiel — à présenter avec une pièce d’identité." className="mt-2 min-h-24 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-aulia-teal dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
         <div className="flex flex-wrap gap-3"><button type="button" onClick={save} disabled={saving || !name.trim()} className="rounded-xl border border-[#087c73] bg-[#0D9488] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#087c73] focus:outline-none focus:ring-4 focus:ring-[#0D9488]/25 disabled:cursor-not-allowed disabled:opacity-50">{saving ? "Enregistrement…" : "Enregistrer l’identité"}</button><button type="button" onClick={() => setLogo(null)} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold dark:border-slate-700 dark:text-white">Supprimer le logo</button></div>
         {message && <p className="rounded-xl bg-aulia-mist px-4 py-3 text-sm text-aulia-navy dark:bg-slate-800 dark:text-slate-100">{message}</p>}
-      </div>
+      </fieldset>
       <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-950"><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Aperçu impression</p><div className="mt-5 grid min-h-44 place-items-center rounded-xl bg-white p-4 shadow-sm dark:bg-slate-900">{logo ? <img src={logo} alt="Logo de l’établissement" className="max-h-28 max-w-full object-contain" /> : <img src="/images/logo/icone.png" alt="Logo Aulia Care par défaut" className="max-h-24 max-w-full object-contain" onError={(event) => { event.currentTarget.style.display = "none"; }} />}</div><p className="mt-4 text-center text-sm font-semibold text-slate-800 dark:text-white">{name || branding?.name || "Établissement"}</p><p className="mt-1 text-center text-xs text-slate-500">{[identity.address, identity.city, identity.phone].filter(Boolean).join(" · ") || "Coordonnées à renseigner"}</p></div>
     </section>
   </div>;

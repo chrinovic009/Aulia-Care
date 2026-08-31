@@ -26,6 +26,8 @@ export interface AuthUser {
   firstName: string;
   lastName: string;
   primaryRole: RoleSlug;
+  /** Immutable tenant chosen by secure provisioning; never client-editable. */
+  clinicId?: string | null;
   role?: RoleSlug; // Alias for primaryRole for backward compatibility
   gender?: string;
   specialty?: string;
