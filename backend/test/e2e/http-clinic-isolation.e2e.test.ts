@@ -6,7 +6,7 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import { ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
-import { PrismaClient } from '@prisma/client';
+import { AuliaLayer, PrismaClient } from '@prisma/client';
 import { AppModule } from '../../src/app.module';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -40,6 +40,12 @@ test('HTTP E2E: une réception ne lit jamais le dossier d’un autre établissem
     ]);
     clinicAId = clinicA.id;
     clinicBId = clinicB.id;
+    await prisma.platformLayerConfiguration.createMany({
+      data: [
+        { clinicId: clinicA.id, enabledLayers: [AuliaLayer.CORE], configuredAt: new Date(), configurationVersion: 1 },
+        { clinicId: clinicB.id, enabledLayers: [AuliaLayer.CORE], configuredAt: new Date(), configurationVersion: 1 },
+      ],
+    });
     const passwordHash = await bcrypt.hash(password, 10);
     const [receptionA, receptionB] = await Promise.all([
       prisma.user.create({ data: { clinicId: clinicA.id, email: `reception-a-${suffix}@e2e.local`, username: `reception-a-${suffix}`, displayName: 'Réception A E2E', firstName: 'Réception', lastName: 'A', passwordHash, primaryRole: 'RECEPTIONIST' } }),

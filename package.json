@@ -46,7 +46,12 @@
     "bootstrap:dev": "npm run bootstrap:dev -w @aulia-care/backend",
 
     "maintenance:backfill-single-clinic-staff": "npm run maintenance:backfill-single-clinic-staff -w @aulia-care/backend",
-    "maintenance:security-retention": "npm run maintenance:security-retention -w @aulia-care/backend"
+    "audit:tenant-integrity": "npm run audit:tenant-integrity -w @aulia-care/backend",
+    "repair:tenant-integrity": "npm run repair:tenant-integrity -w @aulia-care/backend",
+    "maintenance:security-retention": "npm run maintenance:security-retention -w @aulia-care/backend",
+    "docker:up": "docker compose --env-file .env.docker up -d --build",
+    "docker:down": "docker compose --env-file .env.docker down",
+    "docker:logs": "docker compose --env-file .env.docker logs -f"
   },
   "devDependencies": {
     "concurrently": "^9.0.0"

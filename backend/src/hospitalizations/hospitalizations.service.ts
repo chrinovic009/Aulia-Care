@@ -278,7 +278,9 @@ export class HospitalizationsService {
         type: 'SYSTEM',
         priority: 'MEDIUM',
       });
-    } catch {}
+    } catch {
+      // Notification failure must not roll back the already committed hospitalization.
+    }
     return created;
   }
 
@@ -479,7 +481,9 @@ export class HospitalizationsService {
           type: 'SYSTEM',
           priority: body?.escalated ? 'HIGH' : 'MEDIUM',
         });
-      } catch {}
+      } catch {
+        // The nursing event remains persisted even if a secondary notification fails.
+      }
     }
 
     return history;
@@ -667,7 +671,9 @@ export class HospitalizationsService {
         type: 'SYSTEM',
         priority: 'MEDIUM',
       });
-    } catch {}
+    } catch {
+      // The hospitalization update is durable; notification delivery is best-effort.
+    }
     return updated;
   }
 
@@ -714,7 +720,9 @@ export class HospitalizationsService {
         type: 'SYSTEM',
         priority: 'MEDIUM',
       });
-    } catch {}
+    } catch {
+      // Archiving and resource release succeeded; notification delivery is best-effort.
+    }
     return { cancelled: true, archived: true };
   }
 }

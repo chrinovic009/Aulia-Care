@@ -32,7 +32,10 @@ export class PlatformLayersService {
   private fallback(): PlatformLayersSnapshot {
     return {
       configured: false,
-      enabledLayers: [AuliaLayer.CORE],
+      // A missing licence configuration must never silently enable a product.
+      // This is particularly important for a freshly provisioned clinic and
+      // for legacy data that has not yet been reviewed by a platform DEV.
+      enabledLayers: [],
       availableLayers: this.availableLayers(),
       configurationVersion: 0,
       configuredAt: null,
@@ -40,9 +43,13 @@ export class PlatformLayersService {
     };
   }
 
-  /** Core is permanent; optional entitlements are enforced per clinic. */
+  /**
+   * Every product is an explicit clinic entitlement.  Core is no longer
+   * injected here: Aulia AI and Connected Care can be installed together
+   * without Core, and a missing configuration remains fail-closed.
+   */
   private effectiveLayers(layers: AuliaLayer[]): AuliaLayer[] {
-    return layers.includes(AuliaLayer.CORE) ? layers : [AuliaLayer.CORE, ...layers];
+    return [...new Set(layers)];
   }
 
   private assertServerAvailability(layers: AuliaLayer[]) {

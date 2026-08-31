@@ -84,9 +84,15 @@ export class UsersService {
   /** Minimal location exposed to the connected staff member for a patient call.
    * It is never a directory of other staff locations. */
   async findMyWorkLocation(userId?: string) {
+    const actor = userId
+      ? await this.prisma.user.findUnique({ where: { id: userId }, select: { clinicId: true, status: true, deletedAt: true } })
+      : null;
+    if (!actor || actor.deletedAt || actor.status !== 'ACTIVE' || !actor.clinicId) {
+      throw new ForbiddenException('Utilisateur non rattaché à un établissement actif.');
+    }
     if (!userId) throw new NotFoundException('Utilisateur authentifié requis.');
     const assignment = await this.prisma.roomStaffAssignment.findFirst({
-      where: { userId, active: true, user: { status: 'ACTIVE', deletedAt: null } },
+      where: { userId, active: true, user: { clinicId: actor.clinicId, status: 'ACTIVE', deletedAt: null }, room: { serviceUnit: { clinicId: actor.clinicId, deletedAt: null } } },
       select: { room: { select: { id: true, number: true, name: true, location: true, serviceUnit: { select: { name: true } } } } },
       orderBy: { assignedAt: 'desc' },
     });
@@ -123,7 +129,7 @@ export class UsersService {
   }
 
   private makeInitialStaffPassword(clinicName: string, role: RoleSlug, firstName: string, lastName: string, position: number) {
-    const establishmentPrefix = String(clinicName || 'Aulia Care')
+    const establishmentPrefix = String(clinicName)
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-zA-Z0-9]/g, '')
@@ -262,13 +268,15 @@ export class UsersService {
       throw new ForbiddenException('Un administrateur peut créer uniquement du personnel opérationnel de son établissement.');
     }
     await this.validateTenantAssignments(creator.clinicId, dto);
-    const clinic = creator.clinicId
-      ? await this.prisma.clinic.findUnique({ where: { id: creator.clinicId }, select: { name: true, brandDisplayName: true } })
-      : null;
+    const clinic = await this.prisma.clinic.findFirst({
+      where: { id: creator.clinicId, deletedAt: null, status: 'ACTIVE' },
+      select: { name: true, brandDisplayName: true },
+    });
+    if (!clinic) throw new ForbiddenException('Établissement inactif ou introuvable. La création de personnel est bloquée.');
     const position = await this.prisma.user.count({
       where: { deletedAt: null, primaryRole, clinicId: creator.clinicId },
     }) + 1;
-    const generatedPassword = dto.password ? undefined : this.makeInitialStaffPassword(clinic?.brandDisplayName || clinic?.name || 'Aulia Care', primaryRole || RoleSlug.NURSE, dto.firstName, dto.lastName, position);
+    const generatedPassword = dto.password ? undefined : this.makeInitialStaffPassword(clinic.brandDisplayName || clinic.name, primaryRole || RoleSlug.NURSE, dto.firstName, dto.lastName, position);
     const passwordHash = await bcrypt.hash(dto.password || generatedPassword!, 10);
     const employeeDetails = {
       gender: dto.gender ?? null,
@@ -401,7 +409,12 @@ export class UsersService {
     const email = dto.email.trim().toLowerCase();
     const username = dto.username.trim().toLowerCase();
     const displayName = dto.displayName.trim() || `${dto.firstName.trim()} ${dto.lastName.trim()}`.trim();
-    const passwordHash = await bcrypt.hash(dto.password || this.makeInitialStaffPassword('ADM', RoleSlug.ADMIN, dto.firstName, dto.lastName, 1), 12);
+    const [clinic, position] = await Promise.all([
+      this.prisma.clinic.findFirst({ where: { id: creator.clinicId, deletedAt: null, status: 'ACTIVE' }, select: { name: true, brandDisplayName: true } }),
+      this.prisma.user.count({ where: { clinicId: creator.clinicId, primaryRole: RoleSlug.ADMIN, deletedAt: null } }),
+    ]);
+    if (!clinic) throw new ForbiddenException('Établissement inactif ou introuvable. La création d’administrateur est bloquée.');
+    const passwordHash = await bcrypt.hash(dto.password || this.makeInitialStaffPassword(clinic.brandDisplayName || clinic.name, RoleSlug.ADMIN, dto.firstName, dto.lastName, position + 1), 12);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -424,7 +437,7 @@ export class UsersService {
             nationality: dto.nationality ?? null,
             roles: { create: { roleId: role.id, active: true } },
           },
-          select: { id: true, email: true, username: true, displayName: true, primaryRole: true, clinicId: true },
+          select: { id: true, email: true, username: true, displayName: true, primaryRole: true, clinicId: true, createdAt: true },
         });
         await tx.auditTrail.create({
           data: {

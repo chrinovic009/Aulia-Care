@@ -45,6 +45,8 @@ jobs:
         run: npx prisma generate --schema backend/prisma/schema.prisma
       - name: Apply migrations to isolated PostgreSQL
         run: npx prisma migrate deploy --schema backend/prisma/schema.prisma
+      - name: Audit tenant integrity on isolated database
+        run: npm run audit:tenant-integrity
       - name: Lint
         run: npm run lint
       - name: Typecheck frontend and backend
@@ -53,7 +55,7 @@ jobs:
         run: npm run test:unit
       - name: Integration tests
         run: npm run test:integration
-      - name: E2E database readiness
+      - name: PostgreSQL and HTTP E2E
         run: npm run test:e2e
       - name: Build frontend and backend
         run: npm run build
