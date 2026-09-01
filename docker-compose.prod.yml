@@ -1,12 +1,17 @@
 name: aulia-care-prod
 
 services:
+
   # ============================================================
   # POSTGRESQL
   # ============================================================
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+
+    cpus: "1.0"
+    mem_limit: 1g
+    pids_limit: 200
 
     env_file:
       - .env.prod
@@ -35,6 +40,10 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+
+    cpus: "0.50"
+    mem_limit: 256m
+    pids_limit: 100
 
     env_file:
       - .env.prod
@@ -71,6 +80,10 @@ services:
     image: aulia-care-migration:prod
     restart: "no"
 
+    cpus: "0.50"
+    mem_limit: 512m
+    pids_limit: 100
+
     env_file:
       - .env.prod
 
@@ -88,6 +101,10 @@ services:
   backend:
     image: aulia-care-backend:prod
     restart: unless-stopped
+
+    cpus: "1.50"
+    mem_limit: 1g
+    pids_limit: 300
 
     env_file:
       - .env.prod
@@ -130,6 +147,10 @@ services:
     image: aulia-care-backend:prod
     restart: unless-stopped
 
+    cpus: "1.0"
+    mem_limit: 768m
+    pids_limit: 250
+
     command:
       [
         "node",
@@ -163,6 +184,10 @@ services:
   connected-care:
     image: aulia-care-backend:prod
     restart: unless-stopped
+
+    cpus: "1.0"
+    mem_limit: 768m
+    pids_limit: 250
 
     command:
       [
@@ -198,6 +223,10 @@ services:
     image: aulia-care-frontend:prod
     restart: unless-stopped
 
+    cpus: "0.25"
+    mem_limit: 128m
+    pids_limit: 100
+
     depends_on:
       backend:
         condition: service_healthy
@@ -215,6 +244,10 @@ services:
   reverse-proxy:
     image: nginxinc/nginx-unprivileged:1.27-alpine
     restart: unless-stopped
+
+    cpus: "0.25"
+    mem_limit: 128m
+    pids_limit: 100
 
     depends_on:
       backend:
