@@ -353,9 +353,9 @@ const AppSidebar: React.FC = () => {
   const { isEnabled, layers } = usePlatformLayers();
   // Before the installation configuration is available, never advertise an
   // optional layer as active. This mirrors the fail-closed route/API policy.
-  const activeSubscriptionLabel = (layers.configured ? layers.enabledLayers : ["CORE"])
+  const activeSubscriptionLabel = (layers.configured ? layers.enabledLayers : [])
     .map((layer) => ({ CORE: "Aulia Care Core", AI: "Aulia AI", CONNECTED: "Aulia Connected" })[layer])
-    .join(" + ");
+    .join(" + ") || (currentUser?.primaryRole === "DEV" ? "Provisioning plateforme" : "Configuration en attente");
   const [clinicBrand, setClinicBrand] = useState<{ name?: string; brandDisplayName?: string | null }>({});
   const isLabManager = Boolean(
     currentUser?.primaryRole === "LAB_MANAGER" ||
@@ -371,7 +371,12 @@ const AppSidebar: React.FC = () => {
   } | null>(null);
 
   useEffect(() => {
-    if (!currentUser) return;
+    // DEV is platform-scoped: it has no clinic identity and must never make a
+    // hospital-scoped branding request.  The API deliberately denies it.
+    if (!currentUser?.clinicId) {
+      setClinicBrand({});
+      return;
+    }
     const loadClinicBrand = () => apiFetch<{ name?: string; brandDisplayName?: string | null }>("/administration/clinic-branding")
       .then(setClinicBrand)
       .catch(() => setClinicBrand({}));
@@ -385,7 +390,7 @@ const AppSidebar: React.FC = () => {
       window.removeEventListener("aulia:clinic-branding-updated", loadClinicBrand);
       window.removeEventListener("storage", onBrandingStorage);
     };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, currentUser?.clinicId]);
   const isReceptionSection = location.pathname.startsWith("/reception");
   const isNurseSection = location.pathname.startsWith("/nurse");
   const isDoctorSection = location.pathname.startsWith("/doctor");

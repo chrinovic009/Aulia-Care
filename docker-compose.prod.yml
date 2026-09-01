@@ -1,0 +1,225 @@
+name: aulia-care-prod
+
+services:
+  # ============================================================
+  # POSTGRESQL
+  # ============================================================
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+    volumes:
+      - postgres-prod-data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+    networks:
+      - aulia-prod-network
+
+
+  # ============================================================
+  # REDIS
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--requirepass",
+        "${REDIS_PASSWORD}"
+      ]
+
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+
+    volumes:
+      - redis-prod-data:/data
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+    networks:
+      - aulia-prod-network
+
+
+  # ============================================================
+  # BACKEND PRINCIPAL
+  # ============================================================
+  backend:
+    image: aulia-care-backend:prod
+    restart: unless-stopped
+
+    env_file:
+      - .env.prod
+
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      redis:
+        condition: service_healthy
+
+    ports:
+      - "127.0.0.1:3500:3000"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    networks:
+      - aulia-prod-network
+
+
+  # ============================================================
+  # CLINICAL AI
+  # ============================================================
+  clinical-ai:
+    image: aulia-care-backend:prod
+    restart: unless-stopped
+
+    command:
+      [
+        "node",
+        "dist/main-clinical-ai.js"
+      ]
+
+    env_file:
+      - .env.prod
+
+    environment:
+      NODE_ENV: production
+      CLINICAL_AI_PORT: 3100
+
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      redis:
+        condition: service_healthy
+
+    expose:
+      - "3100"
+
+    networks:
+      - aulia-prod-network
+
+
+  # ============================================================
+  # CONNECTED CARE
+  # ============================================================
+  connected-care:
+    image: aulia-care-backend:prod
+    restart: unless-stopped
+
+    command:
+      [
+        "node",
+        "dist/main-connected-care.js"
+      ]
+
+    env_file:
+      - .env.prod
+
+    environment:
+      NODE_ENV: production
+      CONNECTED_CARE_PORT: 3200
+
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      redis:
+        condition: service_healthy
+
+    expose:
+      - "3200"
+
+    networks:
+      - aulia-prod-network
+
+
+  # ============================================================
+  # FRONTEND
+  # ============================================================
+  frontend:
+    image: aulia-care-frontend:prod
+    restart: unless-stopped
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    ports:
+      - "127.0.0.1:3400:80"
+
+    networks:
+      - aulia-prod-network
+
+
+# ==============================================================
+# VOLUMES
+# ==============================================================
+volumes:
+  postgres-prod-data:
+    name: aulia-care-prod-postgres-data
+
+  redis-prod-data:
+    name: aulia-care-prod-redis-data
+
+
+# ==============================================================
+# NETWORK
+# ==============================================================
+networks:
+  aulia-prod-network:
+    name: aulia-care-prod-network
+    driver: bridge

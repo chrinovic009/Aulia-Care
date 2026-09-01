@@ -27,6 +27,7 @@ import { IntelligenceModule } from './intelligence/intelligence.module';
 import { PlatformLayersModule } from './platform/layers/platform-layers.module';
 import { PlatformLayerAccessGuard } from './platform/layers/platform-layer-access.guard';
 import { PlatformProvisioningModule } from './platform/provisioning/platform-provisioning.module';
+import { HealthModule } from './health/health.module';
 
 const clinicalAiModules = process.env.AULIA_ENABLE_CLINICAL_AI === 'false'
   ? []
@@ -50,6 +51,7 @@ const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
     PatientsModule,
     AppointmentsModule,
     ConsultationsModule,
+    HealthModule,
     HospitalizationsModule,
     LaboratoryModule,
     ImagingModule,

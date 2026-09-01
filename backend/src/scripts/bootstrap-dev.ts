@@ -19,7 +19,7 @@ async function bootstrap() {
   try {
     const existing = await prisma.user.findFirst({
       where: { primaryRole: RoleSlug.DEV, deletedAt: null },
-      select: { id: true, username: true, email: true, status: true },
+      select: { id: true, username: true, email: true, status: true, clinicId: true },
     });
     if (existing && !resetRequested) {
       console.log(`Compte DEV déjà existant — identifiant : ${existing.username} ; e-mail : ${existing.email} ; état : ${existing.status}.`);
@@ -29,9 +29,17 @@ async function bootstrap() {
     if (existing && resetRequested) {
       await prisma.user.update({
         where: { id: existing.id },
-        data: { passwordHash: await bcrypt.hash(password, 12), status: 'ACTIVE' },
+        // DEV is a platform-only identity. A legacy clinic link would make
+        // the provisioning guard correctly refuse access, so reset repairs
+        // this invariant as well as the local bootstrap password.
+        data: { passwordHash: await bcrypt.hash(password, 12), status: 'ACTIVE', clinicId: null },
       });
-      console.log(`Mot de passe DEV remplacé — identifiant : ${existing.username}. Retirez immédiatement AULIA_DEV_BOOTSTRAP_PASSWORD et AULIA_DEV_BOOTSTRAP_RESET du fichier .env.`);
+      console.log(`Compte DEV réparé et mot de passe remplacé — identifiant : ${existing.username}. Le compte est maintenant hors établissement et peut provisionner. Retirez immédiatement AULIA_DEV_BOOTSTRAP_PASSWORD et AULIA_DEV_BOOTSTRAP_RESET du fichier .env.`);
+      return;
+    }
+    if (existing?.clinicId) {
+      console.log(`Le compte DEV ${existing.username} est encore rattaché à un établissement historique. Ajoutez temporairement AULIA_DEV_BOOTSTRAP_RESET=true dans backend/.env, puis relancez cette commande pour réparer explicitement ce rattachement.`);
+      process.exitCode = 1;
       return;
     }
 

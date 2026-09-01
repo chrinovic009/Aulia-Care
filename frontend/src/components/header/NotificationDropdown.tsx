@@ -77,14 +77,23 @@ export default function NotificationDropdown() {
     return currentUser?.primaryRole ? messageRoutes[currentUser.primaryRole] || "/messages" : "/messages";
   }, [currentUser?.primaryRole]);
 
+  // A platform DEV account is intentionally not a member of a clinic and has
+  // no hospital messaging entitlement.  Do not issue a request that the API
+  // must reject with 403, and do not expose a dead messaging entry point.
+  const canUseMessages = Boolean(currentUser?.id && currentUser.primaryRole !== "DEV");
+
   useEffect(() => {
-    if (!currentUser?.id) return;
+    if (!canUseMessages) {
+      setUnreadMessages([]);
+      return;
+    }
     fetchUnreadMessages()
       .then((messages) => setUnreadMessages(messages.map(mapStoredUnread)))
       .catch(() => undefined);
-  }, [currentUser?.id]);
+  }, [canUseMessages, currentUser?.id]);
 
   useEffect(() => {
+    if (!canUseMessages) return;
     const handleIncoming = (event: Event) => {
       const incoming = (event as CustomEvent<RealtimeMessage>).detail;
       if (!incoming || incoming.recipientId !== currentUser?.id) return;
@@ -116,7 +125,7 @@ export default function NotificationDropdown() {
       window.removeEventListener("aulia:messages.read", handleRead);
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     };
-  }, [currentUser?.id]);
+  }, [canUseMessages, currentUser?.id]);
 
   const unreadCount = unreadMessages.length;
 
@@ -130,6 +139,8 @@ export default function NotificationDropdown() {
     setToast({ visible: false });
     setIsOpen(false);
   };
+
+  if (!canUseMessages) return null;
 
   return (
     <div className="relative">

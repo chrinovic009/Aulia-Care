@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon --legacy-watch --watch src --ext ts --exec \"ts-node --transpile-only --project tsconfig.json src/main.ts\"",
     "dev:clinical-ai": "ts-node-dev --transpile-only --project tsconfig.json --respawn src/main-clinical-ai.ts",
-    "dev:connected-care": "ts-node-dev --transpile-only --project tsconfig.json --respawn src/main-connected-care.ts",
+    "dev:connected-care": "nodemon --legacy-watch --watch src --ext ts --exec \"ts-node --transpile-only --project tsconfig.json src/main-connected-care.ts\"",
 
     "build": "tsc -p tsconfig.build.json",
 
