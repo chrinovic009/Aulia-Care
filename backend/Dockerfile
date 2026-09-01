@@ -2,6 +2,7 @@
 # AULIA CARE - BACKEND PRODUCTION IMAGE
 # ============================================================
 
+
 # ------------------------------------------------------------
 # 1. Dependencies
 # ------------------------------------------------------------
@@ -37,7 +38,32 @@ RUN npm run build
 
 
 # ------------------------------------------------------------
-# 3. Remove development dependencies
+# 3. Database migration image
+# ------------------------------------------------------------
+#
+# Cette cible contient Prisma CLI et les fichiers de migration.
+# Elle sert uniquement à exécuter :
+#
+#   prisma migrate deploy
+#
+# Elle n'est jamais utilisée comme serveur applicatif.
+#
+# ------------------------------------------------------------
+FROM dependencies AS migration
+
+WORKDIR /app
+
+COPY backend ./backend
+
+WORKDIR /app/backend
+
+RUN npx prisma generate --schema prisma/schema.prisma
+
+CMD ["npx", "prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"]
+
+
+# ------------------------------------------------------------
+# 4. Remove development dependencies
 # ------------------------------------------------------------
 FROM builder AS production-dependencies
 
@@ -47,7 +73,7 @@ RUN npm prune --omit=dev
 
 
 # ------------------------------------------------------------
-# 4. Runtime
+# 5. Runtime
 # ------------------------------------------------------------
 FROM node:22-bookworm-slim AS runtime
 
