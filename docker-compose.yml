@@ -75,7 +75,11 @@ services:
 
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
 
-      CORS_ORIGIN: http://localhost:5173,http://127.0.0.1:5173
+      # The Docker Vite development server uses HTTPS when the local Aulia
+      # certificate is present.  CSRF validates Origin on every write, so the
+      # HTTPS origins must be listed alongside HTTP; otherwise DEV provisioning
+      # is rejected even with a valid session and CSRF cookie.
+      CORS_ORIGIN: http://localhost:5173,http://127.0.0.1:5173,https://localhost:5173,https://127.0.0.1:5173,https://192.168.1.60:5173
 
       # Docker DNS, never localhost: each service is an independent process.
       AULIA_CLINICAL_AI_URL: http://clinical-ai:3100

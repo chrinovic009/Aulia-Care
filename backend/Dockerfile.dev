@@ -21,4 +21,12 @@ RUN npx prisma generate --schema prisma/schema.prisma
 
 EXPOSE 3000
 
-CMD ["npm", "run", "dev"]
+# A fresh Docker volume has no application tables. Generate from the mounted
+# schema and apply the additive Prisma migration history before Nest accepts
+# requests; otherwise the first login can fail with P2021 (table User missing).
+#
+# Nodemon's legacy watcher is not stable on this Windows bind mount: it can
+# restart Nest repeatedly without a source change, causing transient 500s
+# through Vite's proxy. Docker therefore runs one stable TypeScript process;
+# recreate `backend` after a source edit during local development.
+CMD ["sh", "-c", "npx prisma generate --schema prisma/schema.prisma && npx prisma migrate deploy --schema prisma/schema.prisma && npx ts-node --transpile-only --project tsconfig.json src/main.ts"]
