@@ -2,6 +2,7 @@
 # AULIA CARE - FRONTEND PRODUCTION IMAGE
 # ============================================================
 
+
 # ------------------------------------------------------------
 # 1. Build
 # ------------------------------------------------------------
@@ -25,12 +26,26 @@ RUN npm run build
 # ------------------------------------------------------------
 # 2. Runtime
 # ------------------------------------------------------------
-FROM nginx:1.27-alpine AS runtime
+#
+# Nginx unprivileged :
+# - ne tourne pas en root
+# - écoute sur le port 8080
+# - utilise des chemins temporaires accessibles sans privilèges
+#
+# ------------------------------------------------------------
+FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+# Configuration Nginx du frontend
+COPY --chown=nginx:nginx \
+    frontend/nginx.conf \
+    /etc/nginx/conf.d/default.conf
 
-COPY --from=builder /app/dist-frontend /usr/share/nginx/html
+# Build frontend
+COPY --from=builder \
+    --chown=nginx:nginx \
+    /app/dist-frontend \
+    /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]

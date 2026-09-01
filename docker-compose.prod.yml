@@ -203,7 +203,7 @@ services:
         condition: service_healthy
 
     expose:
-      - "80"
+      - "8080"
 
     networks:
       - aulia-prod-network
@@ -213,7 +213,7 @@ services:
   # REVERSE PROXY
   # ============================================================
   reverse-proxy:
-    image: nginx:1.27-alpine
+    image: nginxinc/nginx-unprivileged:1.27-alpine
     restart: unless-stopped
 
     depends_on:
@@ -227,7 +227,7 @@ services:
       - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
 
     ports:
-      - "127.0.0.1:8081:80"
+      - "127.0.0.1:8081:8080"
 
     networks:
       - aulia-prod-network
