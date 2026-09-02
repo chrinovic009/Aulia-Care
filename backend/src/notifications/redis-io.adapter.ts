@@ -10,6 +10,8 @@ export class RedisIoAdapter extends IoAdapter {
   private pubClient?: RedisClientType;
   private subClient?: RedisClientType;
 
+  private closing = false;
+
   constructor(app: INestApplicationContext) {
     super(app);
   }
@@ -20,6 +22,7 @@ export class RedisIoAdapter extends IoAdapter {
       socket: {
         reconnectStrategy: (retries) => {
           const delay = Math.min(retries * 500, 5000);
+
           return delay;
         },
       },
@@ -40,19 +43,27 @@ export class RedisIoAdapter extends IoAdapter {
     });
 
     this.pubClient.on('reconnecting', () => {
-      this.logger.warn('Redis publisher reconnecting...');
+      this.logger.warn(
+        'Redis publisher reconnecting...',
+      );
     });
 
     this.subClient.on('reconnecting', () => {
-      this.logger.warn('Redis subscriber reconnecting...');
+      this.logger.warn(
+        'Redis subscriber reconnecting...',
+      );
     });
 
     this.pubClient.on('ready', () => {
-      this.logger.log('Redis publisher ready');
+      this.logger.log(
+        'Redis publisher ready',
+      );
     });
 
     this.subClient.on('ready', () => {
-      this.logger.log('Redis subscriber ready');
+      this.logger.log(
+        'Redis subscriber ready',
+      );
     });
 
     await Promise.all([
@@ -60,13 +71,24 @@ export class RedisIoAdapter extends IoAdapter {
       this.subClient.connect(),
     ]);
 
-    this.logger.log('Socket.IO Redis adapter connected');
+    this.logger.log(
+      'Socket.IO Redis adapter connected',
+    );
   }
 
-  createIOServer(port: number, options?: ServerOptions) {
-    const server = super.createIOServer(port, options);
+  createIOServer(
+    port: number,
+    options?: ServerOptions,
+  ) {
+    const server = super.createIOServer(
+      port,
+      options,
+    );
 
-    if (this.pubClient && this.subClient) {
+    if (
+      this.pubClient &&
+      this.subClient
+    ) {
       server.adapter(
         createAdapter(
           this.pubClient,
@@ -79,24 +101,39 @@ export class RedisIoAdapter extends IoAdapter {
   }
 
   async close() {
+    if (this.closing) {
+      return;
+    }
+
+    this.closing = true;
+
     const clients = [
       this.pubClient,
       this.subClient,
     ].filter(
-      (client): client is RedisClientType => Boolean(client),
+      (
+        client,
+      ): client is RedisClientType =>
+        Boolean(client),
     );
 
-    await Promise.allSettled(
-      clients.map(async (client) => {
-        if (client.isOpen) {
-          await client.quit();
-        }
-      }),
-    );
+    try {
+      await Promise.allSettled(
+        clients.map(async (client) => {
+          if (client.isOpen) {
+            await client.quit();
+          }
+        }),
+      );
 
-    this.pubClient = undefined;
-    this.subClient = undefined;
+      this.pubClient = undefined;
+      this.subClient = undefined;
 
-    this.logger.log('Socket.IO Redis adapter disconnected');
+      this.logger.log(
+        'Socket.IO Redis adapter disconnected',
+      );
+    } finally {
+      this.closing = false;
+    }
   }
 }
