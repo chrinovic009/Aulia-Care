@@ -7,6 +7,23 @@ import { PrismaClient, RoleSlug } from '@prisma/client';
  * exposing creation of the DEV role would allow taking over an installation.
  */
 async function bootstrap() {
+  const nodeEnv = String(process.env.NODE_ENV || '').trim().toLowerCase();
+  const confirmation = String(
+    process.env.AULIA_DEV_BOOTSTRAP_CONFIRM || '',
+  ).trim();
+
+  if (nodeEnv !== 'development') {
+    throw new Error(
+      'Bootstrap DEV refusé : NODE_ENV doit être exactement "development".',
+    );
+  }
+
+  if (confirmation !== 'LOCAL_DEV_ONLY') {
+    throw new Error(
+      'Bootstrap DEV refusé : définissez temporairement AULIA_DEV_BOOTSTRAP_CONFIRM=LOCAL_DEV_ONLY pour confirmer explicitement une opération locale de développement.',
+    );
+  }
+
   const email = String(process.env.AULIA_DEV_BOOTSTRAP_EMAIL || '').trim().toLowerCase();
   const password = String(process.env.AULIA_DEV_BOOTSTRAP_PASSWORD || '');
   const username = String(process.env.AULIA_DEV_BOOTSTRAP_USERNAME || 'aulia-dev').trim().toLowerCase();
