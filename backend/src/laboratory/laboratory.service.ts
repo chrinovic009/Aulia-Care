@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
+import { ClinicContextService } from '../core/clinic-context.service';
 
 type LabTestParameterRef = {
   name?: string | null;
@@ -79,7 +80,12 @@ export class LaboratoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsGateway: NotificationsGateway,
+    private readonly clinicContext: ClinicContextService,
   ) {}
+
+  private requireClinic(actorId?: string) {
+    return this.clinicContext.requireOperationalActor({ userId: actorId });
+  }
 
   private async technicianDirectReleaseEnabled() {
     const config = await this.prisma.labConfiguration.findUnique({
@@ -112,9 +118,11 @@ export class LaboratoryService {
     return this.getSettings();
   }
 
-  findAll() {
+  async findAll(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     return this.prisma.labRequest.findMany({
       where: {
+        clinicId: actor.clinicId,
         deletedAt: null,
         OR: [
           { externalReference: null },
@@ -147,9 +155,10 @@ export class LaboratoryService {
     });
   }
 
-  async findOne(id: string) {
-    const request = await this.prisma.labRequest.findUnique({
-      where: { id },
+  async findOne(id: string, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    const request = await this.prisma.labRequest.findFirst({
+      where: { id, clinicId: actor.clinicId, deletedAt: null },
       include: {
         patient: true,
         requestedBy: true,
@@ -177,7 +186,7 @@ export class LaboratoryService {
       throw new NotFoundException('Demande de laboratoire introuvable');
     }
 
-    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere(actor.clinicId);
     const isVisible = await this.prisma.labRequest.findFirst({
       where: { id, ...visibilityWhere },
       select: { id: true },
@@ -244,9 +253,9 @@ export class LaboratoryService {
     };
   }
 
-  private async buildLabRequestVisibilityWhere() {
+  private async buildLabRequestVisibilityWhere(clinicId: string) {
     const paidInvoices = await this.prisma.invoice.findMany({
-      where: { type: 'LABORATORY', status: 'PAID' },
+      where: { clinicId, type: 'LABORATORY', status: 'PAID' },
       select: { id: true, remarks: true },
     });
 
@@ -272,10 +281,11 @@ export class LaboratoryService {
     }
 
     if (paidInvoiceConditions.length === 0) {
-      return { deletedAt: null, id: { in: [] } };
+      return { clinicId, deletedAt: null, id: { in: [] } };
     }
 
     return {
+      clinicId,
       deletedAt: null,
       OR: paidInvoiceConditions,
     };
@@ -305,8 +315,9 @@ export class LaboratoryService {
     return `${patientNumber}AU-${firstNameInitial}${lastNameInitial}${suffix}`;
   }
 
-  async getActivityOverview() {
-    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
+  async getActivityOverview(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere(actor.clinicId);
     const [recentRequests, lowStockEntries, assignedItems, directResultAuthorizationEnabled] = await Promise.all([
       this.prisma.labRequest.findMany({
         where: visibilityWhere,
@@ -465,14 +476,15 @@ export class LaboratoryService {
     };
   }
 
-  async getDashboardOverview() {
+  async getDashboardOverview(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
     const now = new Date();
 
-    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere(actor.clinicId);
     const requests = await this.prisma.labRequest.findMany({
       where: visibilityWhere,
       include: {
@@ -618,8 +630,9 @@ export class LaboratoryService {
     };
   }
 
-  async getDashboardWorkflow() {
-    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
+  async getDashboardWorkflow(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere(actor.clinicId);
     const groups = await this.prisma.labRequest.groupBy({
       by: ['status'],
       where: visibilityWhere,
@@ -631,8 +644,8 @@ export class LaboratoryService {
     }, {} as Record<string, number>);
   }
 
-  async getDashboardAlerts() {
-    const activity = await this.getActivityOverview();
+  async getDashboardAlerts(actorId?: string) {
+    const activity = await this.getActivityOverview(actorId);
     return [
       ...activity.criticalAlerts,
       ...activity.lowStockAlerts.map((alert) => ({
@@ -718,8 +731,10 @@ export class LaboratoryService {
   }
 
   async getTechnicians(currentUser?: any) {
+    const actor = await this.requireClinic(currentUser?.userId || currentUser?.id);
     const labDepartment = await this.prisma.department.findFirst({
       where: {
+        clinicId: actor.clinicId,
         OR: [
           { name: { equals: 'Laboratoire Medical', mode: 'insensitive' } },
           { name: { equals: 'Laboratoire Médical', mode: 'insensitive' } },
@@ -750,7 +765,7 @@ export class LaboratoryService {
 
     await this.repairMissingLabRequestItems();
 
-    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere(actor.clinicId);
     const visibleRequestIds = new Set(
       (await this.prisma.labRequest.findMany({ where: visibilityWhere, select: { id: true } })).map((request) => request.id),
     );
@@ -1500,6 +1515,7 @@ export class LaboratoryService {
   }
 
   async getValidations(currentUserId?: string, currentRole?: string) {
+    const actor = await this.requireClinic(currentUserId);
     const where: any = {};
     const normalizedRole = String(currentRole || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
@@ -1507,7 +1523,7 @@ export class LaboratoryService {
       where.items = { some: { assignedToId: currentUserId } };
     }
 
-    const visibilityWhere = await this.buildLabRequestVisibilityWhere();
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere(actor.clinicId);
     const requests = await this.prisma.labRequest.findMany({
       where: {
         ...where,
@@ -1789,10 +1805,11 @@ export class LaboratoryService {
 
   async getCriticalAlerts(currentUser?: any) {
     const userId = currentUser?.userId || currentUser?.id;
+    const actor = await this.requireClinic(userId);
     const role = String(currentUser?.primaryRole || '').toUpperCase();
-    const where: any = { status: 'PENDING' };
+    const where: any = { status: 'PENDING', labResult: { labRequest: { clinicId: actor.clinicId } } };
     if (role === 'PHYSICIAN') {
-      where.labResult = { labRequest: { OR: [{ requestedById: userId }, { consultation: { providerId: userId } }] } };
+      where.labResult = { labRequest: { clinicId: actor.clinicId, OR: [{ requestedById: actor.id }, { consultation: { providerId: actor.id } }] } };
     }
     return this.prisma.labCriticalAlert.findMany({
       where,
@@ -1803,18 +1820,19 @@ export class LaboratoryService {
 
   async acknowledgeCriticalAlert(id: string, currentUser: any, note?: string) {
     const userId = currentUser?.userId || currentUser?.id;
+    const actor = await this.requireClinic(userId);
     if (!userId) throw new BadRequestException('Utilisateur non identifié.');
-    const alert = await this.prisma.labCriticalAlert.findUnique({
-      where: { id },
+    const alert = await this.prisma.labCriticalAlert.findFirst({
+      where: { id, labResult: { labRequest: { clinicId: actor.clinicId } } },
       include: { labResult: { include: { labRequest: { include: { consultation: true } } } } },
     });
     if (!alert) throw new NotFoundException('Alerte critique introuvable.');
     const role = String(currentUser?.primaryRole || '').toUpperCase();
-    const isClinicalOwner = alert.labResult.labRequest.requestedById === userId || alert.labResult.labRequest.consultation?.providerId === userId;
+    const isClinicalOwner = alert.labResult.labRequest.requestedById === actor.id || alert.labResult.labRequest.consultation?.providerId === actor.id;
     if (role === 'PHYSICIAN' && !isClinicalOwner) throw new BadRequestException('Vous ne pouvez accuser réception que des alertes de vos patients.');
     const updated = await this.prisma.labCriticalAlert.update({
       where: { id },
-      data: { status: 'ACKNOWLEDGED', acknowledgedAt: new Date(), acknowledgedById: userId, acknowledgementNote: note?.trim() || null },
+      data: { status: 'ACKNOWLEDGED', acknowledgedAt: new Date(), acknowledgedById: actor.id, acknowledgementNote: note?.trim() || null },
     });
     this.notificationsGateway.notify('lab.critical-alert.acknowledged', { alertId: id, acknowledgedById: userId, acknowledgedAt: updated.acknowledgedAt });
     return updated;
@@ -1859,8 +1877,9 @@ export class LaboratoryService {
   }
 
   async applyValidationDecision(id: string, dto: any, currentUserId?: string) {
-    const result = await this.prisma.labResult.findUnique({
-      where: { id },
+    const actor = await this.requireClinic(currentUserId);
+    const result = await this.prisma.labResult.findFirst({
+      where: { id, labRequest: { clinicId: actor.clinicId, deletedAt: null } },
       include: {
         labRequest: { include: { patient: true, consultation: true } },
         labRequestItem: true,
@@ -1870,8 +1889,8 @@ export class LaboratoryService {
       throw new NotFoundException('Résultat introuvable');
     }
 
-    const labRequest = await this.prisma.labRequest.findUnique({
-      where: { id: result.labRequestId },
+    const labRequest = await this.prisma.labRequest.findFirst({
+      where: { id: result.labRequestId, clinicId: actor.clinicId, deletedAt: null },
       select: { status: true },
     });
 
@@ -1895,14 +1914,14 @@ export class LaboratoryService {
         data: {
           resultStatus: nextStatus as any,
           biologicalValidationAt: new Date(),
-          biologicalValidatedById: currentUserId,
+          biologicalValidatedById: actor.id,
           comments: dto.observations || dto.reason || dto.instructions || null,
           interpretation: dto.observations || dto.reason || dto.instructions || null,
         },
       });
 
       if (decision === 'VALIDATE') {
-        await this.consumeConsumablesForValidatedResult(tx, updatedResult.id, updatedResult.labRequestItemId, currentUserId);
+        await this.consumeConsumablesForValidatedResult(tx, updatedResult.id, updatedResult.labRequestItemId, actor.id);
 
         const labRequest = await tx.labRequest.findUnique({
           where: { id: result.labRequestId },
@@ -1981,9 +2000,10 @@ export class LaboratoryService {
   }
 
   async addResult(id: string, dto: any, reportedById?: string) {
-    const request = await this.findOne(id);
+    const actor = await this.requireClinic(reportedById);
+    const request = await this.findOne(id, actor.id);
     if (request.externalReference) {
-      const invoice = await this.prisma.invoice.findUnique({ where: { id: request.externalReference } });
+      const invoice = await this.prisma.invoice.findFirst({ where: { id: request.externalReference, clinicId: actor.clinicId } });
       if (invoice && invoice.status !== 'PAID') {
         throw new BadRequestException('Le resultat ne peut pas etre saisi avant validation du paiement par la caisse.');
       }
@@ -1992,10 +2012,10 @@ export class LaboratoryService {
     const technicianDirectRelease = await this.technicianDirectReleaseEnabled();
     const recipientId = request.requestedById || request.consultation?.providerId;
     const itemForResult = dto.labRequestItemId
-      ? await this.prisma.labRequestItem.findUnique({ where: { id: dto.labRequestItemId }, include: { assignedTo: true } })
+      ? await this.prisma.labRequestItem.findFirst({ where: { id: dto.labRequestItemId, labRequestId: request.id }, include: { assignedTo: true } })
       : null;
     const reporter = reportedById
-      ? await this.prisma.user.findUnique({ where: { id: reportedById }, select: { primaryRole: true } })
+      ? await this.prisma.user.findFirst({ where: { id: reportedById, clinicId: actor.clinicId, status: 'ACTIVE', deletedAt: null }, select: { primaryRole: true } })
       : null;
     const isManager = reporter?.primaryRole === 'LAB_MANAGER';
     const canDirectSend = technicianDirectRelease || isManager;

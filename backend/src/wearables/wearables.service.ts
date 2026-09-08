@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { EmergencyLocationReason, LocationSource, MeasurementQuality, WearableMetric } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
+import { AuthenticatedActor, ClinicContextService } from '../core/clinic-context.service';
 import { createHash, randomBytes } from 'crypto';
 
 type AlertLevel = 'NORMAL' | 'WATCH' | 'CRITICAL';
@@ -30,7 +31,52 @@ function assessMeasurement(metric: WearableMetric, value: number): { level: Aler
 
 @Injectable()
 export class WearablesService {
-  constructor(private readonly prisma: PrismaService, private readonly gateway: NotificationsGateway) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gateway: NotificationsGateway,
+    private readonly clinicContext: ClinicContextService,
+  ) {}
+
+  private requireClinic(actorId?: string) {
+    return this.clinicContext.requireOperationalActor({ userId: actorId });
+  }
+
+  private async resolvePatientAccess(patientId: string, requester?: AuthenticatedActor) {
+    const userId = requester?.userId || requester?.id;
+    if (!userId) throw new ForbiddenException('Utilisateur authentifié requis.');
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, primaryRole: true, status: true, deletedAt: true },
+    });
+    if (!user || user.deletedAt || user.status !== 'ACTIVE') {
+      throw new ForbiddenException('Compte actif requis.');
+    }
+    if (user.primaryRole && STAFF_ROLES.has(user.primaryRole)) {
+      const actor = await this.requireClinic(user.id);
+      const patient = await this.prisma.patient.findFirst({
+        where: { id: patientId, clinicId: actor.clinicId, deletedAt: null },
+        select: { id: true, clinicId: true },
+      });
+      if (!patient) throw new NotFoundException('Patient introuvable dans cet établissement.');
+      return patient;
+    }
+    const ownPatient = await this.prisma.patient.findFirst({
+      where: { id: patientId, portalUserId: user.id, deletedAt: null },
+      select: { id: true, clinicId: true },
+    });
+    if (ownPatient) return ownPatient;
+    const parentLink = await this.prisma.parentChildLink.findFirst({
+      where: { parentUserId: user.id, childPatientId: patientId, status: 'ACTIVE', revokedAt: null },
+      select: { childPatientId: true },
+    });
+    if (!parentLink) throw new ForbiddenException('Accès au suivi préventif non autorisé.');
+    const child = await this.prisma.patient.findFirst({
+      where: { id: parentLink.childPatientId, deletedAt: null },
+      select: { id: true, clinicId: true },
+    });
+    if (!child) throw new NotFoundException('Patient introuvable.');
+    return child;
+  }
 
   async savePlan(manufacturerInput: string, body: any) {
     const manufacturer = String(manufacturerInput || '').toUpperCase();
@@ -175,6 +221,7 @@ export class WearablesService {
   }
 
   async registerDevice(body: any, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     const patientId = String(body?.patientId || '');
     const externalDeviceId = String(body?.externalDeviceId || '').trim();
     if (!patientId || !externalDeviceId || !body?.manufacturer || !body?.platform) {
@@ -186,13 +233,16 @@ export class WearablesService {
     if (!inventory || inventory.status !== 'AVAILABLE' || inventory.revokedAt || !inventory.provisionedAt || inventory.lot.manufacturer !== manufacturer || inventory.platform !== platform || !inventory.lot.plan?.active) {
       throw new ForbiddenException('Cette montre n’est pas une montre Aulia disponible, approuvée et compatible.');
     }
-    const patient = await this.prisma.patient.findUnique({ where: { id: patientId }, select: { id: true, clinicId: true } });
+    const patient = await this.prisma.patient.findFirst({
+      where: { id: patientId, clinicId: actor.clinicId, deletedAt: null },
+      select: { id: true, clinicId: true },
+    });
     if (!patient) throw new NotFoundException('Patient introuvable.');
 
     const periodStartAt = new Date();
     const periodEndAt = new Date(periodStartAt.getTime() + 30 * 86_400_000);
     const device = await this.prisma.$transaction(async (tx) => {
-      const invoice = await tx.invoice.create({ data: { patientId, issuedById: actorId || null, clinicId: patient.clinicId || null, type: 'OTHER', status: 'ISSUED', totalAmount: inventory.lot.plan.monthlyPrice, balanceDue: inventory.lot.plan.monthlyPrice, dueDate: periodStartAt, remarks: `Abonnement mensuel montre ${manufacturer} Aulia` } });
+      const invoice = await tx.invoice.create({ data: { patientId, issuedById: actor.id, clinicId: actor.clinicId, type: 'OTHER', status: 'ISSUED', totalAmount: inventory.lot.plan.monthlyPrice, balanceDue: inventory.lot.plan.monthlyPrice, dueDate: periodStartAt, remarks: `Abonnement mensuel montre ${manufacturer} Aulia` } });
       const created = await tx.wearableDevice.create({ data: { patientId, inventoryDeviceId: inventory.id, externalDeviceId: inventory.serialNumber, manufacturer, platform, displayName: body.displayName?.trim() || null, esimPhoneNumber: body.esimPhoneNumber?.trim() || null, status: 'SUSPENDED' } as any });
       await (tx as any).wearableSubscription.create({ data: { patientId, wearableDeviceId: created.id, inventoryDeviceId: inventory.id, planId: inventory.lot.plan.id, status: 'PENDING_PAYMENT', amount: inventory.lot.plan.monthlyPrice, currency: 'CDF', periodStartAt, periodEndAt, invoiceId: invoice.id } });
       await (tx as any).wearableInventoryDevice.update({ where: { id: inventory.id }, data: { status: 'ASSIGNED', assignedAt: new Date() } });
@@ -307,14 +357,8 @@ export class WearablesService {
   }
 
   async requestEmergencyLocation(patientId: string, body: any, requester: any) {
-    const patient = await this.prisma.patient.findUnique({ where: { id: patientId }, select: { id: true } });
-    if (!patient) throw new NotFoundException('Patient introuvable.');
-    const requesterId = requester?.userId;
-    const role = requester?.role;
-    if (!STAFF_ROLES.has(role)) {
-      const link = await this.prisma.parentChildLink.findFirst({ where: { parentUserId: requesterId, childPatientId: patientId, status: 'ACTIVE' } });
-      if (!link) throw new ForbiddenException('Le parent n est pas autorisé à localiser ce patient.');
-    }
+    const patient = await this.resolvePatientAccess(patientId, requester);
+    const requesterId = requester?.userId || requester?.id;
     const device = body?.wearableDeviceId
       ? await this.prisma.wearableDevice.findFirst({ where: { id: body.wearableDeviceId, patientId, status: 'ACTIVE' } })
       : await this.prisma.wearableDevice.findFirst({ where: { patientId, status: 'ACTIVE' }, orderBy: { lastSeenAt: 'desc' } });
@@ -359,14 +403,10 @@ export class WearablesService {
   }
 
   async getPatientDashboard(patientId: string, requester: any) {
-    if (!STAFF_ROLES.has(requester?.role)) {
-      const ownPatient = await this.prisma.patient.findFirst({ where: { OR: [{ email: requester?.email }, { phone: requester?.phone }] }, select: { id: true } });
-      const parentLink = await this.prisma.parentChildLink.findFirst({ where: { parentUserId: requester?.userId, childPatientId: patientId, status: 'ACTIVE' } });
-      if (ownPatient?.id !== patientId && !parentLink) throw new ForbiddenException('Accès au suivi préventif non autorisé.');
-    }
+    await this.resolvePatientAccess(patientId, requester);
     await this.refreshSubscriptionStates();
-    const patient = await this.prisma.patient.findUnique({
-      where: { id: patientId },
+    const patient = await this.prisma.patient.findFirst({
+      where: { id: patientId, deletedAt: null },
       select: {
         id: true,
         firstName: true,
@@ -390,7 +430,12 @@ export class WearablesService {
   }
 
   private async createCriticalAlert(patientId: string, measurementId: string, reason: string) {
-    const recipients = await this.prisma.user.findMany({ where: { status: 'ACTIVE', primaryRole: { in: ['NURSE', 'PHYSICIAN', 'ADMIN', 'SUPER_ADMIN'] } }, select: { id: true } });
+    const patient = await this.prisma.patient.findFirst({
+      where: { id: patientId, deletedAt: null, clinicId: { not: null } },
+      select: { clinicId: true },
+    });
+    if (!patient?.clinicId) return;
+    const recipients = await this.prisma.user.findMany({ where: { clinicId: patient.clinicId, status: 'ACTIVE', deletedAt: null, primaryRole: { in: ['NURSE', 'PHYSICIAN', 'ADMIN', 'SUPER_ADMIN'] } }, select: { id: true } });
     await Promise.all(recipients.map(async ({ id }) => {
       const notification = await this.prisma.notification.create({ data: { patientId, recipientId: id, type: 'ALERT', priority: 'CRITICAL', title: 'Alerte clinique critique', message: `${reason}. Évaluation humaine immédiate requise.`, relatedEntity: 'WearableMeasurement', relatedId: measurementId } });
       this.gateway.notifyToUser(id, 'clinical.alert', notification);

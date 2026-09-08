@@ -21,7 +21,7 @@ const report = (category: string, id: string, detail: Record<string, unknown>, r
 };
 
 async function audit() {
-  const [users, employees, serviceUnits, roomAssignments, configurations, subscriptionCompanies, operatingRooms] = await Promise.all([
+  const [users, employees, serviceUnits, roomAssignments, configurations, subscriptionCompanies, operatingRooms, imagingCatalogues, imagingMachines] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null, primaryRole: { in: operationalRoles } },
       select: { id: true, username: true, primaryRole: true, clinicId: true, Employee: { select: { id: true, clinicId: true } } },
@@ -50,6 +50,14 @@ async function audit() {
     prisma.operatingRoom.findMany({
       where: { deletedAt: null },
       select: { id: true, clinicId: true, surgeries: { where: { deletedAt: null }, select: { id: true, patient: { select: { clinicId: true } } } } },
+    }),
+    prisma.imagingCatalogue.findMany({
+      where: { deletedAt: null },
+      select: { id: true, clinicId: true, imagingRequests: { where: { deletedAt: null }, select: { id: true, patient: { select: { clinicId: true } } } } },
+    }),
+    prisma.imagingMachine.findMany({
+      where: { deletedAt: null },
+      select: { id: true, clinicId: true, imagingRequests: { where: { deletedAt: null }, select: { id: true, patient: { select: { clinicId: true } } } } },
     }),
   ]);
 
@@ -125,6 +133,36 @@ async function audit() {
           operatingRoomId: operatingRoom.id,
           operatingRoomClinicId: operatingRoom.clinicId,
           patientClinicId: surgery.patient.clinicId,
+        });
+      }
+    }
+  }
+  for (const catalogue of imagingCatalogues) {
+    if (!catalogue.clinicId) {
+      report('IMAGING_CATALOGUE_WITHOUT_CLINIC', catalogue.id, {});
+      continue;
+    }
+    for (const request of catalogue.imagingRequests) {
+      if (request.patient.clinicId !== catalogue.clinicId) {
+        report('IMAGING_CATALOGUE_REQUEST_CROSS_CLINIC', request.id, {
+          catalogueId: catalogue.id,
+          catalogueClinicId: catalogue.clinicId,
+          patientClinicId: request.patient.clinicId,
+        });
+      }
+    }
+  }
+  for (const machine of imagingMachines) {
+    if (!machine.clinicId) {
+      report('IMAGING_MACHINE_WITHOUT_CLINIC', machine.id, {});
+      continue;
+    }
+    for (const request of machine.imagingRequests) {
+      if (request.patient.clinicId !== machine.clinicId) {
+        report('IMAGING_MACHINE_REQUEST_CROSS_CLINIC', request.id, {
+          machineId: machine.id,
+          machineClinicId: machine.clinicId,
+          patientClinicId: request.patient.clinicId,
         });
       }
     }

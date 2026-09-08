@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ImagingRequestStatus } from '@prisma/client';
+import { ImagingModality, ImagingRequestStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateImagingCatalogueDto } from './dto/create-imaging-catalogue.dto';
 import { ClinicContextService } from '../core/clinic-context.service';
@@ -188,7 +188,7 @@ export class ImagingService {
         break;
     }
 
-    const where = {
+    const where: Prisma.ImagingRequestWhereInput = {
       patient: { clinicId: actor.clinicId, deletedAt: null },
       createdAt: {
         gte: startDate,
@@ -197,7 +197,7 @@ export class ImagingService {
     };
 
     if (modality !== 'ALL') {
-      where.modality = modality;
+      where.modality = modality as ImagingModality;
     }
 
     const requests = await this.prisma.imagingRequest.findMany({
