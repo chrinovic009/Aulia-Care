@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { ImagingRequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateImagingCatalogueDto } from './dto/create-imaging-catalogue.dto';
+import { ClinicContextService } from '../core/clinic-context.service';
 
 type DashboardPeriod = 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH';
 
@@ -9,23 +10,34 @@ type DashboardServiceFilter = 'ALL' | 'EMERGENCY' | 'HOSPITALIZATION' | 'AMBULAT
 
 @Injectable()
 export class ImagingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly clinicContext: ClinicContextService,
+  ) {}
 
-  findAll() {
+  private requireClinic(actorId?: string) {
+    return this.clinicContext.requireOperationalActor({ userId: actorId });
+  }
+
+  async findAll(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     return this.prisma.imagingRequest.findMany({
+      where: { deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
       include: { patient: true, requestedBy: true, consultation: true, report: true, machine: true, imagingCatalogue: true },
       orderBy: [{ urgency: 'desc' }, { createdAt: 'asc' }],
     });
   }
 
-  findCatalogue() {
+  async findCatalogue(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     return this.prisma.imagingCatalogue.findMany({
-      where: { active: true },
+      where: { clinicId: actor.clinicId, active: true, deletedAt: null },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
   }
 
-  async createCatalogue(dto: CreateImagingCatalogueDto) {
+  async createCatalogue(dto: CreateImagingCatalogueDto, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     const code = dto.code.trim().toUpperCase();
     const name = dto.name.trim();
     if (!code || !name) throw new BadRequestException('Le code et le nom de l examen sont requis.');
@@ -42,18 +54,24 @@ export class ImagingService {
         turnaroundTimeMinutes: dto.turnaroundTimeMinutes ?? null,
         active: dto.active !== false,
       };
-    const existing = await this.prisma.imagingCatalogue.findUnique({ where: { code } });
+    const existing = await this.prisma.imagingCatalogue.findFirst({
+      where: { code, clinicId: actor.clinicId },
+    });
     // An archived catalogue item is revived so administrators can recreate a
     // previously removed examination without violating its unique code.
     if (existing && (existing.deletedAt || !existing.active)) {
       return this.prisma.imagingCatalogue.update({ where: { id: existing.id }, data: { ...data, deletedAt: null } });
     }
     if (existing) throw new BadRequestException('Un examen d’imagerie actif utilise déjà ce code.');
-    return this.prisma.imagingCatalogue.create({ data });
+    return this.prisma.imagingCatalogue.create({ data: { ...data, clinicId: actor.clinicId } });
   }
 
-  async removeCatalogue(id: string) {
-    const catalogue = await this.prisma.imagingCatalogue.findUnique({ where: { id }, include: { _count: { select: { imagingRequests: true } } } });
+  async removeCatalogue(id: string, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    const catalogue = await this.prisma.imagingCatalogue.findFirst({
+      where: { id, clinicId: actor.clinicId },
+      include: { _count: { select: { imagingRequests: true } } },
+    });
     if (!catalogue) throw new NotFoundException('Examen d’imagerie introuvable.');
     if (catalogue._count.imagingRequests === 0) {
       await this.prisma.imagingCatalogue.delete({ where: { id } });
@@ -63,13 +81,19 @@ export class ImagingService {
     return { success: true, id, deleted: false, archived: true };
   }
 
-  findMachines() {
+  async findMachines(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     return this.prisma.imagingMachine.findMany({
+      where: { clinicId: actor.clinicId, deletedAt: null },
       orderBy: [{ name: 'asc' }],
     });
   }
 
-  createMachine(dto: { name: string; roomNumber?: string; isOperational?: boolean }) {
+  async createMachine(
+    dto: { name: string; roomNumber?: string; isOperational?: boolean },
+    actorId?: string,
+  ) {
+    const actor = await this.requireClinic(actorId);
     const name = typeof dto.name === 'string' ? dto.name.trim() : '';
     if (!name) {
       throw new BadRequestException('Le nom de l équipement est requis.');
@@ -77,6 +101,7 @@ export class ImagingService {
 
     return this.prisma.imagingMachine.create({
       data: {
+        clinicId: actor.clinicId,
         name,
         roomNumber: typeof dto.roomNumber === 'string' && dto.roomNumber.trim() ? dto.roomNumber.trim() : null,
         isOperational: dto.isOperational !== false,
@@ -84,16 +109,21 @@ export class ImagingService {
     });
   }
 
-  async findOne(id: string) {
-    const imagingRequest = await this.prisma.imagingRequest.findUnique({ where: { id }, include: { patient: true, requestedBy: true, consultation: true, report: true, machine: true, imagingCatalogue: true } });
+  async findOne(id: string, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    const imagingRequest = await this.prisma.imagingRequest.findFirst({
+      where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+      include: { patient: true, requestedBy: true, consultation: true, report: true, machine: true, imagingCatalogue: true },
+    });
     if (!imagingRequest) {
       throw new NotFoundException("Demande d'imagerie introuvable");
     }
     return imagingRequest;
   }
 
-  async updateStatus(id: string, rawStatus: string) {
-    const request = await this.findOne(id);
+  async updateStatus(id: string, rawStatus: string, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    const request = await this.findOne(id, actor.id);
     const status = String(rawStatus || '').toUpperCase() as ImagingRequestStatus;
     if (!Object.values(ImagingRequestStatus).includes(status)) throw new BadRequestException('Statut de radiologie invalide.');
     const allowedTransitions: Partial<Record<ImagingRequestStatus, ImagingRequestStatus[]>> = {
@@ -106,12 +136,26 @@ export class ImagingService {
       throw new BadRequestException(`Transition radiologique interdite : ${request.status} vers ${status}.`);
     }
     if (['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'VERIFIED'].includes(status)) {
-      await this.assertRequestPaid(id);
+      await this.assertRequestPaid(id, actor.clinicId);
     }
-    return this.prisma.imagingRequest.update({ where: { id }, data: { status, ...(status === 'COMPLETED' ? { completedAt: new Date() } : {}) }, include: { patient: true, report: true } });
+    const mutation = await this.prisma.imagingRequest.updateMany({
+      where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+      data: { status, ...(status === 'COMPLETED' ? { completedAt: new Date() } : {}) },
+    });
+    if (mutation.count !== 1) throw new NotFoundException("Demande d'imagerie introuvable");
+    return this.prisma.imagingRequest.findFirstOrThrow({
+      where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+      include: { patient: true, report: true },
+    });
   }
 
-  async getDashboardOverview(rawPeriod: string = 'TODAY', rawModality: string = 'ALL', rawService: string = 'ALL') {
+  async getDashboardOverview(
+    rawPeriod: string = 'TODAY',
+    rawModality: string = 'ALL',
+    rawService: string = 'ALL',
+    actorId?: string,
+  ) {
+    const actor = await this.requireClinic(actorId);
     const period = (rawPeriod || 'TODAY').toUpperCase() as DashboardPeriod;
     const modality = (rawModality || 'ALL').toUpperCase();
     const service = (rawService || 'ALL').toUpperCase() as DashboardServiceFilter;
@@ -144,7 +188,8 @@ export class ImagingService {
         break;
     }
 
-    const where: any = {
+    const where = {
+      patient: { clinicId: actor.clinicId, deletedAt: null },
       createdAt: {
         gte: startDate,
         lte: endDate,
@@ -195,7 +240,9 @@ export class ImagingService {
     const averageWaitMinutes = waitDurations.length ? Math.round(waitDurations.reduce((sum: number, value: number) => sum + value, 0) / waitDurations.length) : 0;
     const averageDurationMinutes = durationDurations.length ? Math.round(durationDurations.reduce((sum: number, value: number) => sum + value, 0) / durationDurations.length) : 0;
 
-    const machineCount = await this.prisma.imagingMachine.count({ where: { isOperational: true } });
+    const machineCount = await this.prisma.imagingMachine.count({
+      where: { clinicId: actor.clinicId, deletedAt: null, isOperational: true },
+    });
     const machineWorkMinutes = durationDurations.reduce((sum: number, value: number) => sum + value, 0);
     const occupancyRate = machineCount > 0 ? Math.min(100, Math.round((machineWorkMinutes / 60) / (12 * machineCount) * 100)) : 0;
 
@@ -203,7 +250,7 @@ export class ImagingService {
     const modalityBreakdown = this.buildModalityBreakdown(filteredRequests);
     const workflowAlerts = this.buildWorkflowAlerts(filteredRequests);
     const activeQueue = this.buildActiveQueue(filteredRequests);
-    const equipmentStatus = await this.buildEquipmentStatus();
+    const equipmentStatus = await this.buildEquipmentStatus(actor.clinicId);
 
     return {
       period,
@@ -292,8 +339,11 @@ export class ImagingService {
       .slice(0, 8);
   }
 
-  private async buildEquipmentStatus() {
-    const machines = await this.prisma.imagingMachine.findMany({ orderBy: [{ name: 'asc' }] });
+  private async buildEquipmentStatus(clinicId: string) {
+    const machines = await this.prisma.imagingMachine.findMany({
+      where: { clinicId, deletedAt: null },
+      orderBy: [{ name: 'asc' }],
+    });
     return machines.map((machine: any) => ({
       id: machine.id,
       name: machine.name,
@@ -306,8 +356,9 @@ export class ImagingService {
   }
 
   async saveReport(id: string, body: { findings: string; impression: string; recommendations?: string; verified?: boolean }, interpretedById?: string) {
-    await this.findOne(id);
-    await this.assertRequestPaid(id);
+    const actor = await this.requireClinic(interpretedById);
+    await this.findOne(id, actor.id);
+    await this.assertRequestPaid(id, actor.clinicId);
     if (!body.findings?.trim() || !body.impression?.trim()) throw new BadRequestException('Les constatations et la conclusion sont obligatoires.');
     return this.prisma.$transaction(async (tx) => {
       const report = await tx.imagingReport.upsert({
@@ -315,15 +366,20 @@ export class ImagingService {
         create: { imagingRequestId: id, interpretedById: interpretedById || null, findings: body.findings.trim(), impression: body.impression.trim(), recommendations: body.recommendations?.trim() || null, verified: Boolean(body.verified), verifiedAt: body.verified ? new Date() : null },
         update: { interpretedById: interpretedById || undefined, findings: body.findings.trim(), impression: body.impression.trim(), recommendations: body.recommendations?.trim() || null, verified: Boolean(body.verified), verifiedAt: body.verified ? new Date() : null },
       });
-      await tx.imagingRequest.update({ where: { id }, data: { status: body.verified ? 'VERIFIED' : 'COMPLETED', completedAt: new Date() } });
+      const mutation = await tx.imagingRequest.updateMany({
+        where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+        data: { status: body.verified ? 'VERIFIED' : 'COMPLETED', completedAt: new Date() },
+      });
+      if (mutation.count !== 1) throw new NotFoundException("Demande d'imagerie introuvable");
       return report;
     });
   }
 
-  private async assertRequestPaid(imagingRequestId: string) {
+  private async assertRequestPaid(imagingRequestId: string, clinicId: string) {
     const invoice = await this.prisma.invoice.findFirst({
       where: {
         type: 'RADIOLOGY',
+        clinicId,
         remarks: { contains: `ImagingRequest:${imagingRequestId}` },
       },
       orderBy: { issuedAt: 'desc' },

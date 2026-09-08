@@ -100,7 +100,7 @@ test('daily check-in notifies only active nurses from the patient clinic after c
   });
 
   assert.equal(result.recipientsNotified, 1);
-  assert.deepEqual(createdNotifications, [{ recipientId: 'nurse-a' }]);
+  assert.deepEqual(createdNotifications, [{ id: 'notification-nurse-a', recipientId: 'nurse-a' }]);
   assert.deepEqual(emittedNotifications, ['nurse-a']);
   assert.equal(recipientQueries.length, 1);
   assert.deepEqual(recipientQueries[0], {

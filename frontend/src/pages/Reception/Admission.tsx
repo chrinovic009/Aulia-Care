@@ -23,6 +23,11 @@ const relationOptions = [
 
 const EMAIL_DOMAINS = ["@gmail.com", "@outlook.com", "@hotmail.com", "@yahoo.com"];
 
+const dateTimeLocalValue = (date = new Date()) => {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
 const normalizeEmailLocalPart = (value: string) =>
   value
     .normalize("NFD")
@@ -106,7 +111,7 @@ const Admission: React.FC = () => {
     nationality: "Congolaise",
     dossierNumber: `D-${Date.now().toString().slice(-6)}`,
     admissionType: "Consultation",
-    arrival: new Date().toISOString(),
+    arrival: dateTimeLocalValue(),
     receptionist: "",
     serviceId: "",
     doctor: "",
@@ -344,7 +349,7 @@ const Admission: React.FC = () => {
       nationality: "Congolaise",
       dossierNumber: `D-${Date.now().toString().slice(-6)}`,
       admissionType: "Consultation",
-      arrival: new Date().toISOString().slice(0, 16),
+      arrival: dateTimeLocalValue(),
       receptionist: currentUser?.firstName ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() : currentUser?.displayName || currentUser?.username || "Réceptionniste",
       serviceId: admissionServices[0]?.id || servicesList[0]?.id || '',
       doctor: '',

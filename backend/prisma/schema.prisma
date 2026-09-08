@@ -191,9 +191,9 @@ model UserRole {
 
 model Department {
   id                        String                  @id @default(uuid())
-  name                      String                  @unique
+  name                      String
   type                      DepartmentType
-  code                      String                  @unique
+  code                      String
   description               String?
   isParamedical             Boolean                 @default(false)
   createdAt                 DateTime                @default(now())
@@ -209,6 +209,8 @@ model Department {
   services                  ServiceUnit[]
 
   @@index([clinicId])
+  @@unique([clinicId, name])
+  @@unique([clinicId, code])
 }
 
 model ServiceUnit {
@@ -241,7 +243,7 @@ model ServiceUnit {
 /// Central services catalog (e.g. Cardiologie, Radiologie)
 model Service {
   id                  String               @id @default(uuid())
-  name                String               @unique
+  name                String
   description         String?
   active              Boolean              @default(true)
   isParamedical       Boolean              @default(false)
@@ -260,6 +262,7 @@ model Service {
   subscriptionCharges SubscriptionCharge[]
 
   @@index([clinicId])
+  @@unique([clinicId, name])
 }
 
 /// DepartmentResponsable links departments to users (department chiefs)
@@ -1585,7 +1588,8 @@ model LabDailyStatistics {
 
 model ImagingCatalogue {
   id                      String           @id @default(uuid())
-  code                    String           @unique
+  clinicId                String?
+  code                    String
   name                    String
   description             String?
   preparationInstructions String?
@@ -1603,14 +1607,18 @@ model ImagingCatalogue {
   config                  Json?
   supportsContrast        Boolean          @default(false)
   modality                ImagingModality
+  clinic                  Clinic?          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   imagingRequests         ImagingRequest[]
 
+  @@unique([clinicId, code])
+  @@index([clinicId, active])
   @@index([active])
   @@index([modality])
 }
 
 model ImagingMachine {
   id              String           @id @default(uuid())
+  clinicId        String?
   name            String
   roomNumber      String?
   isOperational   Boolean          @default(true)
@@ -1620,8 +1628,11 @@ model ImagingMachine {
   syncedAt        DateTime?
   sourceNode      String?
   version         Int              @default(1)
+  clinic          Clinic?          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   imagingRequests ImagingRequest[]
 
+  @@unique([clinicId, name])
+  @@index([clinicId, isOperational])
   @@index([isOperational])
 }
 
@@ -1696,7 +1707,8 @@ model ImagingReport {
 /// Surgery and bloc operatoire.
 model OperatingRoom {
   id         String    @id @default(uuid())
-  name       String    @unique
+  clinicId   String?
+  name       String
   location   String?
   capacity   Int       @default(1)
   active     Boolean   @default(true)
@@ -1707,6 +1719,10 @@ model OperatingRoom {
   sourceNode String?
   version    Int       @default(1)
   surgeries  Surgery[]
+  clinic     Clinic?   @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+
+  @@index([clinicId])
+  @@unique([clinicId, name])
 }
 
 model Surgery {
@@ -1901,6 +1917,10 @@ model Clinic {
   accountingJournal     AccountingJournalEntry[]
   supportingDocuments   FinanceSupportingDocument[]
   refundRequests        RefundRequest[]
+  subscriptionCompanies SubscriptionCompany[]
+  operatingRooms       OperatingRoom[]
+  imagingCatalogues    ImagingCatalogue[]
+  imagingMachines      ImagingMachine[]
   layerConfiguration    PlatformLayerConfiguration?
 }
 
@@ -2586,6 +2606,9 @@ model InsuranceAuthorization {
 /// == Pharmacie avancée (achats, lots, valorisation) ==
 model SubscriptionCompany {
   id                 String                       @id @default(uuid())
+  /// Corporate subscriptions are commercial agreements of one establishment.
+  /// Legacy rows remain nullable until a deliberate tenant-integrity repair.
+  clinicId           String?
   name               String
   legalName          String?
   registrationNumber String?
@@ -2603,12 +2626,14 @@ model SubscriptionCompany {
   createdAt          DateTime                     @default(now())
   updatedAt          DateTime                     @updatedAt
   deletedAt          DateTime?
+  clinic             Clinic?                      @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   monthlyInvoices    MonthlySubscriptionInvoice[]
   charges            SubscriptionCharge[]
   employees          SubscriptionEmployee[]
 
   @@index([name])
   @@index([status])
+  @@index([clinicId, status])
 }
 
 model SubscriptionEmployee {

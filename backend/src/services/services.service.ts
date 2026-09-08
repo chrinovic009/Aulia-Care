@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ClinicContextService } from '../core/clinic-context.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 
@@ -56,29 +57,50 @@ const isReceptionAdministrativeUnitName = (name: string) => {
 
 @Injectable()
 export class ServicesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly clinicContext: ClinicContextService,
+  ) {}
 
-  async create(data: CreateServiceDto & { departmentId?: string }) {
+  private requireClinic(actorId?: string) {
+    return this.clinicContext.requireOperationalActor({ userId: actorId });
+  }
+
+  async create(data: CreateServiceDto & { departmentId?: string }, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     const isParamedical = data.isParamedical !== undefined
       ? data.isParamedical
       : isParamedicalServiceName(data.name);
 
-    const { departmentId, ...serviceData } = data;
+    const { departmentId } = data;
+    if (departmentId) {
+      const department = await this.prisma.department.findFirst({
+        where: { id: departmentId, clinicId: actor.clinicId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!department) throw new NotFoundException('Département introuvable dans cet établissement.');
+    }
     const existing = await this.prisma.service.findFirst({
-      where: { name: { equals: data.name.trim(), mode: 'insensitive' } },
+      where: { name: { equals: data.name.trim(), mode: 'insensitive' }, clinicId: actor.clinicId },
     });
     if (existing?.active) {
       throw new BadRequestException('Un service actif porte déjà ce nom.');
     }
     // Services that were deactivated during a configuration removal are revived
     // instead of causing a uniqueness error. Their clinical invoice history stays intact.
+    const serviceData = {
+      name: data.name.trim(),
+      description: data.description?.trim() || null,
+      active: data.active ?? true,
+      isParamedical,
+    };
     const svc = existing
-      ? await this.prisma.service.update({ where: { id: existing.id }, data: { ...serviceData, active: true, isParamedical } as any })
-      : await this.prisma.service.create({ data: { ...serviceData, isParamedical } as any });
+      ? await this.prisma.service.update({ where: { id: existing.id }, data: { ...serviceData, active: true } })
+      : await this.prisma.service.create({ data: { ...serviceData, clinicId: actor.clinicId } });
 
     try {
       if (departmentId) {
-        await this.ensureServiceUnitForDepartment(svc.name, departmentId);
+        await this.ensureServiceUnitForDepartment(svc.name, departmentId, actor.clinicId);
       }
     } catch {
       // Automatic department creation is disabled; only explicit manual linkage is allowed.
@@ -89,26 +111,27 @@ export class ServicesService {
 
   /** A receptionist may configure only the internal reception units, never a
    * patient-facing/clinical service and never a tariff. */
-  async createReceptionAdministrativeUnit(data: { name?: string; description?: string }) {
+  async createReceptionAdministrativeUnit(data: { name?: string; description?: string }, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     const name = String(data?.name || '').trim();
     if (!isReceptionAdministrativeUnitName(name)) {
       throw new BadRequestException('La réception peut uniquement créer ou réactiver une unité interne : Réception, Accueil, Caisse, Finance ou Secrétariat.');
     }
     const department = await this.prisma.department.findFirst({
-      where: { deletedAt: null, type: 'ADMINISTRATION' },
+      where: { clinicId: actor.clinicId, deletedAt: null, type: 'ADMINISTRATION' },
       select: { id: true },
     });
     if (!department) throw new BadRequestException('Le département Administration & Gestion doit être créé par l’administrateur avant cette action.');
 
-    const existing = await this.prisma.service.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } });
+    const existing = await this.prisma.service.findFirst({ where: { clinicId: actor.clinicId, name: { equals: name, mode: 'insensitive' } } });
     const service = existing
       ? await this.prisma.service.update({ where: { id: existing.id }, data: { active: true, description: data.description?.trim() || existing.description, isParamedical: false } })
-      : await this.prisma.service.create({ data: { name, description: data.description?.trim() || null, active: true, isParamedical: false } });
+      : await this.prisma.service.create({ data: { clinicId: actor.clinicId, name, description: data.description?.trim() || null, active: true, isParamedical: false } });
 
-    await (this.prisma as any).serviceUnit.upsert({
+    await this.prisma.serviceUnit.upsert({
       where: { departmentId_name: { departmentId: department.id, name } },
       update: { active: true, deletedAt: null },
-      create: { departmentId: department.id, name, active: true },
+      create: { departmentId: department.id, clinicId: actor.clinicId, name, active: true },
     });
     await this.prisma.serviceTarif.updateMany({ where: { serviceId: service.id, actif: true }, data: { actif: false, dateFin: new Date() } });
     return service;
@@ -117,7 +140,8 @@ export class ServicesService {
   /** Reception owns only the two admission fees.  The server fixes both
    * business identities so a forged client cannot create a third clinical
    * service or alter any unrelated tariff. */
-  async setReceptionAdmissionFee(data: { kind?: string; price?: number | string; description?: string }) {
+  async setReceptionAdmissionFee(data: { kind?: string; price?: number | string; description?: string }, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     const kind = String(data?.kind || '').toUpperCase();
     const definition = kind === 'SPECIALIST'
       ? { name: 'Consultation specialiste - Reception', label: 'Frais d’admission – consultation spécialiste' }
@@ -129,28 +153,29 @@ export class ServicesService {
     if (!Number.isFinite(price) || price <= 0) throw new BadRequestException('Le tarif d’admission doit être un montant CDF supérieur à zéro.');
 
     return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.service.findFirst({ where: { name: { equals: definition.name, mode: 'insensitive' } } });
+      const existing = await tx.service.findFirst({ where: { clinicId: actor.clinicId, name: { equals: definition.name, mode: 'insensitive' } } });
       const service = existing
         ? await tx.service.update({ where: { id: existing.id }, data: { active: true, description: data.description?.trim() || definition.label, isParamedical: false } })
-        : await tx.service.create({ data: { name: definition.name, description: data.description?.trim() || definition.label, active: true, isParamedical: false } });
+        : await tx.service.create({ data: { clinicId: actor.clinicId, name: definition.name, description: data.description?.trim() || definition.label, active: true, isParamedical: false } });
       await tx.serviceTarif.updateMany({ where: { serviceId: service.id, actif: true }, data: { actif: false, dateFin: new Date() } });
       const tarif = await tx.serviceTarif.create({ data: { serviceId: service.id, prix: price, actif: true } });
       return { kind, service, tarif };
     });
   }
 
-  async findAll() {
+  async findAll(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     const [services, serviceUnits] = await Promise.all([
       this.prisma.service.findMany({
-      where: { active: true },
+      where: { clinicId: actor.clinicId, active: true },
       include: {
         tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' } },
-        responsables: { where: { actif: true }, include: { user: true } },
-        staff: { where: { actif: true }, include: { user: true } },
+        responsables: { where: { actif: true, user: { clinicId: actor.clinicId } }, include: { user: true } },
+        staff: { where: { actif: true, user: { clinicId: actor.clinicId } }, include: { user: true } },
       },
       orderBy: { name: 'asc' },
       }),
-      this.prisma.serviceUnit.findMany({ where: { active: true, deletedAt: null }, include: { department: true } }),
+      this.prisma.serviceUnit.findMany({ where: { clinicId: actor.clinicId, active: true, deletedAt: null }, include: { department: true } }),
     ]);
     const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
     return services.map((service) => {
@@ -163,18 +188,19 @@ export class ServicesService {
     });
   }
 
-  async findOne(id: string) {
-    const svc = await this.prisma.service.findUnique({
-      where: { id },
+  async findOne(id: string, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    const svc = await this.prisma.service.findFirst({
+      where: { id, clinicId: actor.clinicId },
       include: {
         tarifs: true,
-        responsables: { include: { user: true } },
-        staff: { include: { user: true } },
+        responsables: { where: { user: { clinicId: actor.clinicId } }, include: { user: true } },
+        staff: { where: { user: { clinicId: actor.clinicId } }, include: { user: true } },
       },
     });
     if (!svc) throw new NotFoundException('Service introuvable');
     const serviceUnit = await this.prisma.serviceUnit.findFirst({
-      where: { name: { equals: svc.name, mode: 'insensitive' } },
+      where: { name: { equals: svc.name, mode: 'insensitive' }, clinicId: actor.clinicId },
       include: { department: true },
     });
     return {
@@ -184,9 +210,14 @@ export class ServicesService {
     };
   }
 
-  async update(id: string, dto: UpdateServiceDto) {
-    await this.findOne(id);
-    const updateData: any = { ...dto };
+  async update(id: string, dto: UpdateServiceDto, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    await this.findOne(id, actor.id);
+    const updateData: { name?: string; description?: string | null; active?: boolean; isParamedical?: boolean } = {
+      ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+      ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
+      ...(dto.active !== undefined ? { active: dto.active } : {}),
+    };
     if (dto.isParamedical !== undefined) {
       updateData.isParamedical = dto.isParamedical;
     } else if (dto.name) {
@@ -195,8 +226,9 @@ export class ServicesService {
     return this.prisma.service.update({ where: { id }, data: updateData });
   }
 
-  async remove(id: string) {
-    const service = await this.prisma.service.findUnique({ where: { id } });
+  async remove(id: string, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    const service = await this.prisma.service.findFirst({ where: { id, clinicId: actor.clinicId } });
     if (!service) {
       throw new NotFoundException('Service introuvable');
     }
@@ -209,9 +241,15 @@ export class ServicesService {
     return { success: true, id };
   }
 
-  async addTarif(dto: any) {
-    const service = await this.prisma.service.findUnique({
-      where: { id: dto.serviceId },
+  async addTarif(
+    dto: { serviceId: string; prix: number | string; dateDebut?: string | Date },
+    actorId?: string,
+  ) {
+    const actor = await this.requireClinic(actorId);
+    const price = Number(dto.prix);
+    if (!Number.isFinite(price) || price <= 0) throw new BadRequestException('Le prix doit être supérieur à zéro.');
+    const service = await this.prisma.service.findFirst({
+      where: { id: dto.serviceId, clinicId: actor.clinicId },
       select: { id: true, name: true },
     });
     if (!service) throw new NotFoundException('Service introuvable');
@@ -221,7 +259,7 @@ export class ServicesService {
       .toLowerCase()
       .trim();
     const serviceUnit = await this.prisma.serviceUnit.findFirst({
-      where: { name: { equals: service.name, mode: 'insensitive' }, deletedAt: null },
+      where: { name: { equals: service.name, mode: 'insensitive' }, clinicId: actor.clinicId, deletedAt: null },
       include: { department: { select: { type: true, name: true } } },
     });
     const isAdministrativeDepartment = serviceUnit?.department?.type === 'ADMINISTRATION'
@@ -231,7 +269,13 @@ export class ServicesService {
         'Une unité administrative (réception, caisse, finance ou gestion) est interne et ne peut jamais recevoir un tarif patient.',
       );
     }
-    return this.prisma.serviceTarif.create({ data: dto });
+    return this.prisma.serviceTarif.create({
+      data: {
+        serviceId: service.id,
+        prix: price,
+        dateDebut: dto.dateDebut ? new Date(dto.dateDebut) : new Date(),
+      },
+    });
   }
 
   private async ensureDepartmentForService(_serviceName: string) {
@@ -240,8 +284,8 @@ export class ServicesService {
     return;
   }
 
-  private async ensureServiceUnitForDepartment(serviceName: string, departmentId: string) {
-    await (this.prisma as any).serviceUnit.upsert({
+  private async ensureServiceUnitForDepartment(serviceName: string, departmentId: string, clinicId: string) {
+    await this.prisma.serviceUnit.upsert({
       where: {
         departmentId_name: {
           departmentId,
@@ -252,6 +296,7 @@ export class ServicesService {
       create: {
         name: serviceName,
         departmentId,
+        clinicId,
         location: null,
         contactNumber: null,
         active: true,
@@ -265,7 +310,9 @@ export class ServicesService {
       userId: string;
       principal?: boolean;
     }[],
+    actorId?: string,
   ) {
+    const actor = await this.requireClinic(actorId);
     const created = [];
 
     const allowedChiefRoles = [
@@ -283,11 +330,12 @@ export class ServicesService {
 
     for (const it of items) {
 
-      const user = await this.prisma.user.findUnique({
-        where: {
-          id: it.userId,
-        },
-      });
+      const [service, user] = await Promise.all([
+        this.prisma.service.findFirst({ where: { id: it.serviceId, clinicId: actor.clinicId }, select: { id: true } }),
+        this.prisma.user.findFirst({ where: { id: it.userId, clinicId: actor.clinicId, status: 'ACTIVE', deletedAt: null } }),
+      ]);
+
+      if (!service) throw new NotFoundException('Service introuvable dans cet établissement.');
 
       if (!user) {
         throw new NotFoundException(
@@ -336,7 +384,11 @@ export class ServicesService {
     return created;
   }
 
-  async addStaff(items: any[]) {
+  async addStaff(
+    items: Array<{ serviceId: string; userId: string; roleInService?: string }>,
+    actorId?: string,
+  ) {
+    const actor = await this.requireClinic(actorId);
     const created = [];
 
     const allowedRoles = [
@@ -355,9 +407,12 @@ export class ServicesService {
 
     for (const item of items) {
 
-      const user = await this.prisma.user.findUnique({
-        where: { id: item.userId },
-      });
+      const [service, user] = await Promise.all([
+        this.prisma.service.findFirst({ where: { id: item.serviceId, clinicId: actor.clinicId }, select: { id: true } }),
+        this.prisma.user.findFirst({ where: { id: item.userId, clinicId: actor.clinicId, status: 'ACTIVE', deletedAt: null } }),
+      ]);
+
+      if (!service) throw new NotFoundException('Service introuvable dans cet établissement.');
 
       if (!user) {
         throw new NotFoundException(
@@ -378,6 +433,7 @@ export class ServicesService {
         where: {
           userId: item.userId,
           serviceId: { not: item.serviceId },
+          service: { clinicId: actor.clinicId },
           actif: true,
         },
         data: { actif: false },

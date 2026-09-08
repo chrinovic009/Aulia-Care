@@ -111,26 +111,26 @@ export class AdministrationController {
 
   @Post('beds')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  createBed(@Body() body: any) {
-    return this.administrationService.createBed(body);
+  createBed(@Body() body: { roomId: string; code: string; status?: 'FREE' | 'OCCUPIED' | 'CLEANING' | 'RESERVED' }, @Request() req: any) {
+    return this.administrationService.createBed(body, req.user?.userId);
   }
 
   @Post('operating-rooms')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  createOperatingRoom(@Body() body: any) {
-    return this.administrationService.createOperatingRoom(body);
+  createOperatingRoom(@Body() body: { name?: string; location?: string; capacity?: number | string; active?: boolean }, @Request() req: any) {
+    return this.administrationService.createOperatingRoom(body, req.user?.userId);
   }
 
   @Patch('operating-rooms/:id')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  updateOperatingRoom(@Param('id') id: string, @Body() body: any) {
-    return this.administrationService.updateOperatingRoom(id, body);
+  updateOperatingRoom(@Param('id') id: string, @Body() body: { name?: string; location?: string; capacity?: number | string; active?: boolean }, @Request() req: any) {
+    return this.administrationService.updateOperatingRoom(id, body, req.user?.userId);
   }
 
   @Delete('operating-rooms/:id')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  deleteOperatingRoom(@Param('id') id: string) {
-    return this.administrationService.removeOperatingRoom(id);
+  deleteOperatingRoom(@Param('id') id: string, @Request() req: any) {
+    return this.administrationService.removeOperatingRoom(id, req.user?.userId);
   }
 
   @Get('stock')
@@ -159,20 +159,20 @@ export class AdministrationController {
 
   @Get('reports')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  reports() {
-    return this.administrationService.reports();
+  reports(@Request() req: any) {
+    return this.administrationService.reports(req.user?.userId);
   }
 
   @Get('dashboard')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  dashboard() {
-    return this.administrationService.dashboard();
+  dashboard(@Request() req: any) {
+    return this.administrationService.dashboard(req.user?.userId);
   }
 
   /** Vue consolidée réservée à la direction de la plateforme. */
   @Get('executive-dashboard')
   @Roles('SUPER_ADMIN')
-  executiveDashboard() {
-    return this.administrationService.executiveDashboard();
+  executiveDashboard(@Request() req: any) {
+    return this.administrationService.executiveDashboard(req.user?.userId);
   }
 }

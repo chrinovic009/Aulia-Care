@@ -21,7 +21,7 @@ const report = (category: string, id: string, detail: Record<string, unknown>, r
 };
 
 async function audit() {
-  const [users, employees, serviceUnits, roomAssignments, configurations] = await Promise.all([
+  const [users, employees, serviceUnits, roomAssignments, configurations, subscriptionCompanies, operatingRooms] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null, primaryRole: { in: operationalRoles } },
       select: { id: true, username: true, primaryRole: true, clinicId: true, Employee: { select: { id: true, clinicId: true } } },
@@ -38,6 +38,19 @@ async function audit() {
       select: { id: true, user: { select: { clinicId: true } }, room: { select: { serviceUnit: { select: { clinicId: true } } } } },
     }),
     prisma.platformLayerConfiguration.findMany({ select: { id: true, clinicId: true } }),
+    prisma.subscriptionCompany.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true,
+        clinicId: true,
+        employees: { where: { deletedAt: null }, select: { id: true, patient: { select: { clinicId: true } } } },
+        monthlyInvoices: { where: { deletedAt: null }, select: { id: true, invoice: { select: { clinicId: true } } } },
+      },
+    }),
+    prisma.operatingRoom.findMany({
+      where: { deletedAt: null },
+      select: { id: true, clinicId: true, surgeries: { where: { deletedAt: null }, select: { id: true, patient: { select: { clinicId: true } } } } },
+    }),
   ]);
 
   for (const user of users) {
@@ -76,6 +89,45 @@ async function audit() {
   }
   for (const configuration of configurations) {
     if (!configuration.clinicId) report('LAYER_CONFIGURATION_WITHOUT_CLINIC', configuration.id, {});
+  }
+  for (const company of subscriptionCompanies) {
+    if (!company.clinicId) {
+      report('SUBSCRIPTION_COMPANY_WITHOUT_CLINIC', company.id, {});
+      continue;
+    }
+    for (const employee of company.employees) {
+      if (employee.patient?.clinicId && employee.patient.clinicId !== company.clinicId) {
+        report('SUBSCRIPTION_PATIENT_CROSS_CLINIC', employee.id, {
+          companyId: company.id,
+          companyClinicId: company.clinicId,
+          patientClinicId: employee.patient.clinicId,
+        });
+      }
+    }
+    for (const monthlyInvoice of company.monthlyInvoices) {
+      if (monthlyInvoice.invoice?.clinicId && monthlyInvoice.invoice.clinicId !== company.clinicId) {
+        report('SUBSCRIPTION_INVOICE_CROSS_CLINIC', monthlyInvoice.id, {
+          companyId: company.id,
+          companyClinicId: company.clinicId,
+          invoiceClinicId: monthlyInvoice.invoice.clinicId,
+        });
+      }
+    }
+  }
+  for (const operatingRoom of operatingRooms) {
+    if (!operatingRoom.clinicId) {
+      report('OPERATING_ROOM_WITHOUT_CLINIC', operatingRoom.id, {});
+      continue;
+    }
+    for (const surgery of operatingRoom.surgeries) {
+      if (surgery.patient.clinicId !== operatingRoom.clinicId) {
+        report('OPERATING_ROOM_SURGERY_CROSS_CLINIC', surgery.id, {
+          operatingRoomId: operatingRoom.id,
+          operatingRoomClinicId: operatingRoom.clinicId,
+          patientClinicId: surgery.patient.clinicId,
+        });
+      }
+    }
   }
 }
 

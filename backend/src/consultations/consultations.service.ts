@@ -832,6 +832,10 @@ export class ConsultationsService {
   async createImagingRequest(id: string, dto: CreateImagingRequestDto, actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    const clinicId = consultation.clinicId || consultation.patient?.clinicId;
+    if (!clinicId) {
+      throw new ForbiddenException('La consultation doit être rattachée à un établissement actif.');
+    }
 
     const request = await this.prisma.$transaction(async (tx) => {
       const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
@@ -839,14 +843,18 @@ export class ConsultationsService {
 
       let imagingCatalogue: any = null;
       if (imagingCatalogueId) {
-        imagingCatalogue = await tx.imagingCatalogue.findUnique({ where: { id: imagingCatalogueId } });
+        imagingCatalogue = await tx.imagingCatalogue.findFirst({
+          where: { id: imagingCatalogueId, clinicId, active: true, deletedAt: null },
+        });
         if (!imagingCatalogue) {
           throw new BadRequestException('Un examen du catalogue d imagerie est introuvable.');
         }
       } else if (trimmedExamName) {
         imagingCatalogue = await tx.imagingCatalogue.findFirst({
           where: {
+            clinicId,
             active: true,
+            deletedAt: null,
             OR: [
               { name: { equals: trimmedExamName, mode: 'insensitive' } },
               { code: { equals: trimmedExamName, mode: 'insensitive' } },
@@ -857,7 +865,9 @@ export class ConsultationsService {
         if (!imagingCatalogue) {
           imagingCatalogue = await tx.imagingCatalogue.findFirst({
             where: {
+              clinicId,
               active: true,
+              deletedAt: null,
               name: { contains: trimmedExamName, mode: 'insensitive' },
             },
             orderBy: { name: 'asc' },
@@ -898,6 +908,20 @@ export class ConsultationsService {
       const bodyPart = typeof dto.bodyPart === 'string' && dto.bodyPart.trim() ? dto.bodyPart.trim() : imagingCatalogue.name;
       const urgency = typeof dto.urgency === 'string' && dto.urgency.trim() ? dto.urgency.toUpperCase() : 'ROUTINE';
       const machineId = typeof dto.machineId === 'string' && dto.machineId ? dto.machineId : null;
+      if (machineId) {
+        const machine = await tx.imagingMachine.findFirst({
+          where: {
+            id: machineId,
+            clinicId,
+            deletedAt: null,
+            isOperational: true,
+          },
+          select: { id: true },
+        });
+        if (!machine) {
+          throw new BadRequestException('L’équipement d’imagerie sélectionné est indisponible dans cet établissement.');
+        }
+      }
       const scheduledAt = typeof dto.scheduledAt === 'string' && dto.scheduledAt.trim() ? new Date(dto.scheduledAt) : null;
       const status = typeof dto.status === 'string' && dto.status.trim() ? dto.status.toUpperCase() as ImagingRequestStatus : 'REQUESTED';
 
@@ -931,7 +955,7 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           issuedById: actorId,
-          clinicId: consultation.clinicId || consultation.patient.clinicId || null,
+          clinicId,
           type: InvoiceType.RADIOLOGY,
           status: 'PENDING',
           totalAmount: price,
@@ -996,7 +1020,7 @@ export class ConsultationsService {
 
     const cashiers = await this.prisma.user.findMany({
       where: {
-        ...(consultation.clinicId || consultation.patient?.clinicId ? { clinicId: consultation.clinicId || consultation.patient?.clinicId } : {}),
+        clinicId,
         OR: [
           { primaryRole: 'CASHIER' as any },
           { roles: { some: { role: { slug: 'CASHIER' as any } } } },

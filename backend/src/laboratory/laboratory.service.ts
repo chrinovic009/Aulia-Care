@@ -1135,7 +1135,7 @@ export class LaboratoryService {
     return this.prisma.$transaction(async (tx) => {
       const test = await tx.labTest.update({ where: { id }, data: { code: dto.code?.trim(), name: dto.name?.trim(), categoryId: dto.categoryId, sectionId: dto.sectionId, description: dto.description?.trim() || null, price, turnaroundTimeMinutes: dto.turnaroundTimeMinutes === undefined ? undefined : Number(dto.turnaroundTimeMinutes) || null, unit: dto.unit?.trim() || null, referenceRange: dto.referenceRange?.trim() || null, genderRestriction: dto.genderRestriction, minAge: dto.minAge === undefined ? undefined : Number(dto.minAge) || null, maxAge: dto.maxAge === undefined ? undefined : Number(dto.maxAge) || null, active: dto.active } });
       if (price !== undefined) {
-        const service = await tx.service.findUnique({ where: { name: existing.name } });
+        const service = await tx.service.findFirst({ where: { name: existing.name } });
         if (service) {
           await tx.serviceTarif.updateMany({ where: { serviceId: service.id, actif: true }, data: { actif: false, dateFin: new Date() } });
           await tx.serviceTarif.create({ data: { serviceId: service.id, prix: price, actif: true } });
@@ -1223,6 +1223,12 @@ export class LaboratoryService {
     minAge?: string;
     maxAge?: string;
   }, createdById?: string) {
+    if (!createdById) throw new BadRequestException('Utilisateur laboratoire authentifié requis.');
+    const actor = await this.prisma.user.findFirst({
+      where: { id: createdById, status: 'ACTIVE', deletedAt: null, clinicId: { not: null } },
+      select: { id: true, clinicId: true },
+    });
+    if (!actor?.clinicId) throw new BadRequestException('Utilisateur laboratoire non rattaché à un établissement actif.');
     const testName = dto.name.trim();
     const price = Number(dto.price || 0);
     if (price <= 0) {
@@ -1231,9 +1237,10 @@ export class LaboratoryService {
 
     return this.prisma.$transaction(async (tx) => {
       const labDepartment = await tx.department.upsert({
-        where: { name: 'LABORATOIRE' },
+        where: { clinicId_name: { clinicId: actor.clinicId, name: 'LABORATOIRE' } },
         update: {},
         create: {
+          clinicId: actor.clinicId,
           name: 'LABORATOIRE',
           code: 'laboratoire',
           type: 'LABORATORY',
@@ -1242,13 +1249,14 @@ export class LaboratoryService {
       });
 
       const service = await tx.service.upsert({
-        where: { name: testName },
+        where: { clinicId_name: { clinicId: actor.clinicId, name: testName } },
         update: {
           description: dto.description?.trim() || undefined,
           active: true,
           isParamedical: true,
         },
         create: {
+          clinicId: actor.clinicId,
           name: testName,
           description: dto.description?.trim() || 'Examen laboratoire',
           active: true,
@@ -1256,7 +1264,7 @@ export class LaboratoryService {
         },
       });
 
-      await (tx as any).serviceUnit.upsert({
+      await tx.serviceUnit.upsert({
         where: {
           departmentId_name: {
             departmentId: labDepartment.id,
@@ -1266,6 +1274,7 @@ export class LaboratoryService {
         update: { active: true },
         create: {
           departmentId: labDepartment.id,
+          clinicId: actor.clinicId,
           name: testName,
           active: true,
         },

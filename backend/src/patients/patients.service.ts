@@ -1018,6 +1018,101 @@ export class PatientsService {
     dto: CreateDailyCheckinDto,
   ) {
     const profile = await this.getPatientProfileForUser(userId);
+    if (!profile.clinicId) {
+      throw new ForbiddenException('Le dossier patient doit être rattaché à un établissement.');
+    }
+
+    const normalizedSymptoms = [...new Set(
+      (dto.symptoms || []).map((item) => String(item).trim()).filter(Boolean),
+    )].slice(0, 20);
+
+    const committed = await this.prisma.$transaction(async (tx) => {
+      const event = await tx.medicalHistory.create({
+        data: {
+          patientId: profile.id,
+          kind: 'PATIENT_DAILY_CHECKIN',
+          details: JSON.stringify({
+            feelsWell: dto.feelsWell,
+            symptoms: normalizedSymptoms,
+            message: dto.message?.trim() || null,
+            voiceTranscript: dto.voiceTranscript?.trim() || null,
+            submittedAt: new Date().toISOString(),
+            source: 'PATIENT_PORTAL',
+          }),
+        },
+      });
+      const activeStay = await tx.hospitalization.findFirst({
+        where: {
+          patientId: profile.id,
+          dischargedAt: null,
+          status: { in: ['ADMITTED', 'TRANSFERRED'] },
+        },
+        orderBy: { admittedAt: 'desc' },
+        select: {
+          nurseInChargeId: true,
+          nurseAssignments: { where: { releasedAt: null }, select: { nurseId: true } },
+        },
+      });
+      const candidateRecipientIds = [...new Set([
+        activeStay?.nurseInChargeId,
+        ...(activeStay?.nurseAssignments.map((assignment) => assignment.nurseId) || []),
+      ].filter((id): id is string => Boolean(id)))];
+      const recipients = candidateRecipientIds.length
+        ? await tx.user.findMany({
+            where: {
+              id: { in: candidateRecipientIds },
+              clinicId: profile.clinicId,
+              status: 'ACTIVE',
+              deletedAt: null,
+              OR: [
+                { primaryRole: 'NURSE' },
+                { roles: { some: { active: true, role: { slug: 'NURSE' } } } },
+              ],
+            },
+            select: { id: true },
+          })
+        : [];
+      const notifications = await Promise.all(recipients.map(({ id: recipientId }) =>
+        tx.notification.create({
+          data: {
+            patientId: profile.id,
+            recipientId,
+            type: 'TASK',
+            priority: dto.feelsWell ? 'MEDIUM' : 'HIGH',
+            title: 'Nouveau suivi quotidien patient',
+            message: dto.feelsWell
+              ? 'Le patient a complété son suivi quotidien.'
+              : 'Le patient signale un inconfort : une évaluation humaine est demandée.',
+            relatedEntity: 'MedicalHistory',
+            relatedId: event.id,
+          },
+        }),
+      ));
+      return { event, notifications };
+    });
+
+    committed.notifications.forEach((notification) => {
+      this.notificationsGateway.notifyToUser(
+        notification.recipientId,
+        'patient.daily-checkin.created',
+        notification,
+      );
+    });
+    return {
+      id: committed.event.id,
+      submittedAt: committed.event.eventDate,
+      recipientsNotified: committed.notifications.length,
+      message: dto.feelsWell
+        ? 'Merci pour votre suivi. Continuez à respecter les consignes de votre équipe soignante.'
+        : 'Votre signalement a été enregistré et transmis à l’équipe infirmière affectée à votre séjour. En cas d’urgence, contactez immédiatement les services d’urgence.',
+    };
+  }
+
+  private async createDailyCheckinLegacy(
+    userId: string,
+    dto: CreateDailyCheckinDto,
+  ) {
+    const profile = await this.getPatientProfileForUser(userId);
 
     /*
      * A portal identity has no clinicId by design. Its linked Patient is the
