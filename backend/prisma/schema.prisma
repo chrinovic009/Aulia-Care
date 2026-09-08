@@ -510,20 +510,29 @@ model WearableDevice {
 /// from patient, staff or watch clients.
 model WearablePlan {
   id            String                 @id @default(uuid())
-  manufacturer  WearableManufacturer   @unique
+  /// Commercial Connected Care configuration is owned by a clinic. The field
+  /// stays nullable while pre-tenant records are explicitly repaired.
+  clinicId      String?
+  manufacturer  WearableManufacturer
   monthlyPrice  Decimal                @db.Decimal(12, 2)
   currency      String                 @default("CDF")
   active        Boolean                @default(true)
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
+  clinic        Clinic?                @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   lots          WearableLot[]
   subscriptions WearableSubscription[]
+
+  @@unique([clinicId, manufacturer])
+  @@index([clinicId, active])
 }
 
 /// Aulia-owned inventory. Only a serial registered in a lot can ever be assigned.
 model WearableLot {
   id           String                    @id @default(uuid())
-  reference    String                    @unique
+  /// Physical inventory is owned by a single clinic, never by the platform.
+  clinicId     String?
+  reference    String
   manufacturer WearableManufacturer
   receivedAt   DateTime                  @default(now())
   receivedById String?
@@ -533,11 +542,13 @@ model WearableLot {
   createdAt    DateTime                  @default(now())
   updatedAt    DateTime                  @updatedAt
   planId       String?
+  clinic       Clinic?                   @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   plan         WearablePlan?             @relation(fields: [planId], references: [id])
   devices      WearableInventoryDevice[]
   receivedBy   User?                     @relation("WearableLotReceivedBy", fields: [receivedById], references: [id])
 
-  @@index([manufacturer, receivedAt])
+  @@unique([clinicId, reference])
+  @@index([clinicId, manufacturer, receivedAt])
 }
 
 model WearableInventoryDevice {
@@ -1918,6 +1929,8 @@ model Clinic {
   supportingDocuments   FinanceSupportingDocument[]
   refundRequests        RefundRequest[]
   subscriptionCompanies SubscriptionCompany[]
+  wearablePlans         WearablePlan[]
+  wearableLots          WearableLot[]
   operatingRooms       OperatingRoom[]
   imagingCatalogues    ImagingCatalogue[]
   imagingMachines      ImagingMachine[]

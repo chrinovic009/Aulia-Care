@@ -30,7 +30,7 @@ export function LayerRouteGate({ children }: { children: ReactNode }) {
   if (isLoading) return <div className="grid min-h-screen place-items-center text-sm text-slate-500 dark:text-slate-300">Application de la configuration Aulia Care…</div>;
   if (!required || required.every(isEnabled)) return <>{children}</>;
   if (currentUser?.primaryRole === "DEV") return <Navigate to="/dev/couches" replace />;
-  const missingLayerLabel = required.includes("CONNECTED") ? "Aulia Connected" : "Aulia Care AI";
+  const missingLayerLabel = required.includes("CONNECTED") ? "Aulia Connected" : "Aulia Care Diagnostic Agent";
   const capabilityLabel = required.includes("CONNECTED") ? "les fonctionnalités connectées" : "les fonctionnalités d’intelligence clinique";
   return <main className="grid min-h-[70vh] place-items-center px-5 text-center"><div className="max-w-md rounded-3xl border border-aulia-teal/25 bg-white p-7 shadow-sm dark:bg-slate-900"><p className="text-sm font-semibold text-aulia-teal">Couche non activée</p><h1 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">Cette interface n’est pas disponible dans cette installation</h1><p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">Votre établissement doit activer {missingLayerLabel} pour utiliser {capabilityLabel}.</p></div></main>;
 }

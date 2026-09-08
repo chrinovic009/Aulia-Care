@@ -45,7 +45,7 @@ export class PlatformLayersService {
 
   /**
    * Every product is an explicit clinic entitlement.  Core is no longer
-   * injected here: Aulia AI and Connected Care can be installed together
+   * injected here: Aulia Care Diagnostic Agent and Connected Care can be installed together
    * without Core, and a missing configuration remains fail-closed.
    */
   private effectiveLayers(layers: AuliaLayer[]): AuliaLayer[] {

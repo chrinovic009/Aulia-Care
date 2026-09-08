@@ -354,7 +354,7 @@ const AppSidebar: React.FC = () => {
   // Before the installation configuration is available, never advertise an
   // optional layer as active. This mirrors the fail-closed route/API policy.
   const activeSubscriptionLabel = (layers.configured ? layers.enabledLayers : [])
-    .map((layer) => ({ CORE: "Aulia Care Core", AI: "Aulia AI", CONNECTED: "Aulia Connected" })[layer])
+    .map((layer) => ({ CORE: "Aulia Care Core", AI: "Aulia Care Diagnostic Agent", CONNECTED: "Aulia Connected" })[layer])
     .join(" + ") || (currentUser?.primaryRole === "DEV" ? "Provisioning plateforme" : "Configuration en attente");
   const [clinicBrand, setClinicBrand] = useState<{ name?: string; brandDisplayName?: string | null }>({});
   const isLabManager = Boolean(

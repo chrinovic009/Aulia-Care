@@ -30,8 +30,8 @@ export class WearablesController {
 
   @Get('reception/dashboard')
   @Roles('RECEPTIONIST')
-  receptionDashboard(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.wearables.getReceptionDashboard(Number(page || 1), Number(limit || 10));
+  receptionDashboard(@Request() req: any, @Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.wearables.getReceptionDashboard(Number(page || 1), Number(limit || 10), req.user?.userId);
   }
 
   @Post('reception/pair')
@@ -42,14 +42,14 @@ export class WearablesController {
 
   @Get('admin/inventory')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  inventory(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.wearables.getInventoryDashboard(Number(page || 1), Number(limit || 10));
+  inventory(@Request() req: any, @Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.wearables.getInventoryDashboard(Number(page || 1), Number(limit || 10), req.user?.userId);
   }
 
   @Patch('admin/plans/:manufacturer')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  savePlan(@Param('manufacturer') manufacturer: string, @Body() body: any) {
-    return this.wearables.savePlan(manufacturer, body);
+  savePlan(@Param('manufacturer') manufacturer: string, @Body() body: any, @Request() req: any) {
+    return this.wearables.savePlan(manufacturer, body, req.user?.userId);
   }
 
   @Post('admin/lots')

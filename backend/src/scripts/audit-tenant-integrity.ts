@@ -21,7 +21,7 @@ const report = (category: string, id: string, detail: Record<string, unknown>, r
 };
 
 async function audit() {
-  const [users, employees, serviceUnits, roomAssignments, configurations, subscriptionCompanies, operatingRooms, imagingCatalogues, imagingMachines] = await Promise.all([
+  const [users, employees, serviceUnits, roomAssignments, configurations, subscriptionCompanies, operatingRooms, imagingCatalogues, imagingMachines, wearablePlans, wearableLots] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null, primaryRole: { in: operationalRoles } },
       select: { id: true, username: true, primaryRole: true, clinicId: true, Employee: { select: { id: true, clinicId: true } } },
@@ -58,6 +58,12 @@ async function audit() {
     prisma.imagingMachine.findMany({
       where: { deletedAt: null },
       select: { id: true, clinicId: true, imagingRequests: { where: { deletedAt: null }, select: { id: true, patient: { select: { clinicId: true } } } } },
+    }),
+    prisma.wearablePlan.findMany({
+      select: { id: true, clinicId: true, lots: { select: { id: true, clinicId: true } }, subscriptions: { select: { id: true, patient: { select: { clinicId: true } } } } },
+    }),
+    prisma.wearableLot.findMany({
+      select: { id: true, clinicId: true, plan: { select: { clinicId: true } }, devices: { select: { id: true, wearableDevice: { select: { patient: { select: { clinicId: true } } } } } } },
     }),
   ]);
 
@@ -164,6 +170,37 @@ async function audit() {
           machineClinicId: machine.clinicId,
           patientClinicId: request.patient.clinicId,
         });
+      }
+    }
+  }
+  for (const plan of wearablePlans) {
+    if (!plan.clinicId) {
+      report('WEARABLE_PLAN_WITHOUT_CLINIC', plan.id, {});
+      continue;
+    }
+    for (const lot of plan.lots) {
+      if (lot.clinicId !== plan.clinicId) {
+        report('WEARABLE_PLAN_LOT_CROSS_CLINIC', lot.id, { planId: plan.id, planClinicId: plan.clinicId, lotClinicId: lot.clinicId });
+      }
+    }
+    for (const subscription of plan.subscriptions) {
+      if (subscription.patient.clinicId !== plan.clinicId) {
+        report('WEARABLE_PLAN_SUBSCRIPTION_CROSS_CLINIC', subscription.id, { planId: plan.id, planClinicId: plan.clinicId, patientClinicId: subscription.patient.clinicId });
+      }
+    }
+  }
+  for (const lot of wearableLots) {
+    if (!lot.clinicId) {
+      report('WEARABLE_LOT_WITHOUT_CLINIC', lot.id, {});
+      continue;
+    }
+    if (lot.plan?.clinicId && lot.plan.clinicId !== lot.clinicId) {
+      report('WEARABLE_LOT_PLAN_CROSS_CLINIC', lot.id, { lotClinicId: lot.clinicId, planClinicId: lot.plan.clinicId });
+    }
+    for (const inventory of lot.devices) {
+      const patientClinicId = inventory.wearableDevice?.patient.clinicId;
+      if (patientClinicId && patientClinicId !== lot.clinicId) {
+        report('WEARABLE_INVENTORY_ASSIGNMENT_CROSS_CLINIC', inventory.id, { lotId: lot.id, lotClinicId: lot.clinicId, patientClinicId });
       }
     }
   }

@@ -1315,7 +1315,7 @@ export default function DashboardMedecin() {
                         }`}
                       >
                         {isVoiceListening ? <MicOff size={16} /> : <Mic size={16} />}
-                        {!aiEnabled ? "🔒 Assistance vocale · Aulia AI" : isVoiceListening ? "Desactiver" : "Activer l'assistance vocale"}
+                        {!aiEnabled ? "🔒 Assistance vocale · Aulia Care Diagnostic Agent" : isVoiceListening ? "Desactiver" : "Activer l'assistance vocale"}
                       </button>
                     </div>
                     {voiceMessage && <p className="mt-3 text-xs font-medium text-blue-800 dark:text-blue-100">{voiceMessage}</p>}
@@ -1542,7 +1542,7 @@ export default function DashboardMedecin() {
           )}
         </section>
       </div>
-      {aiFeatureNotice && <div className="fixed inset-0 z-[100000] grid place-items-center bg-slate-950/60 p-4"><section role="dialog" aria-modal="true" className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-950"><p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Aulia Care AI</p><h2 className="mt-2 text-xl font-bold text-aulia-navy dark:text-white">Fonctionnalité non incluse dans Aulia Care Core</h2><p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{aiFeatureNotice === "VOICE" ? "L’assistance vocale clinique" : "La télésanté sécurisée"} nécessite l’activation de l'abonnement Aulia Care AI.</p><button type="button" onClick={() => setAiFeatureNotice(null)} className="mt-6 rounded-xl bg-aulia-teal px-4 py-2 font-semibold text-white">Retour</button></section></div>}
+      {aiFeatureNotice && <div className="fixed inset-0 z-[100000] grid place-items-center bg-slate-950/60 p-4"><section role="dialog" aria-modal="true" className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-950"><p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Aulia Care Diagnostic Agent</p><h2 className="mt-2 text-xl font-bold text-aulia-navy dark:text-white">Fonctionnalité non incluse dans Aulia Care Core</h2><p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{aiFeatureNotice === "VOICE" ? "L’assistance vocale clinique" : "La télésanté sécurisée"} nécessite l’activation de l'abonnement Aulia Care Diagnostic Agent.</p><button type="button" onClick={() => setAiFeatureNotice(null)} className="mt-6 rounded-xl bg-aulia-teal px-4 py-2 font-semibold text-white">Retour</button></section></div>}
     </div>
   );
 }
