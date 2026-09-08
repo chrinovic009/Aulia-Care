@@ -378,7 +378,7 @@ model Patient {
   syncedAt               DateTime?
   sourceNode             String?
   version                Int                        @default(1)
-  clinicId               String?
+  clinicId               String
   portalUserId           String?                    @unique
   Allergy                Allergy[]
   appointments           Appointment[]
@@ -401,7 +401,7 @@ model Patient {
   paramedicalVouchers    ParamedicalVoucher?
   childLinks             ParentChildLink[]          @relation("ChildPatient")
   portalUser             User?                      @relation("PatientPortalUser", fields: [portalUserId], references: [id], onDelete: SetNull)
-  clinic                 Clinic?                    @relation(fields: [clinicId], references: [id])
+  clinic                 Clinic                     @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   receptionist           User?                      @relation("PatientReceptionist", fields: [receptionistId], references: [id])
   service                Service?                   @relation(fields: [serviceId], references: [id])
   familyContacts         PatientContact[]
@@ -449,7 +449,7 @@ model PatientVisit {
   id                 String             @id @default(uuid())
   patientId          String
   receptionistId     String?
-  clinicId           String?
+  clinicId           String
   appointmentId      String?            @unique
   invoiceId          String?            @unique
   serviceId          String?
@@ -465,7 +465,7 @@ model PatientVisit {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
   appointment        Appointment?       @relation("AppointmentPatientVisit", fields: [appointmentId], references: [id])
-  clinic             Clinic?            @relation(fields: [clinicId], references: [id])
+  clinic             Clinic             @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   invoice            Invoice?           @relation("InvoicePatientVisit", fields: [invoiceId], references: [id])
   patient            Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
   receptionist       User?              @relation("ReceptionPatientVisits", fields: [receptionistId], references: [id])
@@ -776,7 +776,7 @@ model Appointment {
   patientId       String
   requestedById   String?
   serviceUnitId   String?
-  clinicId        String?
+  clinicId        String
   scheduledAt     DateTime
   durationMinutes Int               @default(30)
   reason          String?
@@ -791,6 +791,7 @@ model Appointment {
   cancelledAt     DateTime?
   cancelledById   String?
   patient         Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinic          Clinic            @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   requestedBy     User?             @relation("AppointmentRequester", fields: [requestedById], references: [id])
   serviceUnit     ServiceUnit?      @relation(fields: [serviceUnitId], references: [id])
   consultation    Consultation?     @relation("AppointmentConsultation")
@@ -804,6 +805,7 @@ model Appointment {
 model Hospitalization {
   id                        String                           @id @default(uuid())
   patientId                 String
+  clinicId                  String
   serviceUnitId             String?
   admittedAt                DateTime                         @default(now())
   dischargedAt              DateTime?
@@ -821,11 +823,14 @@ model Hospitalization {
   Consultation              Consultation[]
   nurseInCharge             User?                            @relation("HospitalizationNurse", fields: [nurseInChargeId], references: [id])
   patient                   Patient                          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinic                    Clinic                           @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   physician                 User?                            @relation("HospitalizationPhysician", fields: [physicianId], references: [id])
   ServiceUnit               ServiceUnit?                     @relation(fields: [serviceUnitId], references: [id])
   nurseAssignments          HospitalizationNurseAssignment[]
   nursingCareTasks          NursingCareTask[]
   medicationAdministrations MedicationAdministration[]
+
+  @@index([clinicId, status])
 }
 
 /// Vital signs recorded by nurses.
@@ -857,7 +862,7 @@ model Consultation {
   id                     String                   @id @default(uuid())
   patientId              String
   appointmentId          String                   @unique
-  clinicId               String?
+  clinicId               String
   hospitalizationId      String?
   providerId             String?
   status                 ConsultationStatus       @default(DRAFT)
@@ -876,6 +881,7 @@ model Consultation {
   appointment            Appointment              @relation("AppointmentConsultation", fields: [appointmentId], references: [id], onDelete: Cascade)
   hospitalization        Hospitalization?         @relation(fields: [hospitalizationId], references: [id])
   patient                Patient                  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinic                 Clinic                   @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   provider               User?                    @relation("ConsultationProvider", fields: [providerId], references: [id])
   notes                  ConsultationNote[]
   Diagnosis              Diagnosis[]
@@ -944,7 +950,7 @@ model Prescription {
   consultationId    String
   patientId         String
   prescriberId      String?
-  clinicId          String?
+  clinicId          String
   status            PrescriptionStatus @default(PRESCRIBED)
   prescribingDate   DateTime           @default(now())
   instruction       String?
@@ -957,6 +963,7 @@ model Prescription {
   pharmacyDispenses PharmacyDispense[]
   consultation      Consultation       @relation(fields: [consultationId], references: [id], onDelete: Cascade)
   patient           Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinic            Clinic             @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   prescriber        User?              @relation("PrescriptionPrescriber", fields: [prescriberId], references: [id])
   lineItems         PrescriptionLine[]
 
@@ -1164,7 +1171,7 @@ model LabRequest {
   consultationId    String
   patientId         String
   requestedById     String?
-  clinicId          String?
+  clinicId          String
   status            LabRequestStatus  @default(REQUESTED)
   requestedAt       DateTime          @default(now())
   receivedAt        DateTime?
@@ -1185,6 +1192,7 @@ model LabRequest {
   reports           LabReport[]
   consultation      Consultation      @relation(fields: [consultationId], references: [id], onDelete: Cascade)
   patient           Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinic            Clinic            @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   requestedBy       User?             @relation("LabRequestRequester", fields: [requestedById], references: [id])
   events            LabRequestEvent[]
   items             LabRequestItem[]
@@ -1652,6 +1660,7 @@ model ImagingRequest {
   id                 String               @id @default(uuid())
   consultationId     String
   patientId          String
+  clinicId           String
   requestedById      String?
   status             ImagingRequestStatus @default(REQUESTED)
   bodyPart           String
@@ -1679,6 +1688,7 @@ model ImagingRequest {
   contraindications  String?
   report             ImagingReport?
   consultation       Consultation         @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  clinic             Clinic               @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   imagingCatalogue   ImagingCatalogue?    @relation(fields: [imagingCatalogueId], references: [id])
   machine            ImagingMachine?      @relation(fields: [machineId], references: [id])
   patient            Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
@@ -1686,6 +1696,7 @@ model ImagingRequest {
   technician         User?                @relation("ImagingRequestTechnician", fields: [technicianId], references: [id])
 
   @@index([status])
+  @@index([clinicId, status])
 }
 
 model ImagingReport {
@@ -1832,9 +1843,9 @@ model Invoice {
   syncedAt                    DateTime?
   sourceNode                  String?
   version                     Int                          @default(1)
-  clinicId                    String?
+  clinicId                    String
   InsuranceClaim              InsuranceClaim[]
-  clinic                      Clinic?                      @relation(fields: [clinicId], references: [id])
+  clinic                      Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   issuedBy                    User?                        @relation("InvoiceIssuer", fields: [issuedById], references: [id])
   patient                     Patient                      @relation(fields: [patientId], references: [id], onDelete: Cascade)
   discountRequests            InvoiceDiscountRequest[]
@@ -1864,8 +1875,8 @@ model Payment {
   syncedAt   DateTime?
   sourceNode String?
   version    Int           @default(1)
-  clinicId   String?
-  clinic     Clinic?       @relation(fields: [clinicId], references: [id])
+  clinicId   String
+  clinic     Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   invoice    Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   paidBy     User?         @relation("PaymentPayer", fields: [paidById], references: [id])
 
@@ -1911,6 +1922,12 @@ model Clinic {
   departments           Department[]
   Employee              Employee[]
   invoices              Invoice[]
+  hospitalizations      Hospitalization[]
+  imagingRequests       ImagingRequest[]
+  labRequests           LabRequest[]
+  consultations         Consultation[]
+  appointments          Appointment[]
+  prescriptions         Prescription[]
   medicationStocks      MedicationStock[]
   patients              Patient[]
   patientVisits         PatientVisit[]

@@ -1,10 +1,24 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, AuditAction, PatientWorkflowStatus, PaymentMethod } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
+
+interface PatientPortalIdentity {
+  id: string;
+  clinicId: string;
+  portalUserId: string | null;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+  nationality: string | null;
+  city: string | null;
+  address: string | null;
+  createdAt: Date;
+}
 
 @Injectable()
 export class PaymentsService {
@@ -20,10 +34,19 @@ export class PaymentsService {
       throw new NotFoundException('Facture introuvable');
     }
 
+    // Legacy invoices without a tenant must be repaired explicitly. They must
+    // never become payable from a cashier's clinic because a filter was omitted.
+    const invoiceClinicId = invoice.clinicId;
+    if (!invoiceClinicId || invoice.patient.clinicId !== invoiceClinicId) {
+      throw new ForbiddenException(
+        'La facture ou son patient n’est pas rattaché de façon cohérente à un établissement.',
+      );
+    }
+
     if (actorId) {
       const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { clinicId: true, primaryRole: true } });
       if (!actor?.clinicId) throw new ForbiddenException('Utilisateur de caisse rattaché à un établissement requis.');
-      if (invoice.clinicId && actor.clinicId !== invoice.clinicId) {
+      if (actor.clinicId !== invoiceClinicId) {
         throw new ForbiddenException('Cette facture appartient à un autre établissement.');
       }
     }
@@ -48,7 +71,7 @@ export class PaymentsService {
           paidById: actorId,
           // Un paiement appartient toujours au même établissement que sa
           // facture. Le client ne choisit jamais cette valeur.
-          clinicId: invoice.clinicId,
+          clinicId: invoiceClinicId,
           paidAt: new Date(),
         },
       });
@@ -56,9 +79,9 @@ export class PaymentsService {
       // Accounting is deliberately created as a balanced DRAFT. A cashier may
       // collect a payment, but a second Finance/Admin controller must post the
       // journal entry; a payment never silently becomes a certified bank entry.
-      if (actorId && invoice.clinicId) {
+      if (actorId) {
         const previous = await (prisma as any).accountingJournalEntry.findFirst({
-          where: { clinicId: invoice.clinicId, status: 'POSTED' },
+          where: { clinicId: invoiceClinicId, status: 'POSTED' },
           orderBy: { postedAt: 'desc' },
           select: { entryHash: true },
         });
@@ -67,10 +90,10 @@ export class PaymentsService {
           { account, label: `Encaissement facture ${invoice.id}`, debit: amount, credit: 0 },
           { account: '411-CLIENTS', label: `Règlement facture ${invoice.id}`, debit: 0, credit: amount },
         ];
-        const entryHash = createHash('sha256').update(`${previous?.entryHash || ''}|${JSON.stringify({ clinicId: invoice.clinicId, paymentId: payment.id, lines })}`).digest('hex');
+        const entryHash = createHash('sha256').update(`${previous?.entryHash || ''}|${JSON.stringify({ clinicId: invoiceClinicId, paymentId: payment.id, lines })}`).digest('hex');
         await (prisma as any).accountingJournalEntry.create({
           data: {
-            clinicId: invoice.clinicId,
+            clinicId: invoiceClinicId,
             reference: `PAY-${payment.id}`,
             occurredAt: payment.paidAt,
             description: `Encaissement ${createPaymentDto.method} de la facture ${invoice.id}`,
@@ -133,20 +156,41 @@ export class PaymentsService {
       if (remainingBalance === 0 && invoice.type === 'LABORATORY') {
         const labRequestMatch = invoice.remarks?.match(/(?:LabRequest|Demande laboratoire):?\s*([a-zA-Z0-9-]+)/i);
         if (labRequestMatch?.[1]) {
-          labRequest = await prisma.labRequest.update({
-            where: { id: labRequestMatch[1] },
-            data: { status: 'REQUESTED' },
+          const matchingLabRequest = await prisma.labRequest.findFirst({
+            where: {
+              id: labRequestMatch[1],
+              clinicId: invoiceClinicId,
+              patientId: invoice.patientId,
+              deletedAt: null,
+            },
+            select: { id: true },
           });
+          if (matchingLabRequest) {
+            labRequest = await prisma.labRequest.update({
+              where: { id: matchingLabRequest.id },
+              data: { status: 'REQUESTED' },
+            });
+          }
         }
       }
 
       if (remainingBalance === 0 && invoice.type === 'PHARMACY') {
         const prescriptionMatch = invoice.remarks?.match(/Prescription:([a-zA-Z0-9-]+)/);
         if (prescriptionMatch?.[1]) {
-          await prisma.prescription.update({
-            where: { id: prescriptionMatch[1] },
-            data: { status: 'PRESCRIBED' },
+          const matchingPrescription = await prisma.prescription.findFirst({
+            where: {
+              id: prescriptionMatch[1],
+              patientId: invoice.patientId,
+              patient: { clinicId: invoiceClinicId, deletedAt: null },
+            },
+            select: { id: true },
           });
+          if (matchingPrescription) {
+            await prisma.prescription.update({
+              where: { id: matchingPrescription.id },
+              data: { status: 'PRESCRIBED' },
+            });
+          }
         }
       }
 
@@ -205,7 +249,7 @@ export class PaymentsService {
         : [];
       const targetUsers = remainingBalance > 0 ? [] : await prisma.user.findMany({
         where: {
-          ...(invoice.clinicId ? { clinicId: invoice.clinicId } : {}),
+          clinicId: invoiceClinicId,
           ...(serviceUserIds.length ? { id: { in: serviceUserIds } } : {}),
           OR: serviceUserIds.length
             ? undefined
@@ -226,7 +270,12 @@ export class PaymentsService {
       // CORRECTION DU DOUBLON ICI : renommage en labRequestByInvoice
       const labRequestByInvoice = invoice.type === 'LABORATORY'
         ? await prisma.labRequest.findFirst({
-            where: { externalReference: invoice.id, deletedAt: null },
+            where: {
+              externalReference: invoice.id,
+              clinicId: invoiceClinicId,
+              patientId: invoice.patientId,
+              deletedAt: null,
+            },
             include: { patient: true, requestedBy: true, items: { include: { labTest: true } } },
           })
         : null;
@@ -242,7 +291,12 @@ export class PaymentsService {
       const finalLabRequest = labRequest || labRequestByInvoice;
       const imagingRequestByInvoice = invoice.type === 'RADIOLOGY'
         ? await prisma.imagingRequest.findFirst({
-            where: { id: invoice.remarks?.match(/ImagingRequest:([a-zA-Z0-9-]+)/)?.[1] || '__missing__', deletedAt: null },
+            where: {
+              id: invoice.remarks?.match(/ImagingRequest:([a-zA-Z0-9-]+)/)?.[1] || '__missing__',
+              clinicId: invoiceClinicId,
+              patientId: invoice.patientId,
+              deletedAt: null,
+            },
           })
         : null;
 
@@ -288,6 +342,7 @@ export class PaymentsService {
         hospitalization = await prisma.hospitalization.create({
           data: {
             patientId: invoice.patientId,
+            clinicId: invoiceClinicId,
             admittedAt: new Date(),
             status: 'ADMITTED',
             admissionReason: 'Admission hospitalière validée après paiement',
@@ -321,17 +376,17 @@ export class PaymentsService {
       this.notificationsGateway.notify('notification.created', notification);
     });
     this.notificationsGateway.notify('patient.updated', result.updatedPatient);
-    if (invoice.clinicId) {
+    if (invoiceClinicId) {
       // Signal minimal et isolé à l'établissement : l'interface Finance
       // recharge ses totaux sans recevoir de données de patient par socket.
-      this.notificationsGateway.notifyFinanceClinic(invoice.clinicId, { resource: 'payment' });
+      this.notificationsGateway.notifyFinanceClinic(invoiceClinicId, { resource: 'payment' });
     }
     
     if (result.labRequest) {
       this.notificationsGateway.notify('lab.request.created', result.labRequest);
     }
     if (result.imagingRequest) {
-      this.notificationsGateway.notify('imaging.request.paid', { id: result.imagingRequest.id, clinicId: invoice.clinicId });
+      this.notificationsGateway.notify('imaging.request.paid', { id: result.imagingRequest.id, clinicId: invoiceClinicId });
     }
 
     if (result.receptionistMessage) {
@@ -357,17 +412,26 @@ export class PaymentsService {
     };
   }
 
-  private async ensurePatientUserAccess(prisma: Prisma.TransactionClient, patient: any) {
+  private async ensurePatientUserAccess(prisma: Prisma.TransactionClient, patient: PatientPortalIdentity) {
+    if (!patient.clinicId) {
+      throw new ForbiddenException('Le dossier patient doit être rattaché à un établissement avant la création du portail.');
+    }
     const usernameBase = this.normalizeUsername(`${patient.firstName}_${patient.lastName}`);
     const email = patient.email?.trim().toLowerCase() || `${patient.id}@patients.aulia.local`;
-    const existing = await prisma.user.findFirst({
-      where: {
-        OR: [{ email }, { username: usernameBase }],
-      },
-    });
+    const existing = patient.portalUserId
+      ? await prisma.user.findFirst({
+          where: {
+            id: patient.portalUserId,
+            primaryRole: 'PATIENT',
+            status: 'ACTIVE',
+            deletedAt: null,
+          },
+        })
+      : null;
 
     const patientPosition = await prisma.patient.count({
       where: {
+        clinicId: patient.clinicId,
         createdAt: { lte: patient.createdAt },
       },
     });
@@ -405,6 +469,18 @@ export class PaymentsService {
         password: null,
         isNew: false,
       };
+    }
+
+    // Matching identifiers are never an authorization mechanism: do not adopt
+    // or transform an unrelated staff/user account into a patient portal.
+    const conflictingUser = await prisma.user.findFirst({
+      where: { email },
+      select: { id: true },
+    });
+    if (conflictingUser) {
+      throw new ConflictException(
+        'Cette adresse e-mail appartient déjà à un compte. La liaison du portail doit être vérifiée explicitement.',
+      );
     }
 
     const username = await this.makeUniqueUsername(prisma, usernameBase);

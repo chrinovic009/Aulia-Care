@@ -25,8 +25,8 @@ test('PostgreSQL: deux transactions ne peuvent pas réclamer le même lit', { sk
       prisma.patient.create({ data: { clinicId, firstName: 'Patient', lastName: `Race B ${suffix}`, gender: 'OTHER', dateOfBirth: new Date('1991-01-01T00:00:00.000Z') } }),
     ]);
     const [hospitalizationOne, hospitalizationTwo] = await Promise.all([
-      prisma.hospitalization.create({ data: { patientId: patientOne.id, serviceUnitId: unit.id, admissionReason: 'Test concurrence A' } }),
-      prisma.hospitalization.create({ data: { patientId: patientTwo.id, serviceUnitId: unit.id, admissionReason: 'Test concurrence B' } }),
+      prisma.hospitalization.create({ data: { patientId: patientOne.id, clinicId, serviceUnitId: unit.id, admissionReason: 'Test concurrence A' } }),
+      prisma.hospitalization.create({ data: { patientId: patientTwo.id, clinicId, serviceUnitId: unit.id, admissionReason: 'Test concurrence B' } }),
     ]);
 
     const claim = (hospitalizationId: string) => prisma.$transaction(async (tx) => {

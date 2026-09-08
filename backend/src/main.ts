@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { Express } from 'express';
 
 import helmet from 'helmet';
 
@@ -11,6 +12,13 @@ import { RedisIoAdapter } from './notifications/redis-io.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // In production the backend is reachable only through the Docker reverse
+  // proxy. Trust exactly this immediate proxy so Express can interpret the
+  // proxy-provided HTTPS scheme for CSRF origin checks and secure cookies.
+  // Development keeps direct connections untrusted.
+  const expressApp = app.getHttpAdapter().getInstance() as Express;
+  expressApp.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false);
 
   app.setGlobalPrefix('api');
 

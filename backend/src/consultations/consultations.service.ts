@@ -234,7 +234,10 @@ export class ConsultationsService {
         await (tx as any).patientVisit.create({
           data: {
             patientId: dto.patientId,
-            clinicId: (await tx.patient.findUnique({ where: { id: dto.patientId }, select: { clinicId: true } }))?.clinicId || null,
+            // The patient was already checked against the authenticated doctor
+            // clinic before entering this transaction. Never derive a nullable
+            // tenant from a second unrestricted lookup.
+            clinicId: actor.clinicId,
             appointmentId: appointment.id,
             visitType: 'CONSULTATION_NON_PROGRAMMEE',
             reason: dto.chiefComplaint?.trim() || 'Consultation clinique ouverte par le médecin',
@@ -591,6 +594,10 @@ export class ConsultationsService {
   async createLabRequest(id: string, dto: CreateLabRequestDto, actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    const clinicId = consultation.clinicId || consultation.patient?.clinicId;
+    if (!clinicId) {
+      throw new ForbiddenException('La consultation doit être rattachée à un établissement actif.');
+    }
     const request = await this.prisma.$transaction(async (tx) => {
       const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
       const requestedLabTestIds = Array.isArray(dto.labTestIds)
@@ -669,6 +676,7 @@ export class ConsultationsService {
           consultationId: id,
           patientId: consultation.patientId,
           requestedById: actorId,
+          clinicId,
           specimenType: specimenTypeLabel,
           priority: dto.priority || 'NORMAL',
           notes: dto.notes || null,
@@ -681,7 +689,7 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           issuedById: actorId,
-          clinicId: consultation.clinicId || consultation.patient.clinicId || null,
+          clinicId,
           type: 'LABORATORY',
           status: 'PENDING',
           totalAmount: examPriceTotal,
@@ -789,7 +797,7 @@ export class ConsultationsService {
 
     const cashiers = await this.prisma.user.findMany({
       where: {
-        ...(consultation.clinicId || consultation.patient?.clinicId ? { clinicId: consultation.clinicId || consultation.patient?.clinicId } : {}),
+        clinicId,
         OR: [
           { primaryRole: 'CASHIER' as any },
           { roles: { some: { role: { slug: 'CASHIER' as any } } } },
@@ -930,6 +938,7 @@ export class ConsultationsService {
           consultationId: id,
           patientId: consultation.patientId,
           requestedById: actorId || null,
+          clinicId,
           imagingCatalogueId: imagingCatalogue.id,
           modality: imagingCatalogue.modality,
           bodyPart,
@@ -1097,6 +1106,10 @@ export class ConsultationsService {
   async createPrescription(id: string, dto: CreatePrescriptionDto, actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    const clinicId = consultation.clinicId || consultation.patient?.clinicId;
+    if (!clinicId) {
+      throw new ForbiddenException('La consultation doit être rattachée à un établissement actif.');
+    }
     const lines = Array.isArray(dto.lines) ? dto.lines : [];
     if (!lines.length) {
       throw new BadRequestException('Aucun medicament prescrit.');
@@ -1136,6 +1149,7 @@ export class ConsultationsService {
           consultationId: id,
           patientId: consultation.patientId,
           prescriberId: actorId,
+          clinicId,
           instruction: dto.instruction || null,
           status: 'PRESCRIBED',
           lineItems: {
@@ -1157,7 +1171,7 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           issuedById: actorId,
-          clinicId: consultation.clinicId || consultation.patient.clinicId || null,
+          clinicId,
           type: 'PHARMACY',
           status: 'PENDING',
           totalAmount: total,

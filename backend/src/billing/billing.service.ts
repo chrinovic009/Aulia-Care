@@ -89,11 +89,6 @@ export class BillingService {
     return createHash('sha256').update(`${previousHash || ''}|${JSON.stringify(value)}`).digest('hex');
   }
 
-  private async canSafelyReadUnscopedLegacyAccounting() {
-    const clinics = await this.prisma.clinic.count({ where: { deletedAt: null, status: 'ACTIVE' } });
-    return clinics === 1;
-  }
-
   private async auditFinance(
     actorId: string | undefined,
     clinicId: string,
@@ -119,34 +114,29 @@ export class BillingService {
     const from = new Date();
     from.setMonth(from.getMonth() - 11, 1);
     from.setHours(0, 0, 0, 0);
-    const allowLegacy = await this.canSafelyReadUnscopedLegacyAccounting();
-
-    // Les premières écritures de caisse pouvaient avoir été créées avant
-    // l'introduction de clinicId. Elles ne peuvent être reprises que dans une
-    // installation mono-établissement : dans une installation multi-cliniques,
-    // les données non rattachées restent volontairement invisibles afin de ne
-    // jamais mélanger les comptabilités.
-    const clinicScopedOrLegacy = allowLegacy
-      ? { OR: [{ clinicId }, { clinicId: null }] }
-      : { clinicId };
+    // Une écriture sans établissement ne peut jamais être affichée ni
+    // imputée dans une comptabilité clinique. Les données historiques sont
+    // réparées par un workflow explicite et audité ; l'absence de clinicId ne
+    // doit pas devenir un élargissement silencieux de périmètre.
+    const clinicScoped = { clinicId };
 
     const [invoices, payments, payrolls, supplierInvoices, supplierPayments, expenses, budgets, investments, departments, rejectedClaims] = await Promise.all([
       this.prisma.invoice.findMany({
-        where: { ...clinicScopedOrLegacy, deletedAt: null },
+        where: { ...clinicScoped, deletedAt: null },
         select: { id: true, type: true, status: true, totalAmount: true, balanceDue: true, issuedAt: true, dueDate: true, patient: { select: { firstName: true, lastName: true, insuranceProvider: true } } },
         orderBy: { issuedAt: 'desc' }, take: 1000,
       }),
-      this.prisma.payment.findMany({ where: { ...clinicScopedOrLegacy, deletedAt: null, paidAt: { gte: from } }, select: { amount: true, paidAt: true, method: true }, orderBy: { paidAt: 'desc' }, take: 2000 }),
+      this.prisma.payment.findMany({ where: { ...clinicScoped, deletedAt: null, paidAt: { gte: from } }, select: { amount: true, paidAt: true, method: true }, orderBy: { paidAt: 'desc' }, take: 2000 }),
       (this.prisma as any).payroll.findMany({ where: { employee: { clinicId }, periodEnd: { gte: from } }, include: { employee: { select: { firstName: true, lastName: true, department: { select: { name: true } } } } }, orderBy: { periodEnd: 'desc' }, take: 1000 }),
       (this.prisma as any).supplierInvoice.findMany({ where: { purchaseOrder: { is: { clinicId } } }, include: { supplier: true, SupplierPayment: true }, orderBy: { dueDate: 'asc' }, take: 500 }),
       (this.prisma as any).supplierPayment.findMany({ where: { supplierInvoice: { is: { purchaseOrder: { is: { clinicId } } } }, paidAt: { gte: from } }, select: { amount: true, paidAt: true, method: true }, orderBy: { paidAt: 'desc' }, take: 1000 }),
-      allowLegacy ? (this.prisma as any).expense.findMany({ where: { deletedAt: null, paidAt: { gte: from } }, orderBy: { paidAt: 'desc' }, take: 1000 }) : Promise.resolve([]),
+      Promise.resolve([]),
       (this.prisma as any).financeBudget.findMany({ where: { clinicId, archivedAt: null }, include: { allocations: { orderBy: { occurredAt: 'desc' } } }, orderBy: [{ fiscalYear: 'desc' }, { createdAt: 'desc' }] }),
       (this.prisma as any).capitalInvestment.findMany({ where: { clinicId, archivedAt: null }, orderBy: [{ plannedAt: 'asc' }, { createdAt: 'desc' }] }),
       this.prisma.department.findMany({ where: { clinicId, deletedAt: null }, select: { id: true, name: true, type: true }, orderBy: { name: 'asc' } }),
       (this.prisma as any).insuranceClaim.findMany({ where: { patient: { is: { clinicId } }, status: 'REJECTED', deletedAt: null }, select: { id: true, amountClaimed: true, rejectionReason: true, patient: { select: { firstName: true, lastName: true } } }, orderBy: { updatedAt: 'desc' }, take: 50 }),
     ]);
-    return { clinicId, from, allowLegacy, invoices, payments, payrolls, supplierInvoices, supplierPayments, expenses, budgets, investments, departments, rejectedClaims };
+    return { clinicId, from, invoices, payments, payrolls, supplierInvoices, supplierPayments, expenses, budgets, investments, departments, rejectedClaims };
   }
 
   async financeDashboard(userId?: string) {
@@ -198,7 +188,7 @@ export class BillingService {
       cashFlow: Array.from(buckets.entries()).map(([month, values]) => ({ month, ...values, net: values.inflows - values.outflows })),
       revenueByPole: Array.from(revenueByPole.entries()).map(([name, value]) => ({ name, value })),
       alerts: { supplierInvoices: supplierAlerts, budgetOverruns: budgetAlerts, insuranceRejections: data.rejectedClaims.map((claim: any) => ({ id: claim.id, patient: `${claim.patient?.firstName || ''} ${claim.patient?.lastName || ''}`.trim() || 'Patient', amount: amount(claim.amountClaimed), reason: claim.rejectionReason || 'Motif non renseigné' })) },
-      dataQuality: { unscopedLegacyExpensesIncluded: data.allowLegacy, note: data.allowLegacy ? 'Les écritures historiques de caisse sans établissement sont incluses car un seul établissement actif est configuré. Elles restent exclues dès qu’un second établissement existe. La trésorerie affichée est opérationnelle, non un solde bancaire rapproché.' : 'Les écritures historiques sans établissement sont exclues afin de protéger la séparation entre établissements. La trésorerie affichée est opérationnelle et non bancaire.' },
+      dataQuality: { unscopedLegacyExpensesIncluded: false, note: 'Les écritures historiques sans établissement sont exclues afin de protéger la séparation entre établissements. La trésorerie affichée est opérationnelle et non bancaire.' },
     };
   }
 
@@ -229,7 +219,7 @@ export class BillingService {
     });
     const poles = new Set([...revenueByPole.keys(), ...costsByPole.keys()]);
     const supplierSources = data.supplierInvoices.map((invoice: any) => ({ id: invoice.id, label: `${invoice.supplier?.name || 'Fournisseur'} · ${invoice.supplierInvoiceNumber || 'Sans référence'}`, reference: invoice.supplierInvoiceNumber || invoice.id }));
-    const expenseSources = data.allowLegacy ? data.expenses.map((expense: any) => ({ id: expense.id, label: expense.label, reference: expense.id })) : [];
+    const expenseSources: Array<{ id: string; label: string; reference: string }> = [];
     return { departments: data.departments, budgets, investments, supplierSources, expenseSources, profitability: Array.from(poles).map((pole) => { const revenue = revenueByPole.get(pole) || 0; const cost = costsByPole.get(pole); return { pole, revenue, cost: cost ?? null, margin: cost === undefined ? null : revenue - cost }; }), dataNotice: 'Les coûts proviennent uniquement des imputations sourcées et amortissements CAPEX affectés à un pôle. Une marge sans coût imputé reste explicitement non disponible.' };
   }
 
@@ -269,9 +259,7 @@ export class BillingService {
     }
     if (dto.sourceKind === 'EXPENSE') {
       if (!dto.expenseId) throw new BadRequestException('Sélectionnez la dépense source.');
-      if (!await this.canSafelyReadUnscopedLegacyAccounting()) throw new BadRequestException('Les dépenses historiques non rattachées à une clinique ne peuvent pas être imputées dans un environnement multi-établissement.');
-      const expense = await this.prisma.expense.findFirst({ where: { id: dto.expenseId, deletedAt: null }, select: { id: true } });
-      if (!expense) throw new NotFoundException('Dépense source introuvable.');
+      throw new BadRequestException('Les dépenses historiques ne sont pas encore rattachées à un établissement et ne peuvent pas être imputées. Rattachez-les d’abord par une procédure administrative auditée.');
     }
     if (dto.sourceKind === 'SUPPORTING_DOCUMENT' && !dto.supportingDocumentUrl?.trim()) throw new BadRequestException('Une pièce justificative est obligatoire pour une imputation documentaire.');
     const created = await (this.prisma as any).financeBudgetAllocation.create({ data: { budgetId, expenseId: dto.expenseId || null, supplierInvoiceId: dto.supplierInvoiceId || null, sourceKind: dto.sourceKind, sourceReference: dto.sourceReference.trim(), supportingDocumentUrl: dto.supportingDocumentUrl?.trim() || null, revenuePole: dto.revenuePole as InvoiceType | undefined, amount: dto.amount, label: dto.label.trim(), occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : new Date(), note: dto.note?.trim() || null, createdById: userId } });
@@ -486,15 +474,8 @@ export class BillingService {
 
   async findInvoices(userId?: string) {
     const clinicId = await this.financeClinicId(userId);
-    // Legacy rows without clinicId are readable only in a confirmed
-    // single-clinic installation.  This preserves isolation as soon as more
-    // than one establishment exists.
-    const clinicCount = await (this.prisma as any).clinic.count();
-    const invoiceScope = clinicCount === 1
-      ? { OR: [{ clinicId }, { clinicId: null }] }
-      : { clinicId };
     const invoices = await this.prisma.invoice.findMany({
-      where: { ...invoiceScope, deletedAt: null },
+      where: { clinicId, deletedAt: null },
       include: {
         patient: {
           select: {

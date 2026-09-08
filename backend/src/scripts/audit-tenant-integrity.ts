@@ -21,7 +21,7 @@ const report = (category: string, id: string, detail: Record<string, unknown>, r
 };
 
 async function audit() {
-  const [users, employees, serviceUnits, roomAssignments, configurations, subscriptionCompanies, operatingRooms, imagingCatalogues, imagingMachines, wearablePlans, wearableLots] = await Promise.all([
+  const [users, employees, serviceUnits, roomAssignments, configurations, subscriptionCompanies, operatingRooms, imagingCatalogues, imagingMachines, wearablePlans, wearableLots, legacyExpenses, legacyRevenues] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null, primaryRole: { in: operationalRoles } },
       select: { id: true, username: true, primaryRole: true, clinicId: true, Employee: { select: { id: true, clinicId: true } } },
@@ -65,7 +65,211 @@ async function audit() {
     prisma.wearableLot.findMany({
       select: { id: true, clinicId: true, plan: { select: { clinicId: true } }, devices: { select: { id: true, wearableDevice: { select: { patient: { select: { clinicId: true } } } } } } },
     }),
+    // These two legacy financial tables predate clinic ownership. They are
+    // intentionally excluded by BillingService and explicitly reported here
+    // until a dedicated, human-approved migration gives each row a tenant.
+    prisma.expense.findMany({ where: { deletedAt: null }, select: { id: true } }),
+    prisma.revenue.findMany({ select: { id: true } }),
   ]);
+
+  // These are the records that form the patient workflow.  They must remain
+  // tenant-aligned even when a legacy database predates the NOT NULL migration.
+  const [patients, patientVisits, appointments, consultations, prescriptions, labRequests, imagingRequests, hospitalizations, invoices, payments] = await Promise.all([
+    prisma.patient.findMany({
+      where: { deletedAt: null },
+      select: { id: true, clinicId: true, receptionist: { select: { clinicId: true } } },
+    }),
+    prisma.patientVisit.findMany({
+      select: {
+        id: true, clinicId: true,
+        patient: { select: { clinicId: true } },
+        appointment: { select: { clinicId: true } },
+        invoice: { select: { clinicId: true } },
+        service: { select: { clinicId: true } },
+        receptionist: { select: { clinicId: true } },
+      },
+    }),
+    prisma.appointment.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true, clinicId: true,
+        patient: { select: { clinicId: true } },
+        serviceUnit: { select: { clinicId: true } },
+        requestedBy: { select: { clinicId: true } },
+      },
+    }),
+    prisma.consultation.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true, clinicId: true,
+        patient: { select: { clinicId: true } },
+        appointment: { select: { clinicId: true } },
+        provider: { select: { clinicId: true } },
+        hospitalization: { select: { clinicId: true } },
+      },
+    }),
+    prisma.prescription.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true, clinicId: true,
+        patient: { select: { clinicId: true } },
+        consultation: { select: { clinicId: true } },
+        prescriber: { select: { clinicId: true } },
+      },
+    }),
+    prisma.labRequest.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true, clinicId: true,
+        patient: { select: { clinicId: true } },
+        consultation: { select: { clinicId: true } },
+        requestedBy: { select: { clinicId: true } },
+      },
+    }),
+    prisma.imagingRequest.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true, clinicId: true,
+        patient: { select: { clinicId: true } },
+        consultation: { select: { clinicId: true } },
+        imagingCatalogue: { select: { clinicId: true } },
+        machine: { select: { clinicId: true } },
+        requestedBy: { select: { clinicId: true } },
+        technician: { select: { clinicId: true } },
+      },
+    }),
+    prisma.hospitalization.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true, clinicId: true,
+        patient: { select: { clinicId: true } },
+        ServiceUnit: { select: { clinicId: true } },
+        physician: { select: { clinicId: true } },
+        nurseInCharge: { select: { clinicId: true } },
+      },
+    }),
+    prisma.invoice.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true, clinicId: true,
+        patient: { select: { clinicId: true } },
+        issuedBy: { select: { clinicId: true } },
+      },
+    }),
+    prisma.payment.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true, clinicId: true,
+        invoice: { select: { clinicId: true } },
+        paidBy: { select: { clinicId: true } },
+      },
+    }),
+  ]);
+
+  const sameClinic = (childClinicId: string | null, parentClinicId: string | null) =>
+    Boolean(childClinicId) && childClinicId === parentClinicId;
+  const reportClinicalMismatch = (
+    category: string,
+    id: string,
+    clinicId: string | null,
+    related: Record<string, string | null>,
+  ) => {
+    if (!clinicId) {
+      report(`${category}_WITHOUT_CLINIC`, id, related);
+      return;
+    }
+    const mismatched = Object.entries(related).filter(([, relatedClinicId]) =>
+      relatedClinicId !== null && !sameClinic(clinicId, relatedClinicId),
+    );
+    if (mismatched.length) {
+      report(`${category}_CROSS_CLINIC`, id, {
+        clinicId,
+        ...related,
+        mismatchedRelations: mismatched.map(([relation]) => relation),
+      });
+    }
+  };
+
+  for (const patient of patients) {
+    reportClinicalMismatch('PATIENT', patient.id, patient.clinicId, {
+      receptionistClinicId: patient.receptionist?.clinicId ?? null,
+    });
+  }
+  for (const visit of patientVisits) {
+    reportClinicalMismatch('PATIENT_VISIT', visit.id, visit.clinicId, {
+      patientClinicId: visit.patient.clinicId,
+      appointmentClinicId: visit.appointment?.clinicId ?? null,
+      invoiceClinicId: visit.invoice?.clinicId ?? null,
+      serviceClinicId: visit.service?.clinicId ?? null,
+      receptionistClinicId: visit.receptionist?.clinicId ?? null,
+    });
+  }
+  for (const appointment of appointments) {
+    reportClinicalMismatch('APPOINTMENT', appointment.id, appointment.clinicId, {
+      patientClinicId: appointment.patient.clinicId,
+      serviceUnitClinicId: appointment.serviceUnit?.clinicId ?? null,
+      requestedByClinicId: appointment.requestedBy?.clinicId ?? null,
+    });
+  }
+  for (const consultation of consultations) {
+    reportClinicalMismatch('CONSULTATION', consultation.id, consultation.clinicId, {
+      patientClinicId: consultation.patient.clinicId,
+      appointmentClinicId: consultation.appointment.clinicId,
+      providerClinicId: consultation.provider?.clinicId ?? null,
+      hospitalizationClinicId: consultation.hospitalization?.clinicId ?? null,
+    });
+  }
+  for (const prescription of prescriptions) {
+    reportClinicalMismatch('PRESCRIPTION', prescription.id, prescription.clinicId, {
+      patientClinicId: prescription.patient.clinicId,
+      consultationClinicId: prescription.consultation.clinicId,
+      prescriberClinicId: prescription.prescriber?.clinicId ?? null,
+    });
+  }
+  for (const labRequest of labRequests) {
+    reportClinicalMismatch('LAB_REQUEST', labRequest.id, labRequest.clinicId, {
+      patientClinicId: labRequest.patient.clinicId,
+      consultationClinicId: labRequest.consultation.clinicId,
+      requestedByClinicId: labRequest.requestedBy?.clinicId ?? null,
+    });
+  }
+  for (const imagingRequest of imagingRequests) {
+    reportClinicalMismatch('IMAGING_REQUEST', imagingRequest.id, imagingRequest.clinicId, {
+      patientClinicId: imagingRequest.patient.clinicId,
+      consultationClinicId: imagingRequest.consultation.clinicId,
+      catalogueClinicId: imagingRequest.imagingCatalogue?.clinicId ?? null,
+      machineClinicId: imagingRequest.machine?.clinicId ?? null,
+      requestedByClinicId: imagingRequest.requestedBy?.clinicId ?? null,
+      technicianClinicId: imagingRequest.technician?.clinicId ?? null,
+    });
+  }
+  for (const hospitalization of hospitalizations) {
+    reportClinicalMismatch('HOSPITALIZATION', hospitalization.id, hospitalization.clinicId, {
+      patientClinicId: hospitalization.patient.clinicId,
+      serviceUnitClinicId: hospitalization.ServiceUnit?.clinicId ?? null,
+      physicianClinicId: hospitalization.physician?.clinicId ?? null,
+      nurseClinicId: hospitalization.nurseInCharge?.clinicId ?? null,
+    });
+  }
+  for (const invoice of invoices) {
+    reportClinicalMismatch('INVOICE', invoice.id, invoice.clinicId, {
+      patientClinicId: invoice.patient.clinicId,
+      issuedByClinicId: invoice.issuedBy?.clinicId ?? null,
+    });
+  }
+  for (const payment of payments) {
+    reportClinicalMismatch('PAYMENT', payment.id, payment.clinicId, {
+      invoiceClinicId: payment.invoice.clinicId,
+      paidByClinicId: payment.paidBy?.clinicId ?? null,
+    });
+  }
+
+  for (const expense of legacyExpenses) {
+    report('LEGACY_EXPENSE_WITHOUT_CLINIC', expense.id, {});
+  }
+  for (const revenue of legacyRevenues) {
+    report('LEGACY_REVENUE_WITHOUT_CLINIC', revenue.id, {});
+  }
 
   for (const user of users) {
     if (user.clinicId) continue;

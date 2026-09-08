@@ -228,6 +228,7 @@ export class HospitalizationsService {
       const hospitalization = await tx.hospitalization.create({
         data: {
           patientId: hospitalizationData.patientId,
+          clinicId: actor.clinicId,
           serviceUnitId: hospitalizationData.serviceUnitId || null,
           admittedAt: hospitalizationData.admittedAt ? new Date(hospitalizationData.admittedAt) : undefined,
           admissionReason: hospitalizationData.admissionReason,
