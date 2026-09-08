@@ -78,6 +78,10 @@ services:
   # ============================================================
   migration:
     image: aulia-care-migration:prod
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: migration
     restart: "no"
 
     cpus: "0.50"
@@ -100,6 +104,10 @@ services:
   # ============================================================
   backend:
     image: aulia-care-backend:prod
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: runtime
     restart: unless-stopped
 
     cpus: "1.50"
@@ -247,6 +255,10 @@ services:
   # ============================================================
   frontend:
     image: aulia-care-frontend:prod
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      target: runtime
     restart: unless-stopped
 
     cpus: "0.25"
