@@ -149,9 +149,9 @@ services:
 
 
   # ============================================================
-  # CLINICAL AI
+  # DIAGNOSTIC AGENT
   # ============================================================
-  clinical-ai:
+  diagnostic-agent:
     image: aulia-care-backend:prod
     restart: unless-stopped
 
@@ -162,7 +162,7 @@ services:
     command:
       [
         "node",
-        "dist/main-clinical-ai.js"
+        "dist/main-diagnostic-agent.js"
       ]
 
     env_file:
@@ -170,7 +170,7 @@ services:
 
     environment:
       NODE_ENV: production
-      CLINICAL_AI_PORT: 3100
+      DIAGNOSTIC_AGENT_PORT: 3100
 
     depends_on:
       migration:
@@ -188,7 +188,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3100/api/v1/clinical-ai/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+          "fetch('http://127.0.0.1:3100/api/v1/diagnostic-agent/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
         ]
       interval: 15s
       timeout: 5s

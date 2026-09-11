@@ -1955,15 +1955,15 @@ model Clinic {
 }
 
 model PlatformLayerConfiguration {
-  id                   String       @id @default(uuid())
-  clinicId             String?      @unique
-  enabledLayers        AuliaLayer[] @default([CORE])
+    id                   String       @id @default(uuid())
+    clinicId             String       @unique
+    enabledLayers        AuliaLayer[] @default([])
   configuredAt         DateTime?
   configurationVersion Int          @default(1)
   updatedById          String?
   createdAt            DateTime     @default(now())
   updatedAt            DateTime     @updatedAt
-  clinic               Clinic?      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+    clinic               Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   updatedBy            User?        @relation("PlatformLayerConfigurationUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@index([updatedById])
@@ -3151,9 +3151,9 @@ enum RoleSlug {
 }
 
 enum AuliaLayer {
-  CORE
-  AI
-  CONNECTED
+    CORE
+    CONNECTED
+    DIAGNOSTIC
 }
 
 /// The codebase keeps the historical "Clinic" tenant name, while supporting

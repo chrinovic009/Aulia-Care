@@ -2088,7 +2088,15 @@ export class LaboratoryService {
           });
           const alertRecipients = Array.from(new Set([
             recipientId,
-            ...(await tx.user.findMany({ where: { primaryRole: 'LAB_MANAGER', status: 'ACTIVE' }, select: { id: true } })).map((user) => user.id),
+            ...(await tx.user.findMany({
+              where: {
+                clinicId: actor.clinicId,
+                primaryRole: 'LAB_MANAGER',
+                status: 'ACTIVE',
+                deletedAt: null,
+              },
+              select: { id: true },
+            })).map((user) => user.id),
           ].filter(Boolean)));
           for (const userId of alertRecipients) {
             criticalNotifications.push(await tx.notification.create({
@@ -2140,8 +2148,10 @@ export class LaboratoryService {
       if (!canDirectSend) {
         const managers = await tx.user.findMany({
           where: {
+            clinicId: actor.clinicId,
             primaryRole: 'LAB_MANAGER',
             status: 'ACTIVE',
+            deletedAt: null,
           },
           select: { id: true },
         });
@@ -2168,6 +2178,9 @@ export class LaboratoryService {
         ? []
         : await tx.user.findMany({
             where: {
+              clinicId: actor.clinicId,
+              status: 'ACTIVE',
+              deletedAt: null,
               OR: [
                 { primaryRole: 'LAB_MANAGER' as any },
                 { roles: { some: { role: { slug: 'LAB_MANAGER' as any } } } },

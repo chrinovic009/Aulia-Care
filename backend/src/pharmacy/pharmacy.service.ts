@@ -232,7 +232,7 @@ export class PharmacyService {
 
     const medication = await this.prisma.medication.findUnique({
       where: { id: medicationId },
-      include: { StockLot: true },
+      include: { StockLot: { where: { clinicId: actor.clinicId } } },
     });
 
     if (!medication) {

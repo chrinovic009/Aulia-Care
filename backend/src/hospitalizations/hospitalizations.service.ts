@@ -1,5 +1,10 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { PatientWorkflowStatus, Prisma } from '@prisma/client';
+import {
+  HospitalizationStatus,
+  PatientWorkflowStatus,
+  Prisma,
+  RoleSlug,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateHospitalizationDto } from './dto/create-hospitalization.dto';
 import { UpdateHospitalizationDto } from './dto/update-hospitalization.dto';
@@ -152,8 +157,13 @@ export class HospitalizationsService {
         })
       : [];
     const workloads = new Map(workloadRows.map((row) => [row.nurseId, row._count._all]));
-    const available = await Promise.all(nurses.flatMap((nurse) => (['DAY', 'NIGHT'] as const).map(async (coverage) => {
-      const shift = await this.nurseScheduling.scheduledShiftForCoverage(nurse.id, coverage, serviceUnitId);
+    const coverageByNurse = await this.nurseScheduling.scheduledShiftsForCoverage(
+      nurses.map((nurse) => nurse.id),
+      clinicId,
+      serviceUnitId,
+    );
+    const available = nurses.flatMap((nurse) => (['DAY', 'NIGHT'] as const).map((coverage) => {
+      const shift = coverageByNurse.get(nurse.id)?.[coverage];
       if (!shift) return null;
       const activePatients = workloads.get(nurse.id) ?? 0;
       return {
@@ -166,7 +176,7 @@ export class HospitalizationsService {
         remainingCapacity: Math.max(0, capacity - activePatients),
         available: activePatients < capacity,
       };
-    })));
+    }));
 
     return available.filter(Boolean);
   }
@@ -652,16 +662,140 @@ export class HospitalizationsService {
   }
 
   async update(id: string, updateHospitalizationDto: UpdateHospitalizationDto, actorId?: string) {
-    const current = await this.findOne(id);
-    if (!actorId || current.physicianId !== actorId) throw new ForbiddenException('Seul le médecin responsable peut modifier cette hospitalisation.');
-    const data: Prisma.HospitalizationUpdateInput = { version: { increment: 1 } };
-    if (updateHospitalizationDto.serviceUnitId !== undefined) data.ServiceUnit = { connect: { id: updateHospitalizationDto.serviceUnitId } };
-    if (updateHospitalizationDto.admittedAt !== undefined) data.admittedAt = new Date(updateHospitalizationDto.admittedAt);
-    if (updateHospitalizationDto.admissionReason !== undefined) data.admissionReason = updateHospitalizationDto.admissionReason.trim();
-    if (updateHospitalizationDto.dischargeReason !== undefined) data.dischargeReason = updateHospitalizationDto.dischargeReason.trim() || null;
-    if (updateHospitalizationDto.bedNumber !== undefined) data.bedNumber = updateHospitalizationDto.bedNumber.trim() || null;
-    if (updateHospitalizationDto.nurseInChargeId !== undefined) data.nurseInCharge = updateHospitalizationDto.nurseInChargeId ? { connect: { id: updateHospitalizationDto.nurseInChargeId } } : { disconnect: true };
-    const updated = await this.prisma.hospitalization.update({ where: { id }, data });
+    if (!actorId) {
+      throw new ForbiddenException('Médecin authentifié requis.');
+    }
+
+    const actor = await this.clinicContext.requireOperationalActor({
+      userId: actorId,
+    });
+    if (actor.primaryRole !== RoleSlug.PHYSICIAN) {
+      throw new ForbiddenException('Seul un médecin peut modifier une hospitalisation.');
+    }
+
+    const current = await this.findOneForActor(id, { userId: actor.id });
+    if (current.physicianId !== actor.id) {
+      throw new ForbiddenException('Seul le médecin responsable peut modifier cette hospitalisation.');
+    }
+    if (
+      current.status === HospitalizationStatus.DISCHARGED ||
+      current.status === HospitalizationStatus.CANCELLATION_REQUESTED
+    ) {
+      throw new BadRequestException('Cette hospitalisation est clôturée et ne peut plus être modifiée.');
+    }
+
+    const requestedStatus = updateHospitalizationDto.status;
+    if (
+      requestedStatus !== undefined &&
+      requestedStatus !== HospitalizationStatus.DISCHARGED &&
+      requestedStatus !== current.status
+    ) {
+      throw new BadRequestException('Seule la sortie du patient est autorisée par cette procédure.');
+    }
+    if (
+      requestedStatus === HospitalizationStatus.DISCHARGED &&
+      !updateHospitalizationDto.dischargeReason?.trim()
+    ) {
+      throw new BadRequestException('Le motif de sortie est obligatoire pour clôturer une hospitalisation.');
+    }
+
+    const data: Prisma.HospitalizationUpdateInput = {
+      version: { increment: 1 },
+    };
+
+    if (updateHospitalizationDto.serviceUnitId !== undefined) {
+      const serviceUnit = updateHospitalizationDto.serviceUnitId
+        ? await this.prisma.serviceUnit.findFirst({
+            where: {
+              id: updateHospitalizationDto.serviceUnitId,
+              clinicId: actor.clinicId,
+              active: true,
+              deletedAt: null,
+            },
+            select: { id: true },
+          })
+        : null;
+      if (updateHospitalizationDto.serviceUnitId && !serviceUnit) {
+        throw new NotFoundException('Unité de service introuvable dans cet établissement.');
+      }
+      data.ServiceUnit = serviceUnit
+        ? { connect: { id: serviceUnit.id } }
+        : { disconnect: true };
+    }
+    if (updateHospitalizationDto.admittedAt !== undefined) {
+      data.admittedAt = new Date(updateHospitalizationDto.admittedAt);
+    }
+    if (updateHospitalizationDto.admissionReason !== undefined) {
+      data.admissionReason = updateHospitalizationDto.admissionReason.trim();
+    }
+    if (updateHospitalizationDto.dischargeReason !== undefined) {
+      data.dischargeReason = updateHospitalizationDto.dischargeReason.trim() || null;
+    }
+    if (updateHospitalizationDto.bedNumber !== undefined) {
+      data.bedNumber = updateHospitalizationDto.bedNumber.trim() || null;
+    }
+    if (updateHospitalizationDto.nurseInChargeId !== undefined) {
+      const nurse = updateHospitalizationDto.nurseInChargeId
+        ? await this.prisma.user.findFirst({
+            where: {
+              id: updateHospitalizationDto.nurseInChargeId,
+              clinicId: actor.clinicId,
+              primaryRole: RoleSlug.NURSE,
+              status: 'ACTIVE',
+              deletedAt: null,
+            },
+            select: { id: true },
+          })
+        : null;
+      if (updateHospitalizationDto.nurseInChargeId && !nurse) {
+        throw new NotFoundException('Infirmier introuvable dans cet établissement.');
+      }
+      data.nurseInCharge = nurse
+        ? { connect: { id: nurse.id } }
+        : { disconnect: true };
+    }
+
+    if (requestedStatus === HospitalizationStatus.DISCHARGED) {
+      data.status = HospitalizationStatus.DISCHARGED;
+      data.dischargedAt = new Date();
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const hospitalization = await tx.hospitalization.update({
+        where: { id: current.id },
+        data,
+      });
+
+      if (requestedStatus === HospitalizationStatus.DISCHARGED) {
+        if (current.bed?.id) {
+          await this.bedAssignments.release(tx, current.bed.id, current.id);
+        }
+        await tx.hospitalizationNurseAssignment.updateMany({
+          where: { hospitalizationId: current.id, releasedAt: null },
+          data: { releasedAt: new Date() },
+        });
+        await tx.patient.updateMany({
+          where: { id: current.patientId, clinicId: actor.clinicId, deletedAt: null },
+          data: { workflowStatus: PatientWorkflowStatus.TERMINE },
+        });
+        await tx.auditTrail.create({
+          data: {
+            actorId: actor.id,
+            entity: 'HOSPITALIZATION',
+            entityId: current.id,
+            action: 'UPDATE',
+            before: { status: current.status, bedId: current.bed?.id || null },
+            after: {
+              status: HospitalizationStatus.DISCHARGED,
+              bedReleased: Boolean(current.bed?.id),
+              clinicId: actor.clinicId,
+            },
+          },
+        });
+      }
+
+      return hospitalization;
+    });
     try {
       await this.notifications.createAndEmit({
         title: `Hospitalisation mise à jour: ${updated.id}`,

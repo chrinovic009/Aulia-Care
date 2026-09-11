@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../config/api";
 import { useAuth } from "./AuthContext";
+import type { AuliaLayer } from "../config/auliaCapabilities";
 
-export type AuliaLayer = "CORE" | "AI" | "CONNECTED";
+export type { AuliaLayer } from "../config/auliaCapabilities";
+
 
 export type PlatformLayers = {
   configured: boolean;
@@ -16,7 +18,7 @@ export type PlatformLayers = {
 const fallback: PlatformLayers = {
   configured: false,
   enabledLayers: [],
-  availableLayers: ["CORE", "AI", "CONNECTED"],
+  availableLayers: ["CORE", "CONNECTED", "DIAGNOSTIC"],
   configurationVersion: 0,
   configuredAt: null,
   updatedAt: null,

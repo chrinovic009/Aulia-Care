@@ -29,7 +29,7 @@ import { PlatformLayerAccessGuard } from './platform/layers/platform-layer-acces
 import { PlatformProvisioningModule } from './platform/provisioning/platform-provisioning.module';
 import { HealthModule } from './health/health.module';
 
-const clinicalAiModules = process.env.AULIA_ENABLE_CLINICAL_AI === 'false'
+const diagnosticAgentModules = process.env.AULIA_ENABLE_DIAGNOSTIC_AGENT === 'false'
   ? []
   : [ClinicalIntelligenceModule, IntelligenceModule];
 const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
@@ -65,7 +65,7 @@ const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
     NotificationsModule,
     AuditModule,
     ...connectedCareModules,
-    ...clinicalAiModules,
+    ...diagnosticAgentModules,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

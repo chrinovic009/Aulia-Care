@@ -14,6 +14,20 @@ if (source.pathname !== '/aulia_care') {
   throw new Error('Refus de test : la source doit être exactement la base de développement aulia_care.');
 }
 
+/*
+ * Docker Desktop on some Windows installations publishes PostgreSQL only on
+ * the IPv4 loopback interface.  Node resolves `localhost` to ::1 first on
+ * those machines, which makes an otherwise healthy isolated test database
+ * look unavailable.  This applies only to the local test runner; production
+ * connection settings are deliberately left untouched.
+ */
+const testHostOverride = String(process.env.AULIA_E2E_DATABASE_HOST || '').trim();
+if (testHostOverride) {
+  source.hostname = testHostOverride;
+} else if (source.hostname === 'localhost') {
+  source.hostname = '127.0.0.1';
+}
+
 const testDatabaseName = String(process.env.AULIA_E2E_DATABASE_NAME || 'aulia_care_e2e').trim();
 if (!/^[a-z][a-z0-9_]{2,62}$/.test(testDatabaseName) || testDatabaseName === 'aulia_care') {
   throw new Error('Nom de base E2E invalide ou non isolé.');

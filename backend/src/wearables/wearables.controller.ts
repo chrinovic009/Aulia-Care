@@ -4,9 +4,12 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { WearablesService } from './wearables.service';
 import { CoreConnectedCareService } from './core-connected-care.service';
+import { AuliaLayer } from '@prisma/client';
+import { RequireLayer } from '../platform/layers/require-layer.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('wearables')
+@RequireLayer(AuliaLayer.CONNECTED)
 export class WearablesController {
   constructor(private readonly wearables: WearablesService, private readonly connectedCare: CoreConnectedCareService) {}
 

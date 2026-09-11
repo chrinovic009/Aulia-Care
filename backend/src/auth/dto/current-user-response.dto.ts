@@ -24,6 +24,9 @@ export class CurrentUserResponseDto {
   primaryRole: RoleSlug;
 
   @Expose()
+  clinicId?: string | null;
+
+  @Expose()
   phone?: string;
 
   @Expose()

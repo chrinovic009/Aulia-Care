@@ -366,8 +366,16 @@ export class AuthService {
       'addressNeighborhood',
       'addressStreet',
       'bio',
+      'whatsappUrl',
+      'facebookUrl',
+      'instagramUrl',
+      'linkedinUrl',
     ]) {
-      if ((dto as any)[key] !== undefined) allowed[key] = (dto as any)[key];
+      const value = dto[key as keyof UpdateUserDto];
+      if (value !== undefined) {
+        const normalized = typeof value === 'string' ? value.trim() : value;
+        (allowed as Record<string, unknown>)[key] = normalized === '' ? null : normalized;
+      }
     }
 
     if (dto.password) {

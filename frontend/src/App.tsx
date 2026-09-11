@@ -45,7 +45,7 @@ export default function App() {
             <Route path="/rendez-vous" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientAppointments /></RoleGuard>} />
             <Route path="/examens-resultats" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientResults /></RoleGuard>} />
             <Route path="/hospitalisation" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientHospitalization /></RoleGuard>} />
-            <Route path="/suivi-quotidien" element={<RoleGuard requiredRoles={["PATIENT"]}><LayerGuard layer="AI"><SuiviQuotidien /></LayerGuard></RoleGuard>} />
+            <Route path="/suivi-quotidien" element={<RoleGuard requiredRoles={["PATIENT"]}><LayerGuard layer="CONNECTED"><SuiviQuotidien /></LayerGuard></RoleGuard>} />
             <Route path="/montre-connectee" element={<RoleGuard requiredRoles={["PATIENT"]}><LayerGuard layer="CONNECTED"><MontreConnectee /></LayerGuard></RoleGuard>} />
             <Route path="/enfants" element={<RoleGuard requiredRoles={["PATIENT"]}><LayerGuard layer="CONNECTED"><MesEnfants /></LayerGuard></RoleGuard>} />
             <Route path="/messages" element={<RoleGuard requiredRoles={["PATIENT"]}><Messages /></RoleGuard>} />

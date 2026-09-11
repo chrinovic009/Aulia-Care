@@ -211,7 +211,7 @@ export class SubscriptionsService {
     return created;
   }
 
-  /** Document-AI data is reviewed by the browser; persistence is tenant-scoped server-side. */
+  /** Document-analysis data is reviewed by the browser; persistence is tenant-scoped server-side. */
   async importExtractedCompany(payload: ExtractedCompanyImportInput, actorId?: string) {
     const actor = await this.requireClinic(actorId);
     const company = payload?.company;
@@ -353,8 +353,25 @@ export class SubscriptionsService {
   private async resolveReceptionBillingService(kind: string | undefined, clinicId: string) {
     const expectedName = normalizeText(kind).includes('special')
       ? 'consultation specialiste - reception' : 'consultation generale - reception';
+    // Existing institutions commonly use French accents in the labels shown
+    // to reception. Prisma's case-insensitive equality does not normalize
+    // accents, so keep a bounded set of the official French spellings rather
+    // than loading an establishment's whole service catalogue.
+    const labels = expectedName === 'consultation specialiste - reception'
+      ? [
+          'consultation specialiste - reception',
+          'consultation spécialiste - réception',
+        ]
+      : [
+          'consultation generale - reception',
+          'consultation générale - réception',
+        ];
     const service = await this.prisma.service.findFirst({
-      where: { clinicId, active: true, name: { equals: expectedName, mode: 'insensitive' } },
+      where: {
+        clinicId,
+        active: true,
+        OR: labels.map((name) => ({ name: { equals: name, mode: 'insensitive' as const } })),
+      },
       include: { tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' }, take: 1 } },
     });
     if (!service) throw new BadRequestException('Configurez le tarif réception pour cette consultation.');

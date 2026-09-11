@@ -82,7 +82,7 @@ services:
       CORS_ORIGIN: http://localhost:5173,http://127.0.0.1:5173,https://localhost:5173,https://127.0.0.1:5173,https://192.168.1.60:5173
 
       # Docker DNS, never localhost: each service is an independent process.
-      AULIA_CLINICAL_AI_URL: http://clinical-ai:3100
+      AULIA_DIAGNOSTIC_AGENT_URL: http://diagnostic-agent:3100
 
     volumes:
       - ./backend:/app/backend
@@ -95,8 +95,6 @@ services:
       redis:
         condition: service_healthy
 
-      clinical-ai:
-        condition: service_healthy
 
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health/ready').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
@@ -108,23 +106,23 @@ services:
     networks:
       - aulia-network
 
-  # Independently deployable clinical intelligence process. It exposes no host
+  # Independently deployable Diagnostic Agent process. It exposes no host
   # port: only Core can invoke its versioned, secret-protected contract.
-  clinical-ai:
+  diagnostic-agent:
     build:
       context: .
       dockerfile: backend/Dockerfile.dev
 
-    container_name: aulia-care-ai-service
+    container_name: aulia-care-diagnostic-agent
     restart: unless-stopped
-    command: npm run dev:clinical-ai
+    command: npm run dev:diagnostic-agent
 
     env_file:
       - ./backend/.env
 
     environment:
       NODE_ENV: development
-      CLINICAL_AI_PORT: 3100
+      DIAGNOSTIC_AGENT_PORT: 3100
 
     volumes:
       - ./backend:/app/backend
@@ -134,7 +132,7 @@ services:
       - "3100"
 
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/api/v1/clinical-ai/health/live').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/api/v1/diagnostic-agent/health/live').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -165,10 +163,6 @@ services:
     volumes:
       - ./backend:/app/backend
       - /app/node_modules
-
-    depends_on:
-      backend:
-        condition: service_healthy
 
     expose:
       - "3200"

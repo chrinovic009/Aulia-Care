@@ -47,7 +47,7 @@ interne. Ne jamais réutiliser ou copier les secrets de développement,
 `.env.docker`, `.env.prod-test` ou d’une autre installation.
 
 Les secrets minimums sont : PostgreSQL, Redis, les deux secrets JWT et les
-trois secrets inter-services Clinical AI / Connected Care.
+trois secrets inter-services Diagnostic Agent / Connected Care.
 
 ## Premier compte plateforme DEV en production
 

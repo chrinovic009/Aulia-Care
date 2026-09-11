@@ -13,6 +13,10 @@ const contextFor = (
   ({
     getType: () => 'http',
 
+    getHandler: () => undefined,
+
+    getClass: () => undefined,
+
     switchToHttp: () => ({
       getRequest: () => ({
         path,
@@ -59,11 +63,12 @@ const guardFor = (
     layers as never,
     jwt as never,
     prisma as never,
+    { getAllAndOverride: () => undefined } as never,
   );
 };
 
 test(
-  'refuses AI and Connected routes when a Core-only installation is configured',
+  'refuses Diagnostic and Connected routes when a Core-only installation is configured',
   async () => {
     const guard = guardFor(['CORE']);
 
@@ -130,7 +135,7 @@ test(
   async () => {
     const guard = guardFor([
       'CORE',
-      'AI',
+      'DIAGNOSTIC',
       'CONNECTED',
     ]);
 
@@ -153,10 +158,10 @@ test(
 );
 
 test(
-  'allows AI and Connected together without silently granting Core',
+  'allows Diagnostic and Connected together without silently granting Core',
   async () => {
     const guard = guardFor([
-      'AI',
+      'DIAGNOSTIC',
       'CONNECTED',
     ]);
 
@@ -222,6 +227,7 @@ test(
         layers as never,
         jwt as never,
         prisma as never,
+        { getAllAndOverride: () => undefined } as never,
       );
 
     assert.equal(
@@ -279,6 +285,7 @@ test(
         layers as never,
         jwt as never,
         prisma as never,
+        { getAllAndOverride: () => undefined } as never,
       );
 
     await assert.rejects(() =>

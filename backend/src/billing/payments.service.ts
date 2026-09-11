@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, AuditAction, PatientWorkflowStatus, PaymentMethod } from '@prisma/client';
+import { Prisma, AuditAction, PatientWorkflowStatus, PaymentMethod, RoleSlug } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -80,7 +80,7 @@ export class PaymentsService {
       // collect a payment, but a second Finance/Admin controller must post the
       // journal entry; a payment never silently becomes a certified bank entry.
       if (actorId) {
-        const previous = await (prisma as any).accountingJournalEntry.findFirst({
+        const previous = await prisma.accountingJournalEntry.findFirst({
           where: { clinicId: invoiceClinicId, status: 'POSTED' },
           orderBy: { postedAt: 'desc' },
           select: { entryHash: true },
@@ -91,7 +91,7 @@ export class PaymentsService {
           { account: '411-CLIENTS', label: `Règlement facture ${invoice.id}`, debit: 0, credit: amount },
         ];
         const entryHash = createHash('sha256').update(`${previous?.entryHash || ''}|${JSON.stringify({ clinicId: invoiceClinicId, paymentId: payment.id, lines })}`).digest('hex');
-        await (prisma as any).accountingJournalEntry.create({
+        await prisma.accountingJournalEntry.create({
           data: {
             clinicId: invoiceClinicId,
             reference: `PAY-${payment.id}`,
@@ -144,7 +144,7 @@ export class PaymentsService {
       // The visit linked to the invoice leaves the reception-payment stage
       // only after the balance is settled.
       if (remainingBalance === 0) {
-        await (prisma as any).patientVisit.updateMany({
+        await prisma.patientVisit.updateMany({
           where: { invoiceId: invoice.id, status: 'AWAITING_PAYMENT' },
           data: { status: 'ORIENTED', orientedAt: new Date() },
         });
@@ -152,7 +152,7 @@ export class PaymentsService {
 
       const patientUserAccess = await this.ensurePatientUserAccess(prisma, updatedPatient);
 
-      let labRequest: any = null;
+      let labRequest: { id: string } | null = null;
       if (remainingBalance === 0 && invoice.type === 'LABORATORY') {
         const labRequestMatch = invoice.remarks?.match(/(?:LabRequest|Demande laboratoire):?\s*([a-zA-Z0-9-]+)/i);
         if (labRequestMatch?.[1]) {
@@ -234,18 +234,18 @@ export class PaymentsService {
         });
       }
 
-      const targetRole = invoice.type === 'PHARMACY'
-        ? 'PHARMACIST'
+      const targetRole: RoleSlug = invoice.type === 'PHARMACY'
+        ? RoleSlug.PHARMACIST
         : invoice.type === 'LABORATORY'
-          ? 'LAB_TECHNICIAN'
+          ? RoleSlug.LAB_TECHNICIAN
           : invoice.type === 'RADIOLOGY'
-            ? 'RADIOLOGIST'
-            : 'NURSE';
+            ? RoleSlug.RADIOLOGIST
+            : RoleSlug.NURSE;
       const serviceUserIds = invoice.type === 'SERVICE'
         ? [
-            ...(invoice.patient?.service?.responsables || []).map((item: any) => item.userId || item.user?.id),
-            ...(invoice.patient?.service?.staff || []).map((item: any) => item.userId || item.user?.id),
-          ].filter(Boolean)
+            ...(invoice.patient?.service?.responsables || []).map((item) => item.userId || item.user?.id),
+            ...(invoice.patient?.service?.staff || []).map((item) => item.userId || item.user?.id),
+          ].filter((id): id is string => Boolean(id))
         : [];
       const targetUsers = remainingBalance > 0 ? [] : await prisma.user.findMany({
         where: {
@@ -255,14 +255,14 @@ export class PaymentsService {
             ? undefined
             : invoice.type === 'LABORATORY'
             ? [
-                { primaryRole: 'LAB_TECHNICIAN' as any },
-                { primaryRole: 'LAB_MANAGER' as any },
-                { roles: { some: { role: { slug: 'LAB_TECHNICIAN' as any } } } },
-                { roles: { some: { role: { slug: 'LAB_MANAGER' as any } } } },
+                { primaryRole: RoleSlug.LAB_TECHNICIAN },
+                { primaryRole: RoleSlug.LAB_MANAGER },
+                { roles: { some: { role: { slug: RoleSlug.LAB_TECHNICIAN } } } },
+                { roles: { some: { role: { slug: RoleSlug.LAB_MANAGER } } } },
               ]
             : [
-                { primaryRole: targetRole as any },
-                { roles: { some: { role: { slug: targetRole as any } } } },
+                { primaryRole: targetRole },
+                { roles: { some: { role: { slug: targetRole } } } },
               ],
         },
       });

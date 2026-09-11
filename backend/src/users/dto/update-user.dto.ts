@@ -73,6 +73,22 @@ export class UpdateUserDto {
 
   @IsString()
   @IsOptional()
+  whatsappUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  facebookUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  instagramUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  linkedinUrl?: string;
+
+  @IsString()
+  @IsOptional()
   gender?: string;
 
   @IsDateString()

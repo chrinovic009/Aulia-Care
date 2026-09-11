@@ -144,7 +144,7 @@ export class ConsultationsService {
         },
       });
       await tx.appointment.update({ where: { id: createConsultationDto.appointmentId }, data: { status: 'CHECKED_IN' } });
-      await (tx as any).patientVisit.updateMany({
+      await tx.patientVisit.updateMany({
         where: { appointmentId: createConsultationDto.appointmentId, status: { in: ['REGISTERED', 'ORIENTED'] } },
         data: { status: 'IN_CONSULTATION', orientedAt: new Date() },
       });
@@ -1118,7 +1118,12 @@ export class ConsultationsService {
     const medicationIds = lines.map((line: any) => line.medicationId).filter(Boolean);
     const medications = await this.prisma.medication.findMany({
       where: { id: { in: medicationIds }, deletedAt: null },
-      include: { StockLot: true },
+      include: {
+        // The medication catalogue may be shared, but stock never is.  A
+        // prescription must not be accepted because another establishment has
+        // inventory for the same medication.
+        StockLot: { where: { clinicId } },
+      },
     });
     const medicationById = new Map(medications.map((item) => [item.id, item]));
 
@@ -1257,7 +1262,7 @@ export class ConsultationsService {
     const medicationIds = lines.map((line: any) => line.medicationId).filter(Boolean);
     const medications = await this.prisma.medication.findMany({
       where: { id: { in: medicationIds }, deletedAt: null },
-      include: { StockLot: true },
+      include: { StockLot: { where: { clinicId: consultation.clinicId } } },
     });
     const medicationById = new Map(medications.map((item) => [item.id, item]));
 

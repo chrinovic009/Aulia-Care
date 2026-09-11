@@ -1,4 +1,4 @@
-# Aulia Connected Care — frontière exécutable
+# Aulia Care Connected Care — frontière exécutable
 
 `ConnectedCareRuntime` fonctionne sans Prisma, Nest ou module Core. Son hôte
 fournit trois ports : annuaire patient, contrôle de consentement et passerelle

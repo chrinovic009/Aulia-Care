@@ -12,7 +12,7 @@
     "dev:frontend": "npm run dev -w @aulia-care/frontend",
     "dev:backend": "npm run dev -w @aulia-care/backend",
 
-    "dev:clinical-ai": "npm run dev:clinical-ai -w @aulia-care/backend",
+    "dev:diagnostic-agent": "npm run dev:diagnostic-agent -w @aulia-care/backend",
     "dev:connected-care": "npm run dev:connected-care -w @aulia-care/backend",
 
     "build": "npm run build -w @aulia-care/frontend && npm run build -w @aulia-care/backend",
@@ -23,7 +23,7 @@
     "start": "npm run start -w @aulia-care/backend",
     "start:prod": "npm run start:prod -w @aulia-care/backend",
 
-    "start:clinical-ai": "npm run start:clinical-ai -w @aulia-care/backend",
+    "start:diagnostic-agent": "npm run start:diagnostic-agent -w @aulia-care/backend",
     "start:connected-care": "npm run start:connected-care -w @aulia-care/backend",
 
     "lint": "npm run lint --workspaces --if-present",

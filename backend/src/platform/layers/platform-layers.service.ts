@@ -24,7 +24,9 @@ export class PlatformLayersService {
 
   private availableLayers(): AuliaLayer[] {
     const available: AuliaLayer[] = [AuliaLayer.CORE];
-    if (process.env.AULIA_ENABLE_CLINICAL_AI !== 'false') available.push(AuliaLayer.AI);
+    if (process.env.AULIA_ENABLE_DIAGNOSTIC_AGENT !== 'false') {
+      available.push(AuliaLayer.DIAGNOSTIC);
+    }
     if (process.env.AULIA_ENABLE_CONNECTED_CARE !== 'false') available.push(AuliaLayer.CONNECTED);
     return available;
   }

@@ -31,7 +31,7 @@ $values = [ordered]@{
     REDIS_PASSWORD                   = New-UrlSafeSecret
     JWT_SECRET                       = New-UrlSafeSecret
     JWT_REFRESH_SECRET               = New-UrlSafeSecret
-    CLINICAL_AI_SERVICE_SECRET       = New-UrlSafeSecret
+    DIAGNOSTIC_AGENT_SERVICE_SECRET  = New-UrlSafeSecret
     CONNECTED_CARE_INGESTION_SECRET  = New-UrlSafeSecret
     CONNECTED_CARE_GATEWAY_SECRET    = New-UrlSafeSecret
 }

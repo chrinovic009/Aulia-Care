@@ -1,11 +1,11 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 
-import { ClinicalAIStandaloneModule } from './platform/clinical-ai/clinical-ai-standalone.module';
+import { DiagnosticAgentStandaloneModule } from './platform/diagnostic-agent/diagnostic-agent-standalone.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(
-    ClinicalAIStandaloneModule,
+    DiagnosticAgentStandaloneModule,
   );
 
   // ==========================================================
@@ -39,7 +39,7 @@ async function bootstrap() {
   // ==========================================================
 
   const port = Number(
-    process.env.CLINICAL_AI_PORT || 3100,
+    process.env.DIAGNOSTIC_AGENT_PORT || 3100,
   );
 
   await app.listen(
@@ -48,13 +48,13 @@ async function bootstrap() {
   );
 
   console.log(
-    `Clinical AI running on port ${port}`,
+    `Aulia Care Diagnostic Agent running on port ${port}`,
   );
 }
 
 bootstrap().catch((error) => {
   console.error(
-    'Failed to start Clinical AI:',
+    'Failed to start Aulia Care Diagnostic Agent:',
     error,
   );
 

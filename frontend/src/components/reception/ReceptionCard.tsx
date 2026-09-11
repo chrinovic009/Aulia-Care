@@ -114,10 +114,10 @@ export default function DemographicCard() {
             className="w-44 p-2"
           >
             <DropdownItem
-              onItemClick={() => { closeDropdown(); if (!isEnabled("AI")) setUpgradeNotice(true); }}
+              onItemClick={() => { closeDropdown(); if (!isEnabled("DIAGNOSTIC")) setUpgradeNotice(true); }}
               className="flex w-full rounded-lg text-left font-normal text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
             >
-              {isEnabled("AI") ? "Voir les statistiques" : "🔒 Voir les statistiques"}
+              {isEnabled("DIAGNOSTIC") ? "Voir les statistiques" : "🔒 Voir les statistiques"}
             </DropdownItem>
 
             <DropdownItem
