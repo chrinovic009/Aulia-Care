@@ -21,6 +21,7 @@ import {
   ClinicContextService,
   OperationalClinicActor,
 } from '../core/clinic-context.service';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
 
 const serviceUserSelect = {
   id: true,
@@ -52,6 +53,7 @@ export class AppointmentsService {
     private readonly prisma: PrismaService,
     private readonly notificationsGateway: NotificationsGateway,
     private readonly clinicContext: ClinicContextService,
+    private readonly patientWorkflow: PatientWorkflowService,
   ) {}
 
   private requireClinic(actorId?: string): Promise<OperationalClinicActor> {
@@ -118,6 +120,43 @@ export class AppointmentsService {
     }
     if (name.includes('pharmacie')) return PatientWorkflowStatus.EN_PHARMACIE;
     return PatientWorkflowStatus.EN_ATTENTE_MEDECIN;
+  }
+
+  private async syncPatientWorkflowFromAppointments(
+    tx: Prisma.TransactionClient,
+    patientId: string,
+    clinicId: string,
+    fallbackStatus?: PatientWorkflowStatus,
+  ) {
+    const patient = await tx.patient.findFirst({
+      where: { id: patientId, clinicId, deletedAt: null },
+      select: { workflowStatus: true },
+    });
+    if (!patient) return;
+
+    const activeAppointment = await tx.appointment.findFirst({
+      where: {
+        patientId,
+        clinicId,
+        deletedAt: null,
+        status: {
+          in: [
+            AppointmentStatus.SCHEDULED,
+            AppointmentStatus.CONFIRMED,
+            AppointmentStatus.CHECKED_IN,
+          ],
+        },
+      },
+      orderBy: { scheduledAt: 'asc' },
+      include: { serviceUnit: { select: { name: true } } },
+    });
+
+    const nextStatus = activeAppointment
+      ? this.workflowForService(activeAppointment.serviceUnit?.name)
+      : fallbackStatus;
+    if (!nextStatus || nextStatus === patient.workflowStatus) return;
+
+    await this.patientWorkflow.transition(tx, patientId, nextStatus, clinicId);
   }
 
   private isAdministrativeDestination(
@@ -274,6 +313,7 @@ export class AppointmentsService {
   }
 
   private async assertNoServiceUnitCollision(
+    prisma: PrismaService | Prisma.TransactionClient,
     clinicId: string,
     serviceUnitId: string | null | undefined,
     scheduledAt: Date,
@@ -281,9 +321,12 @@ export class AppointmentsService {
     excludeAppointmentId?: string,
   ) {
     if (!serviceUnitId) return;
+    await prisma.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`appointments:${clinicId}:${serviceUnitId}`}))`,
+    );
     const windowStart = new Date(scheduledAt.getTime() - 8 * 60 * 60 * 1000);
     const windowEnd = new Date(scheduledAt.getTime() + durationMinutes * 60 * 1000);
-    const candidates = await this.prisma.appointment.findMany({
+    const candidates = await prisma.appointment.findMany({
       where: {
         clinicId,
         serviceUnitId,
@@ -344,14 +387,14 @@ export class AppointmentsService {
     ) {
       throw new BadRequestException('Statut initial de rendez-vous non autorisé.');
     }
-    await this.assertNoServiceUnitCollision(
-      actor.clinicId,
-      serviceUnit?.id,
-      scheduledAt,
-      durationMinutes,
-    );
-
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.assertNoServiceUnitCollision(
+        tx,
+        actor.clinicId,
+        serviceUnit?.id,
+        scheduledAt,
+        durationMinutes,
+      );
       const appointment = await tx.appointment.create({
         data: {
           patientId: patient.id,
@@ -567,26 +610,27 @@ export class AppointmentsService {
       data.cancelledAt = new Date();
       data.cancelledById = actor.id;
     }
-    if (
-      data.scheduledAt ||
-      data.durationMinutes !== undefined ||
-      data.serviceUnitId !== undefined
-    ) {
-      await this.assertNoServiceUnitCollision(
-        actor.clinicId,
-        typeof data.serviceUnitId === 'string' ? data.serviceUnitId : existing.serviceUnitId,
-        data.scheduledAt instanceof Date ? data.scheduledAt : existing.scheduledAt,
-        typeof data.durationMinutes === 'number'
-          ? data.durationMinutes
-          : existing.durationMinutes,
-        id,
-      );
-    }
     if (Object.keys(data).length === 0) {
       throw new ForbiddenException('Modification de rendez-vous non autorisée.');
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      if (
+        data.scheduledAt ||
+        data.durationMinutes !== undefined ||
+        data.serviceUnitId !== undefined
+      ) {
+        await this.assertNoServiceUnitCollision(
+          tx,
+          actor.clinicId,
+          typeof data.serviceUnitId === 'string' ? data.serviceUnitId : existing.serviceUnitId,
+          data.scheduledAt instanceof Date ? data.scheduledAt : existing.scheduledAt,
+          typeof data.durationMinutes === 'number'
+            ? data.durationMinutes
+            : existing.durationMinutes,
+          id,
+        );
+      }
       const mutation = await tx.appointment.updateMany({
         where: { id, clinicId: actor.clinicId, deletedAt: null },
         data,
@@ -607,6 +651,19 @@ export class AppointmentsService {
       const appointment = await tx.appointment.findFirstOrThrow({
         where: { id, clinicId: actor.clinicId, deletedAt: null },
       });
+      const cancellationFallback =
+        appointment.status === AppointmentStatus.CANCELLED
+          ? PatientWorkflowStatus.ANNULE
+          : undefined;
+      await this.syncPatientWorkflowFromAppointments(
+        tx,
+        appointment.patientId,
+        actor.clinicId,
+        cancellationFallback,
+      );
+      if (existing.patientId !== appointment.patientId) {
+        await this.syncPatientWorkflowFromAppointments(tx, existing.patientId, actor.clinicId);
+      }
       await tx.auditLog.create({
         data: {
           actorId: actor.id,

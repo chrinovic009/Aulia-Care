@@ -4,6 +4,7 @@ import { PatientsService } from './patients.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ClinicContextService } from '../core/clinic-context.service';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
 
 test('patient portal never links a medical record from a matching e-mail address', async () => {
   const patientLookups: Array<Record<string, unknown>> = [];
@@ -30,6 +31,7 @@ test('patient portal never links a medical record from a matching e-mail address
     prisma as unknown as PrismaService,
     notifications as NotificationsGateway,
     clinicContext as ClinicContextService,
+    {} as PatientWorkflowService,
   );
 
   await assert.rejects(
@@ -88,6 +90,7 @@ test('daily check-in notifies only active nurses from the patient clinic after c
     prisma as unknown as PrismaService,
     notifications as unknown as NotificationsGateway,
     {} as ClinicContextService,
+    {} as PatientWorkflowService,
   );
   const portalService = service as unknown as {
     getPatientProfileForUser: (userId: string) => Promise<{ id: string; clinicId: string }>;
@@ -113,4 +116,34 @@ test('daily check-in notifies only active nurses from the patient clinic after c
       { roles: { some: { active: true, role: { slug: 'NURSE' } } } },
     ],
   });
+});
+
+test('patient updates reject manual workflow status changes', async () => {
+  let transactionStarted = false;
+  const service = new PatientsService(
+    {
+      patient: {
+        findFirst: async () => ({ id: 'patient-a', clinicId: 'clinic-a', workflowStatus: 'HOSPITALISE' }),
+      },
+      $transaction: async () => {
+        transactionStarted = true;
+        throw new Error('Workflow status changes must be rejected before persistence.');
+      },
+    } as unknown as PrismaService,
+    {} as NotificationsGateway,
+    {
+      requireOperationalActor: async () => ({
+        id: 'admin-a',
+        clinicId: 'clinic-a',
+        primaryRole: 'ADMIN',
+      }),
+    } as unknown as ClinicContextService,
+    {} as PatientWorkflowService,
+  );
+
+  await assert.rejects(
+    () => service.update('patient-a', { firstName: 'Updated', workflowStatus: 'EN_ATTENTE_MEDECIN' } as any, { userId: 'admin-a' }),
+    /transitions métier/,
+  );
+  assert.equal(transactionStarted, false);
 });

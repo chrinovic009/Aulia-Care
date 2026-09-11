@@ -58,7 +58,7 @@ for (const [label, enabledLayers] of combinations) {
     const scenarios: Array<[AuliaLayer, string, Record<string, unknown>?]> = [
       [AuliaLayer.CORE, '/api/patients'],
       [AuliaLayer.CONNECTED, '/api/wearables/devices'],
-      [AuliaLayer.CONNECTED, '/api/consultations/id', { consultationMode: 'TELECONSULTATION' }],
+      [AuliaLayer.DIAGNOSTIC, '/api/consultations/id', { consultationMode: 'TELECONSULTATION' }],
       [AuliaLayer.DIAGNOSTIC, '/api/intelligence'],
     ];
     for (const [layer, path, body] of scenarios) {

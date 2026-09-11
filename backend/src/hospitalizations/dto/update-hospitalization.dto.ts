@@ -24,10 +24,6 @@ export class UpdateHospitalizationDto {
 
   @IsString()
   @IsOptional()
-  bedNumber?: string;
-
-  @IsString()
-  @IsOptional()
   physicianId?: string;
 
   @IsString()

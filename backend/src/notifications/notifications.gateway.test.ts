@@ -4,7 +4,7 @@ import { AuliaLayer } from '@prisma/client';
 import { NotificationsGateway } from './notifications.gateway';
 
 type GatewayWithEntitlementCheck = {
-  requireConnectedCareForTelehealth(userId?: string, clinicId?: string): Promise<void>;
+  requireDiagnosticAgentForTelehealth(userId?: string, clinicId?: string): Promise<void>;
 };
 
 const gatewayFor = (enabledLayers: AuliaLayer[], actorClinicId: string | null = 'clinic-a') => {
@@ -42,22 +42,22 @@ const gatewayFor = (enabledLayers: AuliaLayer[], actorClinicId: string | null = 
 test('denies telehealth Socket.IO activity when Connected Care is absent', async () => {
   const gateway = gatewayFor([AuliaLayer.CORE]);
   await assert.rejects(
-    () => gateway.requireConnectedCareForTelehealth('actor-a', 'clinic-a'),
+    () => gateway.requireDiagnosticAgentForTelehealth('actor-a', 'clinic-a'),
     /Connected Care/,
   );
 });
 
 test('permits telehealth Socket.IO activity only for the current clinic entitlement', async () => {
-  const gateway = gatewayFor([AuliaLayer.CONNECTED]);
+  const gateway = gatewayFor([AuliaLayer.DIAGNOSTIC]);
   await assert.doesNotReject(
-    () => gateway.requireConnectedCareForTelehealth('actor-a', 'clinic-a'),
+    () => gateway.requireDiagnosticAgentForTelehealth('actor-a', 'clinic-a'),
   );
 });
 
 test('denies an operational Socket.IO user from another clinic', async () => {
-  const gateway = gatewayFor([AuliaLayer.CONNECTED], 'clinic-b');
+  const gateway = gatewayFor([AuliaLayer.DIAGNOSTIC], 'clinic-b');
   await assert.rejects(
-    () => gateway.requireConnectedCareForTelehealth('actor-a', 'clinic-a'),
+    () => gateway.requireDiagnosticAgentForTelehealth('actor-a', 'clinic-a'),
     /hors établissement/,
   );
 });

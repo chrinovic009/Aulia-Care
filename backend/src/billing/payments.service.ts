@@ -5,6 +5,7 @@ import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
 
 interface PatientPortalIdentity {
   id: string;
@@ -22,7 +23,11 @@ interface PatientPortalIdentity {
 
 @Injectable()
 export class PaymentsService {
-  constructor(private readonly prisma: PrismaService, private readonly notificationsGateway: NotificationsGateway) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsGateway: NotificationsGateway,
+    private readonly patientWorkflow: PatientWorkflowService,
+  ) {}
 
   async createPayment(createPaymentDto: CreatePaymentDto, actorId?: string) {
     const invoice = await this.prisma.invoice.findUnique({
@@ -61,6 +66,40 @@ export class PaymentsService {
     if (amount > balanceDue) throw new BadRequestException('Le montant payé ne peut pas dépasser le solde dû sans avoir validé.');
 
     const result = await this.prisma.$transaction(async (prisma) => {
+      await prisma.$executeRaw(
+        Prisma.sql`SELECT id FROM "Invoice" WHERE id = ${createPaymentDto.invoiceId} FOR UPDATE`,
+      );
+      const invoice = await prisma.invoice.findUnique({
+        where: { id: createPaymentDto.invoiceId },
+        include: {
+          patient: {
+            include: {
+              service: {
+                include: {
+                  responsables: {
+                    where: { actif: true },
+                    include: { user: true },
+                  },
+                  staff: {
+                    where: { actif: true },
+                    include: { user: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!invoice || invoice.deletedAt || invoice.clinicId !== invoiceClinicId || invoice.patient.clinicId !== invoiceClinicId) {
+        throw new ForbiddenException('La facture ou son patient n’est pas rattaché de façon cohérente à un établissement.');
+      }
+      if (invoice.status === 'PAID' || Number(invoice.balanceDue) <= 0) {
+        throw new BadRequestException('Cette facture est déjà payée.');
+      }
+      const balanceDue = Number(invoice.balanceDue.toString());
+      if (amount > balanceDue) {
+        throw new BadRequestException('Le montant payé ne peut pas dépasser le solde dû sans avoir validé.');
+      }
       const payment = await prisma.payment.create({
         data: {
           invoiceId: invoice.id,
@@ -134,11 +173,14 @@ export class PaymentsService {
                 ? PatientWorkflowStatus.EN_ATTENTE_MEDECIN
                 : PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE;
 
-      const updatedPatient = await prisma.patient.update({
-        where: { id: invoice.patientId },
-        data: {
-          workflowStatus: nextWorkflowStatus,
-        },
+      await this.patientWorkflow.transition(
+        prisma,
+        invoice.patientId,
+        nextWorkflowStatus,
+        invoiceClinicId,
+      );
+      const updatedPatient = await prisma.patient.findFirstOrThrow({
+        where: { id: invoice.patientId, clinicId: invoiceClinicId, deletedAt: null },
       });
 
       // The visit linked to the invoice leaves the reception-payment stage

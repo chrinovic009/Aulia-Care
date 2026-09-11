@@ -8,6 +8,7 @@ import { RecordVitalSignsDto } from './dto/record-vital-signs.dto';
 import { CreateDailyCheckinDto } from './dto/create-daily-checkin.dto';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { AuthenticatedActor, ClinicContextService, OperationalClinicActor } from '../core/clinic-context.service';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
 import * as bcrypt from 'bcrypt';
 
 interface PatientSearchParams {
@@ -70,6 +71,7 @@ export class PatientsService {
     private readonly prisma: PrismaService,
     private readonly notificationsGateway: NotificationsGateway,
     private readonly clinicContext: ClinicContextService,
+    private readonly patientWorkflow: PatientWorkflowService,
   ) {}
 
   private requireOperationalActor(
@@ -1578,7 +1580,7 @@ export class PatientsService {
           throw new NotFoundException('Patient introuvable dans cet établissement.');
         }
 
-       const patient = existingPatientInTransaction
+        const patient = existingPatientInTransaction
   ? await prisma.patient.update({
       where: {
         id: existingPatientInTransaction.id,
@@ -1589,9 +1591,6 @@ export class PatientsService {
         // Never overwrite a known patient's identity
         // or clinical record at reception.
         receptionistId,
-
-        workflowStatus:
-          admissionData.workflowStatus,
 
         admissionType:
           createAdmissionDto.admissionType,
@@ -1613,6 +1612,15 @@ export class PatientsService {
   : await prisma.patient.create({
       data: admissionData,
     });
+
+if (existingPatientInTransaction) {
+  await this.patientWorkflow.transition(
+    prisma,
+    patient.id,
+    admissionData.workflowStatus,
+    clinicId,
+  );
+}
 
 if (isParamedicalVoucher) {
   await prisma.paramedicalVoucher.create({
@@ -2015,9 +2023,14 @@ if (isParamedicalVoucher) {
       'admissionType',
       'priority',
       'arrivalAt',
-      'workflowStatus',
       'bloodType',
     ];
+
+    if (Object.prototype.hasOwnProperty.call(updatePatientDto, 'workflowStatus')) {
+      throw new ForbiddenException(
+        'Le statut du parcours patient est géré par les transitions métier.',
+      );
+    }
 
     const allowedFields =
       role === 'RECEPTIONIST'
@@ -3015,16 +3028,12 @@ if (isParamedicalVoucher) {
       // AC-P002:
       // la mutation elle-même reste strictement limitée
       // au tenant authentifié et à un patient non supprimé.
-      await tx.patient.update({
-        where: {
-          id: patientInTransaction.id,
-          clinicId: recorder.clinicId,
-          deletedAt: null,
-        },
-        data: {
-          workflowStatus,
-        },
-      });
+      await this.patientWorkflow.transition(
+        tx,
+        patientInTransaction.id,
+        workflowStatus,
+        recorder.clinicId,
+      );
 
       return consultation;
     },

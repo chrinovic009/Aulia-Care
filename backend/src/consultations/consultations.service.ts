@@ -10,12 +10,14 @@ import { ClinicalSectionsDto } from './dto/clinical-sections.dto';
 import { CreateLabRequestDto } from './dto/create-lab-request.dto';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { TelehealthTranscriptEntryDto } from './dto/save-telehealth-transcript.dto';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
 
 @Injectable()
 export class ConsultationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsGateway: NotificationsGateway,
+    private readonly patientWorkflow: PatientWorkflowService,
   ) {}
 
   private async recordSubscriptionChargeForInvoice(
@@ -148,7 +150,7 @@ export class ConsultationsService {
         where: { appointmentId: createConsultationDto.appointmentId, status: { in: ['REGISTERED', 'ORIENTED'] } },
         data: { status: 'IN_CONSULTATION', orientedAt: new Date() },
       });
-      await tx.patient.update({ where: { id: createConsultationDto.patientId }, data: { workflowStatus: PatientWorkflowStatus.EN_CONSULTATION } });
+      await this.patientWorkflow.transition(tx, createConsultationDto.patientId, PatientWorkflowStatus.EN_CONSULTATION, actor.clinicId);
       return created;
     });
 
@@ -246,7 +248,7 @@ export class ConsultationsService {
           },
         });
       }
-      await tx.patient.update({ where: { id: dto.patientId }, data: { workflowStatus: PatientWorkflowStatus.EN_CONSULTATION } });
+      await this.patientWorkflow.transition(tx, dto.patientId, PatientWorkflowStatus.EN_CONSULTATION, actor.clinicId);
       return created;
     });
 
@@ -611,7 +613,7 @@ export class ConsultationsService {
       if (requestedLabTestIds.length > 0) {
         for (const labTestId of requestedLabTestIds) {
           const labTest = await tx.labTest.findUnique({
-            where: { id: labTestId },
+            where: { id: labTestId, active: true },
             include: { section: true, category: true },
           });
 
@@ -757,10 +759,12 @@ export class ConsultationsService {
         data: { externalReference: invoice.id },
       });
 
-      await tx.patient.update({
-        where: { id: consultation.patientId },
-        data: { workflowStatus: handledBySubscription ? PatientWorkflowStatus.EN_LABORATOIRE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
-      });
+      await this.patientWorkflow.transition(
+        tx,
+        consultation.patientId,
+        handledBySubscription ? PatientWorkflowStatus.EN_LABORATOIRE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+        clinicId,
+      );
 
       await tx.medicalHistory.create({
         data: {
@@ -992,10 +996,12 @@ export class ConsultationsService {
         imagingCatalogue.id,
       );
 
-      await tx.patient.update({
-        where: { id: consultation.patientId },
-        data: { workflowStatus: handledBySubscription ? PatientWorkflowStatus.EN_RADIOLOGIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
-      });
+      await this.patientWorkflow.transition(
+        tx,
+        consultation.patientId,
+        handledBySubscription ? PatientWorkflowStatus.EN_RADIOLOGIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+        clinicId,
+      );
 
       await tx.medicalHistory.create({
         data: {
@@ -1208,10 +1214,12 @@ export class ConsultationsService {
         null,
       );
 
-      await tx.patient.update({
-        where: { id: consultation.patientId },
-        data: { workflowStatus: handledBySubscription ? PatientWorkflowStatus.EN_PHARMACIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
-      });
+      await this.patientWorkflow.transition(
+        tx,
+        consultation.patientId,
+        handledBySubscription ? PatientWorkflowStatus.EN_PHARMACIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+        consultation.clinicId || consultation.patient?.clinicId || undefined,
+      );
 
       await tx.medicalHistory.create({
         data: {

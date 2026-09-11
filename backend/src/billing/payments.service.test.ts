@@ -3,6 +3,7 @@ import test from 'node:test';
 import { PaymentsService } from './payments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
 
 test('payment refuses a legacy invoice without a clinic before opening a transaction', async () => {
   let transactionStarted = false;
@@ -22,6 +23,7 @@ test('payment refuses a legacy invoice without a clinic before opening a transac
       },
     } as unknown as PrismaService,
     {} as NotificationsGateway,
+    {} as PatientWorkflowService,
   );
 
   await assert.rejects(
@@ -52,6 +54,7 @@ test('payment refuses a cashier from another clinic before opening a transaction
       },
     } as unknown as PrismaService,
     {} as NotificationsGateway,
+    {} as PatientWorkflowService,
   );
 
   await assert.rejects(
