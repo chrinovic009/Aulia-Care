@@ -62,7 +62,7 @@ model User {
   firstName                        String
   lastName                         String
   passwordHash                     String
-  /// PIN de réauthentification de session. Il ne remplace jamais le mot de passe.
+  /// PIN de r├⌐authentification de session. Il ne remplace jamais le mot de passe.
   pinHash                          String?
   pinUpdatedAt                     DateTime?
   pinFailedAttempts                Int                              @default(0)
@@ -214,28 +214,27 @@ model Department {
 }
 
 model ServiceUnit {
-  id                  String            @id @default(uuid())
-  name                String
-  departmentId        String
-  clinicId            String?
-  location            String?
-  contactNumber       String?
-  active              Boolean           @default(true)
-  category            ServiceCategory   @default(CONSULTATION)
+  id               String            @id @default(uuid())
+  name             String
+  departmentId     String
+  clinicId         String?
+  location         String?
+  contactNumber    String?
+  active           Boolean           @default(true)
   /// Optional local override. When null, the clinic default is applied.
   nursePatientCapacity Int?
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-  deletedAt           DateTime?
-  syncedAt            DateTime?
-  sourceNode          String?
-  version             Int               @default(1)
-  appointments        Appointment[]
-  Employee            Employee[]
-  hospitalizations    Hospitalization[]
-  rooms               Room[]
-  clinic              Clinic?           @relation(fields: [clinicId], references: [id])
-  department          Department        @relation(fields: [departmentId], references: [id])
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+  syncedAt         DateTime?
+  sourceNode       String?
+  version          Int               @default(1)
+  appointments     Appointment[]
+  Employee         Employee[]
+  hospitalizations Hospitalization[]
+  rooms            Room[]
+  clinic           Clinic?           @relation(fields: [clinicId], references: [id])
+  department       Department        @relation(fields: [departmentId], references: [id])
 
   @@unique([departmentId, name])
   @@index([clinicId])
@@ -247,7 +246,6 @@ model Service {
   name                String
   description         String?
   active              Boolean              @default(true)
-  category            ServiceCategory      @default(CONSULTATION)
   isParamedical       Boolean              @default(false)
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
@@ -726,7 +724,7 @@ model Room {
 }
 
 /// Active personnel linked to a physical room. The relation is explicit so a
-/// public-address call never guesses a clinician’s destination.
+/// public-address call never guesses a clinicianΓÇÖs destination.
 model RoomStaffAssignment {
   id           String   @id @default(uuid())
   roomId       String
@@ -2635,7 +2633,7 @@ model InsuranceAuthorization {
   @@index([policyId])
 }
 
-/// == Pharmacie avancée (achats, lots, valorisation) ==
+/// == Pharmacie avanc├⌐e (achats, lots, valorisation) ==
 model SubscriptionCompany {
   id                 String                       @id @default(uuid())
   /// Corporate subscriptions are commercial agreements of one establishment.
@@ -3032,7 +3030,7 @@ model Payroll {
   @@index([employeeId, status])
 }
 
-/// == Audit et sécurité ==
+/// == Audit et s├⌐curit├⌐ ==
 model AuditTrail {
   id        String      @id @default(uuid())
   actorId   String?
@@ -3105,7 +3103,7 @@ model SessionRefreshTokenHistory {
   @@index([sessionId, consumedAt])
 }
 
-/// == Sécurité supplémentaire ==
+/// == S├⌐curit├⌐ suppl├⌐mentaire ==
 model PasswordResetToken {
   id        String   @id @default(uuid())
   userId    String
@@ -3599,16 +3597,7 @@ enum DepartmentType {
   ADMINISTRATION
 }
 
-enum ServiceCategory {
-  CONSULTATION
-  LABORATORY
-  IMAGING
-  PHARMACY
-  ADMINISTRATION
-  OTHER_CLINICAL
-}
-
-/// == Dossier médical structuré ==
+/// == Dossier m├⌐dical structur├⌐ ==
 enum DiagnosisSeverity {
   MILD
   MODERATE

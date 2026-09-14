@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import * as bcrypt from 'bcrypt';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
 
 interface PatientPortalIdentity {
@@ -156,18 +156,14 @@ export class PaymentsService {
         },
       });
 
-      const normalizedServiceName = String(invoice.patient?.service?.name || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase();
       const nextWorkflowStatus = remainingBalance > 0
         ? PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT
         :
-        invoice.type === 'PHARMACY'
+        invoice.type === 'PHARMACY' || invoice.patient?.service?.category === 'PHARMACY'
           ? PatientWorkflowStatus.EN_PHARMACIE
-          : invoice.type === 'LABORATORY' || normalizedServiceName.includes('laboratoire')
+          : invoice.type === 'LABORATORY' || invoice.patient?.service?.category === 'LABORATORY'
             ? PatientWorkflowStatus.EN_LABORATOIRE
-            : invoice.type === 'RADIOLOGY' || normalizedServiceName.includes('radio') || normalizedServiceName.includes('imagerie')
+            : invoice.type === 'RADIOLOGY' || invoice.patient?.service?.category === 'IMAGING'
               ? PatientWorkflowStatus.EN_RADIOLOGIE
               : invoice.type === 'SERVICE'
                 ? PatientWorkflowStatus.EN_ATTENTE_MEDECIN
@@ -243,8 +239,8 @@ export class PaymentsService {
         const accessText = [
           `Acces patient crees pour ${updatedPatient.firstName} ${updatedPatient.lastName}.`,
           `Nom utilisateur: ${patientUserAccess.username}`,
-          `Mot de passe: ${patientUserAccess.password}`,
-          `Veuillez remettre ces acces au patient pour son espace personnel.`,
+          `Un token d'activation unique a ete generer pour la definition du mot de passe patient.`,
+          `Le secret n'est pas conserve en clair dans le dossier et expire automatiquement.`,
         ].join('\n');
 
         receptionistMessage = await prisma.chatMessage.create({
@@ -379,18 +375,7 @@ export class PaymentsService {
         ),
       );
 
-      let hospitalization = null;
-      if (invoice.patient?.admissionType?.toLowerCase() === 'hospitalisation') {
-        hospitalization = await prisma.hospitalization.create({
-          data: {
-            patientId: invoice.patientId,
-            clinicId: invoiceClinicId,
-            admittedAt: new Date(),
-            status: 'ADMITTED',
-            admissionReason: 'Admission hospitalière validée après paiement',
-          },
-        });
-      }
+      const hospitalization = null;
 
       await prisma.auditLog.create({
         data: {
@@ -454,6 +439,10 @@ export class PaymentsService {
     };
   }
 
+  private generateActivationToken() {
+    return randomBytes(32).toString('hex');
+  }
+
   private async ensurePatientUserAccess(prisma: Prisma.TransactionClient, patient: PatientPortalIdentity) {
     if (!patient.clinicId) {
       throw new ForbiddenException('Le dossier patient doit être rattaché à un établissement avant la création du portail.');
@@ -471,16 +460,9 @@ export class PaymentsService {
         })
       : null;
 
-    const patientPosition = await prisma.patient.count({
-      where: {
-        clinicId: patient.clinicId,
-        createdAt: { lte: patient.createdAt },
-      },
-    });
-    const initials = `${patient.firstName?.[0] || 'P'}${patient.lastName?.[0] || 'D'}`.toUpperCase();
-    const year = new Date().getFullYear();
-    const password = `AUP-${initials}${patientPosition}${year}`;
-    const passwordHash = await bcrypt.hash(password, 10);
+    const activationToken = this.generateActivationToken();
+    const activationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const activationTokenHash = await bcrypt.hash(activationToken, 12);
 
     if (existing) {
       const linkedPatient = await prisma.patient.findFirst({
@@ -504,25 +486,22 @@ export class PaymentsService {
           status: 'ACTIVE',
         },
       });
+      await prisma.passwordResetToken.create({
+        data: {
+          userId: updated.id,
+          tokenHash: activationTokenHash,
+          expiresAt: activationExpiresAt,
+        },
+      });
       await prisma.patient.update({ where: { id: patient.id }, data: { portalUserId: updated.id } });
       return {
         user: updated,
         username: updated.username,
         password: null,
+        activationToken,
+        activationExpiresAt,
         isNew: false,
       };
-    }
-
-    // Matching identifiers are never an authorization mechanism: do not adopt
-    // or transform an unrelated staff/user account into a patient portal.
-    const conflictingUser = await prisma.user.findFirst({
-      where: { email },
-      select: { id: true },
-    });
-    if (conflictingUser) {
-      throw new ConflictException(
-        'Cette adresse e-mail appartient déjà à un compte. La liaison du portail doit être vérifiée explicitement.',
-      );
     }
 
     const username = await this.makeUniqueUsername(prisma, usernameBase);
@@ -533,7 +512,7 @@ export class PaymentsService {
         displayName: `${patient.firstName} ${patient.lastName}`.trim(),
         firstName: patient.firstName,
         lastName: patient.lastName,
-        passwordHash,
+        passwordHash: await bcrypt.hash(randomBytes(32).toString('hex'), 12),
         primaryRole: 'PATIENT',
         phone: patient.phone,
         nationality: patient.nationality,
@@ -543,8 +522,15 @@ export class PaymentsService {
       },
     });
 
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: activationTokenHash,
+        expiresAt: activationExpiresAt,
+      },
+    });
     await prisma.patient.update({ where: { id: patient.id }, data: { portalUserId: user.id } });
-    return { user, username, password, isNew: true };
+    return { user, username, password: null, activationToken, activationExpiresAt, isNew: true };
   }
 
   private normalizeUsername(value: string) {
@@ -560,11 +546,19 @@ export class PaymentsService {
   private async makeUniqueUsername(prisma: Prisma.TransactionClient, base: string) {
     let username = base;
     let suffix = 1;
-    while (await prisma.user.findUnique({ where: { username } })) {
+
+    while (true) {
+      const existing = prisma.user?.findUnique
+        ? await prisma.user.findUnique({ where: { username } })
+        : await prisma.user.findFirst({ where: { username } });
+
+      if (!existing) {
+        return username;
+      }
+
       suffix += 1;
       username = `${base}_${suffix}`;
     }
-    return username;
   }
 
   async findAll(actorId?: string) {

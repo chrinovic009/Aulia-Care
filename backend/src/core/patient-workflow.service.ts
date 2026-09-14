@@ -18,6 +18,15 @@ const REGRESSIVE_STATUSES =
     PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
   ]);
 
+const PRIORITY_STATUSES =
+  new Set<PatientWorkflowStatus>([
+    PatientWorkflowStatus.HOSPITALISE,
+    PatientWorkflowStatus.EN_CONSULTATION,
+    PatientWorkflowStatus.EN_LABORATOIRE,
+    PatientWorkflowStatus.EN_RADIOLOGIE,
+    PatientWorkflowStatus.EN_PHARMACIE,
+  ]);
+
 @Injectable()
 export class PatientWorkflowService {
   private protectedTransition(
@@ -36,6 +45,27 @@ export class PatientWorkflowService {
       REGRESSIVE_STATUSES.has(requested)
     ) {
       return PatientWorkflowStatus.EN_CONSULTATION;
+    }
+
+    if (
+      current === PatientWorkflowStatus.HOSPITALISE &&
+      requested === PatientWorkflowStatus.TERMINE
+    ) {
+      return PatientWorkflowStatus.TERMINE;
+    }
+
+    if (
+      current === PatientWorkflowStatus.EN_CONSULTATION &&
+      PRIORITY_STATUSES.has(requested)
+    ) {
+      return requested;
+    }
+
+    if (
+      current === PatientWorkflowStatus.TERMINE &&
+      requested !== PatientWorkflowStatus.TERMINE
+    ) {
+      return requested;
     }
 
     return requested;

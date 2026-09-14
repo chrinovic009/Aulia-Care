@@ -105,7 +105,24 @@ export class AppointmentsService {
       .trim();
   }
 
-  private workflowForService(serviceName?: string | null) {
+  private workflowForService(
+    serviceCategory?: string | null,
+    serviceName?: string | null,
+  ) {
+    const category = String(serviceCategory || '').toUpperCase();
+    if (category === 'LABORATORY') {
+      return PatientWorkflowStatus.EN_LABORATOIRE;
+    }
+    if (category === 'IMAGING') {
+      return PatientWorkflowStatus.EN_RADIOLOGIE;
+    }
+    if (category === 'PHARMACY') {
+      return PatientWorkflowStatus.EN_PHARMACIE;
+    }
+    if (category === 'ADMINISTRATION') {
+      return PatientWorkflowStatus.EN_ATTENTE_MEDECIN;
+    }
+
     const name = this.normalizeText(serviceName);
     if (name.includes('laboratoire') || name.includes('labo')) {
       return PatientWorkflowStatus.EN_LABORATOIRE;
@@ -148,11 +165,14 @@ export class AppointmentsService {
         },
       },
       orderBy: { scheduledAt: 'asc' },
-      include: { serviceUnit: { select: { name: true } } },
+      include: { serviceUnit: { select: { name: true, category: true } } },
     });
 
     const nextStatus = activeAppointment
-      ? this.workflowForService(activeAppointment.serviceUnit?.name)
+      ? this.workflowForService(
+          activeAppointment.serviceUnit?.category,
+          activeAppointment.serviceUnit?.name,
+        )
       : fallbackStatus;
     if (!nextStatus || nextStatus === patient.workflowStatus) return;
 
@@ -271,7 +291,7 @@ export class AppointmentsService {
     const services = await this.prisma.service.findMany({
       where: { clinicId: patient.clinicId, active: true },
       orderBy: { name: 'asc' },
-      select: { id: true, name: true, description: true, isParamedical: true },
+      select: { id: true, name: true, description: true, isParamedical: true, category: true },
     });
     const units = await this.prisma.serviceUnit.findMany({
       where: {
@@ -374,7 +394,10 @@ export class AppointmentsService {
       createAppointmentDto.serviceId,
       createAppointmentDto.serviceUnitId,
     );
-    const workflowStatus = this.workflowForService(service?.name || serviceUnit?.name);
+    const workflowStatus = this.workflowForService(
+      service?.category || serviceUnit?.category,
+      service?.name || serviceUnit?.name,
+    );
     const serviceName = service?.name || serviceUnit?.name || 'Service clinique';
     const scheduledAt = new Date(createAppointmentDto.scheduledAt);
     if (Number.isNaN(scheduledAt.getTime())) {

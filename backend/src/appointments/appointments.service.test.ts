@@ -180,6 +180,7 @@ test('appointment workflow recalculation handles cancellation and reassignment',
         findFirst: async () => ({
           serviceUnit: {
             name: 'Laboratoire central',
+            category: 'LABORATORY',
           },
         }),
       },
@@ -199,6 +200,20 @@ test('appointment workflow recalculation handles cancellation and reassignment',
     updates[1]?.data.workflowStatus,
     PatientWorkflowStatus.EN_LABORATOIRE,
   );
+});
+
+test('appointment workflow mapping uses structured service categories instead of text detection', async () => {
+  const service = new AppointmentsService(
+    {} as PrismaService,
+    {} as NotificationsGateway,
+    {} as ClinicContextService,
+    new PatientWorkflowService(),
+  );
+
+  assert.equal((service as any).workflowForService('LABORATORY'), PatientWorkflowStatus.EN_LABORATOIRE);
+  assert.equal((service as any).workflowForService('IMAGING'), PatientWorkflowStatus.EN_RADIOLOGIE);
+  assert.equal((service as any).workflowForService('PHARMACY'), PatientWorkflowStatus.EN_PHARMACIE);
+  assert.equal((service as any).workflowForService('OTHER_CLINICAL'), PatientWorkflowStatus.EN_ATTENTE_MEDECIN);
 });
 
 test('appointment collision check acquires a transaction lock before reading candidates', async () => {
