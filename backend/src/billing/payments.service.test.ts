@@ -107,7 +107,6 @@ test('payment never creates a hospitalization directly when the patient is marke
           findUnique: async () => ({ id: 'user-1', clinicId: 'clinic-a', primaryRole: 'PATIENT' }),
           findMany: async () => [],
         },
-        patient: { findFirstOrThrow: async () => ({ id: 'patient-a', clinicId: 'clinic-a', receptionistId: null, firstName: 'Alice', lastName: 'Bouchard', createdAt: new Date() }) },
         chatMessage: { create: async () => ({ id: 'message-1', recipientId: 'reception-1', sender: { displayName: 'Patient', username: 'patient' }, createdAt: new Date() }) },
         notification: { create: async () => ({ id: 'notif-1' }) },
         labRequest: { findFirst: async () => null, update: async () => ({ id: 'lab-1' }) },

@@ -33,9 +33,45 @@ export default function DemographicCard() {
   const printReport = () => {
     const printWindow = window.open("", "aulia-provenance-print", "width=900,height=700");
     if (!printWindow) { setError("L’impression a été bloquée par le navigateur. Autorisez les fenêtres contextuelles puis réessayez."); return; }
-    const rows = displayCategories.map((item) => `<tr><td>${item.label}</td><td>${item.count}</td><td>${item.percentage}%</td></tr>`).join("");
-    printWindow.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Rapport de provenance — Aulia Care</title><style>body{font-family:Arial,sans-serif;color:#0A1D3A;padding:30px}h1{color:#0D9488}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #cbd5e1;padding:10px;text-align:left}th{background:#e6fffb}@media print{body{padding:0}}</style></head><body><h1>Aulia Care</h1><h2>Rapport officiel — provenance des patients</h2><p>Édité le ${new Intl.DateTimeFormat("fr-FR", { dateStyle:"long", timeStyle:"short" }).format(new Date())}</p><table><thead><tr><th>Zone de provenance</th><th>Patients</th><th>Part</th></tr></thead><tbody>${rows}</tbody></table><p>Document de synthèse fondé sur les adresses administratives disponibles.</p></body></html>`);
-    printWindow.document.close(); printWindow.focus(); window.setTimeout(() => printWindow.print(), 250);
+    const document = printWindow.document;
+    document.title = "Rapport de provenance — Aulia Care";
+    document.documentElement.lang = "fr";
+
+    const style = document.createElement("style");
+    style.textContent = "body{font-family:Arial,sans-serif;color:#0A1D3A;padding:30px}h1{color:#0D9488}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #cbd5e1;padding:10px;text-align:left}th{background:#e6fffb}@media print{body{padding:0}}";
+    document.head.replaceChildren(style);
+
+    const heading = document.createElement("h1");
+    heading.textContent = "Aulia Care";
+    const subtitle = document.createElement("h2");
+    subtitle.textContent = "Rapport officiel — provenance des patients";
+    const generatedAt = document.createElement("p");
+    generatedAt.textContent = `Édité le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date())}`;
+    const table = document.createElement("table");
+    const header = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    ["Zone de provenance", "Patients", "Part"].forEach((label) => {
+      const cell = document.createElement("th");
+      cell.textContent = label;
+      headerRow.append(cell);
+    });
+    header.append(headerRow);
+    const body = document.createElement("tbody");
+    displayCategories.forEach((item) => {
+      const row = document.createElement("tr");
+      [item.label, String(item.count), `${item.percentage}%`].forEach((value) => {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.append(cell);
+      });
+      body.append(row);
+    });
+    table.append(header, body);
+    const footer = document.createElement("p");
+    footer.textContent = "Document de synthèse fondé sur les adresses administratives disponibles.";
+    document.body.replaceChildren(heading, subtitle, generatedAt, table, footer);
+    printWindow.focus();
+    window.setTimeout(() => printWindow.print(), 250);
   };
 
   useEffect(() => {

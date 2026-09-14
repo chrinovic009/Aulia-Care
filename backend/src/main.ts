@@ -24,9 +24,18 @@ async function bootstrap() {
 
   app.use(
     helmet({
-      // A strict CSP is introduced after the legacy document-print components
-      // are migrated away from inline document.write scripts.
-      contentSecurityPolicy: false,
+      // API responses never execute browser code. The frontend has its own
+      // compatible policy at the reverse proxy; this protects JSON endpoints
+      // and Socket.IO handshakes by default.
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'none'"],
+          baseUri: ["'none'"],
+          frameAncestors: ["'none'"],
+          formAction: ["'self'"],
+          objectSrc: ["'none'"],
+        },
+      },
       crossOriginEmbedderPolicy: false,
     }),
   );

@@ -137,7 +137,7 @@ export class BillingController {
 
   @Post('patients/:patientId/authorize-discharge')
   @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
-  authorizePatientDischarge(@Param('patientId') patientId: string) {
-    return this.billingService.authorizePatientDischarge(patientId);
+  authorizePatientDischarge(@Param('patientId') patientId: string, @Request() req: any) {
+    return this.billingService.authorizePatientDischarge(patientId, req.user?.userId);
   }
 }

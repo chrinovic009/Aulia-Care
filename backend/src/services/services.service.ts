@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ServiceCategory } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClinicContextService } from '../core/clinic-context.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
+import { categoryForDepartmentType } from './service-category.policy';
 
 const PARAMEDICAL_KEYWORDS = [
   'radiologie',
@@ -73,12 +75,21 @@ export class ServicesService {
       : isParamedicalServiceName(data.name);
 
     const { departmentId } = data;
+    let category = data.category;
     if (departmentId) {
       const department = await this.prisma.department.findFirst({
         where: { id: departmentId, clinicId: actor.clinicId, deletedAt: null },
-        select: { id: true },
+        select: { id: true, type: true },
       });
       if (!department) throw new NotFoundException('Département introuvable dans cet établissement.');
+      const departmentCategory = categoryForDepartmentType(department.type);
+      if (category && category !== departmentCategory) {
+        throw new BadRequestException('La catégorie doit correspondre au type du département sélectionné.');
+      }
+      category = departmentCategory;
+    }
+    if (!category) {
+      throw new BadRequestException('Choisissez une catégorie métier pour ce service sans département.');
     }
     const existing = await this.prisma.service.findFirst({
       where: { name: { equals: data.name.trim(), mode: 'insensitive' }, clinicId: actor.clinicId },
@@ -93,17 +104,22 @@ export class ServicesService {
       description: data.description?.trim() || null,
       active: data.active ?? true,
       isParamedical,
+      category,
     };
     const svc = existing
       ? await this.prisma.service.update({ where: { id: existing.id }, data: { ...serviceData, active: true } })
       : await this.prisma.service.create({ data: { ...serviceData, clinicId: actor.clinicId } });
 
-    try {
-      if (departmentId) {
-        await this.ensureServiceUnitForDepartment(svc.name, departmentId, actor.clinicId);
-      }
-    } catch {
-      // Automatic department creation is disabled; only explicit manual linkage is allowed.
+    if (departmentId) {
+      // A service and the unit that routes it must be created as one logical
+      // operation. Do not hide a failed synchronization: an orphan service
+      // could otherwise be billed with no deterministic destination.
+      await this.ensureServiceUnitForDepartment(
+        svc.name,
+        departmentId,
+        actor.clinicId,
+        category,
+      );
     }
 
     return svc;
@@ -125,13 +141,13 @@ export class ServicesService {
 
     const existing = await this.prisma.service.findFirst({ where: { clinicId: actor.clinicId, name: { equals: name, mode: 'insensitive' } } });
     const service = existing
-      ? await this.prisma.service.update({ where: { id: existing.id }, data: { active: true, description: data.description?.trim() || existing.description, isParamedical: false } })
-      : await this.prisma.service.create({ data: { clinicId: actor.clinicId, name, description: data.description?.trim() || null, active: true, isParamedical: false } });
+      ? await this.prisma.service.update({ where: { id: existing.id }, data: { active: true, description: data.description?.trim() || existing.description, isParamedical: false, category: ServiceCategory.ADMINISTRATION } })
+      : await this.prisma.service.create({ data: { clinicId: actor.clinicId, name, description: data.description?.trim() || null, active: true, isParamedical: false, category: ServiceCategory.ADMINISTRATION } });
 
     await this.prisma.serviceUnit.upsert({
       where: { departmentId_name: { departmentId: department.id, name } },
-      update: { active: true, deletedAt: null },
-      create: { departmentId: department.id, clinicId: actor.clinicId, name, active: true },
+      update: { active: true, deletedAt: null, category: ServiceCategory.ADMINISTRATION },
+      create: { departmentId: department.id, clinicId: actor.clinicId, name, active: true, category: ServiceCategory.ADMINISTRATION },
     });
     await this.prisma.serviceTarif.updateMany({ where: { serviceId: service.id, actif: true }, data: { actif: false, dateFin: new Date() } });
     return service;
@@ -155,8 +171,8 @@ export class ServicesService {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.service.findFirst({ where: { clinicId: actor.clinicId, name: { equals: definition.name, mode: 'insensitive' } } });
       const service = existing
-        ? await tx.service.update({ where: { id: existing.id }, data: { active: true, description: data.description?.trim() || definition.label, isParamedical: false } })
-        : await tx.service.create({ data: { clinicId: actor.clinicId, name: definition.name, description: data.description?.trim() || definition.label, active: true, isParamedical: false } });
+        ? await tx.service.update({ where: { id: existing.id }, data: { active: true, description: data.description?.trim() || definition.label, isParamedical: false, category: ServiceCategory.CONSULTATION } })
+        : await tx.service.create({ data: { clinicId: actor.clinicId, name: definition.name, description: data.description?.trim() || definition.label, active: true, isParamedical: false, category: ServiceCategory.CONSULTATION } });
       await tx.serviceTarif.updateMany({ where: { serviceId: service.id, actif: true }, data: { actif: false, dateFin: new Date() } });
       const tarif = await tx.serviceTarif.create({ data: { serviceId: service.id, prix: price, actif: true } });
       return { kind, service, tarif };
@@ -212,11 +228,22 @@ export class ServicesService {
 
   async update(id: string, dto: UpdateServiceDto, actorId?: string) {
     const actor = await this.requireClinic(actorId);
-    await this.findOne(id, actor.id);
-    const updateData: { name?: string; description?: string | null; active?: boolean; isParamedical?: boolean } = {
+    const existing = await this.findOne(id, actor.id);
+    if (dto.category && existing.department?.type) {
+      const expectedCategory = categoryForDepartmentType(
+        existing.department.type,
+      );
+      if (dto.category !== expectedCategory) {
+        throw new BadRequestException(
+          'La catégorie doit correspondre au type du département associé.',
+        );
+      }
+    }
+    const updateData: { name?: string; description?: string | null; active?: boolean; isParamedical?: boolean; category?: ServiceCategory } = {
       ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
       ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
       ...(dto.active !== undefined ? { active: dto.active } : {}),
+      ...(dto.category !== undefined ? { category: dto.category } : {}),
     };
     if (dto.isParamedical !== undefined) {
       updateData.isParamedical = dto.isParamedical;
@@ -284,7 +311,7 @@ export class ServicesService {
     return;
   }
 
-  private async ensureServiceUnitForDepartment(serviceName: string, departmentId: string, clinicId: string) {
+  private async ensureServiceUnitForDepartment(serviceName: string, departmentId: string, clinicId: string, category: ServiceCategory) {
     await this.prisma.serviceUnit.upsert({
       where: {
         departmentId_name: {
@@ -292,7 +319,7 @@ export class ServicesService {
           name: serviceName,
         },
       },
-      update: {},
+      update: { category },
       create: {
         name: serviceName,
         departmentId,
@@ -300,6 +327,7 @@ export class ServicesService {
         location: null,
         contactNumber: null,
         active: true,
+        category,
       },
     });
   }

@@ -23,7 +23,7 @@ export const AULIA_CAPABILITIES = {
   },
   teleconsultation: {
     id: 'teleconsultation',
-    requiredLayer: 'CONNECTED',
+    requiredLayer: 'DIAGNOSTIC',
     label: 'Téléconsultation',
     description: 'Continuité des soins et consultation à distance.',
   },
@@ -35,7 +35,7 @@ export const AULIA_CAPABILITIES = {
   },
   dailyConnectedCheckin: {
     id: 'daily-connected-checkin',
-    requiredLayer: 'CONNECTED',
+    requiredLayer: 'DIAGNOSTIC',
     label: 'Suivi quotidien connecté',
     description: 'Suivi patient à domicile et continuité établissement-domicile.',
   },
@@ -84,11 +84,15 @@ export function layersForPath(pathname: string): AuliaLayer[] | null {
       '/reception/montres',
       '/administration/montres',
       '/connected-care',
+    ].some((path) => pathname.startsWith(path))
+  ) return ['CONNECTED'];
+  if (
+    [
       '/suivi-quotidien',
       '/telehealth',
       '/teleconsultation',
     ].some((path) => pathname.startsWith(path))
-  ) return ['CONNECTED'];
+  ) return ['DIAGNOSTIC'];
   if (
     ['/clinical-intelligence', '/intelligence', '/diagnostic-agent'].some((path) =>
       pathname.startsWith(path),

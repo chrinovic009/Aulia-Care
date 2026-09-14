@@ -3,6 +3,8 @@ import { ServicesService } from './services.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { CreateServiceDto } from './dto/create-service.dto';
+import { UpdateServiceDto } from './dto/update-service.dto';
 
 interface AuthenticatedRequest {
   user?: { userId?: string; id?: string };
@@ -29,7 +31,7 @@ export class ServicesController {
 
   @Post()
   @Roles('SUPER_ADMIN', 'ADMIN')
-  create(@Body() body: { name: string; description?: string; isParamedical?: boolean; active?: boolean; departmentId?: string }, @Request() request: AuthenticatedRequest) {
+  create(@Body() body: CreateServiceDto & { departmentId?: string }, @Request() request: AuthenticatedRequest) {
     return this.servicesService.create(body, actorIdFrom(request));
   }
 
@@ -47,7 +49,7 @@ export class ServicesController {
 
   @Patch(':id')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  update(@Param('id') id: string, @Body() body: { name?: string; description?: string; isParamedical?: boolean; active?: boolean }, @Request() request: AuthenticatedRequest) {
+  update(@Param('id') id: string, @Body() body: UpdateServiceDto, @Request() request: AuthenticatedRequest) {
     return this.servicesService.update(id, body, actorIdFrom(request));
   }
 

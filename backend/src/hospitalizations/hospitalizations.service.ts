@@ -251,6 +251,17 @@ export class HospitalizationsService {
       }
       const capacity = await this.nurseScheduling.nurseCapacity(actor.clinicId, hospitalizationData.serviceUnitId);
       for (const assignment of requestedAssignments) {
+        // Capacity is shared by every active assignment of this nurse in the
+        // clinic.  Serialize the count/create pair on that stable resource;
+        // otherwise two concurrent admissions can both observe the same last
+        // available slot.
+        await tx.$executeRaw(
+          Prisma.sql`
+            SELECT pg_advisory_xact_lock(
+              hashtext(${`nurse-capacity:${actor.clinicId}:${assignment.nurseId}`})
+            )
+          `,
+        );
         const nurse = await tx.user.findFirst({
           where: {
             id: assignment.nurseId,

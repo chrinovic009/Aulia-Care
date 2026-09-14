@@ -13,6 +13,7 @@ import {
   PaymentMethod,
   PrismaClient,
   RoleSlug,
+  ServiceCategory,
 } from '@prisma/client';
 import { AppModule } from '../../src/app.module';
 import { AuthService } from '../../src/auth/auth.service';
@@ -111,6 +112,7 @@ test(
           clinicId: clinic.id,
           name: 'Consultation générale - réception',
           active: true,
+          category: ServiceCategory.CONSULTATION,
           tarifs: { create: { prix: 10_000, actif: true } },
         },
       });
@@ -120,6 +122,7 @@ test(
           name: `Kinésithérapie ${suffix}`,
           active: true,
           isParamedical: true,
+          category: ServiceCategory.OTHER_CLINICAL,
           tarifs: { create: { prix: 7_500, actif: true } },
         },
       });
@@ -128,6 +131,7 @@ test(
           clinicId: clinic.id,
           name: `Médecine générale ${suffix}`,
           active: true,
+          category: ServiceCategory.CONSULTATION,
         },
       });
       const department = await prisma.department.create({
@@ -143,6 +147,7 @@ test(
           clinicId: clinic.id,
           departmentId: department.id,
           name: clinicalService.name,
+          category: ServiceCategory.CONSULTATION,
         },
       });
 

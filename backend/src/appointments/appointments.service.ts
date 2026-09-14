@@ -10,6 +10,7 @@ import {
   PatientWorkflowStatus,
   Prisma,
   RoleSlug,
+  ServiceCategory,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
@@ -105,37 +106,19 @@ export class AppointmentsService {
       .trim();
   }
 
-  private workflowForService(
-    serviceCategory?: string | null,
-    serviceName?: string | null,
-  ) {
-    const category = String(serviceCategory || '').toUpperCase();
-    if (category === 'LABORATORY') {
+  private workflowForService(serviceCategory?: ServiceCategory | null) {
+    if (serviceCategory === ServiceCategory.LABORATORY) {
       return PatientWorkflowStatus.EN_LABORATOIRE;
     }
-    if (category === 'IMAGING') {
+    if (serviceCategory === ServiceCategory.IMAGING) {
       return PatientWorkflowStatus.EN_RADIOLOGIE;
     }
-    if (category === 'PHARMACY') {
+    if (serviceCategory === ServiceCategory.PHARMACY) {
       return PatientWorkflowStatus.EN_PHARMACIE;
     }
-    if (category === 'ADMINISTRATION') {
+    if (serviceCategory === ServiceCategory.ADMINISTRATION) {
       return PatientWorkflowStatus.EN_ATTENTE_MEDECIN;
     }
-
-    const name = this.normalizeText(serviceName);
-    if (name.includes('laboratoire') || name.includes('labo')) {
-      return PatientWorkflowStatus.EN_LABORATOIRE;
-    }
-    if (
-      name.includes('radio') ||
-      name.includes('imagerie') ||
-      name.includes('scanner') ||
-      name.includes('echographie')
-    ) {
-      return PatientWorkflowStatus.EN_RADIOLOGIE;
-    }
-    if (name.includes('pharmacie')) return PatientWorkflowStatus.EN_PHARMACIE;
     return PatientWorkflowStatus.EN_ATTENTE_MEDECIN;
   }
 
@@ -171,7 +154,6 @@ export class AppointmentsService {
     const nextStatus = activeAppointment
       ? this.workflowForService(
           activeAppointment.serviceUnit?.category,
-          activeAppointment.serviceUnit?.name,
         )
       : fallbackStatus;
     if (!nextStatus || nextStatus === patient.workflowStatus) return;
@@ -180,24 +162,12 @@ export class AppointmentsService {
   }
 
   private isAdministrativeDestination(
-    name?: string | null,
-    department?: { type?: string | null; name?: string | null } | null,
+    category?: ServiceCategory | null,
+    department?: { type?: string | null } | null,
   ) {
-    const normalized = this.normalizeText(name).replace(/[^a-z0-9]/g, '');
-    const departmentName = this.normalizeText(department?.name);
     return (
-      department?.type === 'ADMINISTRATION' ||
-      departmentName.includes('administration') ||
-      [
-        'reception',
-        'accueil',
-        'caisse',
-        'cashier',
-        'finance',
-        'comptabilite',
-        'secretariat',
-        'gestion',
-      ].some((keyword) => normalized.includes(keyword))
+      category === ServiceCategory.ADMINISTRATION ||
+      department?.type === 'ADMINISTRATION'
     );
   }
 
@@ -235,7 +205,7 @@ export class AppointmentsService {
     if (serviceUnitById) {
       if (
         this.isAdministrativeDestination(
-          serviceUnitById.name,
+          serviceUnitById.category,
           serviceUnitById.department,
         )
       ) {
@@ -271,7 +241,7 @@ export class AppointmentsService {
       },
       include: { department: true },
     });
-    if (this.isAdministrativeDestination(service.name, serviceUnit?.department)) {
+    if (this.isAdministrativeDestination(service.category, serviceUnit?.department)) {
       throw new BadRequestException(
         'Un service administratif ne peut pas être sélectionné pour un rendez-vous patient.',
       );
@@ -306,7 +276,7 @@ export class AppointmentsService {
       const unit = units.find(
         (item) => this.normalizeText(item.name) === this.normalizeText(service.name),
       );
-      return !this.isAdministrativeDestination(service.name, unit?.department);
+      return !this.isAdministrativeDestination(service.category, unit?.department);
     });
   }
 
@@ -396,7 +366,6 @@ export class AppointmentsService {
     );
     const workflowStatus = this.workflowForService(
       service?.category || serviceUnit?.category,
-      service?.name || serviceUnit?.name,
     );
     const serviceName = service?.name || serviceUnit?.name || 'Service clinique';
     const scheduledAt = new Date(createAppointmentDto.scheduledAt);
@@ -431,10 +400,18 @@ export class AppointmentsService {
         } satisfies Prisma.AppointmentUncheckedCreateInput,
         include: { patient: true, serviceUnit: { include: { department: true } } },
       });
+      const transitionedWorkflowStatus = await this.patientWorkflow.transition(
+        tx,
+        patient.id,
+        workflowStatus,
+        actor.clinicId,
+      );
+      if (!transitionedWorkflowStatus) {
+        throw new NotFoundException('Patient introuvable dans cet établissement.');
+      }
       const patientMutation = await tx.patient.updateMany({
         where: { id: patient.id, clinicId: actor.clinicId, deletedAt: null },
         data: {
-          workflowStatus,
           ...(service?.id ? { serviceId: service.id } : {}),
         },
       });
@@ -456,7 +433,7 @@ export class AppointmentsService {
             serviceName,
             scheduledAt: scheduledAt.toISOString(),
             reason: createAppointmentDto.reason?.trim() || 'Nouvelle visite',
-            workflowStatus,
+            workflowStatus: transitionedWorkflowStatus,
           }),
         },
       });
@@ -493,8 +470,8 @@ export class AppointmentsService {
               patientId: patient.id,
               type: 'TASK',
               priority:
-                workflowStatus === PatientWorkflowStatus.EN_LABORATOIRE ||
-                workflowStatus === PatientWorkflowStatus.EN_RADIOLOGIE
+                transitionedWorkflowStatus === PatientWorkflowStatus.EN_LABORATOIRE ||
+                transitionedWorkflowStatus === PatientWorkflowStatus.EN_RADIOLOGIE
                   ? 'HIGH'
                   : 'MEDIUM',
               title: 'Nouvelle visite orientée',

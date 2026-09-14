@@ -14,6 +14,7 @@ import {
   InvoiceType,
   PrismaClient,
   RoleSlug,
+  ServiceCategory,
 } from '@prisma/client';
 import { AppModule } from '../../src/app.module';
 import { AuthService } from '../../src/auth/auth.service';
@@ -142,6 +143,7 @@ test(
             clinicId: clinicA.id,
             departmentId: departmentA.id,
             name: `Unité A ${suffix}`,
+            category: ServiceCategory.CONSULTATION,
           },
         }),
         prisma.serviceUnit.create({
@@ -149,6 +151,7 @@ test(
             clinicId: clinicB.id,
             departmentId: departmentB.id,
             name: `Unité B ${suffix}`,
+            category: ServiceCategory.CONSULTATION,
           },
         }),
       ]);

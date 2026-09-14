@@ -188,8 +188,6 @@ export class PaymentsService {
         });
       }
 
-      const patientUserAccess = await this.ensurePatientUserAccess(prisma, updatedPatient);
-
       let labRequest: { id: string } | null = null;
       if (remainingBalance === 0 && invoice.type === 'LABORATORY') {
         const labRequestMatch = invoice.remarks?.match(/(?:LabRequest|Demande laboratoire):?\s*([a-zA-Z0-9-]+)/i);
@@ -232,45 +230,10 @@ export class PaymentsService {
         }
       }
 
-      let receptionistMessage = null;
-      // Credentials are issued only once, at the first admission. A payment
-      // must never silently reset a patient's password.
-      if (patientUserAccess.isNew && updatedPatient.receptionistId) {
-        const accessText = [
-          `Acces patient crees pour ${updatedPatient.firstName} ${updatedPatient.lastName}.`,
-          `Nom utilisateur: ${patientUserAccess.username}`,
-          `Un token d'activation unique a ete generer pour la definition du mot de passe patient.`,
-          `Le secret n'est pas conserve en clair dans le dossier et expire automatiquement.`,
-        ].join('\n');
-
-        receptionistMessage = await prisma.chatMessage.create({
-          data: {
-            senderId: patientUserAccess.user.id,
-            recipientId: updatedPatient.receptionistId,
-            recipientType: 'USER',
-            text: accessText,
-            status: 'SENT',
-          },
-          include: {
-            sender: { select: { id: true, displayName: true, username: true } },
-          },
-        });
-
-        await prisma.notification.create({
-          data: {
-            recipientId: updatedPatient.receptionistId,
-            patientId: updatedPatient.id,
-            type: 'SYSTEM',
-            status: 'UNREAD',
-            priority: 'HIGH',
-            title: 'Acces patient disponibles',
-            message: `Les acces du patient ${updatedPatient.firstName} ${updatedPatient.lastName} sont disponibles dans vos messages.`,
-            relatedEntity: 'Patient',
-            relatedId: updatedPatient.id,
-            sendAt: new Date(),
-          },
-        });
-      }
+      // Payment is deliberately independent from portal provisioning.  It
+      // cannot create, reissue, or reset patient credentials or activation
+      // tokens.  Those actions belong to the explicit patient-portal flow.
+      const receptionistMessage = null;
 
       const targetRole: RoleSlug = invoice.type === 'PHARMACY'
         ? RoleSlug.PHARMACIST

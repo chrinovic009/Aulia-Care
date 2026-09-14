@@ -3,6 +3,7 @@ import { AuditAction, InvoiceType, PatientWorkflowStatus, RoleSlug } from '@pris
 import { createCipheriv, createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
 import { CapitalInvestmentStatus, FinanceBudgetStatus } from '@prisma/client';
 import {
   CreateBudgetAllocationDto,
@@ -22,7 +23,11 @@ import {
 
 @Injectable()
 export class BillingService {
-  constructor(private readonly prisma: PrismaService, private readonly gateway: NotificationsGateway) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gateway: NotificationsGateway,
+    private readonly patientWorkflow: PatientWorkflowService,
+  ) {}
 
   async financialForecast(userId?: string) {
     const clinicId = await this.financeClinicId(userId);
@@ -748,17 +753,24 @@ export class BillingService {
     }).then((result: any) => { if (result?.request?.requestedById) this.gateway.notifyToUser(result.request.requestedById, 'discount.reviewed', result); return result; });
   }
 
-  async authorizePatientDischarge(patientId: string) {
-    const summary = await this.getPatientBillingSummary(patientId);
+  async authorizePatientDischarge(patientId: string, actorId?: string) {
+    const clinicId = await this.financeClinicId(actorId);
+    const summary = await this.getPatientBillingSummary(patientId, actorId);
     if (summary.balanceDue > 0) {
       throw new BadRequestException('Impossible d’autoriser la sortie: le patient a encore un solde a payer.');
     }
 
-    const patient = await this.prisma.patient.update({
-      where: { id: patientId },
-      data: {
-        workflowStatus: PatientWorkflowStatus.TERMINE,
-      },
+    const transitioned = await this.patientWorkflow.transition(
+      this.prisma,
+      patientId,
+      PatientWorkflowStatus.TERMINE,
+      clinicId,
+    );
+    if (!transitioned) {
+      throw new NotFoundException('Patient introuvable dans cet établissement.');
+    }
+    const patient = await this.prisma.patient.findFirstOrThrow({
+      where: { id: patientId, clinicId, deletedAt: null },
     });
 
     return {

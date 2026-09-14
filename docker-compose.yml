@@ -45,7 +45,7 @@ services:
       - aulia_redis_data:/data
 
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD}\" ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -71,9 +71,13 @@ services:
       NODE_ENV: development
       PORT: 3000
 
+      # Never point a container at the host loopback interface: inside Docker
+      # it would refer to the backend container itself. These URLs use service
+      # discovery on the private aulia-network and resolve their credentials
+      # from the Compose environment file.
       DATABASE_URL: postgresql://aulia:${POSTGRES_PASSWORD}@postgres:5432/aulia_care?schema=public
 
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
 
       # The Docker Vite development server uses HTTPS when the local Aulia
       # certificate is present.  CSRF validates Origin on every write, so the
@@ -81,8 +85,9 @@ services:
       # is rejected even with a valid session and CSRF cookie.
       CORS_ORIGIN: http://localhost:5173,http://127.0.0.1:5173,https://localhost:5173,https://127.0.0.1:5173,https://192.168.1.60:5173
 
-      # Docker DNS, never localhost: each service is an independent process.
-      AULIA_DIAGNOSTIC_AGENT_URL: http://diagnostic-agent:3100
+      # The Core uses its local diagnostic contract in development. Configure
+      # AULIA_DIAGNOSTIC_AGENT_URL and DIAGNOSTIC_AGENT_SERVICE_SECRET together
+      # only when the separately deployed agent is intentionally enabled.
 
     volumes:
       - ./backend:/app/backend

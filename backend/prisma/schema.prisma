@@ -221,7 +221,7 @@ model ServiceUnit {
   location            String?
   contactNumber       String?
   active              Boolean           @default(true)
-  category            ServiceCategory   @default(CONSULTATION)
+  category            ServiceCategory
   /// Optional local override. When null, the clinic default is applied.
   nursePatientCapacity Int?
   createdAt           DateTime          @default(now())
@@ -247,7 +247,7 @@ model Service {
   name                String
   description         String?
   active              Boolean              @default(true)
-  category            ServiceCategory      @default(CONSULTATION)
+  category            ServiceCategory
   isParamedical       Boolean              @default(false)
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt

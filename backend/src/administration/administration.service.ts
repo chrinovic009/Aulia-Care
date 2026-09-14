@@ -5,6 +5,7 @@ import { UpdateClinicBrandingDto } from './dto/update-clinic-branding.dto';
 import { UpdateClinicOperationalPolicyDto } from './dto/update-clinic-operational-policy.dto';
 import { CreateRoomDto, UpdateRoomDto } from './dto/room.dto';
 import { isValidClockTime, isValidIanaTimezone, SYSTEM_MAX_NURSE_PATIENT_CAPACITY } from '../core/operational-policy';
+import { categoryForDepartmentType } from '../services/service-category.policy';
 
 @Injectable()
 export class AdministrationService {
@@ -405,10 +406,11 @@ export class AdministrationService {
     if (!department) throw new NotFoundException('Département introuvable.');
     const name = String(data.name || '').trim();
     if (!name) throw new BadRequestException('Le nom de l’unité est obligatoire.');
+    const category = categoryForDepartmentType(department.type);
     const prior = await this.prisma.serviceUnit.findFirst({ where: { departmentId: department.id, clinicId: actor.clinicId, name } });
     const created = prior
-      ? await this.prisma.serviceUnit.update({ where: { id: prior.id }, data: { deletedAt: null, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true } })
-      : await this.prisma.serviceUnit.create({ data: { clinicId: actor.clinicId, name, departmentId: department.id, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true } });
+      ? await this.prisma.serviceUnit.update({ where: { id: prior.id }, data: { deletedAt: null, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true, category } })
+      : await this.prisma.serviceUnit.create({ data: { clinicId: actor.clinicId, name, departmentId: department.id, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true, category } });
     return { ...created, billable: department.type !== 'ADMINISTRATION' };
   }
 

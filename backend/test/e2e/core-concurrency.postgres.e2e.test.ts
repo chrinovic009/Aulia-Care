@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
-import { AppointmentStatus, DepartmentType, PaymentMethod, PrismaClient } from '@prisma/client';
+import { AppointmentStatus, DepartmentType, PaymentMethod, PrismaClient, ServiceCategory } from '@prisma/client';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -32,7 +32,7 @@ test(
       });
       departmentId = department.id;
       const serviceUnit = await prisma.serviceUnit.create({
-        data: { clinicId: clinic.id, departmentId: department.id, name: `Consultation ${suffix}` },
+        data: { clinicId: clinic.id, departmentId: department.id, name: `Consultation ${suffix}`, category: ServiceCategory.CONSULTATION },
       });
       serviceUnitId = serviceUnit.id;
       const patient = await prisma.patient.create({

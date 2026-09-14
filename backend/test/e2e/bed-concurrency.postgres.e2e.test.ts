@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
-import { BedStatus, DepartmentType, PrismaClient } from '@prisma/client';
+import { BedStatus, DepartmentType, PrismaClient, ServiceCategory } from '@prisma/client';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -17,7 +17,7 @@ test('PostgreSQL: deux transactions ne peuvent pas réclamer le même lit', { sk
     clinicId = clinic.id;
     const department = await prisma.department.create({ data: { clinicId, name: `Hospitalisation ${suffix}`, code: `HOSP-${suffix}`, type: DepartmentType.MEDICAL } });
     departmentId = department.id;
-    const unit = await prisma.serviceUnit.create({ data: { clinicId, departmentId: department.id, name: `Unité ${suffix}` } });
+    const unit = await prisma.serviceUnit.create({ data: { clinicId, departmentId: department.id, name: `Unité ${suffix}`, category: ServiceCategory.CONSULTATION } });
     const room = await prisma.room.create({ data: { serviceUnitId: unit.id, number: `RACE-${suffix}`, name: 'Chambre de test', location: 'Zone E2E' } });
     const bed = await prisma.bed.create({ data: { roomId: room.id, code: `LIT-${suffix}`, status: BedStatus.FREE } });
     const [patientOne, patientTwo] = await Promise.all([

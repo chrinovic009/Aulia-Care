@@ -1269,6 +1269,7 @@ export class LaboratoryService {
           description: dto.description?.trim() || undefined,
           active: true,
           isParamedical: true,
+          category: 'LABORATORY',
         },
         create: {
           clinicId: actor.clinicId,
@@ -1276,6 +1277,7 @@ export class LaboratoryService {
           description: dto.description?.trim() || 'Examen laboratoire',
           active: true,
           isParamedical: true,
+          category: 'LABORATORY',
         },
       });
 
@@ -1286,12 +1288,13 @@ export class LaboratoryService {
             name: testName,
           },
         },
-        update: { active: true },
+        update: { active: true, category: 'LABORATORY' },
         create: {
           departmentId: labDepartment.id,
           clinicId: actor.clinicId,
           name: testName,
           active: true,
+          category: 'LABORATORY',
         },
       });
 

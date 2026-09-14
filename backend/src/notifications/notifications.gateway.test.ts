@@ -39,11 +39,11 @@ const gatewayFor = (enabledLayers: AuliaLayer[], actorClinicId: string | null = 
   ) as unknown as GatewayWithEntitlementCheck;
 };
 
-test('denies telehealth Socket.IO activity when Connected Care is absent', async () => {
+test('denies telehealth Socket.IO activity when Diagnostic Agent is absent', async () => {
   const gateway = gatewayFor([AuliaLayer.CORE]);
   await assert.rejects(
     () => gateway.requireDiagnosticAgentForTelehealth('actor-a', 'clinic-a'),
-    /Connected Care/,
+    /Diagnostic Agent/,
   );
 });
 

@@ -307,7 +307,6 @@ export default function DashboardMedecin() {
   const { currentUser } = useAuth();
   const { isEnabled } = usePlatformLayers();
   const diagnosticEnabled = isEnabled("DIAGNOSTIC");
-  const connectedEnabled = isEnabled("CONNECTED");
   const [aiFeatureNotice, setAiFeatureNotice] = useState<"VOICE" | "TELEHEALTH" | "DIAGNOSTIC_SUGGESTIONS" | null>(null);
   const isConsultationPage = location.pathname.includes("/doctor/consultations");
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
@@ -596,7 +595,7 @@ export default function DashboardMedecin() {
   };
 
   const changeConsultationMode = async (value: string) => {
-    if (value === "TELECONSULTATION" && !connectedEnabled) {
+    if (value === "TELECONSULTATION" && !diagnosticEnabled) {
       setTelehealthReady(false);
       setAiFeatureNotice("TELEHEALTH");
       return;
@@ -1056,10 +1055,10 @@ export default function DashboardMedecin() {
   // case an already selected premium mode must stop immediately rather than
   // leaving a live telehealth component on a Core-only installation.
   useEffect(() => {
-    if (connectedEnabled || consultationModule.consultationMode !== "TELECONSULTATION") return;
+    if (diagnosticEnabled || consultationModule.consultationMode !== "TELECONSULTATION") return;
     setTelehealthReady(false);
     setConsultationModule((current) => ({ ...current, consultationMode: "PRESENTIAL", telehealthTranscript: [] }));
-  }, [connectedEnabled, consultationModule.consultationMode]);
+  }, [diagnosticEnabled, consultationModule.consultationMode]);
 
   const diagnosticSuggestions = useMemo(() => {
     if (!diagnosticEnabled) {
@@ -1189,8 +1188,8 @@ export default function DashboardMedecin() {
 
   const featureNoticeCopy = aiFeatureNotice === "TELEHEALTH"
     ? {
-        product: "Aulia Care Connected Care",
-        detail: "La télésanté sécurisée nécessite Aulia Care Connected Care.",
+        product: "Aulia Care Diagnostic Agent",
+        detail: "La télésanté sécurisée nécessite Aulia Care Diagnostic Agent.",
       }
     : aiFeatureNotice === "DIAGNOSTIC_SUGGESTIONS"
       ? {
@@ -1354,7 +1353,7 @@ export default function DashboardMedecin() {
 
                   <SectionBox title="Mode de consultation">
                     <div className="grid gap-3 md:grid-cols-3">
-                      <FormSelect label="Mode" value={consultationModule.consultationMode} onChange={(value) => { if (!connectedEnabled && value === "TELECONSULTATION") { setAiFeatureNotice("TELEHEALTH"); return; } void changeConsultationMode(value); }} options={[['PRESENTIAL','Présentiel'], ['TELECONSULTATION', connectedEnabled ? 'Télésanté' : '🔒 Télésanté'], ['HOME_VISIT','Visite à domicile'], ['EMERGENCY','Urgence']]} />
+                      <FormSelect label="Mode" value={consultationModule.consultationMode} onChange={(value) => { if (!diagnosticEnabled && value === "TELECONSULTATION") { setAiFeatureNotice("TELEHEALTH"); return; } void changeConsultationMode(value); }} options={[['PRESENTIAL','Présentiel'], ['TELECONSULTATION', diagnosticEnabled ? 'Télésanté' : '🔒 Télésanté'], ['HOME_VISIT','Visite à domicile'], ['EMERGENCY','Urgence']]} />
                       <FormSelect label="Mode d'arrivée" value={consultationModule.arrivalMode} onChange={(value) => setConsultationModule((current) => ({ ...current, arrivalMode: value }))} options={[['SPONTANEOUS','Spontané'], ['AMBULATORY','Ambulatoire'], ['REFERRED','Orienté'], ['EMERGENCY_TRANSFER','Transfert urgence']]} />
                       <FormSelect label="Priorité de triage" value={consultationModule.triagePriority} onChange={(value) => setConsultationModule((current) => ({ ...current, triagePriority: value }))} options={[['GREEN','Normal'], ['YELLOW','Prioritaire'], ['RED','Urgent']]} />
                     </div>

@@ -369,7 +369,7 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
 
     const snapshot = await this.layers.getSnapshotForClinic(clinicId);
     if (!snapshot.configured || !snapshot.enabledLayers.includes(AuliaLayer.DIAGNOSTIC)) {
-      throw new WsException('Aulia Care Connected Care n’est pas activé pour cet établissement.');
+      throw new WsException('Aulia Care Diagnostic Agent n’est pas activé pour cet établissement.');
     }
   }
 

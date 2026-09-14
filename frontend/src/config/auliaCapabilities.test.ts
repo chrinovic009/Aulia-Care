@@ -20,22 +20,22 @@ for (const [label, enabledLayers] of combinations) {
   test(`keeps representative capabilities visible and correctly locked for ${label}`, () => {
     const snapshot = { configured: true, enabledLayers };
     const core = capabilityState('patientRecord', snapshot);
-    const connected = capabilityState('teleconsultation', snapshot);
+    const telehealth = capabilityState('teleconsultation', snapshot);
     const wearable = capabilityState('wearableMonitoring', snapshot);
     const diagnostic = capabilityState('diagnosticAssistant', snapshot);
 
-    assert.equal(core.visible && connected.visible && wearable.visible && diagnostic.visible, true);
+    assert.equal(core.visible && telehealth.visible && wearable.visible && diagnostic.visible, true);
     assert.equal(core.enabled, enabledLayers.includes('CORE'));
-    assert.equal(connected.enabled, enabledLayers.includes('CONNECTED'));
+    assert.equal(telehealth.enabled, enabledLayers.includes('DIAGNOSTIC'));
     assert.equal(wearable.locked, !enabledLayers.includes('CONNECTED'));
     assert.equal(diagnostic.locked, !enabledLayers.includes('DIAGNOSTIC'));
   });
 }
 
-test('assigns telehealth and daily connected care to Connected, not Diagnostic', () => {
-  assert.deepEqual(layersForPath('/teleconsultation'), ['CONNECTED']);
-  assert.deepEqual(layersForPath('/telehealth/call'), ['CONNECTED']);
-  assert.deepEqual(layersForPath('/suivi-quotidien'), ['CONNECTED']);
+test('assigns telehealth and daily follow-up to Diagnostic, not Connected Care', () => {
+  assert.deepEqual(layersForPath('/teleconsultation'), ['DIAGNOSTIC']);
+  assert.deepEqual(layersForPath('/telehealth/call'), ['DIAGNOSTIC']);
+  assert.deepEqual(layersForPath('/suivi-quotidien'), ['DIAGNOSTIC']);
   assert.deepEqual(layersForPath('/intelligence'), ['DIAGNOSTIC']);
 });
 

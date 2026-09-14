@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { PrismaClient, RoleSlug } from '@prisma/client';
+import { PrismaClient, RoleSlug, ServiceCategory } from '@prisma/client';
+import { categoryForDepartmentType } from '../services/service-category.policy';
 
 /**
  * Tenant integrity maintenance tool.
@@ -21,7 +22,7 @@ const report = (category: string, id: string, detail: Record<string, unknown>, r
 };
 
 async function audit() {
-  const [users, employees, serviceUnits, roomAssignments, configurations, subscriptionCompanies, operatingRooms, imagingCatalogues, imagingMachines, wearablePlans, wearableLots, legacyExpenses, legacyRevenues] = await Promise.all([
+  const [users, employees, serviceUnits, services, roomAssignments, configurations, subscriptionCompanies, operatingRooms, imagingCatalogues, imagingMachines, wearablePlans, wearableLots, legacyExpenses, legacyRevenues] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null, primaryRole: { in: operationalRoles } },
       select: { id: true, username: true, primaryRole: true, clinicId: true, Employee: { select: { id: true, clinicId: true } } },
@@ -31,7 +32,17 @@ async function audit() {
     }),
     prisma.serviceUnit.findMany({
       where: { deletedAt: null },
-      select: { id: true, clinicId: true, department: { select: { clinicId: true } } },
+      select: {
+        id: true,
+        name: true,
+        clinicId: true,
+        category: true,
+        department: { select: { clinicId: true, type: true } },
+      },
+    }),
+    prisma.service.findMany({
+      where: { active: true },
+      select: { id: true, name: true, clinicId: true, category: true },
     }),
     prisma.roomStaffAssignment.findMany({
       where: { active: true },
@@ -295,8 +306,41 @@ async function audit() {
   }
 
   for (const unit of serviceUnits) {
-    if (!unit.clinicId || !unit.department.clinicId || unit.clinicId === unit.department.clinicId) continue;
-    report('SERVICE_UNIT_DEPARTMENT_CROSS_CLINIC', unit.id, { serviceUnitClinicId: unit.clinicId, departmentClinicId: unit.department.clinicId });
+    if (!unit.clinicId || !unit.department.clinicId || unit.clinicId !== unit.department.clinicId) {
+      report('SERVICE_UNIT_DEPARTMENT_CROSS_CLINIC', unit.id, { serviceUnitClinicId: unit.clinicId, departmentClinicId: unit.department.clinicId });
+      continue;
+    }
+    const expectedCategory = categoryForDepartmentType(unit.department.type);
+    if (unit.category !== expectedCategory) {
+      report('SERVICE_UNIT_CATEGORY_MISMATCH', unit.id, {
+        clinicId: unit.clinicId,
+        departmentType: unit.department.type,
+        actualCategory: unit.category,
+        expectedCategory,
+      });
+    }
+  }
+
+  const unitCategoriesByClinicAndName = new Map<string, Set<ServiceCategory>>();
+  for (const unit of serviceUnits) {
+    if (!unit.clinicId) continue;
+    const key = `${unit.clinicId}:${unit.name.trim().toLocaleLowerCase()}`;
+    const categories = unitCategoriesByClinicAndName.get(key) ?? new Set<ServiceCategory>();
+    categories.add(unit.category);
+    unitCategoriesByClinicAndName.set(key, categories);
+  }
+  for (const service of services) {
+    const key = `${service.clinicId}:${service.name.trim().toLocaleLowerCase()}`;
+    const unitCategories = unitCategoriesByClinicAndName.get(key);
+    // Ambiguous duplicate names are deliberately reported only by the
+    // provisioning audit; they are never auto-repaired by this tool.
+    if (unitCategories?.size === 1 && !unitCategories.has(service.category)) {
+      report('SERVICE_CATEGORY_UNIT_MISMATCH', service.id, {
+        clinicId: service.clinicId,
+        serviceCategory: service.category,
+        unitCategory: [...unitCategories][0],
+      });
+    }
   }
   for (const assignment of roomAssignments) {
     const userClinicId = assignment.user.clinicId;
