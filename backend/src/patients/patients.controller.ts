@@ -20,6 +20,8 @@ import { CreateAdmissionDto } from './dto/create-admission.dto';
 import { RecordVitalSignsDto } from './dto/record-vital-signs.dto';
 import { CreateDailyCheckinDto } from './dto/create-daily-checkin.dto';
 import { AuthenticatedActor } from '../core/clinic-context.service';
+import { AuliaLayer } from '@prisma/client';
+import { RequireLayer } from '../platform/layers/require-layer.decorator';
 
 type PatientRequest = {
   user?: AuthenticatedActor;
@@ -126,6 +128,8 @@ export class PatientsController {
 
   @Post('me/daily-checkins')
   @Roles('PATIENT')
+  // Daily follow-up is a Diagnostic Agent care workflow, not a device feature.
+  @RequireLayer(AuliaLayer.DIAGNOSTIC)
   createDailyCheckin(
     @Body() dto: CreateDailyCheckinDto,
     @Request() req: PatientRequest,

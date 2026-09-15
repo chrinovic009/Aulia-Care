@@ -8,6 +8,7 @@ import { RecordVitalSignsDto } from './dto/record-vital-signs.dto';
 import { CreateDailyCheckinDto } from './dto/create-daily-checkin.dto';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { AuthenticatedActor, ClinicContextService, OperationalClinicActor } from '../core/clinic-context.service';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
 import * as bcrypt from 'bcrypt';
 
 interface PatientSearchParams {
@@ -70,6 +71,7 @@ export class PatientsService {
     private readonly prisma: PrismaService,
     private readonly notificationsGateway: NotificationsGateway,
     private readonly clinicContext: ClinicContextService,
+    private readonly patientWorkflow: PatientWorkflowService,
   ) {}
 
   private requireOperationalActor(
@@ -1018,6 +1020,101 @@ export class PatientsService {
     dto: CreateDailyCheckinDto,
   ) {
     const profile = await this.getPatientProfileForUser(userId);
+    if (!profile.clinicId) {
+      throw new ForbiddenException('Le dossier patient doit être rattaché à un établissement.');
+    }
+
+    const normalizedSymptoms = [...new Set(
+      (dto.symptoms || []).map((item) => String(item).trim()).filter(Boolean),
+    )].slice(0, 20);
+
+    const committed = await this.prisma.$transaction(async (tx) => {
+      const event = await tx.medicalHistory.create({
+        data: {
+          patientId: profile.id,
+          kind: 'PATIENT_DAILY_CHECKIN',
+          details: JSON.stringify({
+            feelsWell: dto.feelsWell,
+            symptoms: normalizedSymptoms,
+            message: dto.message?.trim() || null,
+            voiceTranscript: dto.voiceTranscript?.trim() || null,
+            submittedAt: new Date().toISOString(),
+            source: 'PATIENT_PORTAL',
+          }),
+        },
+      });
+      const activeStay = await tx.hospitalization.findFirst({
+        where: {
+          patientId: profile.id,
+          dischargedAt: null,
+          status: { in: ['ADMITTED', 'TRANSFERRED'] },
+        },
+        orderBy: { admittedAt: 'desc' },
+        select: {
+          nurseInChargeId: true,
+          nurseAssignments: { where: { releasedAt: null }, select: { nurseId: true } },
+        },
+      });
+      const candidateRecipientIds = [...new Set([
+        activeStay?.nurseInChargeId,
+        ...(activeStay?.nurseAssignments.map((assignment) => assignment.nurseId) || []),
+      ].filter((id): id is string => Boolean(id)))];
+      const recipients = candidateRecipientIds.length
+        ? await tx.user.findMany({
+            where: {
+              id: { in: candidateRecipientIds },
+              clinicId: profile.clinicId,
+              status: 'ACTIVE',
+              deletedAt: null,
+              OR: [
+                { primaryRole: 'NURSE' },
+                { roles: { some: { active: true, role: { slug: 'NURSE' } } } },
+              ],
+            },
+            select: { id: true },
+          })
+        : [];
+      const notifications = await Promise.all(recipients.map(({ id: recipientId }) =>
+        tx.notification.create({
+          data: {
+            patientId: profile.id,
+            recipientId,
+            type: 'TASK',
+            priority: dto.feelsWell ? 'MEDIUM' : 'HIGH',
+            title: 'Nouveau suivi quotidien patient',
+            message: dto.feelsWell
+              ? 'Le patient a complété son suivi quotidien.'
+              : 'Le patient signale un inconfort : une évaluation humaine est demandée.',
+            relatedEntity: 'MedicalHistory',
+            relatedId: event.id,
+          },
+        }),
+      ));
+      return { event, notifications };
+    });
+
+    committed.notifications.forEach((notification) => {
+      this.notificationsGateway.notifyToUser(
+        notification.recipientId,
+        'patient.daily-checkin.created',
+        notification,
+      );
+    });
+    return {
+      id: committed.event.id,
+      submittedAt: committed.event.eventDate,
+      recipientsNotified: committed.notifications.length,
+      message: dto.feelsWell
+        ? 'Merci pour votre suivi. Continuez à respecter les consignes de votre équipe soignante.'
+        : 'Votre signalement a été enregistré et transmis à l’équipe infirmière affectée à votre séjour. En cas d’urgence, contactez immédiatement les services d’urgence.',
+    };
+  }
+
+  private async createDailyCheckinLegacy(
+    userId: string,
+    dto: CreateDailyCheckinDto,
+  ) {
+    const profile = await this.getPatientProfileForUser(userId);
 
     /*
      * A portal identity has no clinicId by design. Its linked Patient is the
@@ -1483,7 +1580,7 @@ export class PatientsService {
           throw new NotFoundException('Patient introuvable dans cet établissement.');
         }
 
-       const patient = existingPatientInTransaction
+        const patient = existingPatientInTransaction
   ? await prisma.patient.update({
       where: {
         id: existingPatientInTransaction.id,
@@ -1494,9 +1591,6 @@ export class PatientsService {
         // Never overwrite a known patient's identity
         // or clinical record at reception.
         receptionistId,
-
-        workflowStatus:
-          admissionData.workflowStatus,
 
         admissionType:
           createAdmissionDto.admissionType,
@@ -1518,6 +1612,15 @@ export class PatientsService {
   : await prisma.patient.create({
       data: admissionData,
     });
+
+if (existingPatientInTransaction) {
+  await this.patientWorkflow.transition(
+    prisma,
+    patient.id,
+    admissionData.workflowStatus,
+    clinicId,
+  );
+}
 
 if (isParamedicalVoucher) {
   await prisma.paramedicalVoucher.create({
@@ -1920,9 +2023,14 @@ if (isParamedicalVoucher) {
       'admissionType',
       'priority',
       'arrivalAt',
-      'workflowStatus',
       'bloodType',
     ];
+
+    if (Object.prototype.hasOwnProperty.call(updatePatientDto, 'workflowStatus')) {
+      throw new ForbiddenException(
+        'Le statut du parcours patient est géré par les transitions métier.',
+      );
+    }
 
     const allowedFields =
       role === 'RECEPTIONIST'
@@ -2289,19 +2397,15 @@ if (isParamedicalVoucher) {
   const message =
     await this.prisma.chatMessage.create({
       data: {
-        senderId:
-          patientUser.id,
-        recipientId:
-          receptionist.id,
-        recipientType:
-          'USER',
-        text:
-          messageText,
-        status:
-          'SENT',
+        clinicId: patient.clinicId,
+        senderId: patientUser.id,
+        recipientId: receptionist.id,
+        recipientType: 'USER',
+        text: messageText,
+        status: 'SENT',
       },
     });
-
+    
   const realtimePayload = {
     id:
       message.id,
@@ -2920,16 +3024,12 @@ if (isParamedicalVoucher) {
       // AC-P002:
       // la mutation elle-même reste strictement limitée
       // au tenant authentifié et à un patient non supprimé.
-      await tx.patient.update({
-        where: {
-          id: patientInTransaction.id,
-          clinicId: recorder.clinicId,
-          deletedAt: null,
-        },
-        data: {
-          workflowStatus,
-        },
-      });
+      await this.patientWorkflow.transition(
+        tx,
+        patientInTransaction.id,
+        workflowStatus,
+        recorder.clinicId,
+      );
 
       return consultation;
     },

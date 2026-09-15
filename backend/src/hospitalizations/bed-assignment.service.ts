@@ -13,7 +13,7 @@ export class BedAssignmentService {
   async assertAvailable(tx: Transaction, bedId: string, clinicId: string) {
     const bed = await tx.bed.findFirst({
       where: { id: bedId, room: { serviceUnit: { clinicId } } },
-      select: { id: true, status: true, hospitalizationId: true },
+      select: { id: true, code: true, status: true, hospitalizationId: true },
     });
     if (!bed) throw new BadRequestException('Le lit sélectionné est introuvable dans cet établissement.');
     if (bed.status !== 'FREE' || bed.hospitalizationId) {

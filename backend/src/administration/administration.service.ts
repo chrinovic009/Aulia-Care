@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BedStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateClinicBrandingDto } from './dto/update-clinic-branding.dto';
 import { UpdateClinicOperationalPolicyDto } from './dto/update-clinic-operational-policy.dto';
 import { CreateRoomDto, UpdateRoomDto } from './dto/room.dto';
 import { isValidClockTime, isValidIanaTimezone, SYSTEM_MAX_NURSE_PATIENT_CAPACITY } from '../core/operational-policy';
+import { categoryForDepartmentType } from '../services/service-category.policy';
 
 @Injectable()
 export class AdministrationService {
@@ -405,10 +406,11 @@ export class AdministrationService {
     if (!department) throw new NotFoundException('Département introuvable.');
     const name = String(data.name || '').trim();
     if (!name) throw new BadRequestException('Le nom de l’unité est obligatoire.');
+    const category = categoryForDepartmentType(department.type);
     const prior = await this.prisma.serviceUnit.findFirst({ where: { departmentId: department.id, clinicId: actor.clinicId, name } });
     const created = prior
-      ? await this.prisma.serviceUnit.update({ where: { id: prior.id }, data: { deletedAt: null, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true } })
-      : await this.prisma.serviceUnit.create({ data: { clinicId: actor.clinicId, name, departmentId: department.id, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true } });
+      ? await this.prisma.serviceUnit.update({ where: { id: prior.id }, data: { deletedAt: null, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true, category } })
+      : await this.prisma.serviceUnit.create({ data: { clinicId: actor.clinicId, name, departmentId: department.id, location: data.location ?? null, contactNumber: data.contactNumber ?? null, active: data.active ?? true, category } });
     return { ...created, billable: department.type !== 'ADMINISTRATION' };
   }
 
@@ -420,7 +422,7 @@ export class AdministrationService {
         include: { serviceUnit: { include: { department: true } }, beds: { include: { hospitalization: { include: { patient: true } } } }, staffAssignments: { where: { active: true }, include: { user: { select: { id: true, firstName: true, lastName: true, primaryRole: true } } } } },
         orderBy: { number: 'asc' },
       }),
-      this.prisma.operatingRoom.findMany({ where: { deletedAt: null }, include: { surgeries: { orderBy: { scheduledAt: 'desc' }, take: 10 } }, orderBy: { name: 'asc' } }),
+      this.prisma.operatingRoom.findMany({ where: { clinicId: clinic.clinicId, deletedAt: null }, include: { surgeries: { where: { patient: { clinicId: clinic.clinicId } }, orderBy: { scheduledAt: 'desc' }, take: 10 } }, orderBy: { name: 'asc' } }),
     ]);
     return { rooms, operatingRooms };
   }
@@ -486,47 +488,54 @@ export class AdministrationService {
     return { success: true, id };
   }
 
-  createBed(data: any) {
-    return (this.prisma as any).bed.create({
-      data: {
-        roomId: data.roomId,
-        code: data.code,
-        status: data.status ?? 'FREE',
-      },
+  async createBed(data: { roomId: string; code: string; status?: BedStatus }, actorId?: string) {
+    const actor = await this.requireClinicManager(actorId);
+    const room = await this.prisma.room.findFirst({
+      where: { id: data.roomId, serviceUnit: { clinicId: actor.clinicId } },
+      select: { id: true },
+    });
+    if (!room) throw new NotFoundException('Salle introuvable dans cet établissement.');
+    const code = data.code?.trim();
+    if (!code) throw new BadRequestException('Le code du lit est obligatoire.');
+    return this.prisma.bed.create({ data: { roomId: room.id, code, status: data.status ?? BedStatus.FREE } });
+  }
+
+  async createOperatingRoom(data: { name?: string; location?: string; capacity?: number | string; active?: boolean }, actorId?: string) {
+    const actor = await this.requireClinicManager(actorId);
+    const name = data.name?.trim();
+    const capacity = Number(data.capacity ?? 1);
+    if (!name || !Number.isInteger(capacity) || capacity < 1) {
+      throw new BadRequestException('Nom et capacité positive du bloc opératoire requis.');
+    }
+    return this.prisma.operatingRoom.create({
+      data: { clinicId: actor.clinicId, name, location: data.location?.trim() || null, capacity, active: data.active ?? true },
     });
   }
 
-  createOperatingRoom(data: any) {
-    return (this.prisma as any).operatingRoom.create({
-      data: {
-        name: data.name,
-        location: data.location ?? null,
-        capacity: Number(data.capacity || 1),
-        active: data.active ?? true,
-      },
-    });
-  }
-
-  async updateOperatingRoom(id: string, data: any) {
-    const existing = await (this.prisma as any).operatingRoom.findUnique({ where: { id } });
+  async updateOperatingRoom(id: string, data: { name?: string; location?: string; capacity?: number | string; active?: boolean }, actorId?: string) {
+    const actor = await this.requireClinicManager(actorId);
+    const existing = await this.prisma.operatingRoom.findFirst({ where: { id, clinicId: actor.clinicId, deletedAt: null } });
     if (!existing) throw new NotFoundException('Bloc opératoire introuvable');
 
-    return (this.prisma as any).operatingRoom.update({
+    const capacity = data.capacity !== undefined ? Number(data.capacity) : existing.capacity;
+    if (!Number.isInteger(capacity) || capacity < 1) throw new BadRequestException('La capacité doit être un entier positif.');
+    return this.prisma.operatingRoom.update({
       where: { id },
       data: {
-        name: data.name ?? existing.name,
-        location: data.location ?? existing.location,
-        capacity: data.capacity !== undefined ? Number(data.capacity) : existing.capacity,
+        name: data.name?.trim() || existing.name,
+        location: data.location === undefined ? existing.location : data.location.trim() || null,
+        capacity,
         active: data.active ?? existing.active,
       },
     });
   }
 
-  async removeOperatingRoom(id: string) {
-    const existing = await (this.prisma as any).operatingRoom.findUnique({ where: { id } });
+  async removeOperatingRoom(id: string, actorId?: string) {
+    const actor = await this.requireClinicManager(actorId);
+    const existing = await this.prisma.operatingRoom.findFirst({ where: { id, clinicId: actor.clinicId, deletedAt: null } });
     if (!existing) throw new NotFoundException('Bloc opératoire introuvable');
 
-    await (this.prisma as any).operatingRoom.delete({ where: { id } });
+    await this.prisma.operatingRoom.delete({ where: { id } });
     return { success: true, id };
   }
 
@@ -632,32 +641,51 @@ export class AdministrationService {
     });
   }
 
-  async reports() {
+  async reports(actorId?: string) {
+    const actor = await this.requireClinicManager(actorId);
     // OPTIMISATION : On charge uniquement les entités légères, ajoute des "take: 100" ou des filtres sur les grosses tables en prod
     const [patients, users, services, invoices, payments, hospitalizations, medications, departments, rooms, consultations, prescriptions, insurances, attendances, leaveRequests, payrolls, auditTrails] =
       await Promise.all([
-        (this.prisma as any).patient.findMany({ where: { deletedAt: null }, take: 500 }), 
-        (this.prisma as any).user.findMany({ where: { deletedAt: null } }),
-        (this.prisma as any).service.findMany({ include: { staff: true, responsables: true } }),
-        (this.prisma as any).invoice.findMany({ where: { deletedAt: null }, take: 200 }),
-        (this.prisma as any).payment.findMany({ where: { deletedAt: null }, take: 200 }),
-        (this.prisma as any).hospitalization.findMany({ where: { deletedAt: null } }),
-        (this.prisma as any).medication.findMany({ where: { deletedAt: null } }),
-        (this.prisma as any).department.findMany({ where: { deletedAt: null } }),
-        (this.prisma as any).room.findMany({ include: { beds: true } }),
-        (this.prisma as any).consultation.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 100 }),
-        (this.prisma as any).prescription.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 100 }),
-        (this.prisma as any).insuranceClaim.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 100 }),
-        (this.prisma as any).attendance.findMany({ orderBy: { createdAt: 'desc' }, take: 100 }),
-        (this.prisma as any).leaveRequest.findMany({ orderBy: { requestedAt: 'desc' }, take: 100 }),
-        (this.prisma as any).payroll.findMany({ orderBy: { createdAt: 'desc' }, take: 50 }),
-        (this.prisma as any).auditTrail.findMany({ orderBy: { changedAt: 'desc' }, take: 50 }),
+        (this.prisma as any).patient.findMany({ where: { clinicId: actor.clinicId, deletedAt: null }, take: 500 }),
+        (this.prisma as any).user.findMany({ where: { clinicId: actor.clinicId, deletedAt: null } }),
+        (this.prisma as any).service.findMany({ where: { clinicId: actor.clinicId }, include: { staff: { where: { user: { clinicId: actor.clinicId } } }, responsables: { where: { user: { clinicId: actor.clinicId } } } } }),
+        (this.prisma as any).invoice.findMany({ where: { clinicId: actor.clinicId, deletedAt: null }, take: 200 }),
+        (this.prisma as any).payment.findMany({ where: { deletedAt: null, invoice: { clinicId: actor.clinicId } }, take: 200 }),
+        (this.prisma as any).hospitalization.findMany({ where: { deletedAt: null, patient: { clinicId: actor.clinicId } } }),
+        (this.prisma as any).medication.findMany({
+          where: {
+            deletedAt: null,
+            id: {
+              in: (
+                await (this.prisma as any).medicationStock.findMany({
+                  where: {
+                    clinicId: actor.clinicId,
+                    deletedAt: null,
+                  },
+                  select: {
+                    medicationId: true,
+                  },
+                })
+              ).map((stock: any) => stock.medicationId),
+            },
+          },
+        }),
+        (this.prisma as any).department.findMany({ where: { clinicId: actor.clinicId, deletedAt: null } }),
+        (this.prisma as any).room.findMany({ where: { serviceUnit: { clinicId: actor.clinicId } }, include: { beds: true } }),
+        (this.prisma as any).consultation.findMany({ where: { clinicId: actor.clinicId, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 100 }),
+        (this.prisma as any).prescription.findMany({ where: { clinicId: actor.clinicId, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 100 }),
+        (this.prisma as any).insuranceClaim.findMany({ where: { deletedAt: null, patient: { clinicId: actor.clinicId } }, orderBy: { createdAt: 'desc' }, take: 100 }),
+        (this.prisma as any).attendance.findMany({ where: { employee: { clinicId: actor.clinicId } }, orderBy: { createdAt: 'desc' }, take: 100 }),
+        (this.prisma as any).leaveRequest.findMany({ where: { employee: { clinicId: actor.clinicId } }, orderBy: { requestedAt: 'desc' }, take: 100 }),
+        (this.prisma as any).payroll.findMany({ where: { employee: { clinicId: actor.clinicId } }, orderBy: { createdAt: 'desc' }, take: 50 }),
+        (this.prisma as any).auditTrail.findMany({ where: { actor: { clinicId: actor.clinicId } }, orderBy: { changedAt: 'desc' }, take: 50 }),
       ]);
 
     return { patients, users, services, invoices, payments, hospitalizations, medications, departments, rooms, consultations, prescriptions, insurances, attendances, leaveRequests, payrolls, auditTrails };
   }
 
-  async dashboard() {
+  async dashboard(actorId?: string) {
+    const actor = await this.requireClinicManager(actorId);
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     const startOfTomorrow = new Date(startOfToday);
@@ -681,15 +709,17 @@ export class AdministrationService {
       lots,
       recentConsultations,
     ] = await Promise.all([
-      (this.prisma as any).patient.count({ where: { deletedAt: null } }),
+      (this.prisma as any).patient.count({ where: { clinicId: actor.clinicId, deletedAt: null } }),
       (this.prisma as any).patient.findMany({
         where: {
+          clinicId: actor.clinicId,
           deletedAt: null,
           priority: { in: ['urgent', 'urgence', 'prioritaire', 'critical', 'critique', 'URGENT', 'CRITICAL'] }
         }
       }),
       (this.prisma as any).consultation.findMany({
         where: {
+          clinicId: actor.clinicId,
           deletedAt: null,
           createdAt: { gte: startOfToday, lt: startOfTomorrow },
         },
@@ -697,32 +727,34 @@ export class AdministrationService {
         orderBy: { createdAt: 'desc' },
       }),
       (this.prisma as any).hospitalization.findMany({
-        where: { status: { in: ['ADMITTED', 'TRANSFERRED'] } },
+        where: { status: { in: ['ADMITTED', 'TRANSFERRED'] }, patient: { clinicId: actor.clinicId } },
         include: { patient: true, ServiceUnit: true },
       }),
       (this.prisma as any).invoice.count({
-        where: { deletedAt: null, issuedAt: { gte: startOfMonth } },
+        where: { clinicId: actor.clinicId, deletedAt: null, issuedAt: { gte: startOfMonth } },
       }),
       (this.prisma as any).payment.findMany({
-        where: { deletedAt: null, paidAt: { gte: startOfMonth } },
+        where: { deletedAt: null, paidAt: { gte: startOfMonth }, invoice: { clinicId: actor.clinicId } },
         select: { amount: true } // Rend la requête ultra légère
       }),
       (this.prisma as any).room.findMany({
+        where: { serviceUnit: { clinicId: actor.clinicId } },
         include: { beds: true },
       }),
       (this.prisma as any).service.findMany({
+        where: { clinicId: actor.clinicId },
         include: {
-          staff: { where: { actif: true } },
-          responsables: { where: { actif: true } },
-          patients: { where: { deletedAt: null } },
+          staff: { where: { actif: true, user: { clinicId: actor.clinicId } } },
+          responsables: { where: { actif: true, user: { clinicId: actor.clinicId } } },
+          patients: { where: { clinicId: actor.clinicId, deletedAt: null } },
           tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' }, take: 1 },
         },
         orderBy: { name: 'asc' },
       }),
-      (this.prisma as any).medicationStock.findMany({ where: { deletedAt: null } }),
-      (this.prisma as any).stockLot.findMany({ include: { medication: true } }),
+      (this.prisma as any).medicationStock.findMany({ where: { clinicId: actor.clinicId, deletedAt: null } }),
+      (this.prisma as any).stockLot.findMany({ where: { clinicId: actor.clinicId }, include: { medication: true } }),
       (this.prisma as any).consultation.findMany({
-        where: { deletedAt: null },
+        where: { clinicId: actor.clinicId, deletedAt: null },
         include: { patient: true, provider: true },
         orderBy: { createdAt: 'desc' },
         take: 20,
@@ -784,7 +816,8 @@ export class AdministrationService {
    * sur les écritures réelles : une facture est facturée, un paiement est
    * encaissé. Ils ne constituent pas un rapprochement bancaire certifié.
    */
-  async executiveDashboard() {
+  async executiveDashboard(actorId?: string) {
+    const actor = await this.requireClinicManager(actorId);
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -806,31 +839,31 @@ export class AdministrationService {
       criticalLots,
       payrollMonth,
     ] = await Promise.all([
-      (this.prisma as any).patient.count({ where: { deletedAt: null } }),
-      (this.prisma as any).patient.count({ where: { deletedAt: null, createdAt: { gte: today } } }),
-      (this.prisma as any).consultation.count({ where: { deletedAt: null, createdAt: { gte: today } } }),
-      (this.prisma as any).hospitalization.count({ where: { deletedAt: null, status: { in: ['ADMITTED', 'TRANSFERRED'] } } }),
+      (this.prisma as any).patient.count({ where: { clinicId: actor.clinicId, deletedAt: null } }),
+      (this.prisma as any).patient.count({ where: { clinicId: actor.clinicId, deletedAt: null, createdAt: { gte: today } } }),
+      (this.prisma as any).consultation.count({ where: { clinicId: actor.clinicId, deletedAt: null, createdAt: { gte: today } } }),
+      (this.prisma as any).hospitalization.count({ where: { deletedAt: null, status: { in: ['ADMITTED', 'TRANSFERRED'] }, patient: { clinicId: actor.clinicId } } }),
       (this.prisma as any).invoice.findMany({
-        where: { deletedAt: null, issuedAt: { gte: historyStart } },
+        where: { clinicId: actor.clinicId, deletedAt: null, issuedAt: { gte: historyStart } },
         select: { issuedAt: true, totalAmount: true, balanceDue: true, status: true },
       }),
       (this.prisma as any).payment.findMany({
-        where: { deletedAt: null, paidAt: { gte: historyStart } },
+        where: { deletedAt: null, paidAt: { gte: historyStart }, invoice: { clinicId: actor.clinicId } },
         select: { paidAt: true, amount: true, method: true },
       }),
       (this.prisma as any).insuranceClaim.findMany({
-        where: { deletedAt: null },
+        where: { deletedAt: null, patient: { clinicId: actor.clinicId } },
         select: { amountClaimed: true, amountApproved: true, status: true, submittedAt: true, createdAt: true },
       }),
       (this.prisma as any).service.findMany({
-        where: { active: true },
+        where: { clinicId: actor.clinicId, active: true },
         select: { id: true, name: true, _count: { select: { patients: true, staff: true } } },
         orderBy: { name: 'asc' },
       }),
-      (this.prisma as any).user.findMany({ where: { deletedAt: null, status: 'ACTIVE' }, select: { primaryRole: true } }),
-      (this.prisma as any).room.findMany({ select: { beds: { select: { status: true } } } }),
-      (this.prisma as any).stockLot.findMany({ where: { quantity: { lte: 3 } }, select: { id: true, quantity: true, medication: { select: { name: true } } }, take: 20 }),
-      (this.prisma as any).payroll.aggregate({ where: { status: { in: ['PROCESSED', 'PAID'] }, periodEnd: { gte: monthStart } }, _sum: { netAmount: true } }),
+      (this.prisma as any).user.findMany({ where: { clinicId: actor.clinicId, deletedAt: null, status: 'ACTIVE' }, select: { primaryRole: true } }),
+      (this.prisma as any).room.findMany({ where: { serviceUnit: { clinicId: actor.clinicId } }, select: { beds: { select: { status: true } } } }),
+      (this.prisma as any).stockLot.findMany({ where: { clinicId: actor.clinicId, quantity: { lte: 3 } }, select: { id: true, quantity: true, medication: { select: { name: true } } }, take: 20 }),
+      (this.prisma as any).payroll.aggregate({ where: { employee: { clinicId: actor.clinicId }, status: { in: ['PROCESSED', 'PAID'] }, periodEnd: { gte: monthStart } }, _sum: { netAmount: true } }),
     ]);
 
     const amount = (value: unknown) => Number(value || 0);

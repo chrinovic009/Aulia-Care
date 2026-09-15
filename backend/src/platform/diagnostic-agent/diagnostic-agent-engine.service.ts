@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import {
-  CLINICAL_AI_CONTRACT_VERSION,
-  CLINICAL_AI_DISCLAIMER,
-  ClinicalAIProvider,
-  ClinicalAIRequest,
-  ClinicalAIResponse,
-  ClinicalAISuggestion,
-} from '../contracts/clinical-ai.contract';
+  DIAGNOSTIC_AGENT_CONTRACT_VERSION,
+  DIAGNOSTIC_AGENT_DISCLAIMER,
+  DiagnosticAgentProvider,
+  DiagnosticAgentRequest,
+  DiagnosticAgentResponse,
+  DiagnosticAgentSuggestion,
+} from '../contracts/diagnostic-agent.contract';
 
 const normalise = (value?: string) => String(value || '')
   .normalize('NFD')
@@ -14,15 +14,15 @@ const normalise = (value?: string) => String(value || '')
   .toLowerCase();
 
 /**
- * A portable, deterministic Clinical AI provider.
+ * A portable, deterministic Diagnostic Agent provider.
  *
  * It deliberately has no database, HTTP or Core import.  A hospital can deploy
  * it with only the platform contracts, or replace it with an accredited remote
  * provider without changing Core.
  */
 @Injectable()
-export class ClinicalAIEngineService implements ClinicalAIProvider {
-  async execute(request: ClinicalAIRequest): Promise<ClinicalAIResponse> {
+export class DiagnosticAgentEngineService implements DiagnosticAgentProvider {
+  async execute(request: DiagnosticAgentRequest): Promise<DiagnosticAgentResponse> {
     switch (request.purpose) {
       case 'STRUCTURE_ENCOUNTER':
         return this.structureEncounter(request);
@@ -33,9 +33,9 @@ export class ClinicalAIEngineService implements ClinicalAIProvider {
     }
   }
 
-  async structureEncounter(request: ClinicalAIRequest): Promise<ClinicalAIResponse> {
+  async structureEncounter(request: DiagnosticAgentRequest): Promise<DiagnosticAgentResponse> {
     const text = String(request.encounter.transcript || request.encounter.clinicalText || '').trim();
-    const suggestions: ClinicalAISuggestion[] = text
+    const suggestions: DiagnosticAgentSuggestion[] = text
       ? [{
           kind: 'STRUCTURE',
           label: 'Texte clinique reçu : à relire et structurer par le médecin',
@@ -46,9 +46,9 @@ export class ClinicalAIEngineService implements ClinicalAIProvider {
     return this.response(request, suggestions);
   }
 
-  async summarizeEncounter(request: ClinicalAIRequest): Promise<ClinicalAIResponse> {
+  async summarizeEncounter(request: DiagnosticAgentRequest): Promise<DiagnosticAgentResponse> {
     const text = String(request.encounter.clinicalText || request.encounter.transcript || '').trim();
-    const suggestions: ClinicalAISuggestion[] = text
+    const suggestions: DiagnosticAgentSuggestion[] = text
       ? [{
           kind: 'SUMMARY',
           label: text.length > 480 ? `${text.slice(0, 477).trim()}...` : text,
@@ -59,9 +59,9 @@ export class ClinicalAIEngineService implements ClinicalAIProvider {
     return this.response(request, suggestions);
   }
 
-  async detectRisks(request: ClinicalAIRequest): Promise<ClinicalAIResponse> {
+  async detectRisks(request: DiagnosticAgentRequest): Promise<DiagnosticAgentResponse> {
     const text = normalise(`${request.encounter.transcript || ''} ${request.encounter.clinicalText || ''}`);
-    const suggestions: ClinicalAISuggestion[] = [];
+    const suggestions: DiagnosticAgentSuggestion[] = [];
 
     if (/epigas|estomac|douleur.*dos|brulure/.test(text)) {
       suggestions.push(
@@ -99,30 +99,30 @@ export class ClinicalAIEngineService implements ClinicalAIProvider {
     return this.response(request, this.uniqueSuggestions(suggestions));
   }
 
-  private response(request: ClinicalAIRequest, suggestions: ClinicalAISuggestion[]): ClinicalAIResponse {
+  private response(request: DiagnosticAgentRequest, suggestions: DiagnosticAgentSuggestion[]): DiagnosticAgentResponse {
     return {
-      contractVersion: CLINICAL_AI_CONTRACT_VERSION,
+      contractVersion: DIAGNOSTIC_AGENT_CONTRACT_VERSION,
       requestId: request.requestId,
       generatedAt: new Date().toISOString(),
-      provider: { name: 'Aulia deterministic safety engine', version: CLINICAL_AI_CONTRACT_VERSION },
-      disclaimer: CLINICAL_AI_DISCLAIMER,
+      provider: { name: 'Aulia Diagnostic Agent deterministic safety engine', version: DIAGNOSTIC_AGENT_CONTRACT_VERSION },
+      disclaimer: DIAGNOSTIC_AGENT_DISCLAIMER,
       suggestions,
     };
   }
 
-  private decision(label: string, rationale: string, urgency: 'ROUTINE' | 'PRIORITY'): ClinicalAISuggestion {
+  private decision(label: string, rationale: string, urgency: 'ROUTINE' | 'PRIORITY'): DiagnosticAgentSuggestion {
     return { kind: 'DECISION_SUPPORT', label, rationale, urgency, confidence: 0.3 };
   }
 
-  private exam(name: string, rationale: string): ClinicalAISuggestion {
+  private exam(name: string, rationale: string): DiagnosticAgentSuggestion {
     return { kind: 'DECISION_SUPPORT', label: `EXAM:${name}`, rationale, urgency: 'ROUTINE', confidence: 0.2 };
   }
 
-  private risk(label: string, rationale: string): ClinicalAISuggestion {
+  private risk(label: string, rationale: string): DiagnosticAgentSuggestion {
     return { kind: 'RISK', label, rationale, urgency: 'IMMEDIATE_REVIEW', confidence: 0.7 };
   }
 
-  private uniqueSuggestions(suggestions: ClinicalAISuggestion[]) {
+  private uniqueSuggestions(suggestions: DiagnosticAgentSuggestion[]) {
     return suggestions.filter((suggestion, index) => suggestions.findIndex((item) => item.label === suggestion.label) === index);
   }
 }

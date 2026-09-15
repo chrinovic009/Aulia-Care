@@ -45,7 +45,7 @@ services:
       - aulia_redis_data:/data
 
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD}\" ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -71,9 +71,13 @@ services:
       NODE_ENV: development
       PORT: 3000
 
+      # Never point a container at the host loopback interface: inside Docker
+      # it would refer to the backend container itself. These URLs use service
+      # discovery on the private aulia-network and resolve their credentials
+      # from the Compose environment file.
       DATABASE_URL: postgresql://aulia:${POSTGRES_PASSWORD}@postgres:5432/aulia_care?schema=public
 
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
 
       # The Docker Vite development server uses HTTPS when the local Aulia
       # certificate is present.  CSRF validates Origin on every write, so the
@@ -81,8 +85,9 @@ services:
       # is rejected even with a valid session and CSRF cookie.
       CORS_ORIGIN: http://localhost:5173,http://127.0.0.1:5173,https://localhost:5173,https://127.0.0.1:5173,https://192.168.1.60:5173
 
-      # Docker DNS, never localhost: each service is an independent process.
-      AULIA_CLINICAL_AI_URL: http://clinical-ai:3100
+      # The Core uses its local diagnostic contract in development. Configure
+      # AULIA_DIAGNOSTIC_AGENT_URL and DIAGNOSTIC_AGENT_SERVICE_SECRET together
+      # only when the separately deployed agent is intentionally enabled.
 
     volumes:
       - ./backend:/app/backend
@@ -95,29 +100,34 @@ services:
       redis:
         condition: service_healthy
 
-      clinical-ai:
-        condition: service_started
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health/ready').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
     networks:
       - aulia-network
 
-  # Independently deployable clinical intelligence process. It exposes no host
+  # Independently deployable Diagnostic Agent process. It exposes no host
   # port: only Core can invoke its versioned, secret-protected contract.
-  clinical-ai:
+  diagnostic-agent:
     build:
       context: .
       dockerfile: backend/Dockerfile.dev
 
-    container_name: aulia-care-ai-service
+    container_name: aulia-care-diagnostic-agent
     restart: unless-stopped
-    command: npm run dev:clinical-ai
+    command: npm run dev:diagnostic-agent
 
     env_file:
       - ./backend/.env
 
     environment:
       NODE_ENV: development
-      CLINICAL_AI_PORT: 3100
+      DIAGNOSTIC_AGENT_PORT: 3100
 
     volumes:
       - ./backend:/app/backend
@@ -125,6 +135,13 @@ services:
 
     expose:
       - "3100"
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/api/v1/diagnostic-agent/health/live').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
     networks:
       - aulia-network
@@ -152,12 +169,15 @@ services:
       - ./backend:/app/backend
       - /app/node_modules
 
-    depends_on:
-      backend:
-        condition: service_started
-
     expose:
       - "3200"
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3200/api/v1/connected-care/health/live').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
     networks:
       - aulia-network

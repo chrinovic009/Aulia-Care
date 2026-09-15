@@ -20,8 +20,8 @@ export class LaboratoryController {
 
   @Get()
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'LAB_TECHNICIAN', 'LAB_MANAGER')
-  findAll() {
-    return this.laboratoryService.findAll();
+  findAll(@Request() req: any) {
+    return this.laboratoryService.findAll(req.user?.userId || req.user?.id);
   }
 
   @Get('catalogue')
@@ -32,8 +32,8 @@ export class LaboratoryController {
 
   @Get('activity')
   @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_TECHNICIAN', 'LAB_MANAGER')
-  activityOverview() {
-    return this.laboratoryService.getActivityOverview();
+  activityOverview(@Request() req: any) {
+    return this.laboratoryService.getActivityOverview(req.user?.userId || req.user?.id);
   }
 
   @Get('settings')
@@ -50,20 +50,20 @@ export class LaboratoryController {
 
   @Get('dashboard/overview')
   @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_TECHNICIAN', 'LAB_MANAGER')
-  dashboardOverview() {
-    return this.laboratoryService.getDashboardOverview();
+  dashboardOverview(@Request() req: any) {
+    return this.laboratoryService.getDashboardOverview(req.user?.userId || req.user?.id);
   }
 
   @Get('dashboard/workflow')
   @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_TECHNICIAN', 'LAB_MANAGER')
-  dashboardWorkflow() {
-    return this.laboratoryService.getDashboardWorkflow();
+  dashboardWorkflow(@Request() req: any) {
+    return this.laboratoryService.getDashboardWorkflow(req.user?.userId || req.user?.id);
   }
 
   @Get('dashboard/alerts')
   @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_TECHNICIAN', 'LAB_MANAGER')
-  dashboardAlerts() {
-    return this.laboratoryService.getDashboardAlerts();
+  dashboardAlerts(@Request() req: any) {
+    return this.laboratoryService.getDashboardAlerts(req.user?.userId || req.user?.id);
   }
 
   @Get('technicians')
@@ -176,8 +176,8 @@ export class LaboratoryController {
 
   @Get(':id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'LAB_TECHNICIAN', 'LAB_MANAGER')
-  findOne(@Param('id') id: string) {
-    return this.laboratoryService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.laboratoryService.findOne(id, req.user?.userId || req.user?.id);
   }
 
   @Post('config/direct-result-authorization')

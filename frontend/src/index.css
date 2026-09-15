@@ -1358,3 +1358,31 @@ button.bg-aulia-teal,
     max-width: 100%;
   }
 }
+
+/* Actions compactes du registre DEV : même lisibilité sur les cartes actives
+   et sur les écrans tactiles étroits. */
+.registry-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgb(51 65 85);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.registry-button:hover {
+  background: rgb(248 250 252);
+}
+
+.dark .registry-button {
+  border-color: rgb(51 65 85);
+  color: rgb(226 232 240);
+}
+
+.dark .registry-button:hover {
+  background: rgb(30 41 59);
+}
