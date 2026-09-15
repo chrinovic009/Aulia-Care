@@ -652,7 +652,24 @@ export class AdministrationService {
         (this.prisma as any).invoice.findMany({ where: { clinicId: actor.clinicId, deletedAt: null }, take: 200 }),
         (this.prisma as any).payment.findMany({ where: { deletedAt: null, invoice: { clinicId: actor.clinicId } }, take: 200 }),
         (this.prisma as any).hospitalization.findMany({ where: { deletedAt: null, patient: { clinicId: actor.clinicId } } }),
-        (this.prisma as any).medication.findMany({ where: { deletedAt: null, MedicationStock: { some: { clinicId: actor.clinicId, deletedAt: null } } } }),
+        (this.prisma as any).medication.findMany({
+          where: {
+            deletedAt: null,
+            id: {
+              in: (
+                await (this.prisma as any).medicationStock.findMany({
+                  where: {
+                    clinicId: actor.clinicId,
+                    deletedAt: null,
+                  },
+                  select: {
+                    medicationId: true,
+                  },
+                })
+              ).map((stock: any) => stock.medicationId),
+            },
+          },
+        }),
         (this.prisma as any).department.findMany({ where: { clinicId: actor.clinicId, deletedAt: null } }),
         (this.prisma as any).room.findMany({ where: { serviceUnit: { clinicId: actor.clinicId } }, include: { beds: true } }),
         (this.prisma as any).consultation.findMany({ where: { clinicId: actor.clinicId, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 100 }),

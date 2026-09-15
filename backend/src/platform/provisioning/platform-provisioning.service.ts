@@ -173,68 +173,132 @@ export class PlatformProvisioningService {
     return snapshot;
   }
 
-  async createSuperAdmin(actorId: string | undefined, clinicId: string, dto: CreateProvisionedSuperAdminDto) {
-    const actor = await this.requireDev(actorId);
-    const clinic = await this.requireProvisionableClinic(clinicId);
-    const configuration = await this.prisma.platformLayerConfiguration.findUnique({
+  async createSuperAdmin(
+  actorId: string | undefined,
+  clinicId: string,
+  dto: CreateProvisionedSuperAdminDto,
+) {
+  const actor = await this.requireDev(actorId);
+  const clinic = await this.requireProvisionableClinic(clinicId);
+
+  const configuration =
+    await this.prisma.platformLayerConfiguration.findUnique({
       where: { clinicId: clinic.id },
       select: { id: true, configuredAt: true },
     });
-    if (!configuration?.configuredAt) {
-      throw new BadRequestException('Activez les couches de cet établissement avant de créer son Super Admin.');
-    }
 
-    const existing = await this.prisma.user.findFirst({
-      where: { clinicId: clinic.id, primaryRole: RoleSlug.SUPER_ADMIN, deletedAt: null },
-      select: { id: true },
-    });
-    if (existing) throw new ConflictException('Un Super Admin est déjà configuré pour cet établissement.');
-
-    const email = dto.email.trim().toLowerCase();
-    const username = dto.username.trim().toLowerCase();
-    const displayName = `${dto.firstName.trim()} ${dto.lastName.trim()}`.trim();
-    const passwordHash = await bcrypt.hash(dto.password, 12);
-
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const role = await tx.role.upsert({
-          where: { slug: RoleSlug.SUPER_ADMIN },
-          create: { slug: RoleSlug.SUPER_ADMIN, name: 'Super administrateur établissement', description: 'Responsable institutionnel numérique de son établissement.' },
-          update: {},
-        });
-        const superAdmin = await tx.user.create({
-          data: {
-            email,
-            username,
-            displayName,
-            firstName: dto.firstName.trim(),
-            lastName: dto.lastName.trim(),
-            passwordHash,
-            primaryRole: RoleSlug.SUPER_ADMIN,
-            clinicId: clinic.id,
-            roles: { create: { roleId: role.id, active: true } },
-          },
-          select: { id: true, email: true, username: true, displayName: true, primaryRole: true, clinicId: true },
-        });
-        await tx.clinic.update({ where: { id: clinic.id }, data: { provisioningStatus: ClinicProvisioningStatus.SUPER_ADMIN_CREATED } });
-        await tx.auditTrail.create({
-          data: {
-            actorId: actor.id,
-            entity: 'USER',
-            entityId: superAdmin.id,
-            action: 'CREATE',
-            after: { event: 'SUPER_ADMIN_CREATED', clinicId: clinic.id, targetUserId: superAdmin.id, role: RoleSlug.SUPER_ADMIN },
-          },
-        });
-        return superAdmin;
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('Cet e-mail ou ce nom d’utilisateur est déjà utilisé.');
-      }
-      throw error;
-    }
+  if (!configuration?.configuredAt) {
+    throw new BadRequestException(
+      'Activez les couches de cet établissement avant de créer son Super Admin.',
+    );
   }
+
+  const existing = await this.prisma.user.findFirst({
+    where: {
+      clinicId: clinic.id,
+      primaryRole: RoleSlug.SUPER_ADMIN,
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+
+  if (existing) {
+    throw new ConflictException(
+      'Un Super Admin est déjà configuré pour cet établissement.',
+    );
+  }
+
+  const email = dto.email.trim().toLowerCase();
+  const username = dto.username.trim().toLowerCase();
+  const firstName = dto.firstName.trim();
+  const lastName = dto.lastName.trim();
+  const displayName = `${firstName} ${lastName}`.trim();
+  const passwordHash = await bcrypt.hash(dto.password, 12);
+
+  try {
+    return await this.prisma.$transaction(async (tx) => {
+      const role = await tx.role.upsert({
+        where: { slug: RoleSlug.SUPER_ADMIN },
+        create: {
+          slug: RoleSlug.SUPER_ADMIN,
+          name: 'Super administrateur établissement',
+          description:
+            'Responsable institutionnel numérique de son établissement.',
+        },
+        update: {},
+      });
+
+      const superAdmin = await tx.user.create({
+        data: {
+          email,
+          username,
+          displayName,
+          firstName,
+          lastName,
+          phone: trimOrNull(dto.phone),
+          bio: trimOrNull(dto.bio),
+          passwordHash,
+          primaryRole: RoleSlug.SUPER_ADMIN,
+          clinicId: clinic.id,
+          roles: {
+            create: {
+              roleId: role.id,
+              active: true,
+            },
+          },
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          displayName: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          bio: true,
+          primaryRole: true,
+          clinicId: true,
+        },
+      });
+
+      await tx.clinic.update({
+        where: { id: clinic.id },
+        data: {
+          provisioningStatus:
+            ClinicProvisioningStatus.SUPER_ADMIN_CREATED,
+        },
+      });
+
+      await tx.auditTrail.create({
+        data: {
+          actorId: actor.id,
+          entity: 'USER',
+          entityId: superAdmin.id,
+          action: 'CREATE',
+          after: {
+            event: 'SUPER_ADMIN_CREATED',
+            clinicId: clinic.id,
+            targetUserId: superAdmin.id,
+            role: RoleSlug.SUPER_ADMIN,
+          },
+        },
+      });
+
+      return superAdmin;
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      throw new ConflictException(
+        'Cet e-mail ou ce nom d’utilisateur est déjà utilisé.',
+      );
+    }
+
+    throw error;
+  }
+}
 
   async activateClinic(actorId: string | undefined, clinicId: string) {
     const actor = await this.requireDev(actorId);
