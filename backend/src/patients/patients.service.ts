@@ -2397,19 +2397,15 @@ if (isParamedicalVoucher) {
   const message =
     await this.prisma.chatMessage.create({
       data: {
-        senderId:
-          patientUser.id,
-        recipientId:
-          receptionist.id,
-        recipientType:
-          'USER',
-        text:
-          messageText,
-        status:
-          'SENT',
+        clinicId: patient.clinicId,
+        senderId: patientUser.id,
+        recipientId: receptionist.id,
+        recipientType: 'USER',
+        text: messageText,
+        status: 'SENT',
       },
     });
-
+    
   const realtimePayload = {
     id:
       message.id,

@@ -138,9 +138,11 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     }
 
     const delivered = await this.isUserOnline(payload.recipientId);
+
     const saved = await this.prisma.chatMessage.create({
       data: {
         ...(payload.id ? { id: payload.id } : {}),
+        clinicId: sender.clinicId!,
         senderId: payload.senderId,
         recipientId: payload.recipientId,
         recipientType: payload.recipientType || 'USER',
@@ -174,37 +176,72 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
 
   @SubscribeMessage('message.read')
   async handleMessageRead(
-    @MessageBody() payload: { readerId?: string; senderId?: string; messageIds?: string[] },
-    @ConnectedSocket() client: Socket,
+  @MessageBody()
+  payload: {
+    readerId?: string;
+    senderId?: string;
+    messageIds?: string[];
+  },
+  @ConnectedSocket() client: Socket,
+) {
+  // The reader identity always comes from the authenticated socket.
+  const readerId = client.data.userId as string | undefined;
+
+  if (!readerId || !payload?.senderId) return;
+
+  // Enforce role, care-path and same-clinic messaging rules.
+  const allowed = await this.usersService.isDirectMessagingAllowed(
+    readerId,
+    payload.senderId,
+  );
+
+  if (!allowed) {
+    throw new WsException('Expéditeur non autorisé');
+  }
+
+  // Resolve the tenant server-side. Never trust a clinicId from the payload.
+  const reader = await this.prisma.user.findUnique({
+    where: { id: readerId },
+    select: {
+      clinicId: true,
+      status: true,
+      deletedAt: true,
+    },
+  });
+
+  if (
+    !reader ||
+    reader.status !== 'ACTIVE' ||
+    reader.deletedAt !== null ||
+    !reader.clinicId
   ) {
-    const readerId = client.data.userId as string | undefined;
-    if (!readerId || !payload?.senderId) return;
-    if (!await this.usersService.isDirectMessagingAllowed(readerId, payload.senderId)) {
-      throw new WsException('Expéditeur non autorisé');
-    }
+    throw new WsException('Établissement utilisateur invalide');
+  }
 
-    if (payload.messageIds?.length) {
-      this.prisma.chatMessage
-        .updateMany({
-          where: {
-            id: { in: payload.messageIds },
-            senderId: payload.senderId,
-            recipientId: readerId,
-          },
-          data: {
-            status: 'READ',
-            readAt: new Date(),
-          },
-        })
-        .catch(() => undefined);
-    }
-
-    this.server.to(this.userRoom(payload.senderId)).emit('message.read', {
-      readerId,
-      messageIds: payload.messageIds || [],
-      readAt: new Date().toISOString(),
+  if (payload.messageIds?.length) {
+    await this.prisma.chatMessage.updateMany({
+      where: {
+        clinicId: reader.clinicId,
+        id: {
+          in: payload.messageIds,
+        },
+        senderId: payload.senderId,
+        recipientId: readerId,
+        deletedAt: null,
+      },
+      data: {
+        status: 'READ',
+        readAt: new Date(),
+      },
     });
   }
+
+  this.server.to(this.userRoom(payload.senderId)).emit('message.read', {
+    readerId,
+    messageIds: payload.messageIds || [],
+    readAt: new Date().toISOString(),
+  });
+}
 
   @SubscribeMessage('message.typing')
   async handleTyping(

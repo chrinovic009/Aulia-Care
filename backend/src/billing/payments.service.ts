@@ -352,7 +352,7 @@ export class PaymentsService {
             paymentId: payment.id,
             invoiceId: invoice.id,
             hospitalizationId: hospitalization?.id,
-            patientUserId: patientUserAccess.user.id,
+            patientUserId: updatedPatient.portalUserId ?? null,
             labRequestId: finalLabRequest?.id,
             imagingRequestId: imagingRequestByInvoice?.id,
           },

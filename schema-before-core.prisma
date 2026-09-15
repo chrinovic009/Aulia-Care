@@ -1939,6 +1939,7 @@ model Clinic {
   StockLot              StockLot[]
   StockTransaction      StockTransaction[]
   users                 User[]
+  chatMessages          ChatMessage[]
   financeBudgets        FinanceBudget[]
   capitalInvestments    CapitalInvestment[]
   bankAccounts          BankAccount[]
@@ -2364,6 +2365,7 @@ model Notification {
 
 model ChatMessage {
   id            String        @id @default(uuid())
+  clinicId      String
   senderId      String
   recipientId   String
   recipientType String        @default("USER")
@@ -2374,11 +2376,13 @@ model ChatMessage {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
+
+  clinic        Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   recipient     User          @relation("ChatMessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
   sender        User          @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
 
-  @@index([senderId, recipientId, createdAt])
-  @@index([recipientId, status])
+  @@index([clinicId, senderId, recipientId, createdAt])
+  @@index([clinicId, recipientId, status])
 }
 
 model AuditLog {
