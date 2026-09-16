@@ -7,13 +7,16 @@ import {
 
 import { JwtService } from '@nestjs/jwt';
 
+import { Reflector } from '@nestjs/core';
+
 import { AuliaLayer, RoleSlug } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
 import { PlatformLayersService } from './platform-layers.service';
+import { REQUIRED_AULIA_LAYER } from './require-layer.decorator';
 
-const routeLayer = (path: string): AuliaLayer | null => {
+export const fallbackLayerForPath = (path: string): AuliaLayer | null => {
   const normalized = path
     .split('?')[0]
     .replace(/^\/api/, '');
@@ -37,15 +40,19 @@ const routeLayer = (path: string): AuliaLayer | null => {
     normalized.startsWith('/clinical-intelligence') ||
     normalized.startsWith('/intelligence')
   ) {
-    return AuliaLayer.AI;
+    return AuliaLayer.DIAGNOSTIC;
   }
 
   if (
-    /\/telehealth(?:-|\/)|\/teleconsultation(?:-|\/)|\/transcript(?:-|\/)|\/daily-checkins?(?:\/|$)|\/provenance(?:-|\/)/i.test(
+    /\/telehealth(?:-|\/)|\/teleconsultation(?:-|\/)|\/daily-checkins?(?:\/|$)/i.test(
       normalized,
     )
   ) {
-    return AuliaLayer.AI;
+    return AuliaLayer.DIAGNOSTIC;
+  }
+
+  if (/\/transcript(?:-|\/)|\/provenance(?:-|\/)/i.test(normalized)) {
+    return AuliaLayer.DIAGNOSTIC;
   }
 
   return AuliaLayer.CORE;
@@ -70,6 +77,7 @@ export class PlatformLayerAccessGuard implements CanActivate {
     private readonly layers: PlatformLayersService,
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
+    private readonly reflector: Reflector,
   ) {}
 
   private extractAccessToken(request: {
@@ -172,7 +180,7 @@ export class PlatformLayerAccessGuard implements CanActivate {
         '',
     ).toUpperCase();
 
-    const requiresAiConsultationMode =
+    const requiresDiagnosticConsultationMode =
       /\/consultations(?:\/[^/]+)?$/i.test(
         path.split('?')[0],
       ) &&
@@ -181,10 +189,14 @@ export class PlatformLayerAccessGuard implements CanActivate {
         'TELECONSULTATION',
       ].includes(clinicalMode);
 
-    const requiredLayer =
-      requiresAiConsultationMode
-        ? AuliaLayer.AI
-        : routeLayer(path);
+    const explicitLayer = this.reflector.getAllAndOverride<AuliaLayer>(
+      REQUIRED_AULIA_LAYER,
+      [context.getHandler(), context.getClass()],
+    );
+
+    const requiredLayer = requiresDiagnosticConsultationMode
+      ? AuliaLayer.DIAGNOSTIC
+      : explicitLayer ?? fallbackLayerForPath(path);
 
     if (!requiredLayer) {
       return true;

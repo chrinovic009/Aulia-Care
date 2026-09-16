@@ -78,6 +78,10 @@ services:
   # ============================================================
   migration:
     image: aulia-care-migration:prod
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: migration
     restart: "no"
 
     cpus: "0.50"
@@ -100,6 +104,10 @@ services:
   # ============================================================
   backend:
     image: aulia-care-backend:prod
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: runtime
     restart: unless-stopped
 
     cpus: "1.50"
@@ -141,9 +149,9 @@ services:
 
 
   # ============================================================
-  # CLINICAL AI
+  # DIAGNOSTIC AGENT
   # ============================================================
-  clinical-ai:
+  diagnostic-agent:
     image: aulia-care-backend:prod
     restart: unless-stopped
 
@@ -154,7 +162,7 @@ services:
     command:
       [
         "node",
-        "dist/main-clinical-ai.js"
+        "dist/main-diagnostic-agent.js"
       ]
 
     env_file:
@@ -162,7 +170,7 @@ services:
 
     environment:
       NODE_ENV: production
-      CLINICAL_AI_PORT: 3100
+      DIAGNOSTIC_AGENT_PORT: 3100
 
     depends_on:
       migration:
@@ -173,6 +181,19 @@ services:
 
     expose:
       - "3100"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3100/api/v1/diagnostic-agent/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
     networks:
       - aulia-prod-network
@@ -212,6 +233,19 @@ services:
     expose:
       - "3200"
 
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3200/api/v1/connected-care/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
     networks:
       - aulia-prod-network
 
@@ -221,6 +255,10 @@ services:
   # ============================================================
   frontend:
     image: aulia-care-frontend:prod
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      target: runtime
     restart: unless-stopped
 
     cpus: "0.25"
@@ -258,9 +296,16 @@ services:
 
     volumes:
       - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      # A production deployment must provide a certificate issued for its
+      # stable institutional DNS name. This directory is git-ignored.
+      - ./.secrets/tls:/etc/nginx/certs:ro
 
     ports:
-      - "127.0.0.1:8081:8080"
+      # HTTP exists only to redirect to HTTPS. The application itself is
+      # served exclusively through TLS, which is required by Secure session
+      # cookies and browser APIs such as camera access.
+      - "80:8080"
+      - "443:8443"
 
     networks:
       - aulia-prod-network

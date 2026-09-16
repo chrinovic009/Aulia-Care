@@ -24,7 +24,9 @@ export class PlatformLayersService {
 
   private availableLayers(): AuliaLayer[] {
     const available: AuliaLayer[] = [AuliaLayer.CORE];
-    if (process.env.AULIA_ENABLE_CLINICAL_AI !== 'false') available.push(AuliaLayer.AI);
+    if (process.env.AULIA_ENABLE_DIAGNOSTIC_AGENT !== 'false') {
+      available.push(AuliaLayer.DIAGNOSTIC);
+    }
     if (process.env.AULIA_ENABLE_CONNECTED_CARE !== 'false') available.push(AuliaLayer.CONNECTED);
     return available;
   }
@@ -45,7 +47,7 @@ export class PlatformLayersService {
 
   /**
    * Every product is an explicit clinic entitlement.  Core is no longer
-   * injected here: Aulia AI and Connected Care can be installed together
+   * injected here: Aulia Care Diagnostic Agent and Connected Care can be installed together
    * without Core, and a missing configuration remains fail-closed.
    */
   private effectiveLayers(layers: AuliaLayer[]): AuliaLayer[] {

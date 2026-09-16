@@ -10,12 +10,14 @@ import { ClinicalSectionsDto } from './dto/clinical-sections.dto';
 import { CreateLabRequestDto } from './dto/create-lab-request.dto';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { TelehealthTranscriptEntryDto } from './dto/save-telehealth-transcript.dto';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
 
 @Injectable()
 export class ConsultationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsGateway: NotificationsGateway,
+    private readonly patientWorkflow: PatientWorkflowService,
   ) {}
 
   private async recordSubscriptionChargeForInvoice(
@@ -144,11 +146,11 @@ export class ConsultationsService {
         },
       });
       await tx.appointment.update({ where: { id: createConsultationDto.appointmentId }, data: { status: 'CHECKED_IN' } });
-      await (tx as any).patientVisit.updateMany({
+      await tx.patientVisit.updateMany({
         where: { appointmentId: createConsultationDto.appointmentId, status: { in: ['REGISTERED', 'ORIENTED'] } },
         data: { status: 'IN_CONSULTATION', orientedAt: new Date() },
       });
-      await tx.patient.update({ where: { id: createConsultationDto.patientId }, data: { workflowStatus: PatientWorkflowStatus.EN_CONSULTATION } });
+      await this.patientWorkflow.transition(tx, createConsultationDto.patientId, PatientWorkflowStatus.EN_CONSULTATION, actor.clinicId);
       return created;
     });
 
@@ -234,7 +236,10 @@ export class ConsultationsService {
         await (tx as any).patientVisit.create({
           data: {
             patientId: dto.patientId,
-            clinicId: (await tx.patient.findUnique({ where: { id: dto.patientId }, select: { clinicId: true } }))?.clinicId || null,
+            // The patient was already checked against the authenticated doctor
+            // clinic before entering this transaction. Never derive a nullable
+            // tenant from a second unrestricted lookup.
+            clinicId: actor.clinicId,
             appointmentId: appointment.id,
             visitType: 'CONSULTATION_NON_PROGRAMMEE',
             reason: dto.chiefComplaint?.trim() || 'Consultation clinique ouverte par le médecin',
@@ -243,7 +248,7 @@ export class ConsultationsService {
           },
         });
       }
-      await tx.patient.update({ where: { id: dto.patientId }, data: { workflowStatus: PatientWorkflowStatus.EN_CONSULTATION } });
+      await this.patientWorkflow.transition(tx, dto.patientId, PatientWorkflowStatus.EN_CONSULTATION, actor.clinicId);
       return created;
     });
 
@@ -591,6 +596,10 @@ export class ConsultationsService {
   async createLabRequest(id: string, dto: CreateLabRequestDto, actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    const clinicId = consultation.clinicId || consultation.patient?.clinicId;
+    if (!clinicId) {
+      throw new ForbiddenException('La consultation doit être rattachée à un établissement actif.');
+    }
     const request = await this.prisma.$transaction(async (tx) => {
       const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
       const requestedLabTestIds = Array.isArray(dto.labTestIds)
@@ -604,7 +613,7 @@ export class ConsultationsService {
       if (requestedLabTestIds.length > 0) {
         for (const labTestId of requestedLabTestIds) {
           const labTest = await tx.labTest.findUnique({
-            where: { id: labTestId },
+            where: { id: labTestId, active: true },
             include: { section: true, category: true },
           });
 
@@ -669,6 +678,7 @@ export class ConsultationsService {
           consultationId: id,
           patientId: consultation.patientId,
           requestedById: actorId,
+          clinicId,
           specimenType: specimenTypeLabel,
           priority: dto.priority || 'NORMAL',
           notes: dto.notes || null,
@@ -681,7 +691,7 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           issuedById: actorId,
-          clinicId: consultation.clinicId || consultation.patient.clinicId || null,
+          clinicId,
           type: 'LABORATORY',
           status: 'PENDING',
           totalAmount: examPriceTotal,
@@ -749,10 +759,12 @@ export class ConsultationsService {
         data: { externalReference: invoice.id },
       });
 
-      await tx.patient.update({
-        where: { id: consultation.patientId },
-        data: { workflowStatus: handledBySubscription ? PatientWorkflowStatus.EN_LABORATOIRE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
-      });
+      await this.patientWorkflow.transition(
+        tx,
+        consultation.patientId,
+        handledBySubscription ? PatientWorkflowStatus.EN_LABORATOIRE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+        clinicId,
+      );
 
       await tx.medicalHistory.create({
         data: {
@@ -789,7 +801,7 @@ export class ConsultationsService {
 
     const cashiers = await this.prisma.user.findMany({
       where: {
-        ...(consultation.clinicId || consultation.patient?.clinicId ? { clinicId: consultation.clinicId || consultation.patient?.clinicId } : {}),
+        clinicId,
         OR: [
           { primaryRole: 'CASHIER' as any },
           { roles: { some: { role: { slug: 'CASHIER' as any } } } },
@@ -832,6 +844,10 @@ export class ConsultationsService {
   async createImagingRequest(id: string, dto: CreateImagingRequestDto, actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    const clinicId = consultation.clinicId || consultation.patient?.clinicId;
+    if (!clinicId) {
+      throw new ForbiddenException('La consultation doit être rattachée à un établissement actif.');
+    }
 
     const request = await this.prisma.$transaction(async (tx) => {
       const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
@@ -839,14 +855,18 @@ export class ConsultationsService {
 
       let imagingCatalogue: any = null;
       if (imagingCatalogueId) {
-        imagingCatalogue = await tx.imagingCatalogue.findUnique({ where: { id: imagingCatalogueId } });
+        imagingCatalogue = await tx.imagingCatalogue.findFirst({
+          where: { id: imagingCatalogueId, clinicId, active: true, deletedAt: null },
+        });
         if (!imagingCatalogue) {
           throw new BadRequestException('Un examen du catalogue d imagerie est introuvable.');
         }
       } else if (trimmedExamName) {
         imagingCatalogue = await tx.imagingCatalogue.findFirst({
           where: {
+            clinicId,
             active: true,
+            deletedAt: null,
             OR: [
               { name: { equals: trimmedExamName, mode: 'insensitive' } },
               { code: { equals: trimmedExamName, mode: 'insensitive' } },
@@ -857,7 +877,9 @@ export class ConsultationsService {
         if (!imagingCatalogue) {
           imagingCatalogue = await tx.imagingCatalogue.findFirst({
             where: {
+              clinicId,
               active: true,
+              deletedAt: null,
               name: { contains: trimmedExamName, mode: 'insensitive' },
             },
             orderBy: { name: 'asc' },
@@ -898,6 +920,20 @@ export class ConsultationsService {
       const bodyPart = typeof dto.bodyPart === 'string' && dto.bodyPart.trim() ? dto.bodyPart.trim() : imagingCatalogue.name;
       const urgency = typeof dto.urgency === 'string' && dto.urgency.trim() ? dto.urgency.toUpperCase() : 'ROUTINE';
       const machineId = typeof dto.machineId === 'string' && dto.machineId ? dto.machineId : null;
+      if (machineId) {
+        const machine = await tx.imagingMachine.findFirst({
+          where: {
+            id: machineId,
+            clinicId,
+            deletedAt: null,
+            isOperational: true,
+          },
+          select: { id: true },
+        });
+        if (!machine) {
+          throw new BadRequestException('L’équipement d’imagerie sélectionné est indisponible dans cet établissement.');
+        }
+      }
       const scheduledAt = typeof dto.scheduledAt === 'string' && dto.scheduledAt.trim() ? new Date(dto.scheduledAt) : null;
       const status = typeof dto.status === 'string' && dto.status.trim() ? dto.status.toUpperCase() as ImagingRequestStatus : 'REQUESTED';
 
@@ -906,6 +942,7 @@ export class ConsultationsService {
           consultationId: id,
           patientId: consultation.patientId,
           requestedById: actorId || null,
+          clinicId,
           imagingCatalogueId: imagingCatalogue.id,
           modality: imagingCatalogue.modality,
           bodyPart,
@@ -931,7 +968,7 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           issuedById: actorId,
-          clinicId: consultation.clinicId || consultation.patient.clinicId || null,
+          clinicId,
           type: InvoiceType.RADIOLOGY,
           status: 'PENDING',
           totalAmount: price,
@@ -959,10 +996,12 @@ export class ConsultationsService {
         imagingCatalogue.id,
       );
 
-      await tx.patient.update({
-        where: { id: consultation.patientId },
-        data: { workflowStatus: handledBySubscription ? PatientWorkflowStatus.EN_RADIOLOGIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
-      });
+      await this.patientWorkflow.transition(
+        tx,
+        consultation.patientId,
+        handledBySubscription ? PatientWorkflowStatus.EN_RADIOLOGIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+        clinicId,
+      );
 
       await tx.medicalHistory.create({
         data: {
@@ -996,7 +1035,7 @@ export class ConsultationsService {
 
     const cashiers = await this.prisma.user.findMany({
       where: {
-        ...(consultation.clinicId || consultation.patient?.clinicId ? { clinicId: consultation.clinicId || consultation.patient?.clinicId } : {}),
+        clinicId,
         OR: [
           { primaryRole: 'CASHIER' as any },
           { roles: { some: { role: { slug: 'CASHIER' as any } } } },
@@ -1073,6 +1112,10 @@ export class ConsultationsService {
   async createPrescription(id: string, dto: CreatePrescriptionDto, actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    const clinicId = consultation.clinicId || consultation.patient?.clinicId;
+    if (!clinicId) {
+      throw new ForbiddenException('La consultation doit être rattachée à un établissement actif.');
+    }
     const lines = Array.isArray(dto.lines) ? dto.lines : [];
     if (!lines.length) {
       throw new BadRequestException('Aucun medicament prescrit.');
@@ -1081,7 +1124,12 @@ export class ConsultationsService {
     const medicationIds = lines.map((line: any) => line.medicationId).filter(Boolean);
     const medications = await this.prisma.medication.findMany({
       where: { id: { in: medicationIds }, deletedAt: null },
-      include: { StockLot: true },
+      include: {
+        // The medication catalogue may be shared, but stock never is.  A
+        // prescription must not be accepted because another establishment has
+        // inventory for the same medication.
+        StockLot: { where: { clinicId } },
+      },
     });
     const medicationById = new Map(medications.map((item) => [item.id, item]));
 
@@ -1112,6 +1160,7 @@ export class ConsultationsService {
           consultationId: id,
           patientId: consultation.patientId,
           prescriberId: actorId,
+          clinicId,
           instruction: dto.instruction || null,
           status: 'PRESCRIBED',
           lineItems: {
@@ -1133,7 +1182,7 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           issuedById: actorId,
-          clinicId: consultation.clinicId || consultation.patient.clinicId || null,
+          clinicId,
           type: 'PHARMACY',
           status: 'PENDING',
           totalAmount: total,
@@ -1165,10 +1214,12 @@ export class ConsultationsService {
         null,
       );
 
-      await tx.patient.update({
-        where: { id: consultation.patientId },
-        data: { workflowStatus: handledBySubscription ? PatientWorkflowStatus.EN_PHARMACIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
-      });
+      await this.patientWorkflow.transition(
+        tx,
+        consultation.patientId,
+        handledBySubscription ? PatientWorkflowStatus.EN_PHARMACIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+        consultation.clinicId || consultation.patient?.clinicId || undefined,
+      );
 
       await tx.medicalHistory.create({
         data: {
@@ -1219,7 +1270,7 @@ export class ConsultationsService {
     const medicationIds = lines.map((line: any) => line.medicationId).filter(Boolean);
     const medications = await this.prisma.medication.findMany({
       where: { id: { in: medicationIds }, deletedAt: null },
-      include: { StockLot: true },
+      include: { StockLot: { where: { clinicId: consultation.clinicId } } },
     });
     const medicationById = new Map(medications.map((item) => [item.id, item]));
 

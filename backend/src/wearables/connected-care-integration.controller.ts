@@ -3,10 +3,13 @@ import { DeviceObservation } from '../platform/contracts/connected-care.contract
 import { isDeviceObservation } from '../platform/contracts/contract-validation';
 import { ConnectedCareIntegrationGuard } from './connected-care-integration.guard';
 import { CoreConnectedCareService } from './core-connected-care.service';
+import { AuliaLayer } from '@prisma/client';
+import { RequireLayer } from '../platform/layers/require-layer.decorator';
 
 /** Versioned, server-to-server boundary used by an independently deployed gateway. */
 @Controller('connected-care/v1')
 @UseGuards(ConnectedCareIntegrationGuard)
+@RequireLayer(AuliaLayer.CONNECTED)
 export class ConnectedCareIntegrationController {
   constructor(private readonly connectedCare: CoreConnectedCareService) {}
 

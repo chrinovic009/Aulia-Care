@@ -119,8 +119,9 @@ export class BillingController {
   applyInvoiceDiscount(
     @Param('invoiceId') invoiceId: string,
     @Body() body: { amount: number; reason?: string },
+    @Request() req: any,
   ) {
-    return this.billingService.applyInvoiceDiscount(invoiceId, Number(body.amount), body.reason);
+    return this.billingService.applyInvoiceDiscount(invoiceId, Number(body.amount), body.reason, req.user?.userId);
   }
 
   @Post('invoices/:invoiceId/discount-requests')
@@ -137,7 +138,7 @@ export class BillingController {
 
   @Post('patients/:patientId/authorize-discharge')
   @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
-  authorizePatientDischarge(@Param('patientId') patientId: string) {
-    return this.billingService.authorizePatientDischarge(patientId);
+  authorizePatientDischarge(@Param('patientId') patientId: string, @Request() req: any) {
+    return this.billingService.authorizePatientDischarge(patientId, req.user?.userId);
   }
 }

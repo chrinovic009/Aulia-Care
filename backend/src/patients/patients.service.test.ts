@@ -4,6 +4,7 @@ import { PatientsService } from './patients.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ClinicContextService } from '../core/clinic-context.service';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
 
 test('patient portal never links a medical record from a matching e-mail address', async () => {
   const patientLookups: Array<Record<string, unknown>> = [];
@@ -30,6 +31,7 @@ test('patient portal never links a medical record from a matching e-mail address
     prisma as unknown as PrismaService,
     notifications as NotificationsGateway,
     clinicContext as ClinicContextService,
+    {} as PatientWorkflowService,
   );
 
   await assert.rejects(
@@ -43,4 +45,105 @@ test('patient portal never links a medical record from a matching e-mail address
       deletedAt: null,
     },
   ]);
+});
+
+test('daily check-in notifies only active nurses from the patient clinic after commit', async () => {
+  const recipientQueries: Array<Record<string, unknown>> = [];
+  const createdNotifications: Array<{ recipientId: string }> = [];
+  const emittedNotifications: string[] = [];
+
+  const transaction = {
+    patient: {
+      findFirst: async () => ({ id: 'patient-a', clinicId: 'clinic-a' }),
+    },
+    medicalHistory: {
+      create: async () => ({ id: 'checkin-a', eventDate: new Date('2026-09-04T08:00:00.000Z') }),
+    },
+    hospitalization: {
+      findFirst: async () => ({
+        nurseInChargeId: 'nurse-a',
+        nurseAssignments: [{ nurseId: 'nurse-b-from-another-clinic' }],
+      }),
+    },
+    user: {
+      findMany: async (args: { where: Record<string, unknown> }) => {
+        recipientQueries.push(args.where);
+        return [{ id: 'nurse-a' }];
+      },
+    },
+    notification: {
+      create: async ({ data }: { data: { recipientId: string } }) => {
+        const notification = { id: `notification-${data.recipientId}`, recipientId: data.recipientId };
+        createdNotifications.push(notification);
+        return notification;
+      },
+    },
+  };
+
+  const prisma = {
+    $transaction: async (callback: (tx: typeof transaction) => Promise<unknown>) => callback(transaction),
+  };
+  const notifications = {
+    notifyToUser: (recipientId: string) => emittedNotifications.push(recipientId),
+  };
+  const service = new PatientsService(
+    prisma as unknown as PrismaService,
+    notifications as unknown as NotificationsGateway,
+    {} as ClinicContextService,
+    {} as PatientWorkflowService,
+  );
+  const portalService = service as unknown as {
+    getPatientProfileForUser: (userId: string) => Promise<{ id: string; clinicId: string }>;
+  };
+  portalService.getPatientProfileForUser = async () => ({ id: 'patient-a', clinicId: 'clinic-a' });
+
+  const result = await service.createDailyCheckin('portal-user-a', {
+    feelsWell: false,
+    symptoms: ['Fièvre', ' Fièvre '],
+  });
+
+  assert.equal(result.recipientsNotified, 1);
+  assert.deepEqual(createdNotifications, [{ id: 'notification-nurse-a', recipientId: 'nurse-a' }]);
+  assert.deepEqual(emittedNotifications, ['nurse-a']);
+  assert.equal(recipientQueries.length, 1);
+  assert.deepEqual(recipientQueries[0], {
+    id: { in: ['nurse-a', 'nurse-b-from-another-clinic'] },
+    clinicId: 'clinic-a',
+    status: 'ACTIVE',
+    deletedAt: null,
+    OR: [
+      { primaryRole: 'NURSE' },
+      { roles: { some: { active: true, role: { slug: 'NURSE' } } } },
+    ],
+  });
+});
+
+test('patient updates reject manual workflow status changes', async () => {
+  let transactionStarted = false;
+  const service = new PatientsService(
+    {
+      patient: {
+        findFirst: async () => ({ id: 'patient-a', clinicId: 'clinic-a', workflowStatus: 'HOSPITALISE' }),
+      },
+      $transaction: async () => {
+        transactionStarted = true;
+        throw new Error('Workflow status changes must be rejected before persistence.');
+      },
+    } as unknown as PrismaService,
+    {} as NotificationsGateway,
+    {
+      requireOperationalActor: async () => ({
+        id: 'admin-a',
+        clinicId: 'clinic-a',
+        primaryRole: 'ADMIN',
+      }),
+    } as unknown as ClinicContextService,
+    {} as PatientWorkflowService,
+  );
+
+  await assert.rejects(
+    () => service.update('patient-a', { firstName: 'Updated', workflowStatus: 'EN_ATTENTE_MEDECIN' } as any, { userId: 'admin-a' }),
+    /transitions métier/,
+  );
+  assert.equal(transactionStarted, false);
 });

@@ -452,9 +452,12 @@ export default function ReceptionPatients() {
         const services = await fetchServices();
         setAppointmentTypes(services || []);
 
-        const docs = await fetch(`${API_BASE_URL}/users?role=PHYSICIAN`, { credentials: 'include' }).then((r) => r.ok ? r.json() : [] ).catch(() => []);
-        const docsAlt = await fetch(`${API_BASE_URL}/users?role=MEDECIN`, { credentials: 'include' }).then((r) => r.ok ? r.json() : [] ).catch(() => []);
-        setDoctors((Array.isArray(docs) ? docs : []).concat(Array.isArray(docsAlt) ? docsAlt : []));
+        // Reception must never query the administrative user directory. This
+        // limited endpoint returns only active physicians from its own clinic.
+        const physicians = await fetch(`${API_BASE_URL}/users/physicians/available`, { credentials: 'include' })
+          .then((response) => response.ok ? response.json() : [])
+          .catch(() => []);
+        setDoctors(Array.isArray(physicians) ? physicians : []);
       } catch (e) {}
     })();
   }, [navigationState?.openAppointment, navigationState?.patientId, page]);

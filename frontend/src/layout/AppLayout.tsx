@@ -4,10 +4,17 @@ import AppHeader from "./AppHeader";
 import Backdrop from "./Backdrop";
 import AppSidebar from "./AppSidebar";
 import { useAuth } from '../context/AuthContext';
+import { usePlatformLayers } from '../context/PlatformLayersContext';
 import { useSpeechNotifications } from '../hooks/useSpeechNotifications';
 import RealtimePageBoundary from "../components/common/RealtimePageBoundary";
 import { PatientTelehealthOverlay } from "../components/telehealth/TelehealthCall";
 import { ShiftHandoverPrompt } from "../components/staff/ShiftHandoverPrompt";
+
+const PatientTelehealthOverlayForDiagnosticAgent: React.FC = () => {
+  const { isLoading, isEnabled } = usePlatformLayers();
+  if (isLoading || !isEnabled('DIAGNOSTIC')) return null;
+  return <PatientTelehealthOverlay />;
+};
 
 const LayoutContent: React.FC = () => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
@@ -27,7 +34,7 @@ const LayoutContent: React.FC = () => {
       >
         <AppHeader />
         <ShiftHandoverPrompt />
-        {currentUser?.primaryRole === "PATIENT" && <PatientTelehealthOverlay />}
+        {currentUser?.primaryRole === "PATIENT" && <PatientTelehealthOverlayForDiagnosticAgent />}
         <div className="aulia-content-frame mx-auto w-full min-w-0 max-w-[1680px] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           <RealtimePageBoundary><Outlet /></RealtimePageBoundary>
         </div>

@@ -11,6 +11,8 @@ import { SaveTelehealthTranscriptDto } from './dto/save-telehealth-transcript.dt
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { AuliaLayer } from '@prisma/client';
+import { RequireLayer } from '../platform/layers/require-layer.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('consultations')
@@ -77,6 +79,9 @@ export class ConsultationsController {
 
   @Post(':id/telehealth-transcript')
   @Roles('PHYSICIAN')
+  // Telehealth and its transcription belong to the Diagnostic Agent.
+  // Connected Care is reserved for devices and parent/child connectivity.
+  @RequireLayer(AuliaLayer.DIAGNOSTIC)
   saveTelehealthTranscript(@Param('id') id: string, @Body() body: SaveTelehealthTranscriptDto, @Request() req: any) {
     return this.consultationsService.saveTelehealthTranscript(id, body.sessionId, body.entries, req.user?.userId);
   }

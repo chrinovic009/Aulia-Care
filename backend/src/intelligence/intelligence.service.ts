@@ -1,7 +1,11 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { CLINICAL_AI_CLIENT, CLINICAL_AI_CONTRACT_VERSION, ClinicalAIClient } from '../platform/contracts/clinical-ai.contract';
+import {
+  DIAGNOSTIC_AGENT_CLIENT,
+  DIAGNOSTIC_AGENT_CONTRACT_VERSION,
+  DiagnosticAgentClient,
+} from '../platform/contracts/diagnostic-agent.contract';
 
 const normalise = (value?: string) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
@@ -13,7 +17,8 @@ const normalise = (value?: string) => String(value || '').normalize('NFD').repla
 export class IntelligenceService {
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(CLINICAL_AI_CLIENT) private readonly clinicalAI: ClinicalAIClient,
+    @Inject(DIAGNOSTIC_AGENT_CLIENT)
+    private readonly diagnosticAgent: DiagnosticAgentClient,
   ) {}
 
   async analyseConsultation(consultationId: string, transcript: string) {
@@ -35,9 +40,9 @@ export class IntelligenceService {
     const ageYears = consultation.patient.dateOfBirth
       ? Math.max(0, Math.floor((Date.now() - consultation.patient.dateOfBirth.getTime()) / 31_557_600_000))
       : undefined;
-    const response = await this.clinicalAI.execute({
-      contractVersion: CLINICAL_AI_CONTRACT_VERSION,
-      tenantId: consultation.patient.clinicId || 'local-unassigned-clinic',
+    const response = await this.diagnosticAgent.execute({
+      contractVersion: DIAGNOSTIC_AGENT_CONTRACT_VERSION,
+      tenantId: this.requireClinicId(consultation.patient.clinicId),
       requestId: randomUUID(),
       idempotencyKey: `transcript:${consultation.id}:updated:${consultation.updatedAt.toISOString()}`,
       purpose: 'DETECT_RISKS',
@@ -52,6 +57,15 @@ export class IntelligenceService {
       safety: response.disclaimer,
       persisted: false,
     };
+  }
+
+  private requireClinicId(clinicId: string | null): string {
+    if (!clinicId) {
+      throw new BadRequestException(
+        'La consultation doit être rattachée à un établissement avant toute analyse Diagnostic Agent.',
+      );
+    }
+    return clinicId;
   }
 
   async findDuplicateCandidates(identity: any) {
