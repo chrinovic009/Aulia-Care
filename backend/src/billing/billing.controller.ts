@@ -119,8 +119,9 @@ export class BillingController {
   applyInvoiceDiscount(
     @Param('invoiceId') invoiceId: string,
     @Body() body: { amount: number; reason?: string },
+    @Request() req: any,
   ) {
-    return this.billingService.applyInvoiceDiscount(invoiceId, Number(body.amount), body.reason);
+    return this.billingService.applyInvoiceDiscount(invoiceId, Number(body.amount), body.reason, req.user?.userId);
   }
 
   @Post('invoices/:invoiceId/discount-requests')

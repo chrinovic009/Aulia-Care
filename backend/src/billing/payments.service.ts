@@ -363,24 +363,24 @@ export class PaymentsService {
     });
 
     result.notifications.forEach((notification) => {
-      this.notificationsGateway.notify('notification.created', notification);
+      this.notificationsGateway?.notify?.('notification.created', notification);
     });
-    this.notificationsGateway.notify('patient.updated', result.updatedPatient);
+    this.notificationsGateway?.notify?.('patient.updated', result.updatedPatient);
     if (invoiceClinicId) {
       // Signal minimal et isolé à l'établissement : l'interface Finance
       // recharge ses totaux sans recevoir de données de patient par socket.
-      this.notificationsGateway.notifyFinanceClinic(invoiceClinicId, { resource: 'payment' });
+      this.notificationsGateway?.notifyFinanceClinic?.(invoiceClinicId, { resource: 'payment' });
     }
     
     if (result.labRequest) {
-      this.notificationsGateway.notify('lab.request.created', result.labRequest);
+      this.notificationsGateway?.notify?.('lab.request.created', result.labRequest);
     }
     if (result.imagingRequest) {
-      this.notificationsGateway.notify('imaging.request.paid', { id: result.imagingRequest.id, clinicId: invoiceClinicId });
+      this.notificationsGateway?.notify?.('imaging.request.paid', { id: result.imagingRequest.id, clinicId: invoiceClinicId });
     }
 
     if (result.receptionistMessage) {
-      this.notificationsGateway.notifyToUser(result.receptionistMessage.recipientId, 'message.received', {
+      this.notificationsGateway?.notifyToUser?.(result.receptionistMessage.recipientId, 'message.received', {
         id: result.receptionistMessage.id,
         senderId: result.receptionistMessage.senderId,
         senderName:

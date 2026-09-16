@@ -286,8 +286,15 @@ export class PharmacyService {
       }
 
       return tx.stockTransaction.findMany({
-        where: { reference: { contains: data?.source || 'PHARMACY' } },
-        orderBy: { createdAt: 'desc' },
+        where: {
+          clinicId: actor.clinicId,
+          reference: {
+            contains: data?.source || 'PHARMACY',
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
         take: 1,
       });
     });
@@ -640,19 +647,47 @@ export class PharmacyService {
 
   async prescriptionsToDispense(actorId?: string) {
     const actor = await this.requireClinic(actorId);
+
     return this.prisma.prescription.findMany({
       where: {
         deletedAt: null,
         status: { not: 'DISPENSED' },
-        patient: { clinicId: actor.clinicId, deletedAt: null, workflowStatus: 'EN_PHARMACIE' },
+        patient: {
+          clinicId: actor.clinicId,
+          deletedAt: null,
+          workflowStatus: 'EN_PHARMACIE',
+        },
       },
       include: {
         patient: true,
         prescriber: true,
-        lineItems: { include: { medication: { include: { StockLot: true } } } },
-        pharmacyDispenses: { include: { lines: { include: { medication: true } }, dispensedBy: true } },
+        lineItems: {
+          include: {
+            medication: {
+              include: {
+                StockLot: {
+                  where: {
+                    clinicId: actor.clinicId,
+                  },
+                },
+              },
+            },
+          },
+        },
+        pharmacyDispenses: {
+          include: {
+            lines: {
+              include: {
+                medication: true,
+              },
+            },
+            dispensedBy: true,
+          },
+        },
       },
-      orderBy: { prescribingDate: 'desc' },
+      orderBy: {
+        prescribingDate: 'desc',
+      },
     });
   }
 

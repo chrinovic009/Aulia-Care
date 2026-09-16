@@ -59,7 +59,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Compte institutionnel non rattaché à un établissement. Contactez le Super Admin.');
     }
     if (isOperationalRole(user.primaryRole) && (!user.clinic || user.clinic.deletedAt || user.clinic.status !== 'ACTIVE')) {
-      throw new UnauthorizedException('Cet établissement est désactivé. Contactez la plateforme Aulia Care.');
+      throw new UnauthorizedException('Cet établissement est désactivé. Contactez la plateforme Aulia Care : contact@aulia-care.com');
     }
 
     // Access tokens are bound to a persisted session. This makes a targeted

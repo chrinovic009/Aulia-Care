@@ -80,6 +80,37 @@ export class UsersService {
     return { actor, target };
   }
 
+  private async requireActiveClinicUser(actorId?: string) {
+    if (!actorId) {
+      throw new ForbiddenException('Utilisateur authentifié requis.');
+    }
+
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: {
+        id: true,
+        clinicId: true,
+        primaryRole: true,
+        status: true,
+        deletedAt: true,
+      },
+    });
+
+    if (
+      !actor ||
+      actor.deletedAt ||
+      actor.status !== 'ACTIVE' ||
+      !actor.clinicId ||
+      actor.primaryRole === RoleSlug.DEV
+    ) {
+      throw new ForbiddenException(
+        'Utilisateur non rattaché à un établissement actif.',
+      );
+    }
+
+    return actor;
+  }
+
   private normalize(value?: string | null) {
     return String(value || '')
       .normalize('NFD')
@@ -552,157 +583,288 @@ export class UsersService {
     });
   }
 
-  async findContactsForRole(role?: RoleSlug | 'PATIENT', userId?: string) {
-    if (role === 'PATIENT') {
-      return this.decorateContactsByActivity(userId, await this.findPatientCareTeamContacts(userId));
-    }
-    type ContactRole = RoleSlug | 'PATIENT';
-    const staffRoles: RoleSlug[] = [
-      RoleSlug.RECEPTIONIST,
-      RoleSlug.NURSE,
-      RoleSlug.PHYSICIAN,
-      RoleSlug.LAB_MANAGER,
-      RoleSlug.LAB_TECHNICIAN,
-      RoleSlug.RADIOLOGIST,
-      RoleSlug.PHARMACIST,
-      RoleSlug.CASHIER,
-      RoleSlug.FINANCE,
-    ];
-    const allowedRolesByRole: Partial<Record<RoleSlug | 'PATIENT', ContactRole[]>> = {
-      // Administrative accounts do not directly message patients; clinical roles
-      // remain the designated communication channel.
-      SUPER_ADMIN: ['ADMIN'],
+  async findContactsForRole(
+  role?: RoleSlug | 'PATIENT',
+  userId?: string,
+) {
+  // Le portail patient utilise son propre mécanisme de résolution
+  // de l'équipe de soins, déjà tenant-scoped.
+  if (role === 'PATIENT') {
+    return this.decorateContactsByActivity(
+      userId,
+      await this.findPatientCareTeamContacts(userId),
+    );
+  }
 
-      // Admin can contact staff, but not patients.
-      ADMIN: [
-        'SUPER_ADMIN',
-        'RECEPTIONIST',
-        'NURSE',
-        'PHYSICIAN',
-        'LAB_MANAGER',
-        'LAB_TECHNICIAN',
-        'RADIOLOGIST',
-        'PHARMACIST',
-        'CASHIER',
-        'FINANCE',
-      ],
-      // All operational staff can collaborate with every other operational staff.
-      RECEPTIONIST: staffRoles,
-      NURSE: staffRoles,
-      PHYSICIAN: staffRoles,
-      LAB_TECHNICIAN: staffRoles,
-      LAB_MANAGER: staffRoles,
-      RADIOLOGIST: staffRoles,
-      PHARMACIST: staffRoles,
-      CASHIER: staffRoles,
-      // Finance collaborates with all staff and both administration levels,
-      // while patient conversations remain restricted to the care pathway.
-      FINANCE: [...staffRoles, RoleSlug.ADMIN],
-      PATIENT: ['RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER'],
-    };
+  // Résoudre le tenant exclusivement depuis l'utilisateur authentifié.
+  // On ne fait jamais confiance à un clinicId fourni par le client.
+  const actor = await this.requireActiveClinicUser(userId);
+  const clinicId = actor.clinicId;
 
-    const allowedRoles = role ? allowedRolesByRole[role] || [] : [];
-    const permittedStaffRoles = allowedRoles.filter((allowedRole): allowedRole is RoleSlug => allowedRole !== 'PATIENT');
-    const includePatients = allowedRoles.includes('PATIENT');
+  type ContactRole = RoleSlug | 'PATIENT';
 
-    const staff = permittedStaffRoles.length
-      ? await this.prisma.user.findMany({
-          where: {
-            deletedAt: null,
-            status: 'ACTIVE',
-            primaryRole: { in: permittedStaffRoles },
-            ...(userId ? { id: { not: userId } } : {}),
+  const staffRoles: RoleSlug[] = [
+    RoleSlug.RECEPTIONIST,
+    RoleSlug.NURSE,
+    RoleSlug.PHYSICIAN,
+    RoleSlug.LAB_MANAGER,
+    RoleSlug.LAB_TECHNICIAN,
+    RoleSlug.RADIOLOGIST,
+    RoleSlug.PHARMACIST,
+    RoleSlug.CASHIER,
+    RoleSlug.FINANCE,
+  ];
+
+  const allowedRolesByRole: Partial<
+    Record<RoleSlug | 'PATIENT', ContactRole[]>
+  > = {
+    // SUPER_ADMIN communique uniquement avec les ADMIN
+    // de son propre établissement.
+    SUPER_ADMIN: ['ADMIN'],
+
+    // ADMIN peut communiquer avec le personnel,
+    // mais pas directement avec les patients.
+    ADMIN: [
+      'SUPER_ADMIN',
+      'RECEPTIONIST',
+      'NURSE',
+      'PHYSICIAN',
+      'LAB_MANAGER',
+      'LAB_TECHNICIAN',
+      'RADIOLOGIST',
+      'PHARMACIST',
+      'CASHIER',
+      'FINANCE',
+    ],
+
+    // Le personnel opérationnel peut collaborer
+    // avec le personnel autorisé de la même clinique.
+    RECEPTIONIST: staffRoles,
+    NURSE: staffRoles,
+    PHYSICIAN: staffRoles,
+    LAB_TECHNICIAN: staffRoles,
+    LAB_MANAGER: staffRoles,
+    RADIOLOGIST: staffRoles,
+    PHARMACIST: staffRoles,
+    CASHIER: staffRoles,
+
+    // Finance collabore avec le personnel et l'administration.
+    FINANCE: [...staffRoles, RoleSlug.ADMIN],
+
+    PATIENT: [
+      'RECEPTIONIST',
+      'NURSE',
+      'PHYSICIAN',
+      'CASHIER',
+    ],
+  };
+
+  const allowedRoles = role
+    ? allowedRolesByRole[role] || []
+    : [];
+
+  const permittedStaffRoles = allowedRoles.filter(
+    (allowedRole): allowedRole is RoleSlug =>
+      allowedRole !== 'PATIENT',
+  );
+
+  const includePatients = allowedRoles.includes('PATIENT');
+
+  // ------------------------------------------------------------------
+  // PERSONNEL
+  // ------------------------------------------------------------------
+  // Frontière tenant explicite :
+  // un utilisateur de la clinique A ne peut voir que le personnel A.
+  const staff = permittedStaffRoles.length
+    ? await this.prisma.user.findMany({
+        where: {
+          clinicId,
+          deletedAt: null,
+          status: 'ACTIVE',
+          primaryRole: {
+            in: permittedStaffRoles,
           },
-          select: {
-            id: true,
-            displayName: true,
-            firstName: true,
-            lastName: true,
-            primaryRole: true,
-            specialty: true,
-            phone: true,
-            email: true,
+          id: {
+            not: actor.id,
           },
-          orderBy: [{ primaryRole: 'asc' }, { displayName: 'asc' }],
-        })
-      : [];
+        },
+        select: {
+          id: true,
+          displayName: true,
+          firstName: true,
+          lastName: true,
+          primaryRole: true,
+          specialty: true,
+          phone: true,
+          email: true,
+        },
+        orderBy: [
+          { primaryRole: 'asc' },
+          { displayName: 'asc' },
+        ],
+      })
+    : [];
 
-    const patients = includePatients
-      ? await this.prisma.patient.findMany({
-          where: {
-            deletedAt: null,
-            ...(role === 'NURSE'
-              ? {
-                  OR: [
-                    { workflowStatus: PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE },
-                    {
-                      priority: {
-                        in: ['URGENT', 'URGENCE', 'HIGH', 'HAUTE', 'CRITICAL', 'CRITIQUE', 'PRIORITAIRE'],
-                        mode: 'insensitive',
-                      },
+  // ------------------------------------------------------------------
+  // PATIENTS
+  // ------------------------------------------------------------------
+  // Même frontière tenant explicite pour les patients.
+  const patients = includePatients
+    ? await this.prisma.patient.findMany({
+        where: {
+          clinicId,
+          deletedAt: null,
+
+          ...(role === 'NURSE'
+            ? {
+                OR: [
+                  {
+                    workflowStatus:
+                      PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE,
+                  },
+                  {
+                    priority: {
+                      in: [
+                        'URGENT',
+                        'URGENCE',
+                        'HIGH',
+                        'HAUTE',
+                        'CRITICAL',
+                        'CRITIQUE',
+                        'PRIORITAIRE',
+                      ],
+                      mode: 'insensitive',
                     },
-                  ],
-                }
-              : {}),
-          },
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            middleName: true,
-            phone: true,
-            email: true,
-            portalUserId: true,
-            workflowStatus: true,
-            priority: true,
-          },
-          orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
-          take: 100,
-        })
-      : [];
+                  },
+                ],
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          middleName: true,
+          phone: true,
+          email: true,
+          portalUserId: true,
+          workflowStatus: true,
+          priority: true,
+        },
+        orderBy: [
+          { lastName: 'asc' },
+          { firstName: 'asc' },
+        ],
+        take: 100,
+      })
+    : [];
 
-    let contacts = [
-      ...staff.map((user) => ({
-        id: user.id,
-        type: 'USER',
-        name: user.displayName || `${user.firstName} ${user.lastName}`.trim(),
-        role: user.primaryRole,
-        subtitle: user.specialty || this.labelRole(user.primaryRole),
-        phone: user.phone,
-        email: user.email,
-      })),
-      ...patients.filter((patient) => Boolean(patient.portalUserId)).map((patient) => ({
+  let contacts = [
+    ...staff.map((user) => ({
+      id: user.id,
+      type: 'USER',
+      name:
+        user.displayName ||
+        `${user.firstName} ${user.lastName}`.trim(),
+      role: user.primaryRole,
+      subtitle:
+        user.specialty ||
+        this.labelRole(user.primaryRole),
+      phone: user.phone,
+      email: user.email,
+    })),
+
+    ...patients
+      .filter((patient) => Boolean(patient.portalUserId))
+      .map((patient) => ({
         id: patient.portalUserId!,
         patientId: patient.id,
         type: 'PATIENT',
-        name: [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(' '),
+        name: [
+          patient.firstName,
+          patient.middleName,
+          patient.lastName,
+        ]
+          .filter(Boolean)
+          .join(' '),
         role: 'PATIENT',
-        subtitle: patient.priority ? `Cas ${patient.priority}` : patient.workflowStatus,
+        subtitle: patient.priority
+          ? `Cas ${patient.priority}`
+          : patient.workflowStatus,
         phone: patient.phone,
         email: patient.email,
       })),
+  ];
+
+  // Les patients liés au parcours de soins restent dans le même tenant que
+  // l'utilisateur authentifié ; `clinicId` ne provient jamais du client.
+  if (
+    userId &&
+    role &&
+    !['ADMIN', 'SUPER_ADMIN'].includes(String(role))
+  ) {
+    const carePatients =
+      await this.findPatientsForStaffContact(
+        userId,
+        role,
+        clinicId,
+      );
+
+    contacts = [
+      ...contacts,
+      ...carePatients.filter(
+        (candidate) =>
+          !contacts.some(
+            (contact) => contact.id === candidate.id,
+          ),
+      ),
     ];
-    if (userId && role && !['ADMIN', 'SUPER_ADMIN'].includes(String(role))) {
-      const carePatients = await this.findPatientsForStaffContact(userId, role);
-      contacts = [...contacts, ...carePatients.filter((candidate) => !contacts.some((contact) => contact.id === candidate.id))];
-    }
-    return this.decorateContactsByActivity(userId, contacts);
   }
 
-  private async findPatientsForStaffContact(userId: string, role: RoleSlug) {
+  return this.decorateContactsByActivity(
+    userId,
+    contacts,
+  );
+}
+
+  private async findPatientsForStaffContact(
+    userId: string,
+    role: RoleSlug,
+    clinicId: string,
+  ) {
     const whereByRole: Record<string, any> = {
       RECEPTIONIST: { receptionistId: userId },
-      PHYSICIAN: { OR: [{ consultations: { some: { providerId: userId } } }, { hospitalizations: { some: { physicianId: userId } } }] },
-      NURSE: { OR: [{ hospitalizations: { some: { nurseInChargeId: userId } } }, { hospitalizations: { some: { nurseAssignments: { some: { nurseId: userId, releasedAt: null } } } } }] },
-      CASHIER: { invoices: { some: { payments: { some: { paidById: userId } } } } },
-      LAB_MANAGER: { labRequests: { some: {} } },
-      LAB_TECHNICIAN: { labRequests: { some: { items: { some: { assignedToId: userId } } } } },
-      RADIOLOGIST: { imagingRequests: { some: {} } },
+      PHYSICIAN: {
+        OR: [
+          { consultations: { some: { providerId: userId, clinicId, deletedAt: null } } },
+          { hospitalizations: { some: { physicianId: userId, clinicId, deletedAt: null } } },
+        ],
+      },
+      NURSE: {
+        OR: [
+          { hospitalizations: { some: { nurseInChargeId: userId, clinicId, deletedAt: null } } },
+          {
+            hospitalizations: {
+              some: {
+                clinicId,
+                deletedAt: null,
+                nurseAssignments: { some: { nurseId: userId, releasedAt: null } },
+              },
+            },
+          },
+        ],
+      },
+      CASHIER: {
+        invoices: { some: { clinicId, deletedAt: null, payments: { some: { paidById: userId, clinicId, deletedAt: null } } } },
+      },
+      LAB_MANAGER: { labRequests: { some: { clinicId, deletedAt: null } } },
+      LAB_TECHNICIAN: { labRequests: { some: { clinicId, deletedAt: null, items: { some: { assignedToId: userId } } } } },
+      RADIOLOGIST: { imagingRequests: { some: { clinicId, deletedAt: null } } },
     };
     const relation = whereByRole[String(role)];
     if (!relation) return [];
     const patients = await this.prisma.patient.findMany({
-      where: { deletedAt: null, ...relation },
+      where: { clinicId, deletedAt: null, ...relation },
       select: { id: true, firstName: true, middleName: true, lastName: true, email: true, phone: true, portalUserId: true, workflowStatus: true, priority: true },
       orderBy: { updatedAt: 'desc' },
       take: 100,

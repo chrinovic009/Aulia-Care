@@ -2291,6 +2291,7 @@ if (isParamedicalVoucher) {
             await bcrypt.hash(password, 10),
           primaryRole:
             'PATIENT',
+          clinicId: patient.clinicId,
           phone:
             patient.phone,
           nationality:

@@ -696,12 +696,13 @@ export class BillingService {
     };
   }
 
-  async applyInvoiceDiscount(invoiceId: string, amount: number, reason?: string) {
+  async applyInvoiceDiscount(invoiceId: string, amount: number, reason?: string, actorId?: string) {
+    const clinicId = await this.financeClinicId(actorId);
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('Le montant de la reduction est invalide.');
     }
 
-    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    const invoice = await this.prisma.invoice.findFirst({ where: { id: invoiceId, clinicId, deletedAt: null } });
     if (!invoice) {
       throw new NotFoundException('Facture introuvable');
     }
@@ -727,12 +728,13 @@ export class BillingService {
 
   async requestInvoiceDiscount(invoiceId: string, amount: number, reason: string, requesterId?: string) {
     if (!requesterId || !Number.isFinite(amount) || amount <= 0 || !reason?.trim()) throw new BadRequestException('Montant, motif et demandeur sont requis.');
-    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId } });
+    const clinicId = await this.financeClinicId(requesterId);
+    const invoice = await this.prisma.invoice.findFirst({ where: { id: invoiceId, clinicId, deletedAt: null } });
     if (!invoice) throw new NotFoundException('Facture introuvable.');
     if (amount > Number(invoice.balanceDue)) throw new BadRequestException('La réduction ne peut pas dépasser le solde restant.');
     const request = await this.prisma.invoiceDiscountRequest.create({ data: { invoiceId, requestedById: requesterId, amount, reason: reason.trim() } });
     const financeRecipients = await this.prisma.user.findMany({
-      where: { status: 'ACTIVE', primaryRole: { in: ['ADMIN', 'SUPER_ADMIN', 'FINANCE'] } },
+      where: { clinicId, status: 'ACTIVE', deletedAt: null, primaryRole: { in: ['ADMIN', 'SUPER_ADMIN', 'FINANCE'] } },
       select: { id: true },
     });
     financeRecipients.forEach(({ id }) => this.gateway.notifyToUser(id, 'discount.requested', request));
@@ -741,8 +743,9 @@ export class BillingService {
 
   async reviewInvoiceDiscount(requestId: string, approved: boolean, reviewerId?: string, reviewNote?: string) {
     if (!reviewerId) throw new BadRequestException('Administrateur non identifié.');
+    const clinicId = await this.financeClinicId(reviewerId);
     return this.prisma.$transaction(async (tx) => {
-      const request = await tx.invoiceDiscountRequest.findUnique({ where: { id: requestId }, include: { invoice: true } });
+      const request = await tx.invoiceDiscountRequest.findFirst({ where: { id: requestId, invoice: { clinicId, deletedAt: null } }, include: { invoice: true } });
       if (!request) throw new NotFoundException('Demande de réduction introuvable.');
       if (request.status !== 'PENDING') throw new BadRequestException('Cette demande a déjà été traitée.');
       if (!approved) return tx.invoiceDiscountRequest.update({ where: { id: requestId }, data: { status: 'REJECTED', reviewedById: reviewerId, reviewedAt: new Date(), reviewNote: reviewNote || null } });

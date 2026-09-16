@@ -29,13 +29,13 @@ export class PharmacyController {
   }
 
   @Post('catalogue/sections')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+  @Roles('DEV')
   createSection(@Body() body: any) {
     return this.pharmacyService.createSection(body);
   }
 
   @Post('catalogue/categories')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+  @Roles('DEV')
   createCategory(@Body() body: any) {
     return this.pharmacyService.createCategory(body);
   }
@@ -74,7 +74,7 @@ export class PharmacyController {
   }
 
   @Post('medications')
-  @Roles('SUPER_ADMIN', 'PHARMACIST')
+  @Roles('DEV')
   createMedication(@Body() body: any) {
     return this.pharmacyService.createMedication(body);
   }

@@ -69,9 +69,9 @@ async function bootstrap() {
       data: {
         email,
         username,
-        displayName: 'Développeur Aulia Care',
-        firstName: 'Développeur',
-        lastName: 'Aulia Care',
+        displayName: 'Aulia Care',
+        firstName: 'Aulia',
+        lastName: 'Care',
         passwordHash: await bcrypt.hash(password, 12),
         primaryRole: RoleSlug.DEV,
         roles: { create: { roleId: role.id, active: true } },

@@ -17,6 +17,7 @@ import { randomUUID } from 'crypto';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlatformLayersService } from '../platform/layers/platform-layers.service';
+import { isOperationalRole } from '../core/tenant-roles';
 
 @WebSocketGateway({
   cors: {
@@ -64,15 +65,31 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     if (!token) return client.disconnect(true);
 
     try {
-      const payload = await this.jwtService.verifyAsync<{ sub?: string; type?: string }>(token, {
+      const payload = await this.jwtService.verifyAsync<{ sub?: string; sid?: string; type?: string }>(token, {
         secret: this.configService.getOrThrow<string>('JWT_SECRET'),
       });
-      if (!payload.sub || payload.type === 'refresh') return client.disconnect(true);
+      if (!payload.sub || !payload.sid || payload.type === 'refresh') return client.disconnect(true);
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
         select: { id: true, email: true, status: true, deletedAt: true, clinicId: true, primaryRole: true },
       });
       if (!user || user.deletedAt || user.status !== 'ACTIVE') return client.disconnect(true);
+      if (isOperationalRole(user.primaryRole) && !user.clinicId) return client.disconnect(true);
+
+      // A WebSocket upgrade bypasses Passport's HTTP guard. Apply the same
+      // persisted-session and PIN-lock checks as JwtStrategy before the socket
+      // is placed in any user, patient or clinic room.
+      const session = await this.prisma.session.findFirst({
+        where: {
+          id: payload.sid,
+          userId: user.id,
+          status: 'ACTIVE',
+          expiresAt: { gt: new Date() },
+          pinLockedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!session) return client.disconnect(true);
       await this.registerClient(client, user);
     } catch {
       client.disconnect(true);
@@ -542,7 +559,30 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     };
     if (audience.clinicId) this.server.to(this.clinicDomainRoom(audience.clinicId, domain)).emit('realtime.update', event);
     if (audience.patientId) this.server.to(this.patientRoom(audience.patientId)).emit('realtime.update', event);
-    audience.userIds.forEach((userId) => this.server.to(this.userRoom(userId)).emit('realtime.update', event));
+    const scopedUserIds = await this.filterAudienceUserIds(audience.userIds, audience.clinicId);
+    scopedUserIds.forEach((userId) => this.server.to(this.userRoom(userId)).emit('realtime.update', event));
+  }
+
+  /**
+   * Domain rooms are clinic-scoped. Direct user rooms need the same protection:
+   * an inconsistent foreign key must not turn a background change into a
+   * cross-clinic WebSocket disclosure. Portal delivery uses the explicit
+   * patient room instead and is intentionally not included here.
+   */
+  private async filterAudienceUserIds(userIds: string[], clinicId?: string): Promise<string[]> {
+    const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
+    if (uniqueUserIds.length === 0) return [];
+    if (!clinicId) return uniqueUserIds;
+    const users = await this.prisma.user.findMany({
+      where: {
+        id: { in: uniqueUserIds },
+        clinicId,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    return users.map((user) => user.id);
   }
 
   private async resolveAudience(model: string, recordId: string): Promise<RealtimeAudience> {

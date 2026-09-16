@@ -169,8 +169,8 @@ async function bootstrapInitialPlatformDev() {
           data: {
             email: config.email,
             username: config.username,
-            displayName: 'Développeur plateforme Aulia Care',
-            firstName: 'Développeur',
+            displayName: 'Installation Aulia Care',
+            firstName: 'Installation',
             lastName: 'Aulia Care',
             passwordHash: await bcrypt.hash(config.password, 12),
             primaryRole: RoleSlug.DEV,

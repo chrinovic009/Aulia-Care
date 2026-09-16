@@ -539,43 +539,204 @@ export class AdministrationService {
     return { success: true, id };
   }
 
-  stocks() {
+  private stocksForClinic(clinicId: string) {
     return (this.prisma as any).medicationStock.findMany({
-      where: { deletedAt: null },
-      orderBy: [{ expiryDate: 'asc' }, { updatedAt: 'desc' }],
+      where: {
+        clinicId,
+        deletedAt: null,
+      },
+      orderBy: [
+        { expiryDate: 'asc' },
+        { updatedAt: 'desc' },
+      ],
     });
   }
 
-  async stockCatalog() {
-    const [medications, stocks, suppliers, movements, lots, transactions, purchaseOrders, goodsReceipts, dispenses] = await Promise.all([
-      (this.prisma as any).medication.findMany({ where: { deletedAt: null }, orderBy: { name: 'asc' } }),
-      this.stocks(),
-      (this.prisma as any).supplier.findMany({ where: { deletedAt: null }, orderBy: { name: 'asc' } }),
-      (this.prisma as any).stockMovement.findMany({ orderBy: { createdAt: 'desc' }, take: 100 }),
-      (this.prisma as any).stockLot.findMany({ include: { medication: true }, orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'desc' }] }),
-      (this.prisma as any).stockTransaction.findMany({ include: { medication: true, lot: true, performedBy: true }, orderBy: { createdAt: 'desc' }, take: 100 }),
-      (this.prisma as any).purchaseOrder.findMany({ include: { supplier: true, lines: { include: { medication: true } } }, orderBy: { orderedAt: 'desc' }, take: 50 }),
-      (this.prisma as any).goodsReceipt.findMany({ include: { supplier: true, lines: { include: { medication: true } } }, orderBy: { receivedAt: 'desc' }, take: 50 }),
-      (this.prisma as any).pharmacyDispense.findMany({ include: { prescription: { include: { patient: true } }, lines: { include: { medication: true } } }, orderBy: { dispensedAt: 'desc' }, take: 50 }),
-    ]);
+  async stocks(actorId?: string) {
+    const actor = await this.requireClinicMember(actorId);
 
-    return { medications, stocks, suppliers, movements, lots, transactions, purchaseOrders, goodsReceipts, dispenses };
+    return this.stocksForClinic(actor.clinicId);
   }
 
-  async createMedication(data: any) {
+  async stockCatalog(actorId?: string) {
+    const actor = await this.requireClinicMember(actorId);
+    const clinicId = actor.clinicId;
+
+    const [
+      medications,
+      stocks,
+      suppliers,
+      movements,
+      lots,
+      transactions,
+      purchaseOrders,
+      goodsReceipts,
+      dispenses,
+    ] = await Promise.all([
+      (this.prisma as any).medication.findMany({
+        where: {
+          deletedAt: null,
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      }),
+
+      this.stocksForClinic(clinicId),
+
+      (this.prisma as any).supplier.findMany({
+        where: {
+          clinicId,
+          deletedAt: null,
+        },
+        orderBy: {
+          name: 'asc',
+        },
+      }),
+
+      (this.prisma as any).stockMovement.findMany({
+        where: {
+          clinicId,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: 100,
+      }),
+
+      (this.prisma as any).stockLot.findMany({
+        where: {
+          clinicId,
+        },
+        include: {
+          medication: true,
+        },
+        orderBy: [
+          { expiryDate: 'asc' },
+          { receivedAt: 'desc' },
+        ],
+      }),
+
+      (this.prisma as any).stockTransaction.findMany({
+        where: {
+          clinicId,
+        },
+        include: {
+          medication: true,
+          lot: true,
+          performedBy: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: 100,
+      }),
+
+      (this.prisma as any).purchaseOrder.findMany({
+        where: {
+          clinicId,
+        },
+        include: {
+          supplier: true,
+          lines: {
+            include: {
+              medication: true,
+            },
+          },
+        },
+        orderBy: {
+          orderedAt: 'desc',
+        },
+        take: 50,
+      }),
+
+      (this.prisma as any).goodsReceipt.findMany({
+        where: {
+          clinicId,
+        },
+        include: {
+          supplier: true,
+          lines: {
+            include: {
+              medication: true,
+            },
+          },
+        },
+        orderBy: {
+          receivedAt: 'desc',
+        },
+        take: 50,
+      }),
+
+      (this.prisma as any).pharmacyDispense.findMany({
+        where: {
+          clinicId,
+          deletedAt: null,
+        },
+        include: {
+          prescription: {
+            include: {
+              patient: true,
+            },
+          },
+          lines: {
+            include: {
+              medication: true,
+            },
+          },
+        },
+        orderBy: {
+          dispensedAt: 'desc',
+        },
+        take: 50,
+      }),
+    ]);
+
+    return {
+      medications,
+      stocks,
+      suppliers,
+      movements,
+      lots,
+      transactions,
+      purchaseOrders,
+      goodsReceipts,
+      dispenses,
+    };
+  }
+
+  async createMedication(data: any, actorId?: string) {
+    /*
+     * Même si Medication est actuellement un référentiel global,
+     * une création via une route clinique exige toujours un membre
+     * authentifié d'un établissement.
+     */
+    const actor = await this.requireClinicMember(actorId);
+
     const code = String(data.code || '').trim();
     const name = String(data.name || '').trim();
     const unit = String(data.unit || '').trim();
     const strength = String(data.strength || '').trim() || null;
 
     if (!code || !name || !unit) {
-      throw new BadRequestException('Le code, le nom et l\'unité du médicament sont requis.');
+      throw new BadRequestException(
+        "Le code, le nom et l'unité du médicament sont requis.",
+      );
     }
 
     let existing = await (this.prisma as any).medication.findUnique({
-      where: { code },
-      include: { StockLot: true },
+      where: {
+        code,
+      },
+      include: {
+        StockLot: {
+          where: {
+            clinicId: actor.clinicId,
+          },
+        },
+      },
     });
+
     if (!existing) {
       existing = await (this.prisma as any).medication.findFirst({
         where: {
@@ -584,14 +745,25 @@ export class AdministrationService {
           unit,
           strength,
         },
-        include: { StockLot: true },
+        include: {
+          StockLot: {
+            where: {
+              clinicId: actor.clinicId,
+            },
+          },
+        },
       });
     }
 
     if (existing) {
-      const currentQuantity = (existing.StockLot || []).reduce((sum: number, lot: any) => sum + Number(lot.quantity || 0), 0);
+      const currentQuantity = (existing.StockLot || []).reduce(
+        (sum: number, lot: any) =>
+          sum + Number(lot.quantity || 0),
+        0,
+      );
+
       throw new ConflictException({
-        message: 'Un médicament identique existe déjà dans le stock.',
+        message: 'Un médicament identique existe déjà dans le catalogue.',
         medication: {
           id: existing.id,
           code: existing.code,
@@ -616,10 +788,21 @@ export class AdministrationService {
     });
   }
 
-  createSupplier(data: any) {
+  async createSupplier(data: any, actorId?: string) {
+    const actor = await this.requireClinicMember(actorId);
+
+    const name = String(data.name || '').trim();
+
+    if (!name) {
+      throw new BadRequestException(
+        'Le nom du fournisseur est obligatoire.',
+      );
+    }
+
     return (this.prisma as any).supplier.create({
       data: {
-        name: data.name,
+        clinicId: actor.clinicId,
+        name,
         phone: data.phone ?? null,
         email: data.email ?? null,
         address: data.address ?? null,
@@ -628,16 +811,70 @@ export class AdministrationService {
     });
   }
 
-  createStockLot(data: any) {
+  async createStockLot(data: any, actorId?: string) {
+    const actor = await this.requireClinicMember(actorId);
+
+    const medicationId = String(data.medicationId || '').trim();
+    const batchNumber = String(data.batchNumber || '').trim();
+    const quantity = Number(data.quantity || 0);
+
+    if (!medicationId) {
+      throw new BadRequestException(
+        'Le médicament est obligatoire.',
+      );
+    }
+
+    if (!batchNumber) {
+      throw new BadRequestException(
+        'Le numéro de lot est obligatoire.',
+      );
+    }
+
+    if (!Number.isInteger(quantity) || quantity < 0) {
+      throw new BadRequestException(
+        'La quantité du lot doit être un entier positif ou nul.',
+      );
+    }
+
+    /*
+     * Medication est global, mais nous vérifions qu'il s'agit bien
+     * d'une référence active avant de l'utiliser.
+     */
+    const medication = await (this.prisma as any).medication.findFirst({
+      where: {
+        id: medicationId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!medication) {
+      throw new NotFoundException(
+        'Médicament introuvable.',
+      );
+    }
+
     return (this.prisma as any).stockLot.create({
       data: {
-        medicationId: data.medicationId,
-        batchNumber: data.batchNumber,
-        quantity: Number(data.quantity || 0),
-        purchasePrice: data.purchasePrice ? Number(data.purchasePrice) : null,
-        expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
+        clinicId: actor.clinicId,
+        medicationId: medication.id,
+        batchNumber,
+        quantity,
+        purchasePrice:
+          data.purchasePrice !== undefined &&
+          data.purchasePrice !== null &&
+          data.purchasePrice !== ''
+            ? Number(data.purchasePrice)
+            : null,
+        expiryDate: data.expiryDate
+          ? new Date(data.expiryDate)
+          : null,
       },
-      include: { medication: true },
+      include: {
+        medication: true,
+      },
     });
   }
 

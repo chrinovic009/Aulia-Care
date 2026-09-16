@@ -25,7 +25,14 @@ async function audit() {
   const [users, employees, serviceUnits, services, roomAssignments, configurations, subscriptionCompanies, operatingRooms, imagingCatalogues, imagingMachines, wearablePlans, wearableLots, legacyExpenses, legacyRevenues] = await Promise.all([
     prisma.user.findMany({
       where: { deletedAt: null, primaryRole: { in: operationalRoles } },
-      select: { id: true, username: true, primaryRole: true, clinicId: true, Employee: { select: { id: true, clinicId: true } } },
+      select: {
+        id: true,
+        username: true,
+        primaryRole: true,
+        clinicId: true,
+        Employee: { select: { id: true, clinicId: true } },
+        patientPortalProfile: { select: { clinicId: true } },
+      },
     }),
     prisma.employee.findMany({
       select: { id: true, userId: true, clinicId: true, user: { select: { id: true, clinicId: true, primaryRole: true } } },
@@ -85,7 +92,7 @@ async function audit() {
 
   // These are the records that form the patient workflow.  They must remain
   // tenant-aligned even when a legacy database predates the NOT NULL migration.
-  const [patients, patientVisits, appointments, consultations, prescriptions, labRequests, imagingRequests, hospitalizations, invoices, payments] = await Promise.all([
+  const [patients, patientVisits, appointments, consultations, prescriptions, labRequests, imagingRequests, hospitalizations, invoices, payments, pharmacies, medicationStocks, stockMovements, purchaseOrders, goodsReceipts, supplierInvoices, supplierPayments, stockLots, stockTransactions, pharmacyDispenses, notifications, chatMessages, auditLogs, parentChildLinks, telehealthSessions] = await Promise.all([
     prisma.patient.findMany({
       where: { deletedAt: null },
       select: { id: true, clinicId: true, receptionist: { select: { clinicId: true } } },
@@ -173,6 +180,113 @@ async function audit() {
         id: true, clinicId: true,
         invoice: { select: { clinicId: true } },
         paidBy: { select: { clinicId: true } },
+      },
+    }),
+    prisma.pharmacy.findMany({
+      select: { id: true, clinicId: true },
+    }),
+    prisma.medicationStock.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true,
+        clinicId: true,
+        Pharmacy: { select: { clinicId: true } },
+      },
+    }),
+    prisma.stockMovement.findMany({
+      select: { id: true, clinicId: true, supplierId: true, performedById: true },
+    }),
+    prisma.purchaseOrder.findMany({
+      select: {
+        id: true,
+        clinicId: true,
+        supplier: { select: { clinicId: true } },
+      },
+    }),
+    prisma.goodsReceipt.findMany({
+      select: {
+        id: true,
+        clinicId: true,
+        purchaseOrder: { select: { clinicId: true } },
+        supplier: { select: { clinicId: true } },
+        receivedBy: { select: { clinicId: true } },
+      },
+    }),
+    prisma.supplierInvoice.findMany({
+      select: {
+        id: true,
+        clinicId: true,
+        supplier: { select: { clinicId: true } },
+        purchaseOrder: { select: { clinicId: true } },
+      },
+    }),
+    prisma.supplierPayment.findMany({
+      select: {
+        id: true,
+        clinicId: true,
+        supplier: { select: { clinicId: true } },
+        supplierInvoice: { select: { clinicId: true } },
+      },
+    }),
+    prisma.stockLot.findMany({
+      select: { id: true, clinicId: true },
+    }),
+    prisma.stockTransaction.findMany({
+      select: {
+        id: true,
+        clinicId: true,
+        lot: { select: { clinicId: true } },
+        performedBy: { select: { clinicId: true } },
+      },
+    }),
+    prisma.pharmacyDispense.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true,
+        clinicId: true,
+        prescription: { select: { clinicId: true } },
+        dispensedBy: { select: { clinicId: true } },
+      },
+    }),
+    prisma.notification.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true,
+        recipient: { select: { clinicId: true } },
+        author: { select: { clinicId: true } },
+        patient: { select: { clinicId: true } },
+      },
+    }),
+    prisma.chatMessage.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true,
+        clinicId: true,
+        sender: { select: { clinicId: true } },
+        recipient: { select: { clinicId: true } },
+      },
+    }),
+    prisma.auditLog.findMany({
+      select: {
+        id: true,
+        actor: { select: { clinicId: true } },
+        patient: { select: { clinicId: true } },
+      },
+    }),
+    prisma.parentChildLink.findMany({
+      select: {
+        id: true,
+        parent: { select: { clinicId: true } },
+        child: { select: { clinicId: true } },
+      },
+    }),
+    prisma.telehealthSession.findMany({
+      select: {
+        id: true,
+        consultation: { select: { clinicId: true } },
+        patient: { select: { clinicId: true } },
+        doctor: { select: { clinicId: true } },
+        patientUser: { select: { clinicId: true } },
       },
     }),
   ]);
@@ -274,6 +388,130 @@ async function audit() {
       paidByClinicId: payment.paidBy?.clinicId ?? null,
     });
   }
+  for (const pharmacy of pharmacies) {
+    if (!pharmacy.clinicId) {
+      report('PHARMACY_WITHOUT_CLINIC', pharmacy.id, {});
+    }
+  }
+  for (const stock of medicationStocks) {
+    reportClinicalMismatch('MEDICATION_STOCK', stock.id, stock.clinicId, {
+      pharmacyClinicId: stock.Pharmacy?.clinicId ?? null,
+    });
+  }
+  for (const order of purchaseOrders) {
+    reportClinicalMismatch('PURCHASE_ORDER', order.id, order.clinicId, {
+      supplierClinicId: order.supplier.clinicId,
+    });
+  }
+  for (const receipt of goodsReceipts) {
+    reportClinicalMismatch('GOODS_RECEIPT', receipt.id, receipt.clinicId, {
+      purchaseOrderClinicId: receipt.purchaseOrder?.clinicId ?? null,
+      supplierClinicId: receipt.supplier?.clinicId ?? null,
+      receivedByClinicId: receipt.receivedBy?.clinicId ?? null,
+    });
+  }
+  for (const invoice of supplierInvoices) {
+    reportClinicalMismatch('SUPPLIER_INVOICE', invoice.id, invoice.clinicId, {
+      supplierClinicId: invoice.supplier.clinicId,
+      purchaseOrderClinicId: invoice.purchaseOrder?.clinicId ?? null,
+    });
+  }
+  for (const payment of supplierPayments) {
+    reportClinicalMismatch('SUPPLIER_PAYMENT', payment.id, payment.clinicId, {
+      supplierClinicId: payment.supplier.clinicId,
+      supplierInvoiceClinicId: payment.supplierInvoice?.clinicId ?? null,
+    });
+  }
+  for (const lot of stockLots) {
+    if (!lot.clinicId) report('STOCK_LOT_WITHOUT_CLINIC', lot.id, {});
+  }
+  for (const transaction of stockTransactions) {
+    reportClinicalMismatch('STOCK_TRANSACTION', transaction.id, transaction.clinicId, {
+      stockLotClinicId: transaction.lot?.clinicId ?? null,
+      performedByClinicId: transaction.performedBy?.clinicId ?? null,
+    });
+  }
+  for (const dispense of pharmacyDispenses) {
+    reportClinicalMismatch('PHARMACY_DISPENSE', dispense.id, dispense.clinicId, {
+      prescriptionClinicId: dispense.prescription.clinicId,
+      dispensedByClinicId: dispense.dispensedBy?.clinicId ?? null,
+    });
+  }
+  for (const notification of notifications) {
+    const relatedClinics = {
+      recipientClinicId: notification.recipient?.clinicId ?? null,
+      authorClinicId: notification.author?.clinicId ?? null,
+      patientClinicId: notification.patient?.clinicId ?? null,
+    };
+    const clinicIds = [...new Set(Object.values(relatedClinics).filter((clinicId): clinicId is string => Boolean(clinicId)))];
+    if (clinicIds.length === 0) {
+      report('NOTIFICATION_WITHOUT_TENANT_OWNER', notification.id, relatedClinics);
+    } else if (clinicIds.length > 1) {
+      report('NOTIFICATION_CROSS_CLINIC', notification.id, relatedClinics);
+    }
+  }
+  for (const message of chatMessages) {
+    reportClinicalMismatch('CHAT_MESSAGE', message.id, message.clinicId, {
+      senderClinicId: message.sender.clinicId,
+      recipientClinicId: message.recipient.clinicId,
+    });
+  }
+  for (const log of auditLogs) {
+    const relatedClinics = {
+      actorClinicId: log.actor?.clinicId ?? null,
+      patientClinicId: log.patient?.clinicId ?? null,
+    };
+    const clinicIds = [...new Set(Object.values(relatedClinics).filter((clinicId): clinicId is string => Boolean(clinicId)))];
+    if (clinicIds.length > 1) {
+      report('AUDIT_LOG_CROSS_CLINIC', log.id, relatedClinics);
+    }
+    // A zero-owner entry is a platform/legacy maintenance event. It has no
+    // patient or operational actor relation, and AuditService deliberately
+    // makes it invisible from every clinic endpoint. It therefore is not a
+    // cross-tenant data exposure and cannot be safely attributed by this tool.
+  }
+  for (const link of parentChildLinks) {
+    const parentClinicId = link.parent.clinicId;
+    const childClinicId = link.child.clinicId;
+    // Patient portals created before the tenant hardening can lack clinicId;
+    // their explicit Patient relation remains auditable as an unresolved legacy
+    // case rather than silently granting a cross-clinic parent link.
+    if (!childClinicId || (parentClinicId && parentClinicId !== childClinicId)) {
+      report('PARENT_CHILD_LINK_CROSS_CLINIC_OR_UNSCOPED', link.id, {
+        parentClinicId,
+        childClinicId,
+      });
+    }
+  }
+  for (const session of telehealthSessions) {
+    const consultationClinicId = session.consultation.clinicId;
+    if (!consultationClinicId || session.patient.clinicId !== consultationClinicId || session.doctor.clinicId !== consultationClinicId) {
+      report('TELEHEALTH_SESSION_CROSS_CLINIC_OR_UNSCOPED', session.id, {
+        consultationClinicId,
+        patientClinicId: session.patient.clinicId,
+        doctorClinicId: session.doctor.clinicId,
+        patientUserClinicId: session.patientUser.clinicId,
+      });
+    }
+  }
+
+  // StockMovement intentionally has only a scalar supplierId in the legacy
+  // schema. Resolve it through the tenant-owned Supplier table instead of
+  // treating a scalar identifier as evidence of tenant ownership.
+  const movementSupplierIds = [...new Set(stockMovements.map((movement) => movement.supplierId).filter((id): id is string => Boolean(id)))];
+  const movementActorIds = [...new Set(stockMovements.map((movement) => movement.performedById).filter((id): id is string => Boolean(id)))];
+  const [movementSuppliers, movementActors] = await Promise.all([
+    prisma.supplier.findMany({ where: { id: { in: movementSupplierIds } }, select: { id: true, clinicId: true } }),
+    prisma.user.findMany({ where: { id: { in: movementActorIds } }, select: { id: true, clinicId: true } }),
+  ]);
+  const supplierClinicById = new Map(movementSuppliers.map((supplier) => [supplier.id, supplier.clinicId]));
+  const actorClinicById = new Map(movementActors.map((actor) => [actor.id, actor.clinicId]));
+  for (const movement of stockMovements) {
+    reportClinicalMismatch('STOCK_MOVEMENT', movement.id, movement.clinicId, {
+      supplierClinicId: movement.supplierId ? supplierClinicById.get(movement.supplierId) ?? null : null,
+      performedByClinicId: movement.performedById ? actorClinicById.get(movement.performedById) ?? null : null,
+    });
+  }
 
   for (const expense of legacyExpenses) {
     report('LEGACY_EXPENSE_WITHOUT_CLINIC', expense.id, {});
@@ -285,6 +523,14 @@ async function audit() {
   for (const user of users) {
     if (user.clinicId) continue;
     const employeeClinics = [...new Set(user.Employee.map((employee) => employee.clinicId).filter((clinicId): clinicId is string => Boolean(clinicId)))];
+    const portalPatientClinicId = user.patientPortalProfile?.clinicId ?? null;
+    if (user.primaryRole === RoleSlug.PATIENT && portalPatientClinicId) {
+      report('PATIENT_PORTAL_USER_CLINIC_MISSING_DETERMINISTIC', user.id, {
+        username: user.username,
+        resolvedClinicId: portalPatientClinicId,
+      }, true);
+      continue;
+    }
     if (employeeClinics.length === 1) {
       report('USER_CLINIC_MISSING_DETERMINISTIC', user.id, { username: user.username, role: user.primaryRole, resolvedClinicId: employeeClinics[0] }, true);
     } else {
@@ -458,7 +704,10 @@ async function repairDeterministicFindings() {
   for (const finding of findings.filter((entry) => entry.repairable)) {
     const clinicId = String(finding.detail.resolvedClinicId || finding.detail.clinicId);
     await prisma.$transaction(async (tx) => {
-      if (finding.category === 'USER_CLINIC_MISSING_DETERMINISTIC') {
+      if (
+        finding.category === 'USER_CLINIC_MISSING_DETERMINISTIC' ||
+        finding.category === 'PATIENT_PORTAL_USER_CLINIC_MISSING_DETERMINISTIC'
+      ) {
         await tx.user.update({ where: { id: finding.id }, data: { clinicId } });
       }
       if (finding.category === 'EMPLOYEE_CLINIC_MISSING_DETERMINISTIC') {

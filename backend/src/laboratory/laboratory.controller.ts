@@ -37,13 +37,13 @@ export class LaboratoryController {
   }
 
   @Get('settings')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_TECHNICIAN', 'LAB_MANAGER')
+  @Roles('DEV')
   settings() {
     return this.laboratoryService.getSettings();
   }
 
   @Post('settings')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
+  @Roles('DEV')
   updateSettings(@Body() body: any) {
     return this.laboratoryService.updateSettings(body);
   }
@@ -109,67 +109,67 @@ export class LaboratoryController {
   }
 
   @Post('catalogue/sections')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
+  @Roles('DEV')
   createSection(@Body() body: CreateLabSectionDto) {
     return this.laboratoryService.createSection(body);
   }
 
   @Post('catalogue/categories')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
+  @Roles('DEV')
   createCategory(@Body() body: CreateLabCategoryDto) {
     return this.laboratoryService.createCategory(body);
   }
 
   @Post('catalogue/tests')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
+  @Roles('DEV')
   createTest(@Body() body: CreateLabTestDto, @Request() req: any) {
     return this.laboratoryService.createTest(body, req.user?.userId);
   }
 
   @Post('catalogue/test-parameters')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
+  @Roles('DEV')
   createTestParameter(@Body() body: CreateLabTestParameterDto) {
     return this.laboratoryService.createTestParameter(body);
   }
 
   @Post('catalogue/sample-types')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
+  @Roles('DEV')
   createSampleType(@Body() body: CreateLabSampleTypeDto) {
     return this.laboratoryService.createSampleType(body);
   }
 
   @Post('catalogue/sample-requirements')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
+  @Roles('DEV')
   createSampleRequirement(@Body() body: CreateLabTestSampleRequirementDto) {
     return this.laboratoryService.createSampleRequirement(body);
   }
 
   @Post('catalogue/consumables')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
+  @Roles('DEV')
   createConsumable(@Body() body: CreateLabConsumableDto) {
     return this.laboratoryService.createConsumable(body);
   }
 
   @Post('catalogue/consumable-requirements')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
+  @Roles('DEV')
   createConsumableRequirement(@Body() body: CreateLabTestConsumableRequirementDto) {
     return this.laboratoryService.createConsumableRequirement(body);
   }
 
   @Post('catalogue/stock')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
+  @Roles('DEV')
   createConsumableStock(@Body() body: CreateLabConsumableStockDto, @Request() req: any) {
     return this.laboratoryService.createConsumableStock(body, req.user?.userId);
   }
 
   @Patch('catalogue/:kind/:id')
-  @Roles('LAB_MANAGER')
+  @Roles('DEV')
   updateCatalogue(@Param('kind') kind: string, @Param('id') id: string, @Body() body: any) {
     return this.laboratoryService.updateCatalogue(kind as any, id, body);
   }
 
   @Delete('catalogue/:kind/:id')
-  @Roles('LAB_MANAGER')
+  @Roles('DEV')
   deleteCatalogue(@Param('kind') kind: string, @Param('id') id: string) {
     return this.laboratoryService.deleteCatalogue(kind as any, id);
   }
@@ -181,7 +181,7 @@ export class LaboratoryController {
   }
 
   @Post('config/direct-result-authorization')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'LAB_MANAGER')
+  @Roles('DEV')
   setDirectResultAuthorization(@Body() body: any, @Request() req: any) {
     return this.laboratoryService.setDirectResultAuthorization(Boolean(body?.enabled), req.user?.userId);
   }
