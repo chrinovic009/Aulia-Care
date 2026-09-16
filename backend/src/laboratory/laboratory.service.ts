@@ -536,7 +536,7 @@ export class LaboratoryService {
       return acc;
     }, {} as Record<string, number>);
 
-    const validations = await this.getValidations(undefined, 'LAB_MANAGER');
+    const validations = await this.getValidations(actorId, 'LAB_MANAGER');
     const performance = {
       value: requests.length > 0 ? Number(((processedToday / Math.max(todayRequests.length, 1)) * 100).toFixed(1)) : 0,
       processedToday,
@@ -550,8 +550,18 @@ export class LaboratoryService {
     }, {} as Record<string, number>);
 
     const staffPerformance = await this.prisma.labRequestItem.findMany({
-      where: { deletedAt: null, assignedToId: { not: null } },
-      include: { assignedTo: true, results: true },
+      where: {
+        deletedAt: null,
+        assignedToId: { not: null },
+        labRequest: {
+          clinicId: actor.clinicId,
+          deletedAt: null,
+        },
+      },
+      include: {
+        assignedTo: true,
+        results: true,
+      },
     });
 
     const staffMap = new Map<string, { name: string; total: number; validated: number }>();
@@ -580,15 +590,39 @@ export class LaboratoryService {
     };
 
     const recentActivity = await this.prisma.labRequestEvent.findMany({
-      where: { createdAt: { gte: today, lt: tomorrow } },
-      include: { labRequest: { include: { patient: true } }, labRequestItem: { include: { labTest: true } } },
-      orderBy: { createdAt: 'desc' },
+      where: {
+        createdAt: {
+          gte: today,
+          lt: tomorrow,
+        },
+        labRequest: {
+          clinicId: actor.clinicId,
+          deletedAt: null,
+        },
+      },
+      include: {
+        labRequest: {
+          include: {
+            patient: true,
+          },
+        },
+        labRequestItem: {
+          include: {
+            labTest: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
       take: 10,
     });
 
+    const activity = await this.getActivityOverview(actorId);
+
     const alerts = [
-      ...((await this.getActivityOverview()).criticalAlerts || []),
-      ...((await this.getActivityOverview()).lowStockAlerts || []).map((alert) => ({
+      ...(activity.criticalAlerts || []),
+      ...(activity.lowStockAlerts || []).map((alert) => ({
         title: 'Stock laboratoire critique',
         message: `${alert.consumableName} - ${alert.quantity} restant(s)`,
         priority: 'HIGH',
