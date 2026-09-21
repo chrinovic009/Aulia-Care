@@ -14,7 +14,11 @@ import { useAuth } from "../../context/AuthContext";
 import { usePlatformLayers } from "../../context/PlatformLayersContext";
 import { DoctorTelehealthCall } from "../../components/telehealth/TelehealthCall";
 import { ClinicalConsultationWorkspace, createInitialStructuredConsultation, type StructuredConsultation } from "./ClinicalConsultationWorkspace";
-import { ConsultationExamOrder, ConsultationPrescriptionOrder } from "./ConsultationOrders";
+import {
+  ConsultationExamOrder,
+  ConsultationPrescriptionOrder,
+  type ConsultationOrderedExam,
+} from "./ConsultationOrders";
 import { apiFetch } from "../../config/api";
 
 // Petit hook utilitaire pour gérer l'état d'une modale
@@ -231,7 +235,7 @@ type ConsultationModuleState = {
   differentialDiagnoses: string[];
   selectedDiagnosis: { codeICD: string; label: string; certaintyLevel: "PRESUMPTION" | "CONFIRMED" | "CHRONIC" };
   performedProcedures: Array<{ code: string; description: string; cost: number }>;
-  orderedExams: Array<{ category: "LABORATORY" | "IMAGING"; testName: string; urgency: "ROUTINE" | "URGENT"; clinicalIndication: string }>;
+  orderedExams: ConsultationOrderedExam[];
   prescriptions: Array<{ drugId: string; innName: string; brandName?: string; form: string; dosage: string; route: string; durationDays: number; pharmacyStockStatus: "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK" }>;
   safetyAlerts: Array<{ type: "ALLERGY_WARNING" | "DRUG_INTERACTION" | "CONTRAINDICATION"; message: string }>;
   safetyConsignes: string;
@@ -567,10 +571,19 @@ export default function DashboardMedecin() {
   const activeConsultation = openedDraft && openedDraft.id === requestedDraftId ? openedDraft : (selectedPatient?.consultations || []).find((item) => item.id === requestedDraftId && ["DRAFT", "IN_PROGRESS"].includes(String(item.status).toUpperCase()))
     || (selectedPatient?.consultations || []).find((item) => ["DRAFT", "IN_PROGRESS"].includes(String(item.status).toUpperCase()));
   const currentConsultationId = activeConsultation?.id || "";
-  const hasConsultationResults = Boolean(currentConsultationId && (
-    selectedPatient?.labRequests?.some((request) => request.consultationId === currentConsultationId && request.results?.length && ["AVAILABLE", "SENT", "COMPLETED", "VERIFIED"].includes(String(request.status).toUpperCase()))
-    || selectedPatient?.imagingRequests?.some((request) => request.consultationId === currentConsultationId && request.report && ["COMPLETED", "VERIFIED"].includes(String(request.status).toUpperCase()))
-  ));
+  const hasConsultationResults = currentConsultationId
+    ? (consultationModule.orderedExams.length === 0 || consultationModule.orderedExams.every((exam) => {
+        const category = String(exam.category || "").toUpperCase();
+        const itemId = exam.catalogueItemId || "";
+        if (category === "LABORATORY") {
+          return Boolean((selectedPatient?.labRequests || []).some((request) => request.consultationId === currentConsultationId && request.results?.length && request.labTestId === itemId && ["AVAILABLE", "SENT", "COMPLETED", "VERIFIED"].includes(String(request.status).toUpperCase())));
+        }
+        if (category === "IMAGING") {
+          return Boolean((selectedPatient?.imagingRequests || []).some((request) => request.consultationId === currentConsultationId && request.imagingCatalogueId === itemId && request.report && ["COMPLETED", "VERIFIED"].includes(String(request.status).toUpperCase())));
+        }
+        return true;
+      }))
+    : false;
   const consultationDraftKey = currentConsultationId && currentUser?.id
     ? `aulia:consultation-draft:${currentUser.id}:${currentConsultationId}`
     : "";
@@ -727,7 +740,9 @@ export default function DashboardMedecin() {
     });
   };
 
-  const saveDraftConsultation = async (awaitingResults = false) => {
+  const saveDraftConsultation = async (
+    mode: "AUTO_DRAFT" | "IN_PROGRESS" = "AUTO_DRAFT",
+  ) => {
     if (isSavingConsultation) return;
     setIsSavingConsultation(true);
     setActionMessage(null);
@@ -781,16 +796,33 @@ export default function DashboardMedecin() {
       complementaryExams: { orderedExams: consultationModule.orderedExams },
       complementaryAnamnesis: complementDescription,
       consultationModule,
-      status: "DRAFT",
+      status: mode === "IN_PROGRESS" ? "IN_PROGRESS" : "DRAFT",
     });
       const savedDraftKey = currentUser?.id ? `aulia:consultation-draft:${currentUser.id}:${consultationId}` : consultationDraftKey;
       if (savedDraftKey) window.sessionStorage.removeItem(savedDraftKey);
-      const message = awaitingResults
-        ? "Les données cliniques ont été enregistrées en brouillon. Demandez les examens complémentaires : l’orientation et la prise en charge seront disponibles à réception de leurs résultats."
-        : "Brouillon enregistré dans le dossier médical. Vous pouvez reprendre la consultation à tout moment.";
+      const isInProgress = mode === "IN_PROGRESS";
+
+      const message = isInProgress
+        ? consultationModule.orderedExams.length > 0
+          ? "Consultation enregistrée comme en cours. Les examens demandés sont en attente de traitement et de résultats. Vous pourrez reprendre cette même consultation lorsque les résultats seront disponibles."
+          : "Consultation enregistrée comme en cours. Vous pourrez la reprendre et poursuivre le dossier clinique."
+        : "Brouillon de récupération enregistré automatiquement.";
+
       setActionMessage(message);
-      setSaveFeedback({ title: "Brouillon enregistré", message, tone: awaitingResults ? "warning" : "success" });
-      setIsConsultationOpen(false);
+
+      setSaveFeedback(
+        isInProgress
+          ? {
+              title: "Consultation en cours",
+              message,
+              tone: consultationModule.orderedExams.length > 0 ? "warning" : "success",
+            }
+          : null,
+      );
+
+      if (isInProgress) {
+        setIsConsultationOpen(false);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "La sauvegarde du brouillon a échoué.";
       setActionMessage(message);
@@ -1379,7 +1411,17 @@ export default function DashboardMedecin() {
                       value={consultationModule.structured}
                       onChange={(structured) => setConsultationModule((current) => ({ ...current, structured }))}
                       hasAvailableResults={hasConsultationResults}
-                      examinationsSlot={<ConsultationExamOrder ensureConsultation={ensureActiveConsultation} />}
+                      examinationsSlot={
+                        <ConsultationExamOrder
+                          orderedExams={consultationModule.orderedExams}
+                          onChange={(orderedExams) =>
+                            setConsultationModule((current) => ({
+                              ...current,
+                              orderedExams,
+                            }))
+                          }
+                        />
+                      }
                       prescriptionSlot={<ConsultationPrescriptionOrder ensureConsultation={ensureActiveConsultation} />}
                     />
                   ) : !telehealthReady ? (
@@ -1507,7 +1549,7 @@ export default function DashboardMedecin() {
                   {consultationModule.consultationMode !== "TELECONSULTATION" && (
                     <div className="sticky bottom-3 z-10 mt-4 flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
                       <button type="button" onClick={() => setConfirmation({ title: "Réinitialiser la consultation ?", message: "Les données non enregistrées de cette consultation seront effacées. Cette action ne peut pas être annulée.", confirmLabel: "Oui, effacer", tone: "danger", onConfirm: () => { resetConsultationModule(); setConfirmation(null); } })} disabled={isSavingConsultation} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200">Effacer / réinitialiser</button>
-                      <button type="button" onClick={() => void saveDraftConsultation()} disabled={isSavingConsultation} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{isSavingConsultation ? "Enregistrement…" : "Enregistrer brouillon"}</button>
+                      <button type="button" onClick={() => void saveDraftConsultation("IN_PROGRESS")} disabled={isSavingConsultation} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{isSavingConsultation ? "Enregistrement…" : "Enregistrer et continuer plus tard"}</button>
                       <button type="button" onClick={() => void validateConsultation()} disabled={isSavingConsultation} className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60">{isSavingConsultation ? "Enregistrement…" : "Valider et signer"}</button>
                     </div>
                   )}

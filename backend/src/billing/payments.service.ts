@@ -188,22 +188,90 @@ export class PaymentsService {
         });
       }
 
-      let labRequest: { id: string } | null = null;
+      // Les demandes d'examens restent bloquées tant que la facture n'est pas
+      // intégralement réglée. La caisse libère une demande en REQUESTED ;
+      // elle ne la marque jamais RECEIVED, état réservé au service clinique.
+      let labRequest: any = null;
+      let imagingRequest: any = null;
+
       if (remainingBalance === 0 && invoice.type === 'LABORATORY') {
-        const labRequestMatch = invoice.remarks?.match(/(?:LabRequest|Demande laboratoire):?\s*([a-zA-Z0-9-]+)/i);
-        if (labRequestMatch?.[1]) {
-          const matchingLabRequest = await prisma.labRequest.findFirst({
+        let matchingLabRequest = await prisma.labRequest.findFirst({
+          where: {
+            externalReference: invoice.id,
+            clinicId: invoiceClinicId,
+            patientId: invoice.patientId,
+            deletedAt: null,
+          },
+          include: {
+            patient: true,
+            requestedBy: true,
+            items: { include: { labTest: true } },
+          },
+        });
+
+        // Compatibilité avec les anciennes factures qui n'avaient pas encore
+        // externalReference comme lien canonique.
+        if (!matchingLabRequest) {
+          const labRequestMatch = invoice.remarks?.match(
+            /(?:LabRequest|Demande laboratoire):?\s*([a-zA-Z0-9-]+)/i,
+          );
+          if (labRequestMatch?.[1]) {
+            matchingLabRequest = await prisma.labRequest.findFirst({
+              where: {
+                id: labRequestMatch[1],
+                clinicId: invoiceClinicId,
+                patientId: invoice.patientId,
+                deletedAt: null,
+              },
+              include: {
+                patient: true,
+                requestedBy: true,
+                items: { include: { labTest: true } },
+              },
+            });
+          }
+        }
+
+        if (matchingLabRequest) {
+          labRequest = await prisma.labRequest.update({
+            where: { id: matchingLabRequest.id },
+            data: { status: 'REQUESTED', receivedAt: null },
+            include: {
+              patient: true,
+              requestedBy: true,
+              items: { include: { labTest: true } },
+            },
+          });
+
+          await prisma.labRequestItem.updateMany({
             where: {
-              id: labRequestMatch[1],
+              labRequestId: matchingLabRequest.id,
+              status: 'AWAITING_PAYMENT',
+              deletedAt: null,
+            },
+            data: { status: 'REQUESTED' },
+          });
+        }
+      }
+
+      if (remainingBalance === 0 && invoice.type === 'RADIOLOGY') {
+        const imagingRequestMatch = invoice.remarks?.match(
+          /ImagingRequest:?\s*([a-zA-Z0-9-]+)/i,
+        );
+
+        if (imagingRequestMatch?.[1]) {
+          const matchingImagingRequest = await prisma.imagingRequest.findFirst({
+            where: {
+              id: imagingRequestMatch[1],
               clinicId: invoiceClinicId,
               patientId: invoice.patientId,
               deletedAt: null,
             },
-            select: { id: true },
           });
-          if (matchingLabRequest) {
-            labRequest = await prisma.labRequest.update({
-              where: { id: matchingLabRequest.id },
+
+          if (matchingImagingRequest) {
+            imagingRequest = await prisma.imagingRequest.update({
+              where: { id: matchingImagingRequest.id },
               data: { status: 'REQUESTED' },
             });
           }
@@ -230,9 +298,9 @@ export class PaymentsService {
         }
       }
 
-      // Payment is deliberately independent from portal provisioning.  It
+      // Payment is deliberately independent from portal provisioning. It
       // cannot create, reissue, or reset patient credentials or activation
-      // tokens.  Those actions belong to the explicit patient-portal flow.
+      // tokens. Those actions belong to the explicit patient-portal flow.
       const receptionistMessage = null;
 
       const targetRole: RoleSlug = invoice.type === 'PHARMACY'
@@ -242,12 +310,14 @@ export class PaymentsService {
           : invoice.type === 'RADIOLOGY'
             ? RoleSlug.RADIOLOGIST
             : RoleSlug.NURSE;
+
       const serviceUserIds = invoice.type === 'SERVICE'
         ? [
             ...(invoice.patient?.service?.responsables || []).map((item) => item.userId || item.user?.id),
             ...(invoice.patient?.service?.staff || []).map((item) => item.userId || item.user?.id),
           ].filter((id): id is string => Boolean(id))
         : [];
+
       const targetUsers = remainingBalance > 0 ? [] : await prisma.user.findMany({
         where: {
           clinicId: invoiceClinicId,
@@ -255,51 +325,18 @@ export class PaymentsService {
           OR: serviceUserIds.length
             ? undefined
             : invoice.type === 'LABORATORY'
-            ? [
-                { primaryRole: RoleSlug.LAB_TECHNICIAN },
-                { primaryRole: RoleSlug.LAB_MANAGER },
-                { roles: { some: { role: { slug: RoleSlug.LAB_TECHNICIAN } } } },
-                { roles: { some: { role: { slug: RoleSlug.LAB_MANAGER } } } },
-              ]
-            : [
-                { primaryRole: targetRole },
-                { roles: { some: { role: { slug: targetRole } } } },
-              ],
+              ? [
+                  { primaryRole: RoleSlug.LAB_TECHNICIAN },
+                  { primaryRole: RoleSlug.LAB_MANAGER },
+                  { roles: { some: { role: { slug: RoleSlug.LAB_TECHNICIAN } } } },
+                  { roles: { some: { role: { slug: RoleSlug.LAB_MANAGER } } } },
+                ]
+              : [
+                  { primaryRole: targetRole },
+                  { roles: { some: { role: { slug: targetRole } } } },
+                ],
         },
       });
-
-      // CORRECTION DU DOUBLON ICI : renommage en labRequestByInvoice
-      const labRequestByInvoice = invoice.type === 'LABORATORY'
-        ? await prisma.labRequest.findFirst({
-            where: {
-              externalReference: invoice.id,
-              clinicId: invoiceClinicId,
-              patientId: invoice.patientId,
-              deletedAt: null,
-            },
-            include: { patient: true, requestedBy: true, items: { include: { labTest: true } } },
-          })
-        : null;
-
-      if (labRequestByInvoice) {
-        await prisma.labRequest.update({
-          where: { id: labRequestByInvoice.id },
-          data: { status: 'RECEIVED', receivedAt: new Date() },
-        });
-      }
-
-      // Si labRequest n'a pas été trouvé via le match des remarques, on tente d'utiliser celui trouvé via externalReference
-      const finalLabRequest = labRequest || labRequestByInvoice;
-      const imagingRequestByInvoice = invoice.type === 'RADIOLOGY'
-        ? await prisma.imagingRequest.findFirst({
-            where: {
-              id: invoice.remarks?.match(/ImagingRequest:([a-zA-Z0-9-]+)/)?.[1] || '__missing__',
-              clinicId: invoiceClinicId,
-              patientId: invoice.patientId,
-              deletedAt: null,
-            },
-          })
-        : null;
 
       const notifications = await Promise.all(
         targetUsers.map((user) =>
@@ -328,9 +365,9 @@ export class PaymentsService {
                     : `Le patient ${updatedPatient.firstName} ${updatedPatient.lastName} est en attente de l'infirmerie apres paiement.`,
               relatedEntity: invoice.type === 'LABORATORY' ? 'LabRequest' : invoice.type === 'RADIOLOGY' ? 'ImagingRequest' : 'Patient',
               relatedId: invoice.type === 'LABORATORY'
-                ? finalLabRequest?.id || invoice.id
+                ? labRequest?.id || invoice.id
                 : invoice.type === 'RADIOLOGY'
-                  ? imagingRequestByInvoice?.id || invoice.id
+                  ? imagingRequest?.id || invoice.id
                   : updatedPatient.id,
               sendAt: new Date(),
             },
@@ -353,13 +390,13 @@ export class PaymentsService {
             invoiceId: invoice.id,
             hospitalizationId: hospitalization?.id,
             patientUserId: updatedPatient.portalUserId ?? null,
-            labRequestId: finalLabRequest?.id,
-            imagingRequestId: imagingRequestByInvoice?.id,
+            labRequestId: labRequest?.id,
+            imagingRequestId: imagingRequest?.id,
           },
         },
       });
 
-      return { payment, updatedInvoice, updatedPatient, notifications, hospitalization, receptionistMessage, labRequest: finalLabRequest, imagingRequest: imagingRequestByInvoice };
+      return { payment, updatedInvoice, updatedPatient, notifications, hospitalization, receptionistMessage, labRequest, imagingRequest };
     });
 
     result.notifications.forEach((notification) => {

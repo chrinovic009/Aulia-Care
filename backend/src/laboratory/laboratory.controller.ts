@@ -1,4 +1,6 @@
+// backend/src/laboratory/laboratory.controller.ts
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -6,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -25,6 +28,7 @@ import { CreateLabTestSampleRequirementDto } from './dto/create-lab-test-sample-
 import { CreateLabTestConsumableRequirementDto } from './dto/create-lab-test-consumable-requirement.dto';
 import { CreateLabConsumableDto } from './dto/create-lab-consumable.dto';
 import { CreateLabConsumableStockDto } from './dto/create-lab-consumable-stock.dto';
+import { ConfigureClinicLabTestDto } from './dto/configure-clinic-lab-test.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('laboratory')
@@ -32,6 +36,12 @@ export class LaboratoryController {
   constructor(
     private readonly laboratoryService: LaboratoryService,
   ) {}
+
+  /*
+   * ============================================================
+   * DEMANDES LABORATOIRE
+   * ============================================================
+   */
 
   @Get()
   @Roles(
@@ -49,6 +59,18 @@ export class LaboratoryController {
     );
   }
 
+  /*
+   * ============================================================
+   * CATALOGUE MÉDICAL DE LA CLINIQUE
+   * ============================================================
+   *
+   * Le catalogue appartient à la clinique authentifiée.
+   *
+   * Sa consultation peut être autorisée aux rôles cliniques
+   * concernés, mais ses définitions maîtres restent administrées
+   * par le LAB_MANAGER de cet établissement.
+   */
+
   @Get('catalogue')
   @Roles(
     'SUPER_ADMIN',
@@ -56,9 +78,51 @@ export class LaboratoryController {
     'LAB_MANAGER',
     'PHYSICIAN',
   )
-  findCatalogue() {
-    return this.laboratoryService.findCatalogue();
+  findCatalogue(@Request() req: any) {
+    return this.laboratoryService.findCatalogue(req.user?.userId || req.user?.id);
   }
+
+    /*
+   * ============================================================
+   * CONFIGURATION DES EXAMENS DE LA CLINIQUE
+   * ============================================================
+   *
+   * Les examens sont désormais directement rattachés à la clinique.
+   *
+   * Chaque clinique décide ensuite quels examens elle active,
+   * leur prix local et leur délai opérationnel.
+   *
+   * Le clinicId n'est jamais accepté depuis le client :
+   * il est dérivé exclusivement de l'utilisateur authentifié.
+   */
+
+  @Get('clinic-tests')
+  @Roles('LAB_MANAGER')
+  getClinicLabTests(@Request() req: any) {
+    return this.laboratoryService.getClinicLabTests(
+      req.user?.userId || req.user?.id,
+    );
+  }
+
+@Put('clinic-tests/:labTestId')
+@Roles('LAB_MANAGER')
+configureClinicLabTest(
+  @Param('labTestId') labTestId: string,
+  @Body() body: ConfigureClinicLabTestDto,
+  @Request() req: any,
+) {
+  return this.laboratoryService.configureClinicLabTest(
+    labTestId,
+    body,
+    req.user?.userId || req.user?.id,
+  );
+}
+
+  /*
+   * ============================================================
+   * ACTIVITÉ
+   * ============================================================
+   */
 
   @Get('activity')
   @Roles(
@@ -73,29 +137,58 @@ export class LaboratoryController {
     );
   }
 
-  /**
-   * Politique fonctionnelle du laboratoire.
+  /*
+   * ============================================================
+   * CONFIGURATION OPÉRATIONNELLE DE LA CLINIQUE
+   * ============================================================
    *
-   * DEV peut administrer cette configuration au niveau plateforme.
-   * LAB_MANAGER peut consulter et gérer la politique opérationnelle
-   * du laboratoire.
+   * Ces paramètres appartiennent désormais à une clinique.
    *
-   * IMPORTANT :
-   * La configuration technicianDirectRelease est actuellement globale.
-   * Elle devra être rattachée à clinicId lors du durcissement
-   * multi-tenant du laboratoire.
+   * LAB_MANAGER administre uniquement la configuration
+   * opérationnelle de son propre établissement.
+   *
+   * DEV n'est volontairement pas autorisé ici :
+   * DEV est un rôle plateforme et ne possède pas de clinicId
+   * opérationnel implicite.
    */
+
   @Get('settings')
-  @Roles('DEV', 'LAB_MANAGER')
-  settings() {
-    return this.laboratoryService.getSettings();
+  @Roles('LAB_MANAGER')
+  settings(@Request() req: any) {
+    return this.laboratoryService.getSettings(
+      req.user?.userId || req.user?.id,
+    );
   }
 
   @Post('settings')
-  @Roles('DEV', 'LAB_MANAGER')
-  updateSettings(@Body() body: any) {
-    return this.laboratoryService.updateSettings(body);
+  @Roles('DEV')
+  updateSettings(
+    @Body() body: any,
+    @Request() req: any,
+  ) {
+    return this.laboratoryService.updateSettings(
+      body,
+      req.user?.userId || req.user?.id,
+    );
   }
+
+  @Post('direct-result-authorization')
+  @Roles('DEV')
+  setDirectResultAuthorization(
+    @Body() body: any,
+    @Request() req: any,
+  ) {
+    return this.laboratoryService.setDirectResultAuthorization(
+      body,
+      req.user?.userId || req.user?.id,
+    );
+  }
+
+  /*
+   * ============================================================
+   * TABLEAU DE BORD
+   * ============================================================
+   */
 
   @Get('dashboard/overview')
   @Roles(
@@ -135,6 +228,12 @@ export class LaboratoryController {
       req.user?.userId || req.user?.id,
     );
   }
+
+  /*
+   * ============================================================
+   * TECHNICIENS / AFFECTATIONS
+   * ============================================================
+   */
 
   @Get('technicians')
   @Roles(
@@ -182,6 +281,12 @@ export class LaboratoryController {
     );
   }
 
+  /*
+   * ============================================================
+   * VALIDATIONS
+   * ============================================================
+   */
+
   @Get('validations')
   @Roles(
     'SUPER_ADMIN',
@@ -195,6 +300,30 @@ export class LaboratoryController {
       req.user?.primaryRole,
     );
   }
+
+  @Post('validations/:id/decision')
+  @Roles(
+    'SUPER_ADMIN',
+    'ADMIN',
+    'LAB_MANAGER',
+  )
+  decision(
+    @Param('id') id: string,
+    @Body() body: any,
+    @Request() req: any,
+  ) {
+    return this.laboratoryService.applyValidationDecision(
+      id,
+      body,
+      req.user?.userId || req.user?.id,
+    );
+  }
+
+  /*
+   * ============================================================
+   * ALERTES CRITIQUES
+   * ============================================================
+   */
 
   @Get('critical-alerts')
   @Roles(
@@ -228,50 +357,37 @@ export class LaboratoryController {
     );
   }
 
-  @Post('validations/:id/decision')
-  @Roles(
-    'SUPER_ADMIN',
-    'ADMIN',
-    'LAB_MANAGER',
-  )
-  decision(
-    @Param('id') id: string,
-    @Body() body: any,
-    @Request() req: any,
-  ) {
-    return this.laboratoryService.applyValidationDecision(
-      id,
-      body,
-      req.user?.userId || req.user?.id,
-    );
-  }
-
   /*
    * ============================================================
-   * CATALOGUE LABORATOIRE
+   * MUTATIONS DU CATALOGUE DE LA CLINIQUE
    * ============================================================
    *
-   * Ces mutations restent DEV pour le moment.
+   * IMPORTANT :
    *
-   * Ne pas simplement ajouter LAB_MANAGER ici tant que les modèles
-   * catalogue/stock/configuration ne sont pas correctement isolés
-   * par clinicId.
+   * LabSection
+   * LabCategory
+   * LabTest
+   * LabTestParameter
+   * LabSampleType
+   * LabConsumable
+   * LabTestSampleRequirement
+   * LabTestConsumableRequirement
+   *
+   * sont des références propres à chaque clinique.
+   *
+   * Chaque mutation est limitée au clinicId dérivé de l’utilisateur authentifié.
    */
 
   @Post('catalogue/sections')
   @Roles('DEV')
-  createSection(
-    @Body() body: CreateLabSectionDto,
-  ) {
-    return this.laboratoryService.createSection(body);
+  createSection(@Body() body: CreateLabSectionDto, @Request() req: any) {
+    return this.laboratoryService.createSection(body, req.user?.userId || req.user?.id);
   }
 
   @Post('catalogue/categories')
   @Roles('DEV')
-  createCategory(
-    @Body() body: CreateLabCategoryDto,
-  ) {
-    return this.laboratoryService.createCategory(body);
+  createCategory(@Body() body: CreateLabCategoryDto, @Request() req: any) {
+    return this.laboratoryService.createCategory(body, req.user?.userId || req.user?.id);
   }
 
   @Post('catalogue/tests')
@@ -288,49 +404,44 @@ export class LaboratoryController {
 
   @Post('catalogue/test-parameters')
   @Roles('DEV')
-  createTestParameter(
-    @Body() body: CreateLabTestParameterDto,
-  ) {
-    return this.laboratoryService.createTestParameter(
-      body,
-    );
+  createTestParameter(@Body() body: CreateLabTestParameterDto, @Request() req: any) {
+    return this.laboratoryService.createTestParameter(body, req.user?.userId || req.user?.id);
   }
 
   @Post('catalogue/sample-types')
   @Roles('DEV')
-  createSampleType(
-    @Body() body: CreateLabSampleTypeDto,
-  ) {
-    return this.laboratoryService.createSampleType(body);
+  createSampleType(@Body() body: CreateLabSampleTypeDto, @Request() req: any) {
+    return this.laboratoryService.createSampleType(body, req.user?.userId || req.user?.id);
   }
 
   @Post('catalogue/sample-requirements')
   @Roles('DEV')
-  createSampleRequirement(
-    @Body() body: CreateLabTestSampleRequirementDto,
-  ) {
-    return this.laboratoryService.createSampleRequirement(
-      body,
-    );
+  createSampleRequirement(@Body() body: CreateLabTestSampleRequirementDto, @Request() req: any) {
+    return this.laboratoryService.createSampleRequirement(body, req.user?.userId || req.user?.id);
   }
 
   @Post('catalogue/consumables')
   @Roles('DEV')
-  createConsumable(
-    @Body() body: CreateLabConsumableDto,
-  ) {
-    return this.laboratoryService.createConsumable(body);
+  createConsumable(@Body() body: CreateLabConsumableDto, @Request() req: any) {
+    return this.laboratoryService.createConsumable(body, req.user?.userId || req.user?.id);
   }
 
   @Post('catalogue/consumable-requirements')
   @Roles('DEV')
-  createConsumableRequirement(
-    @Body() body: CreateLabTestConsumableRequirementDto,
-  ) {
-    return this.laboratoryService.createConsumableRequirement(
-      body,
-    );
+  createConsumableRequirement(@Body() body: CreateLabTestConsumableRequirementDto, @Request() req: any) {
+    return this.laboratoryService.createConsumableRequirement(body, req.user?.userId || req.user?.id);
   }
+
+  /*
+   * ============================================================
+   * STOCK OPÉRATIONNEL DE LA CLINIQUE
+   * ============================================================
+   *
+   * Le consommable et son stock appartiennent à la même clinique.
+   *
+   * LAB_MANAGER ne peut donc créer du stock que dans
+   * l'établissement auquel son compte est rattaché.
+   */
 
   @Post('catalogue/stock')
   @Roles('DEV')
@@ -344,36 +455,153 @@ export class LaboratoryController {
     );
   }
 
-  @Patch('catalogue/:kind/:id')
-  @Roles('DEV')
-  updateCatalogue(
-    @Param('kind') kind: string,
-    @Param('id') id: string,
-    @Body() body: any,
-  ) {
-    return this.laboratoryService.updateCatalogue(
-      kind as any,
-      id,
-      body,
+ /*
+ * Modification du stock propre à la clinique.
+ *
+ * L'identifiant de clinique n'est jamais accepté depuis le body.
+ * Le service détermine la clinique à partir du LAB_MANAGER
+ * authentifié et refuse tout stock appartenant à une autre clinique.
+ */
+@Patch('catalogue/stock/:id')
+@Roles('DEV')
+updateConsumableStock(
+  @Param('id') id: string,
+  @Body()
+  body: {
+    quantity?: string;
+    minimumLevel?: string;
+    criticalLevel?: string;
+    location?: string;
+  },
+  @Request() req: any,
+) {
+  return this.laboratoryService.updateConsumableStock(
+    id,
+    body,
+    req.user?.userId || req.user?.id,
+  );
+}
+
+@Patch('catalogue/:kind/:id')
+@Roles('DEV')
+updateCatalogue(
+  @Param('kind') kind: string,
+  @Param('id') id: string,
+  @Body() body: any,
+  @Request() req: any,
+) {
+  const allowedKinds = [
+    'sections',
+    'categories',
+    'tests',
+    'sample-types',
+    'consumables',
+    'test-parameters',
+    'sample-requirements',
+    'consumable-requirements',
+  ] as const;
+
+  type CatalogueKind = (typeof allowedKinds)[number];
+
+  if (!allowedKinds.includes(kind as CatalogueKind)) {
+    throw new BadRequestException(
+      `Type de catalogue non autorisé : ${kind}`,
     );
   }
 
-  @Delete('catalogue/:kind/:id')
-  @Roles('DEV')
-  deleteCatalogue(
-    @Param('kind') kind: string,
+  return this.laboratoryService.updateCatalogue(
+    kind as CatalogueKind,
+    id,
+    body,
+    req.user?.userId || req.user?.id,
+  );
+}
+
+@Delete('catalogue/:kind/:id')
+@Roles('DEV')
+deleteCatalogue(
+  @Param('kind') kind: string,
+  @Param('id') id: string,
+  @Request() req: any,
+) {
+  const allowedKinds = [
+    'sections',
+    'categories',
+    'tests',
+    'sample-types',
+    'consumables',
+    'test-parameters',
+    'sample-requirements',
+    'consumable-requirements',
+  ] as const;
+
+  type CatalogueKind = (typeof allowedKinds)[number];
+
+  if (!allowedKinds.includes(kind as CatalogueKind)) {
+    throw new BadRequestException(
+      `Type de catalogue non autorisé : ${kind}`,
+    );
+  }
+
+  return this.laboratoryService.deleteCatalogue(
+    kind as CatalogueKind,
+    id,
+    req.user?.userId || req.user?.id,
+  );
+}
+
+/*
+ * ============================================================
+ * AUTORISATION D'ENVOI DIRECT DES RÉSULTATS
+ * ============================================================
+ *
+ * Cette configuration est propre à chaque clinique.
+ *
+ * LAB_MANAGER peut autoriser ou désactiver l'envoi direct
+ * des résultats par les techniciens de laboratoire de son
+ * propre établissement.
+ *
+ * Le clinicId n'est jamais accepté depuis le body :
+ * il est déterminé côté serveur à partir de l'utilisateur
+ * authentifié.
+ */
+
+
+  /*
+   * ============================================================
+   * CRÉATION DES RÉSULTATS
+   * ============================================================
+   */
+
+  @Post('requests/:id/results')
+  @Roles(
+    'SUPER_ADMIN',
+    'LAB_TECHNICIAN',
+    'LAB_MANAGER',
+  )
+  addResult(
     @Param('id') id: string,
+    @Body() body: any,
+    @Request() req: any,
   ) {
-    return this.laboratoryService.deleteCatalogue(
-      kind as any,
+    return this.laboratoryService.addResult(
       id,
+      body,
+      req.user?.userId || req.user?.id,
     );
   }
 
   /*
-   * Cette route paramétrique doit rester après les routes
-   * statiques comme /catalogue, /activity, /settings, etc.
+   * ============================================================
+   * ROUTE PARAMÉTRIQUE
+   * ============================================================
+   *
+   * IMPORTANT :
+   * Elle doit rester après toutes les routes GET statiques afin
+   * que "catalogue", "activity", "settings", etc. ne soient pas
+   * interprétés comme des identifiants de demande laboratoire.
    */
+
   @Get(':id')
   @Roles(
     'SUPER_ADMIN',
@@ -390,36 +618,6 @@ export class LaboratoryController {
   ) {
     return this.laboratoryService.findOne(
       id,
-      req.user?.userId || req.user?.id,
-    );
-  }
-
-  @Post('config/direct-result-authorization')
-  @Roles('DEV')
-  setDirectResultAuthorization(
-    @Body() body: any,
-    @Request() req: any,
-  ) {
-    return this.laboratoryService.setDirectResultAuthorization(
-      Boolean(body?.enabled),
-      req.user?.userId || req.user?.id,
-    );
-  }
-
-  @Post('requests/:id/results')
-  @Roles(
-    'SUPER_ADMIN',
-    'LAB_TECHNICIAN',
-    'LAB_MANAGER',
-  )
-  addResult(
-    @Param('id') id: string,
-    @Body() body: any,
-    @Request() req: any,
-  ) {
-    return this.laboratoryService.addResult(
-      id,
-      body,
       req.user?.userId || req.user?.id,
     );
   }

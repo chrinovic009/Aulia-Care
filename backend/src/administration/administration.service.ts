@@ -155,10 +155,13 @@ export class AdministrationService {
     if (!userId) throw new ForbiddenException('Utilisateur authentifié requis.');
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { clinicId: true, status: true, deletedAt: true },
+      select: { clinicId: true, status: true, deletedAt: true, primaryRole: true },
     });
     if (!user || user.deletedAt || user.status !== 'ACTIVE' || !user.clinicId) {
       throw new ForbiddenException('Utilisateur non rattaché à un établissement actif.');
+    }
+    if (user.primaryRole === 'PATIENT') {
+      throw new ForbiddenException('Le compte patient n’est pas autorisé à consulter l’identité de l’établissement.');
     }
     const clinic = await this.prisma.clinic.findFirst({
       where: { id: user.clinicId, deletedAt: null },

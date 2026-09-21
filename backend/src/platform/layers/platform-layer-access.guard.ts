@@ -58,6 +58,51 @@ export const fallbackLayerForPath = (path: string): AuliaLayer | null => {
   return AuliaLayer.CORE;
 };
 
+const isGlobalPlatformCataloguePath = (
+  path: string,
+  method: string,
+): boolean => {
+  const normalized = path
+    .split('?')[0]
+    .replace(/^\/api/, '')
+    .replace(/\/+$/, '');
+
+  const normalizedMethod = method.toUpperCase();
+
+  // Lecture du catalogue scientifique global Aulia.
+  if (
+    normalizedMethod === 'GET' &&
+    normalized === '/laboratory/catalogue'
+  ) {
+    return true;
+  }
+
+  // Création des définitions maîtres globales.
+  if (
+    normalizedMethod === 'POST' &&
+    /^\/laboratory\/catalogue\/(?:sections|categories|tests|test-parameters|sample-types|sample-requirements|consumables|consumable-requirements)$/.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+
+  // Modification/suppression des définitions maîtres globales.
+  //
+  // "stock" est volontairement absent : le stock appartient
+  // toujours à une clinique.
+  if (
+    normalizedMethod === 'DELETE' &&
+    /^\/laboratory\/catalogue\/(?:sections|categories|tests|test-parameters|sample-types|sample-requirements|consumables|consumable-requirements)\/[^/]+$/.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 type GuardActor = {
   userId: string;
   role: RoleSlug | null;
@@ -217,6 +262,16 @@ export class PlatformLayerAccessGuard implements CanActivate {
     }
 
     if (actor.role === RoleSlug.DEV) {
+      const isGlobalPlatformCatalogue =
+        isGlobalPlatformCataloguePath(
+          path,
+          String(request.method || 'GET'),
+        );
+
+      if (isGlobalPlatformCatalogue) {
+        return true;
+      }
+
       throw new ForbiddenException(
         'Le compte DEV plateforme ne peut pas utiliser les données cliniques ou les modules d’établissement.',
       );

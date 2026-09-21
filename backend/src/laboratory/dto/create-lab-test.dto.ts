@@ -1,4 +1,16 @@
-import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  Min,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
 import { GenderRestriction, LabResultType } from '@prisma/client';
 
 export class CreateLabTestDto {
@@ -22,14 +34,6 @@ export class CreateLabTestDto {
   @IsString()
   description?: string;
 
-  @IsNotEmpty()
-  @IsString()
-  price: string;
-
-  @IsOptional()
-  @IsString()
-  turnaroundTimeMinutes?: string;
-
   @IsEnum(LabResultType)
   resultType: LabResultType;
 
@@ -52,6 +56,26 @@ export class CreateLabTestDto {
   @IsOptional()
   @IsString()
   maxAge?: string;
+
+  /**
+   * Prix propre à l'établissement.
+   * Aucun prix global Aulia n'est utilisé.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  price?: number;
+
+  /**
+   * Délai indicatif de rendu de l'examen, en minutes,
+   * propre à l'établissement.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  turnaroundTimeMinutes?: number;
 
   @IsOptional()
   @IsBoolean()

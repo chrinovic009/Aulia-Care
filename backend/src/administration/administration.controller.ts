@@ -38,7 +38,6 @@ export class AdministrationController {
     'LAB_TECHNICIAN',
     'RADIOLOGIST',
     'PHARMACIST',
-    'PATIENT',
   )
   clinicBranding(@Request() req: any) {
     return this.administrationService.getClinicBranding(

@@ -66,3 +66,27 @@ test('staff directory never includes a portal patient from another clinic, even 
     'every Patient directory query must be constrained by the authenticated clinic',
   );
 });
+
+test('clinic branding is rejected for a patient whose portal account is not linked to the clinic', async () => {
+  const service = new UsersService({
+    user: {
+      findUnique: async (args: any) => {
+        if (args.where.id === 'patient-a') {
+          return { id: 'patient-a', clinicId: 'clinic-b', primaryRole: RoleSlug.PATIENT, status: 'ACTIVE', deletedAt: null };
+        }
+        return null;
+      },
+    },
+    patient: {
+      findFirst: async () => null,
+    },
+    clinic: {
+      findFirst: async () => ({ id: 'clinic-a', name: 'Aulia' }),
+    },
+  } as never);
+
+  await assert.rejects(
+    () => service.getPatientClinicBranding('patient-a'),
+    /patient.*liée.*établissement/,
+  );
+});

@@ -883,6 +883,55 @@ export class UsersService {
       }));
   }
 
+  async getPatientClinicBranding(userId: string) {
+    if (!userId) {
+      throw new ForbiddenException('Utilisateur authentifié requis.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        clinicId: true,
+        primaryRole: true,
+        status: true,
+        deletedAt: true,
+      },
+    });
+
+    if (!user || user.deletedAt || user.status !== 'ACTIVE') {
+      throw new ForbiddenException('Compte patient actif requis.');
+    }
+
+    if (user.primaryRole !== RoleSlug.PATIENT) {
+      throw new ForbiddenException('Le compte patient n’est pas autorisé à consulter l’identité de l’établissement.');
+    }
+
+    const patient = await this.prisma.patient.findFirst({
+      where: {
+        portalUserId: user.id,
+        clinicId: user.clinicId,
+        deletedAt: null,
+      },
+      select: { id: true, clinicId: true },
+    });
+
+    if (!patient || !patient.clinicId || patient.clinicId !== user.clinicId) {
+      throw new ForbiddenException('Le compte patient n’est pas liée à un établissement valide.');
+    }
+
+    const clinic = await this.prisma.clinic.findFirst({
+      where: { id: patient.clinicId, deletedAt: null },
+      select: { id: true, name: true, brandDisplayName: true, legalName: true },
+    });
+
+    if (!clinic) {
+      throw new ForbiddenException('Établissement introuvable ou archivé.');
+    }
+
+    return clinic;
+  }
+
   async isDirectMessagingAllowed(senderId: string, recipientId: string) {
     if (senderId === recipientId) return false;
 
