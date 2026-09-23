@@ -115,3 +115,33 @@ test('reusing a consumed refresh token revokes the server session', async () => 
   assert.equal(revoked?.status, 'REVOKED');
   assert.equal(revoked?.revocationReason, 'REFRESH_TOKEN_REUSE');
 });
+
+test('profile updates persist trimmed phone and bio instead of dropping them', async () => {
+  let updateData: Record<string, unknown> | undefined;
+  const prisma = {
+    user: {
+      update: async ({ data }: { data: Record<string, unknown> }) => {
+        updateData = data;
+        return {};
+      },
+      findUnique: async () => ({
+        id: 'user-1', email: 'user@example.test', username: 'user-1', displayName: 'User One',
+        firstName: 'User', lastName: 'One', primaryRole: 'NURSE', clinicId: 'clinic-1',
+        phone: '+243990000000', bio: 'Infirmier référent', status: 'ACTIVE',
+        Employee: [], serviceResponsabilites: [], departmentResponsibilities: [],
+      }),
+    },
+  };
+
+  await makeService(prisma).updateProfile('user-1', {
+    phone: ' +243990000000 ',
+    bio: ' Infirmier référent ',
+    facebookUrl: ' https://example.test/profile ',
+  });
+
+  assert.deepEqual(updateData, {
+    phone: '+243990000000',
+    bio: 'Infirmier référent',
+    facebookUrl: 'https://example.test/profile',
+  });
+});

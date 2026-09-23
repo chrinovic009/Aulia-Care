@@ -461,10 +461,10 @@ function PatientRecord({ patient, position, labTests, departments }: { patient: 
         <Section title="Consultations récentes">
           {consultations.length === 0 ? <Empty /> : (
             <div className="space-y-3">
-              {pageItems(consultations, consultationsPage, 3).map((consultation, index) => (
-                <ClinicalConsultation key={consultation.id} consultation={consultation} displayId={formatConsultationId((consultationsPage - 1) * 3 + index + 1, patient)} />
+              {pageItems(consultations, consultationsPage, 5).map((consultation, index) => (
+                <ClinicalConsultation key={consultation.id} consultation={consultation} displayId={formatConsultationId((consultationsPage - 1) * 5 + index + 1, patient)} />
               ))}
-              <InlinePagination page={consultationsPage} total={consultations.length} pageSize={3} onChange={setConsultationsPage} label="consultations" />
+              <InlinePagination page={consultationsPage} total={consultations.length} pageSize={5} onChange={setConsultationsPage} label="consultations" />
             </div>
           )}
         </Section>

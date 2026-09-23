@@ -1,12 +1,12 @@
 /**
  * Centralized API configuration
- * All API endpoints and base URLs are defined here
+ * All API endpoints and base URLs are defined here.
  */
 
 export const API_CONFIG = {
   // Base URL for the API backend
   BASE_URL: import.meta.env.VITE_API_BASE_URL || "/api",
-  
+
   // Authentication endpoints
   AUTH: {
     LOGIN: "/auth/login",
@@ -30,7 +30,8 @@ export const API_CONFIG = {
   NURSE: {
     AWAITING_VITALS: "/patients/nurse/awaiting-vitals",
     ORIENTATION_HISTORY: "/patients/nurse/orientation-history",
-    RECORD_VITAL_SIGNS: (patientId: string) => `/patients/${patientId}/vital-signs`,
+    RECORD_VITAL_SIGNS: (patientId: string) =>
+      `/patients/${patientId}/vital-signs`,
   },
 
   // Appointment endpoints
@@ -75,32 +76,48 @@ export const API_CONFIG = {
 };
 
 /**
- * Build full URL from endpoint
+ * Build full URL from endpoint.
  */
 export const buildUrl = (endpoint: string): string => {
   const baseUrl = API_CONFIG.BASE_URL.replace(/\/+$/, "");
   const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+
   return `${baseUrl}${path}`;
 };
 
 const getCookie = (name: string): string | null => {
-  if (typeof document === "undefined") return null;
+  if (typeof document === "undefined") {
+    return null;
+  }
+
   const prefix = `${name}=`;
-  return document.cookie
-    .split(";")
-    .map((value) => value.trim())
-    .find((value) => value.startsWith(prefix))
-    ?.slice(prefix.length) ?? null;
+
+  return (
+    document.cookie
+      .split(";")
+      .map((value) => value.trim())
+      .find((value) => value.startsWith(prefix))
+      ?.slice(prefix.length) ?? null
+  );
 };
 
-// Access tokens are deliberately never exposed to JavaScript. This function is
-// retained only for compatibility with callers that previously read localStorage.
+// Access tokens are deliberately never exposed to JavaScript.
+// This function is retained only for compatibility with callers
+// that previously read localStorage.
 export const getAuthToken = (): string | null => null;
 
-/** Adds the non-sensitive CSRF value required for cookie-authenticated writes. */
+/**
+ * Adds the non-sensitive CSRF value required for
+ * cookie-authenticated writes.
+ */
 export const getAuthHeaders = (): Record<string, string> => {
   const csrfToken = getCookie("aulia_csrf_token");
-  return csrfToken ? { "X-CSRF-Token": csrfToken } : {};
+
+  return csrfToken
+    ? {
+        "X-CSRF-Token": csrfToken,
+      }
+    : {};
 };
 
 export class ApiError extends Error {
@@ -115,43 +132,146 @@ export class ApiError extends Error {
   }
 }
 
-const reportApiFailure = (endpoint: string, method: string, message: string, status?: number) => {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent("aulia:action-feedback", {
-    detail: {
-      kind: "error",
-      title: status === 401 ? "Session à renouveler" : "Action non effectuée",
-      message: status === 401
-        ? "Votre session n’est plus valide. Reconnectez-vous puis recommencez l’action."
-        : `${message}${method !== "GET" ? " Aucune modification n’a été enregistrée." : ""}`,
-      endpoint,
-      method,
-    },
-  }));
+const reportApiFailure = (
+  endpoint: string,
+  method: string,
+  message: string,
+  status?: number,
+) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("aulia:action-feedback", {
+      detail: {
+        kind: "error",
+        title:
+          status === 401
+            ? "Session à renouveler"
+            : "Action non effectuée",
+        message:
+          status === 401
+            ? "Votre session n’est plus valide. Reconnectez-vous puis recommencez l’action."
+            : `${message}${
+                method !== "GET"
+                  ? " Aucune modification n’a été enregistrée."
+                  : ""
+              }`,
+        endpoint,
+        method,
+      },
+    }),
+  );
 };
 
-const reportApiSuccess = (endpoint: string, method: string) => {
-  if (typeof window === "undefined" || method === "GET") return;
-  window.dispatchEvent(new CustomEvent("aulia:action-feedback", {
-    detail: {
-      kind: "success",
-      title: "Action enregistrée",
-      message: "L’action a été traitée avec succès et les données ont été enregistrées.",
-      endpoint,
-      method,
-    },
-  }));
+const reportApiSuccess = (
+  endpoint: string,
+  method: string,
+) => {
+  if (
+    typeof window === "undefined" ||
+    method === "GET"
+  ) {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent("aulia:action-feedback", {
+      detail: {
+        kind: "success",
+        title: "Action enregistrée",
+        message:
+          "L’action a été traitée avec succès et les données ont été enregistrées.",
+        endpoint,
+        method,
+      },
+    }),
+  );
 };
 
 /**
- * Enhanced fetch with error handling and retry logic
+ * Reads a successful HTTP response safely.
+ *
+ * Supported cases:
+ * - JSON response
+ * - text response
+ * - 204 No Content
+ * - 205 Reset Content
+ * - 200/201 with an empty body
+ */
+const parseSuccessfulResponse = async <T>(
+  response: Response,
+  endpoint: string,
+): Promise<T> => {
+  // HTTP explicitly defines these responses as having no useful body.
+  if (
+    response.status === 204 ||
+    response.status === 205
+  ) {
+    return undefined as T;
+  }
+
+  const contentLength =
+    response.headers.get("content-length");
+
+  if (contentLength === "0") {
+    return undefined as T;
+  }
+
+  /*
+   * Read the body once as text.
+   *
+   * Calling response.json() directly on an empty response throws:
+   * "Unexpected end of JSON input".
+   */
+  const rawBody = await response.text();
+
+  if (!rawBody.trim()) {
+    return undefined as T;
+  }
+
+  const contentType =
+    response.headers.get("content-type") || "";
+
+  if (
+    contentType
+      .toLowerCase()
+      .includes("application/json")
+  ) {
+    try {
+      return JSON.parse(rawBody) as T;
+    } catch {
+      throw new Error(
+        `Réponse JSON invalide reçue depuis ${endpoint}.`,
+      );
+    }
+  }
+
+  // Some successful endpoints can legitimately return plain text.
+  return rawBody as T;
+};
+
+/**
+ * Enhanced fetch with:
+ * - cookie authentication
+ * - CSRF protection
+ * - access-token refresh
+ * - timeout handling
+ * - API error normalization
+ * - safe parsing of empty responses
  */
 export const apiFetch = async <T = any>(
   endpoint: string,
   options?: RequestInit,
-  timeout: number = 10000
+  timeout: number = 10000,
 ): Promise<T> => {
   const url = buildUrl(endpoint);
+
+  const method = (
+    options?.method || "GET"
+  ).toUpperCase();
+
   const requestHeaders = () => ({
     "Content-Type": "application/json",
     ...getAuthHeaders(),
@@ -159,56 +279,164 @@ export const apiFetch = async <T = any>(
   });
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    timeout,
+  );
 
   try {
-    const execute = (headers: Record<string, string>) => fetch(url, {
-      ...options,
-      headers,
-      signal: controller.signal,
-      credentials: "include",
-    });
-    let response = await execute(requestHeaders());
-
-    // Access tokens are intentionally short-lived. A normal clinical action
-    // must not fail simply because the tab remained open for more than 15 min:
-    // renew once through the HttpOnly refresh cookie, then replay the exact
-    // request with the freshly-issued CSRF value. Auth endpoints never retry
-    // themselves, preventing a refresh loop.
-    // Only the endpoints that establish or destroy a session must never be
-    // replayed. Protected auth actions (PIN change/verification, profile)
-    // still need the normal one-time refresh after an idle access token.
-    const canRefresh = !["/auth/login", "/auth/refresh", "/auth/logout", "/auth/csrf"].includes(endpoint);
-    if (response.status === 401 && canRefresh) {
-      const refresh = await fetch(buildUrl("/auth/refresh"), {
-        method: "POST",
-        credentials: "include",
-        headers: getAuthHeaders(),
+    const execute = (
+      headers: Record<string, string>,
+    ) =>
+      fetch(url, {
+        ...options,
+        headers,
         signal: controller.signal,
+        credentials: "include",
       });
-      if (refresh.ok) response = await execute(requestHeaders());
+
+    let response = await execute(
+      requestHeaders(),
+    );
+
+    /*
+     * Access tokens are intentionally short-lived.
+     *
+     * A normal clinical action must not fail simply because
+     * the tab remained open for more than the access-token
+     * lifetime.
+     *
+     * Renew once through the HttpOnly refresh cookie, then
+     * replay the exact request with the freshly-issued CSRF
+     * value.
+     *
+     * Session-establishment/destruction endpoints must never
+     * refresh themselves, preventing refresh loops.
+     */
+    const canRefresh = ![
+      "/auth/login",
+      "/auth/refresh",
+      "/auth/logout",
+      "/auth/csrf",
+    ].includes(endpoint);
+
+    if (
+      response.status === 401 &&
+      canRefresh
+    ) {
+      const refresh = await fetch(
+        buildUrl("/auth/refresh"),
+        {
+          method: "POST",
+          credentials: "include",
+          headers: getAuthHeaders(),
+          signal: controller.signal,
+        },
+      );
+
+      if (refresh.ok) {
+        response = await execute(
+          requestHeaders(),
+        );
+      }
     }
 
     clearTimeout(timeoutId);
 
+    /*
+     * HTTP errors.
+     *
+     * Error responses are allowed to have either JSON,
+     * text, or no body at all.
+     */
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const message = typeof errorData.message === "string" ? errorData.message : response.statusText;
-      reportApiFailure(endpoint, (options?.method || "GET").toUpperCase(), message, response.status);
-      throw new ApiError(`API Error: ${response.status} - ${message}`, response.status, response.statusText, errorData);
+      let errorData: any = {};
+
+      const rawErrorBody =
+        await response.text().catch(() => "");
+
+      if (rawErrorBody.trim()) {
+        try {
+          errorData = JSON.parse(rawErrorBody);
+        } catch {
+          errorData = {
+            message: rawErrorBody,
+          };
+        }
+      }
+
+      const message =
+        typeof errorData?.message === "string" &&
+        errorData.message.trim()
+          ? errorData.message
+          : response.statusText ||
+            `Erreur HTTP ${response.status}`;
+
+      reportApiFailure(
+        endpoint,
+        method,
+        message,
+        response.status,
+      );
+
+      throw new ApiError(
+        `API Error: ${response.status} - ${message}`,
+        response.status,
+        response.statusText,
+        errorData,
+      );
     }
 
-    const data = await response.json();
-    reportApiSuccess(endpoint, (options?.method || "GET").toUpperCase());
+    /*
+     * Successful responses.
+     *
+     * Crucially, do not blindly call response.json().
+     * DELETE/PATCH/session endpoints can legitimately return
+     * 204 or another successful empty response.
+     */
+    const data =
+      await parseSuccessfulResponse<T>(
+        response,
+        endpoint,
+      );
+
+    reportApiSuccess(
+      endpoint,
+      method,
+    );
+
     return data;
   } catch (error: any) {
     clearTimeout(timeoutId);
-    if (error.name === "AbortError") {
-      const message = "Le serveur n’a pas répondu à temps. Vérifiez la connexion puis réessayez.";
-      reportApiFailure(endpoint, (options?.method || "GET").toUpperCase(), message);
+
+    if (error?.name === "AbortError") {
+      const message =
+        "Le serveur n’a pas répondu à temps. Vérifiez la connexion puis réessayez.";
+
+      reportApiFailure(
+        endpoint,
+        method,
+        message,
+      );
+
       throw new Error(message);
     }
-    if (!(error instanceof ApiError)) reportApiFailure(endpoint, (options?.method || "GET").toUpperCase(), error instanceof Error ? error.message : "Une erreur technique est survenue.");
+
+    /*
+     * ApiError has already been reported above.
+     * Avoid displaying the same error twice.
+     */
+    if (!(error instanceof ApiError)) {
+      reportApiFailure(
+        endpoint,
+        method,
+        error instanceof Error
+          ? error.message
+          : "Une erreur technique est survenue.",
+      );
+    }
+
     throw error;
   }
 };

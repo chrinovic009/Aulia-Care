@@ -229,6 +229,8 @@ export function ClinicalConsultationWorkspace({
       duration: "",
       impact: "",
     });
+
+  if (!patient) return null;
   useEffect(() => {
     if (mode === "EMERGENCY") setStep(4);
   }, [mode]);

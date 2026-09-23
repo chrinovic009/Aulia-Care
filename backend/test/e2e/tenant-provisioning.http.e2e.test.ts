@@ -61,7 +61,7 @@ test('HTTP E2E: DEV -> clinic -> layers -> Super Admin -> Admin -> staff preserv
     await request(server)
       .put(`/api/platform/provisioning/clinics/${clinicId}/layers`)
       .set('Cookie', devCookies)
-      .send({ layers: ['CORE', 'AI'] })
+      .send({ layers: ['CORE', 'DIAGNOSTIC'] })
       .expect(200);
     const createdSuperAdmin = await request(server)
       .post(`/api/platform/provisioning/clinics/${clinicId}/super-admin`)

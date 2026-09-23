@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { createPatientAdmission, findPatientByEmail, findPatientByPhone, searchPatients, fetchServices, fetchPatientsFromDatabase } from "../../api/reception";
+import { admitSubscriptionEmployee, fetchAdmissibleSubscriptionEmployees, fetchSubscriptionCompanies, SubscriptionCompany, SubscriptionEmployee } from "../../api/subscriptions";
+import { showActionFeedback } from "../../components/common/ActionFeedbackProvider";
 
 type ModalStep = null | "success";
 
@@ -22,6 +24,11 @@ const relationOptions = [
 // Les types de consultation et tarifs sont récupérés depuis les services/tarifs en base
 
 const EMAIL_DOMAINS = ["@gmail.com", "@outlook.com", "@hotmail.com", "@yahoo.com"];
+
+const dateTimeLocalValue = (date = new Date()) => {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+};
 
 const normalizeEmailLocalPart = (value: string) =>
   value
@@ -85,6 +92,16 @@ const findLaboratoryResponsibleService = (services: any[]) => {
   return services.find((service: any) => service.responsables?.length && isLaboratoryService(service));
 };
 
+const latestNurseOrientation = (patient: any) => {
+  const details = patient?.medicalHistories?.[0]?.details;
+  try {
+    const parsed = typeof details === "string" ? JSON.parse(details) : details;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
 const Admission: React.FC = () => {
   const navigate = useNavigate();
   const [emailDomain, setEmailDomain] = useState("@gmail.com");
@@ -106,7 +123,7 @@ const Admission: React.FC = () => {
     nationality: "Congolaise",
     dossierNumber: `D-${Date.now().toString().slice(-6)}`,
     admissionType: "Consultation",
-    arrival: new Date().toISOString(),
+    arrival: dateTimeLocalValue(),
     receptionist: "",
     serviceId: "",
     doctor: "",
@@ -130,6 +147,10 @@ const Admission: React.FC = () => {
   const [emailMatchPatient, setEmailMatchPatient] = useState<any>(null);
   const [servicesList, setServicesList] = useState<any[]>([]);
   const [modalStep, setModalStep] = useState<ModalStep>(null);
+  const [subscriptionCompanies, setSubscriptionCompanies] = useState<SubscriptionCompany[]>([]);
+  const [admissibleEmployees, setAdmissibleEmployees] = useState<SubscriptionEmployee[]>([]);
+  const [subscriptionCompanyId, setSubscriptionCompanyId] = useState("");
+  const [subscriptionEmployeeId, setSubscriptionEmployeeId] = useState("");
 
   // Met à jour le tarif de la consultation sélectionnée dans le formulaire
   useEffect(() => {
@@ -141,6 +162,12 @@ const Admission: React.FC = () => {
   }, [consultationType, consultationTypes]);
 
   const selectedService = useMemo(() => servicesList.find((s) => s.id === form.serviceId), [servicesList, form.serviceId]);
+  const selectedSubscriptionCompany = useMemo(() => subscriptionCompanies.find((company) => company.id === subscriptionCompanyId) || null, [subscriptionCompanies, subscriptionCompanyId]);
+  const selectedSubscriptionEmployee = useMemo(
+    () => admissibleEmployees.find((employee) => employee.id === subscriptionEmployeeId) || null,
+    [admissibleEmployees, subscriptionEmployeeId],
+  );
+  const subscriberIdentityIsSelected = form.category === "S" && Boolean(selectedSubscriptionEmployee);
   const selectedServicePrice = useMemo(() => getActiveServicePrice(selectedService), [selectedService]);
   const effectiveAmountDue = useMemo(() => {
     if (form.admissionMode === "PARAMEDICAL_VOUCHER") {
@@ -251,12 +278,55 @@ const Admission: React.FC = () => {
   }, [form.profession]);
 
   useEffect(() => {
-    if (form.insurance.company && form.category !== 'S') {
-      setForm((current: any) => ({ ...current, category: 'S' }));
-    } else if (!form.insurance.company && form.category === 'S') {
-      setForm((current: any) => ({ ...current, category: 'P' }));
+    fetchSubscriptionCompanies()
+      .then((companies) => setSubscriptionCompanies(companies.filter((company) => company.status === "ACTIVE")))
+      .catch(() => setSubscriptionCompanies([]));
+  }, []);
+
+  useEffect(() => {
+    if (form.category !== "S" || !subscriptionCompanyId) {
+      setAdmissibleEmployees([]);
+      setSubscriptionEmployeeId("");
+      return;
     }
-  }, [form.insurance.company, form.category]);
+    fetchAdmissibleSubscriptionEmployees(subscriptionCompanyId)
+      .then((employees) => {
+        setAdmissibleEmployees(employees);
+        // An admission is a deliberate choice: never silently admit the first
+        // employee returned by the API.
+        setSubscriptionEmployeeId("");
+      })
+      .catch(() => { setAdmissibleEmployees([]); setSubscriptionEmployeeId(""); });
+  }, [form.category, subscriptionCompanyId]);
+
+  useEffect(() => {
+    if (form.category !== "S" || !selectedSubscriptionEmployee) return;
+
+    const employee = selectedSubscriptionEmployee;
+    const fullName = [employee.lastName, employee.middleName, employee.firstName]
+      .filter(Boolean)
+      .join(" ");
+
+    // The selected subscription employee is the source displayed to the
+    // receptionist. The backend still resolves this employee itself from its
+    // tenant-scoped id when the admission is saved.
+    setForm((current: any) => ({
+      ...current,
+      name: fullName,
+      gender: employee.gender || current.gender,
+      dob: employee.dateOfBirth ? employee.dateOfBirth.slice(0, 10) : current.dob,
+      phone: employee.phone || current.phone,
+      email: employee.email || current.email,
+      address: employee.address || current.address,
+      profession: employee.profession || current.profession,
+      nationality: employee.nationality || current.nationality,
+      insurance: {
+        ...current.insurance,
+        company: selectedSubscriptionCompany?.name || current.insurance.company,
+        policy: employee.policyNumber || current.insurance.policy,
+      },
+    }));
+  }, [form.category, selectedSubscriptionCompany?.name, selectedSubscriptionEmployee]);
 
   useEffect(() => {
     (async () => {
@@ -330,6 +400,9 @@ const Admission: React.FC = () => {
     setPhoneMatchPatient(null);
     setEmailMatchPatient(null);
     setModalStep(null);
+    setSubscriptionCompanyId("");
+    setSubscriptionEmployeeId("");
+    setAdmissibleEmployees([]);
     setConsultationType(consultationTypes[0]?.id || "");
     setForm({
       admissionMode: "ORDINARY",
@@ -344,7 +417,7 @@ const Admission: React.FC = () => {
       nationality: "Congolaise",
       dossierNumber: `D-${Date.now().toString().slice(-6)}`,
       admissionType: "Consultation",
-      arrival: new Date().toISOString().slice(0, 16),
+      arrival: dateTimeLocalValue(),
       receptionist: currentUser?.firstName ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim() : currentUser?.displayName || currentUser?.username || "Réceptionniste",
       serviceId: admissionServices[0]?.id || servicesList[0]?.id || '',
       doctor: '',
@@ -392,6 +465,33 @@ const Admission: React.FC = () => {
 
   const handleSaveClick = async () => {
     const isVoucherAdmission = form.admissionMode === "PARAMEDICAL_VOUCHER";
+    if (form.category === "S") {
+      if (!subscriptionCompanies.length) {
+        showActionFeedback({ kind: "warning", title: "Aucune entreprise disponible", message: "Créez d’abord une entreprise abonnée puis ajoutez ses employés dans Abonnements entreprises." });
+        return;
+      }
+      if (!subscriptionCompanyId || !admissibleEmployees.length || !subscriptionEmployeeId) {
+        showActionFeedback({ kind: "warning", title: "Employé abonné requis", message: selectedSubscriptionCompany ? "Ajoutez ou sélectionnez d’abord un employé actif de cette entreprise avant son admission." : "Choisissez d’abord une entreprise abonnée." });
+        return;
+      }
+      try {
+        await admitSubscriptionEmployee(subscriptionEmployeeId, {
+          consultationKind: consultationKindFromFee(consultationTypes.find((item) => item.id === consultationType)),
+          gender: form.gender,
+          dateOfBirth: form.dob,
+          phone: form.phone,
+          email: form.email,
+          address: form.address,
+          nationality: form.nationality,
+          priority: form.priority,
+        });
+        setModalStep('success');
+        return;
+      } catch (error) {
+        showActionFeedback({ kind: "error", title: "Admission abonnée non enregistrée", message: error instanceof Error ? error.message : "Le serveur a refusé l’admission de l’employé abonné." });
+        return;
+      }
+    }
     if (!isVoucherAdmission && !consultationType) {
       window.alert("Configurez puis choisissez un tarif de fiche d’admission généraliste ou spécialiste avant de poursuivre.");
       return;
@@ -445,28 +545,34 @@ const Admission: React.FC = () => {
     }
   };
 
-  const renderPatientDetails = () => (
+  const renderPatientDetails = () => {
+    const subscription = existingPatient?.subscriptionEmployees?.[0];
+    const isSubscriber = Boolean(subscription?.company?.name || existingPatient?.admissionType === "ABONNEMENT_ENTREPRISE");
+    const orientation: any = latestNurseOrientation(existingPatient);
+    const serviceName = typeof existingPatient?.service === "string" ? existingPatient.service : existingPatient?.service?.name;
+    return (
     <div className="bg-white dark:bg-slate-900 p-5 rounded-lg shadow dark:shadow-lg border border-gray-200 dark:border-slate-700">
       <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">Patient déjà enregistré</h3>
       <div className="grid grid-cols-1 gap-3 text-sm text-gray-700 dark:text-gray-300">
         <div><span className="font-medium">Nom:</span> {existingPatient.firstName ? `${existingPatient.firstName} ${existingPatient.lastName}` : existingPatient.name}</div>
-        <div><span className="font-medium">Catégorie:</span> {existingPatient.insuranceProvider ? "Abonné" : "Particulier"}</div>
-        <div><span className="font-medium">Entreprise:</span> {existingPatient.insuranceProvider || "—"}</div>
+        <div><span className="font-medium">Catégorie:</span> {isSubscriber ? "Abonné" : "Particulier"}</div>
+        {isSubscriber ? <div><span className="font-medium">Entreprise:</span> {subscription?.company?.name || existingPatient.insuranceProvider || "—"}</div> : null}
         <div><span className="font-medium">Téléphone:</span> {existingPatient.phone}</div>
         <div><span className="font-medium">Email:</span> {existingPatient.email}</div>
         <div><span className="font-medium">Adresse:</span> {existingPatient.address}</div>
-        <div><span className="font-medium">Service:</span> {existingPatient.service || '—'}</div>
-        <div><span className="font-medium">Médecin:</span> {existingPatient.doctor || '—'}</div>
+        <div><span className="font-medium">Service:</span> {orientation.serviceName || serviceName || '—'}</div>
+        <div><span className="font-medium">Médecin:</span> {orientation.physicianName || existingPatient.doctor || '—'}</div>
         <div><span className="font-medium">Priorité:</span> {existingPatient.priority || '—'}</div>
         <div><span className="font-medium">Allergies:</span> {(existingPatient.allergies || []).join(", ") || "Aucune"}</div>
       </div>
       <div className="mt-4 flex flex-col sm:flex-row gap-2">
         <button onClick={resetForm} className="w-full sm:w-auto rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 px-3 py-2 text-sm font-medium">Nouvelle admission</button>
         <button onClick={() => navigate("/reception/patients", { state: { patientId: existingPatient.id } })} className="w-full sm:w-auto rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 px-3 py-2 text-sm font-medium">Ouvrir dossier</button>
-        <button onClick={() => navigate("/reception/patients", { state: { patientId: existingPatient.id, openAppointment: true } })} className="w-full sm:w-auto rounded border border-blue-300 text-blue-700 px-3 py-2 text-sm font-medium">Nouvelle visite</button>
+        <button onClick={() => void handleSaveClick()} className="w-full sm:w-auto rounded border border-blue-300 text-blue-700 px-3 py-2 text-sm font-medium">Enregistrer une nouvelle visite</button>
       </div>
     </div>
-  );
+    );
+  };
 
   return (
     <div className="p-4 sm:p-6 bg-gray-50 dark:bg-slate-950 min-h-screen">
@@ -518,9 +624,11 @@ const Admission: React.FC = () => {
                   </div>
                 ) : null}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
-                  <input type="hidden" value="P" />
-                  <div className="rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 dark:border-slate-600 dark:bg-slate-800 dark:text-gray-200">Particulier</div>
-                  <input placeholder="Nom complet" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <select value={form.category} onChange={(event) => { setSubscriptionCompanyId(""); setSubscriptionEmployeeId(""); setAdmissibleEmployees([]); setForm((current: any) => ({ ...current, category: event.target.value, insurance: event.target.value === "S" ? current.insurance : { ...current.insurance, company: "", policy: "" } })); }} className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 dark:border-slate-600 dark:bg-slate-800 dark:text-gray-200">
+                    <option value="P">Particulier</option>
+                    <option value="S">Abonné entreprise</option>
+                  </select>
+                  <input placeholder="Nom complet" value={form.name} readOnly={subscriberIdentityIsSelected} onChange={(e) => setForm({ ...form, name: e.target.value })} className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 read-only:bg-gray-50 dark:read-only:bg-slate-700" />
                   {suggestions.length > 0 && (
                     <div className="absolute bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded mt-1 max-h-48 overflow-auto z-50 w-full">
                       {suggestions.slice(0, 8).map((s) => (
@@ -531,15 +639,15 @@ const Admission: React.FC = () => {
                       ))}
                     </div>
                   )}
-                  <select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <select value={form.gender} disabled={Boolean(selectedSubscriptionEmployee?.gender)} onChange={(e) => setForm({ ...form, gender: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 dark:disabled:bg-slate-700">
                     <option value="F">Femme</option>
                     <option value="M">Homme</option>
                     <option value="O">Autre</option>
                   </select>
-                  <input type="date" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="date" value={form.dob} readOnly={Boolean(selectedSubscriptionEmployee?.dateOfBirth)} onChange={(e) => setForm({ ...form, dob: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 read-only:bg-gray-50 dark:read-only:bg-slate-700" />
                   <div className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm">Âge: {age}</div>
                   <div className="space-y-1">
-                    <input placeholder="Téléphone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <input placeholder="Téléphone" value={form.phone} readOnly={Boolean(selectedSubscriptionEmployee?.phone)} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 read-only:bg-gray-50 dark:read-only:bg-slate-700" />
                     {phoneMatchPatient && !existingPatient ? (
                       <p className="text-xs text-red-600 dark:text-red-400">Ce téléphone correspond déjà à : {phoneMatchPatient.name}</p>
                     ) : null}
@@ -549,11 +657,13 @@ const Admission: React.FC = () => {
                       <input
                         placeholder="email patient"
                         value={emailLocalPart}
+                        readOnly={Boolean(selectedSubscriptionEmployee?.email)}
                         onChange={(e) => updateEmailFromParts(e.target.value)}
                         className="min-w-0 flex-1 px-3 py-2 text-gray-900 outline-none placeholder-gray-500 dark:bg-slate-800 dark:text-white dark:placeholder-gray-400"
                       />
                       <select
                         value={emailDomain}
+                        disabled={Boolean(selectedSubscriptionEmployee?.email)}
                         onChange={(e) => {
                           setEmailDomain(e.target.value);
                           updateEmailFromParts(emailLocalPart, e.target.value);
@@ -570,9 +680,9 @@ const Admission: React.FC = () => {
                       <p className="text-xs text-red-600 dark:text-red-400">Cet email correspond déjà à : {emailMatchPatient.name}</p>
                     ) : null}
                   </div>
-                  <input placeholder="Adresse" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="col-span-1 sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input placeholder="Adresse" value={form.address} readOnly={Boolean(selectedSubscriptionEmployee?.address)} onChange={(e) => setForm({ ...form, address: e.target.value })} className="col-span-1 sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 read-only:bg-gray-50 dark:read-only:bg-slate-700" />
                   <div className="relative">
-                    <input placeholder="Profession" value={form.profession} onChange={(e) => setForm({ ...form, profession: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full" />
+                    <input placeholder="Profession" value={form.profession} readOnly={Boolean(selectedSubscriptionEmployee?.profession)} onChange={(e) => setForm({ ...form, profession: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full read-only:bg-gray-50 dark:read-only:bg-slate-700" />
                     {professionSuggestions.length > 0 && (
                       <div className="absolute z-50 left-0 right-0 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded mt-1 max-h-40 overflow-auto">
                         {professionSuggestions.map((p) => (
@@ -583,11 +693,20 @@ const Admission: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <input placeholder="Nationalité" value={form.nationality} onChange={(e) => setForm({ ...form, nationality: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input placeholder="Nationalité" value={form.nationality} readOnly={Boolean(selectedSubscriptionEmployee?.nationality)} onChange={(e) => setForm({ ...form, nationality: e.target.value })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 read-only:bg-gray-50 dark:read-only:bg-slate-700" />
                   {form.category === "S" ? (
                     <>
-                      <input placeholder="Entreprise / Société" value={form.insurance.company} onChange={(e) => setForm({ ...form, insurance: { ...form.insurance, company: e.target.value } })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                      <input placeholder="N° police" value={form.insurance.policy} onChange={(e) => setForm({ ...form, insurance: { ...form.insurance, policy: e.target.value } })} className="rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      <select value={subscriptionCompanyId} onChange={(event) => { setSubscriptionEmployeeId(""); setSubscriptionCompanyId(event.target.value); }} className="rounded-md border border-gray-300 px-3 py-2 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+                        <option value="">Choisir une entreprise</option>
+                        {subscriptionCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+                      </select>
+                      <select value={subscriptionEmployeeId} disabled={!subscriptionCompanyId || !admissibleEmployees.length} onChange={(event) => setSubscriptionEmployeeId(event.target.value)} className="rounded-md border border-gray-300 px-3 py-2 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+                        <option value="">{subscriptionCompanyId && !admissibleEmployees.length ? "Aucun employé admissible" : "Choisir l’employé"}</option>
+                        {admissibleEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.firstName} {employee.lastName} — {employee.policyNumber}</option>)}
+                      </select>
+                      {!subscriptionCompanies.length ? <p className="sm:col-span-2 text-sm text-amber-700">Créez d’abord une entreprise et ses employés dans Abonnements entreprises.</p> : null}
+                      {subscriptionCompanyId && !admissibleEmployees.length ? <p className="sm:col-span-2 text-sm text-amber-700">Ajoutez d’abord un employé actif à cette entreprise avant son admission.</p> : null}
+                      {subscriptionCompanyId && admissibleEmployees.length && !subscriptionEmployeeId ? <p className="sm:col-span-2 text-sm text-amber-700">Choisissez obligatoirement l’employé à admettre. Ses informations seront ensuite chargées automatiquement.</p> : null}
                     </>
                   ) : (
                     <div className="sm:col-span-2 lg:col-span-2 rounded-md border border-gray-300 dark:border-slate-600 px-3 py-2 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm">Particulier : aucune entreprise exigée.</div>
@@ -702,7 +821,6 @@ const Admission: React.FC = () => {
                 <span className="font-medium">Frais de fiche:</span> {effectiveAmountDue.toLocaleString()} CDF
               </div>
               
-              <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Médecin:</span> {existingPatient ? existingPatient.doctor : form.doctor}</div>
               <div className="text-gray-700 dark:text-gray-300"><span className="font-medium">Priorité:</span> {existingPatient ? existingPatient.priority : form.priority}</div>
             </div>
 
@@ -726,7 +844,7 @@ const Admission: React.FC = () => {
                 <div className="mt-3 text-sm text-gray-700 dark:text-gray-300">Patient trouvé. Tous les champs sont remplacés par ses détails.</div>
                 <div className="mt-3 flex flex-col sm:flex-row gap-2">
                   <button onClick={resetForm} className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 text-xs font-medium">Nouvelle admission</button>
-                  <button onClick={() => navigate("/reception/patients", { state: { patientId: existingPatient.id, openAppointment: true } })} className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 text-xs font-medium">Nouvelle visite</button>
+                  <button onClick={() => void handleSaveClick()} className="px-2 py-1 rounded border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 text-xs font-medium">Enregistrer une nouvelle visite</button>
                 </div>
               </div>
             ) : (

@@ -12,8 +12,21 @@ type Transaction = Prisma.TransactionClient;
 export class BedAssignmentService {
   async assertAvailable(tx: Transaction, bedId: string, clinicId: string) {
     const bed = await tx.bed.findFirst({
-      where: { id: bedId, room: { serviceUnit: { clinicId } } },
-      select: { id: true, status: true, hospitalizationId: true },
+      // A bed is valid only in an inpatient clinical unit. Consultation
+      // cabinets, laboratory/imaging rooms, pharmacy and administration are
+      // physical rooms, never hospital rooms.
+      where: {
+        id: bedId,
+        room: {
+          serviceUnit: {
+            clinicId,
+            category: 'OTHER_CLINICAL',
+            active: true,
+            deletedAt: null,
+          },
+        },
+      },
+      select: { id: true, code: true, status: true, hospitalizationId: true },
     });
     if (!bed) throw new BadRequestException('Le lit sélectionné est introuvable dans cet établissement.');
     if (bed.status !== 'FREE' || bed.hospitalizationId) {

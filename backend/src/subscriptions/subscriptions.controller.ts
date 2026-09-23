@@ -2,7 +2,20 @@ import { Body, Controller, Get, Param, Patch, Post, Query, Request, UseGuards } 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { SubscriptionsService } from './subscriptions.service';
+import {
+  ExtractedCompanyImportInput,
+  SubscriptionAdmissionInput,
+  SubscriptionChargeInput,
+  SubscriptionCompanyInput,
+  SubscriptionEmployeeInput,
+  SubscriptionsService,
+} from './subscriptions.service';
+
+interface AuthenticatedRequest {
+  user?: { userId?: string; id?: string };
+}
+
+const actorIdFrom = (request: AuthenticatedRequest) => request.user?.userId || request.user?.id;
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('subscriptions')
@@ -11,67 +24,67 @@ export class SubscriptionsController {
 
   @Get('companies')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER')
-  findCompanies() {
-    return this.subscriptionsService.findCompanies();
+  findCompanies(@Request() request: AuthenticatedRequest) {
+    return this.subscriptionsService.findCompanies(actorIdFrom(request));
   }
 
   @Post('companies')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
-  createCompany(@Body() body: any) {
-    return this.subscriptionsService.createCompany(body);
+  createCompany(@Body() body: SubscriptionCompanyInput, @Request() request: AuthenticatedRequest) {
+    return this.subscriptionsService.createCompany(body, actorIdFrom(request));
   }
 
   @Post('companies/import-extracted')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
-  importExtractedCompany(@Body() body: any, @Request() req: any) {
-    return this.subscriptionsService.importExtractedCompany(body, req.user?.userId || req.user?.id);
+  importExtractedCompany(@Body() body: ExtractedCompanyImportInput, @Request() request: AuthenticatedRequest) {
+    return this.subscriptionsService.importExtractedCompany(body, actorIdFrom(request));
   }
 
   @Get('companies/:id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER')
-  getCompany(@Param('id') id: string) {
-    return this.subscriptionsService.getCompany(id);
+  getCompany(@Param('id') id: string, @Request() request: AuthenticatedRequest) {
+    return this.subscriptionsService.getCompany(id, actorIdFrom(request));
   }
 
   @Patch('companies/:id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
-  updateCompany(@Param('id') id: string, @Body() body: any) {
-    return this.subscriptionsService.updateCompany(id, body);
+  updateCompany(@Param('id') id: string, @Body() body: SubscriptionCompanyInput, @Request() request: AuthenticatedRequest) {
+    return this.subscriptionsService.updateCompany(id, body, actorIdFrom(request));
   }
 
   @Post('companies/:id/employees')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
-  createEmployee(@Param('id') id: string, @Body() body: any) {
-    return this.subscriptionsService.createEmployee(id, body);
+  createEmployee(@Param('id') id: string, @Body() body: SubscriptionEmployeeInput, @Request() request: AuthenticatedRequest) {
+    return this.subscriptionsService.createEmployee(id, body, actorIdFrom(request));
   }
 
   @Get('employees/admissible')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
-  findAdmissibleEmployees(@Query('companyId') companyId?: string) {
-    return this.subscriptionsService.findAdmissibleEmployees(companyId);
+  findAdmissibleEmployees(@Query('companyId') companyId: string | undefined, @Request() request: AuthenticatedRequest) {
+    return this.subscriptionsService.findAdmissibleEmployees(companyId, actorIdFrom(request));
   }
 
   @Post('employees/:id/admit')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
-  admitEmployee(@Param('id') id: string, @Body() body: any, @Request() req: any) {
-    return this.subscriptionsService.admitEmployee(id, body, req.user?.userId || req.user?.id);
+  admitEmployee(@Param('id') id: string, @Body() body: SubscriptionAdmissionInput, @Request() request: AuthenticatedRequest) {
+    return this.subscriptionsService.admitEmployee(id, body, actorIdFrom(request));
   }
 
   @Post('charges')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER')
-  createCharge(@Body() body: any) {
-    return this.subscriptionsService.createCharge(body);
+  createCharge(@Body() body: SubscriptionChargeInput, @Request() request: AuthenticatedRequest) {
+    return this.subscriptionsService.createCharge(body, actorIdFrom(request));
   }
 
   @Post('companies/:id/monthly-invoices')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
-  generateMonthlyInvoice(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER')
+  generateMonthlyInvoice(@Param('id') id: string, @Body() body: { year?: number | string; month?: number | string }, @Request() request: AuthenticatedRequest) {
     const now = new Date();
     return this.subscriptionsService.generateMonthlyInvoice(
       id,
       Number(body.year || now.getFullYear()),
       Number(body.month || now.getMonth() + 1),
-      req.user?.userId || req.user?.id,
+      actorIdFrom(request),
     );
   }
 }

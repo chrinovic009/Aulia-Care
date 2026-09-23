@@ -1,5 +1,4 @@
-import { IsDateString, IsEmail, IsEnum, IsOptional, IsString } from 'class-validator';
-import { PatientWorkflowStatus } from '@prisma/client';
+import { IsDateString, IsEmail, IsOptional, IsString } from 'class-validator';
 
 export class UpdatePatientDto {
   @IsString()
@@ -94,7 +93,4 @@ export class UpdatePatientDto {
   @IsOptional()
   profession?: string;
 
-  @IsEnum(PatientWorkflowStatus)
-  @IsOptional()
-  workflowStatus?: PatientWorkflowStatus;
 }

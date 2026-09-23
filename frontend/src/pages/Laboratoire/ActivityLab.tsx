@@ -21,7 +21,7 @@ export default function ActivityLab() {
   const [activity, setActivity] = useState<LabActivityPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingAuthorization, setIsSavingAuthorization] = useState(false);
-  const [directResultAuthorizationEnabled, setDirectResultAuthorizationEnabled] = useState(false);
+  const [technicianDirectRelease, setTechnicianDirectRelease] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
   const [requestDetail, setRequestDetail] = useState<LabRequestDetail | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
@@ -141,7 +141,10 @@ export default function ActivityLab() {
     try {
       const data = await fetchLaboratoryActivity();
       setActivity(data);
-      setDirectResultAuthorizationEnabled(Boolean(data.directResultAuthorizationEnabled));
+      // La politique canonique est `technicianDirectRelease`.
+      // L'activité peut encore provenir d'un backend en transition ; on ne
+      // réactive jamais implicitement l'ancienne clé parallèle.
+      setTechnicianDirectRelease(Boolean(data.technicianDirectRelease));
     } catch (error) {
       console.error("Impossible de charger l'activité laboratoire", error);
       setActivity(null);
@@ -317,10 +320,11 @@ export default function ActivityLab() {
     setIsSavingAuthorization(true);
     try {
       // Utilisation de la fonction updateLaboratorySettings déclarée dans laboratory.ts
+      const nextValue = !technicianDirectRelease;
       await updateLaboratorySettings({
-        technicianDirectRelease: !directResultAuthorizationEnabled
+        technicianDirectRelease: nextValue,
       });
-      setDirectResultAuthorizationEnabled(!directResultAuthorizationEnabled);
+      setTechnicianDirectRelease(nextValue);
       await loadActivity();
     } catch (error) {
       console.error("Impossible de mettre à jour l'autorisation d'envoi direct", error);

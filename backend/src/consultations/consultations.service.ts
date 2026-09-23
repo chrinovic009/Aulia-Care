@@ -1,3 +1,4 @@
+// backend/src/consultations/consultations.services.ts
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -10,24 +11,33 @@ import { ClinicalSectionsDto } from './dto/clinical-sections.dto';
 import { CreateLabRequestDto } from './dto/create-lab-request.dto';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { TelehealthTranscriptEntryDto } from './dto/save-telehealth-transcript.dto';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
 
 @Injectable()
 export class ConsultationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsGateway: NotificationsGateway,
+    private readonly patientWorkflow: PatientWorkflowService,
   ) {}
 
   private async recordSubscriptionChargeForInvoice(
     tx: any,
     patientId: string,
+    clinicId: string,
     invoiceId: string,
     label: string,
     amount: number,
     serviceId?: string | null,
   ) {
     const employee = await tx.subscriptionEmployee.findFirst({
-      where: { patientId, deletedAt: null, status: 'ACTIVE', company: { status: 'ACTIVE', deletedAt: null } },
+      where: {
+        patientId,
+        deletedAt: null,
+        status: 'ACTIVE',
+        patient: { clinicId, deletedAt: null },
+        company: { clinicId, status: 'ACTIVE', deletedAt: null },
+      },
       include: { company: true },
     });
     if (!employee) return false;
@@ -144,11 +154,11 @@ export class ConsultationsService {
         },
       });
       await tx.appointment.update({ where: { id: createConsultationDto.appointmentId }, data: { status: 'CHECKED_IN' } });
-      await (tx as any).patientVisit.updateMany({
+      await tx.patientVisit.updateMany({
         where: { appointmentId: createConsultationDto.appointmentId, status: { in: ['REGISTERED', 'ORIENTED'] } },
         data: { status: 'IN_CONSULTATION', orientedAt: new Date() },
       });
-      await tx.patient.update({ where: { id: createConsultationDto.patientId }, data: { workflowStatus: PatientWorkflowStatus.EN_CONSULTATION } });
+      await this.patientWorkflow.transition(tx, createConsultationDto.patientId, PatientWorkflowStatus.EN_CONSULTATION, actor.clinicId);
       return created;
     });
 
@@ -234,7 +244,10 @@ export class ConsultationsService {
         await (tx as any).patientVisit.create({
           data: {
             patientId: dto.patientId,
-            clinicId: (await tx.patient.findUnique({ where: { id: dto.patientId }, select: { clinicId: true } }))?.clinicId || null,
+            // The patient was already checked against the authenticated doctor
+            // clinic before entering this transaction. Never derive a nullable
+            // tenant from a second unrestricted lookup.
+            clinicId: actor.clinicId,
             appointmentId: appointment.id,
             visitType: 'CONSULTATION_NON_PROGRAMMEE',
             reason: dto.chiefComplaint?.trim() || 'Consultation clinique ouverte par le médecin',
@@ -243,7 +256,7 @@ export class ConsultationsService {
           },
         });
       }
-      await tx.patient.update({ where: { id: dto.patientId }, data: { workflowStatus: PatientWorkflowStatus.EN_CONSULTATION } });
+      await this.patientWorkflow.transition(tx, dto.patientId, PatientWorkflowStatus.EN_CONSULTATION, actor.clinicId);
       return created;
     });
 
@@ -483,23 +496,44 @@ export class ConsultationsService {
   async saveClinicalSections(id: string, dto: ClinicalSectionsDto, actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+
     const amendmentReason = dto.amendmentReason?.trim();
     const isAmendment = consultation.status === ConsultationStatus.FINALIZED;
     if (isAmendment && !amendmentReason) {
-      throw new BadRequestException('Une consultation finalisée est protégée : indiquez le motif de l’avenant.');
+      throw new BadRequestException(
+        'Une consultation finalisée est protégée : indiquez le motif de l’avenant.',
+      );
     }
-    // DTO validation owns the HTTP boundary; this compatibility view supports
-    // existing JSON clinical drafts until their fields are fully normalised.
-    const payload: Record<string, any> | null = dto.clinicalSummary && typeof dto.clinicalSummary === 'object' && !Array.isArray(dto.clinicalSummary)
-      ? dto.clinicalSummary
-      : null;
-    const consultationModule: Record<string, any> | null = dto.consultationModule || payload?.consultationModule || null;
-    const currentMedicationValue = dto.medicalHistory?.currentMedications
-      || payload?.medicalHistory?.currentMedications
-      || (Array.isArray(consultationModule?.currentMedications) ? consultationModule.currentMedications : null);
-    const followUpNotes = dto.followUp?.notes
-      || payload?.followUp?.notes
-      || (consultationModule?.followUp ? [consultationModule.followUp.recommendedInterval, consultationModule.followUp.specificDate].filter(Boolean).join(' | ') : null);
+
+    const payload: Record<string, any> | null =
+      dto.clinicalSummary &&
+      typeof dto.clinicalSummary === 'object' &&
+      !Array.isArray(dto.clinicalSummary)
+        ? dto.clinicalSummary
+        : null;
+
+    const consultationModule: Record<string, any> | null =
+      dto.consultationModule || payload?.consultationModule || null;
+
+    const currentMedicationValue =
+      dto.medicalHistory?.currentMedications ||
+      payload?.medicalHistory?.currentMedications ||
+      (Array.isArray(consultationModule?.currentMedications)
+        ? consultationModule.currentMedications
+        : null);
+
+    const followUpNotes =
+      dto.followUp?.notes ||
+      payload?.followUp?.notes ||
+      (consultationModule?.followUp
+        ? [
+            consultationModule.followUp.recommendedInterval,
+            consultationModule.followUp.specificDate,
+          ]
+            .filter(Boolean)
+            .join(' | ')
+        : null);
+
     const structured = {
       medicalHistory: {
         ...(dto.medicalHistory || payload?.medicalHistory || {}),
@@ -508,89 +542,800 @@ export class ConsultationsService {
       currentSymptoms: dto.currentSymptoms || payload?.currentSymptoms || null,
       clinicalExam: dto.clinicalExam || payload?.clinicalExam || null,
       diagnosis: dto.diagnosis || payload?.diagnosis || null,
-      complementaryExams: dto.complementaryExams || payload?.complementaryExams || (consultationModule?.orderedExams ? { orderedExams: consultationModule.orderedExams } : null),
-      treatmentPlan: dto.treatmentPlan || payload?.treatmentPlan || {
-        notes: dto.treatmentPlan?.notes || dto.treatmentPlan?.description || consultationModule?.safetyConsignes || null,
-        description: dto.treatmentPlan?.description || consultationModule?.safetyConsignes || null,
-        safetyConsignes: consultationModule?.safetyConsignes || null,
-        sickLeave: consultationModule?.sickLeave || null,
-        followUp: consultationModule?.followUp || null,
-      },
-      followUp: dto.followUp || payload?.followUp || {
-        notes: followUpNotes,
-        recommendedInterval: consultationModule?.followUp?.recommendedInterval || null,
-        specificDate: consultationModule?.followUp?.specificDate || null,
-      },
+      complementaryExams:
+        dto.complementaryExams ||
+        payload?.complementaryExams ||
+        (consultationModule?.orderedExams
+          ? { orderedExams: consultationModule.orderedExams }
+          : null),
+      treatmentPlan:
+        dto.treatmentPlan ||
+        payload?.treatmentPlan || {
+          notes:
+            dto.treatmentPlan?.notes ||
+            dto.treatmentPlan?.description ||
+            consultationModule?.safetyConsignes ||
+            null,
+          description:
+            dto.treatmentPlan?.description ||
+            consultationModule?.safetyConsignes ||
+            null,
+          safetyConsignes: consultationModule?.safetyConsignes || null,
+          sickLeave: consultationModule?.sickLeave || null,
+          followUp: consultationModule?.followUp || null,
+        },
+      followUp:
+        dto.followUp ||
+        payload?.followUp || {
+          notes: followUpNotes,
+          recommendedInterval:
+            consultationModule?.followUp?.recommendedInterval || null,
+          specificDate: consultationModule?.followUp?.specificDate || null,
+        },
       consultationModule,
-      complementaryAnamnesis: dto.complementaryAnamnesis || payload?.complementaryAnamnesis || null,
+      complementaryAnamnesis:
+        dto.complementaryAnamnesis ||
+        payload?.complementaryAnamnesis ||
+        null,
     };
 
     const requestedStatus = dto.status || consultation.status;
     const normalizedStatus = this.normalizeConsultationStatus(requestedStatus);
-    if (!isAmendment && normalizedStatus === ConsultationStatus.FINALIZED && dto.attestation !== true) {
-      throw new BadRequestException('La validation exige l’attestation explicite du médecin.');
+
+    if (
+      !isAmendment &&
+      normalizedStatus === ConsultationStatus.FINALIZED &&
+      dto.attestation !== true
+    ) {
+      throw new BadRequestException(
+        'La validation exige l’attestation explicite du médecin.',
+      );
     }
 
-    const updated = await this.prisma.consultation.update({
-      where: { id },
-      data: {
-        chiefComplaint: dto.chiefComplaint ?? consultation.chiefComplaint,
-        clinicalSummary: typeof dto.clinicalSummary === 'string' ? dto.clinicalSummary : JSON.stringify(structured),
-        diagnosis: dto.diagnosis?.principal || dto.diagnosis?.main || dto.diagnosisText || consultation.diagnosis,
-        assessment: dto.diagnosis?.hypotheses ? JSON.stringify(dto.diagnosis.hypotheses) : consultation.assessment,
-        plan: dto.treatmentPlan ? JSON.stringify(dto.treatmentPlan) : consultation.plan,
-        status: isAmendment ? ConsultationStatus.FINALIZED : normalizedStatus,
-        version: { increment: 1 },
-      } as any,
-      include: { patient: true, provider: true },
+    const clinicId = consultation.clinicId || consultation.patient?.clinicId;
+    if (!clinicId) {
+      throw new ForbiddenException(
+        'La consultation doit être rattachée à un établissement actif.',
+      );
+    }
+
+    const orderedExams = Array.isArray(consultationModule?.orderedExams)
+      ? consultationModule.orderedExams
+      : [];
+
+    const hasPendingOrderedExams = orderedExams.length > 0
+      ? await this.prisma.$transaction(async (tx) => {
+          for (const exam of orderedExams) {
+            if (!exam || typeof exam !== 'object') return true;
+            const category = String(exam.category || '').toUpperCase();
+            const catalogueItemId = typeof exam.catalogueItemId === 'string' ? exam.catalogueItemId.trim() : '';
+            if (!category || !catalogueItemId) return true;
+
+            if (category === 'LABORATORY') {
+              const request = await tx.labRequest.findFirst({
+                where: {
+                  consultationId: id,
+                  patientId: consultation.patientId,
+                  clinicId,
+                  deletedAt: null,
+                },
+                include: {
+                  items: {
+                    where: { deletedAt: null },
+                    select: { labTestId: true, status: true },
+                  },
+                },
+              });
+              const hasFinalResult = request?.items.some(
+                (item) => item.labTestId === catalogueItemId && ['AVAILABLE', 'SENT', 'COMPLETED', 'VERIFIED'].includes(String(item.status || '')),
+              );
+              if (!hasFinalResult) return true;
+            }
+
+            if (category === 'IMAGING') {
+              const imagingRequest = await tx.imagingRequest.findFirst({
+                where: {
+                  consultationId: id,
+                  patientId: consultation.patientId,
+                  clinicId,
+                  imagingCatalogueId: catalogueItemId,
+                  deletedAt: null,
+                  status: { in: ['COMPLETED', 'VERIFIED'] },
+                },
+                select: { report: true },
+              });
+              if (!imagingRequest?.report) return true;
+            }
+          }
+          return false;
+        })
+      : false;
+
+    if (!isAmendment && normalizedStatus === ConsultationStatus.FINALIZED && hasPendingOrderedExams) {
+      throw new BadRequestException('La consultation ne peut être finalisée que lorsque tous les examens complémentaires commandés n’ont pas de résultat final valide.');
+    }
+
+    const transactionResult = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.consultation.update({
+        where: { id },
+        data: {
+          chiefComplaint: dto.chiefComplaint ?? consultation.chiefComplaint,
+          clinicalSummary:
+            typeof dto.clinicalSummary === 'string'
+              ? dto.clinicalSummary
+              : JSON.stringify(structured),
+          diagnosis:
+            dto.diagnosis?.principal ||
+            dto.diagnosis?.main ||
+            dto.diagnosisText ||
+            consultation.diagnosis,
+          assessment: dto.diagnosis?.hypotheses
+            ? JSON.stringify(dto.diagnosis.hypotheses)
+            : consultation.assessment,
+          plan: dto.treatmentPlan
+            ? JSON.stringify(dto.treatmentPlan)
+            : consultation.plan,
+          status: isAmendment
+            ? ConsultationStatus.FINALIZED
+            : normalizedStatus,
+          version: { increment: 1 },
+        } as any,
+        include: { patient: true, provider: true },
+      });
+
+      let materialized: Array<{
+        invoiceId: string;
+        invoiceStatus: string;
+        invoiceTotal: number;
+        kind: 'LABORATORY' | 'IMAGING';
+        label: string;
+        priority: string;
+      }> = [];
+
+      // AUTO_DRAFT ne matérialise rien. Seul l'enregistrement volontaire
+      // IN_PROGRESS transforme les examens du brouillon en demandes réelles.
+      if (
+        !isAmendment &&
+        normalizedStatus === ConsultationStatus.IN_PROGRESS &&
+        orderedExams.length > 0
+      ) {
+        materialized = await this.materializeOrderedExamsInTransaction(
+          tx,
+          {
+            id,
+            patientId: consultation.patientId,
+            clinicId,
+          },
+          orderedExams,
+          actorId,
+        );
+      }
+
+      if (normalizedStatus === ConsultationStatus.FINALIZED) {
+        await tx.appointment.update({
+          where: { id: updated.appointmentId },
+          data: { status: 'COMPLETED' },
+        });
+
+        await tx.patientVisit.updateMany({
+          where: {
+            appointmentId: updated.appointmentId,
+            status: 'IN_CONSULTATION',
+          },
+          data: { status: 'COMPLETED', completedAt: new Date() },
+        });
+      }
+
+      // DRAFT et IN_PROGRESS restent uniquement dans la consultation.
+      // L'historique longitudinal définitif est écrit à la signature.
+      if (!isAmendment && normalizedStatus !== ConsultationStatus.FINALIZED) {
+        return { updated, materialized };
+      }
+
+      await tx.consultationNote.create({
+        data: {
+          consultationId: id,
+          authorId: actorId,
+          noteType: isAmendment ? 'AMENDMENT' : 'FINALIZATION_SIGNATURE',
+          content: isAmendment
+            ? `Avenant v${updated.version}: ${amendmentReason}`
+            : 'Consultation relue et validée par le médecin responsable.',
+        },
+      });
+
+      await tx.medicalHistory.create({
+        data: {
+          patientId: consultation.patientId,
+          kind: 'MEDICAL_CONSULTATION',
+          details: JSON.stringify({
+            ...structured,
+            consultationId: id,
+            consultationStatus: updated.status,
+            chiefComplaint: updated.chiefComplaint,
+            savedAt: new Date().toISOString(),
+            amendmentReason: amendmentReason || null,
+            consultationVersion: updated.version,
+          }),
+          createdById: actorId,
+        },
+      });
+
+      return { updated, materialized };
     });
 
-    if (normalizedStatus === ConsultationStatus.FINALIZED) {
-      await this.prisma.appointment.update({ where: { id: updated.appointmentId }, data: { status: 'COMPLETED' } });
-      await (this.prisma as any).patientVisit.updateMany({
-        where: { appointmentId: updated.appointmentId, status: 'IN_CONSULTATION' },
-        data: { status: 'COMPLETED', completedAt: new Date() },
+    // Les notifications sont des effets externes : on les émet uniquement
+    // après le commit. Une transaction annulée ne doit jamais annoncer une
+    // facture qui n'existe pas.
+    if (transactionResult.materialized.length > 0) {
+      await this.notifyMaterializedExamInvoices(
+        clinicId,
+        consultation.patientId,
+        consultation.patient.firstName,
+        consultation.patient.lastName,
+        transactionResult.materialized,
+      );
+    }
+
+    return transactionResult.updated;
+  }
+
+  private async materializeOrderedExamsInTransaction(
+    tx: Prisma.TransactionClient,
+    consultation: {
+      id: string;
+      patientId: string;
+      clinicId: string;
+    },
+    orderedExams: Array<any>,
+    actorId?: string,
+  ): Promise<
+    Array<{
+      invoiceId: string;
+      invoiceStatus: string;
+      invoiceTotal: number;
+      kind: 'LABORATORY' | 'IMAGING';
+      label: string;
+      priority: string;
+    }>
+  > {
+    const createdInvoices: Array<{
+      invoiceId: string;
+      invoiceStatus: string;
+      invoiceTotal: number;
+      kind: 'LABORATORY' | 'IMAGING';
+      label: string;
+      priority: string;
+    }> = [];
+
+    // Une suggestion IA libre sans catalogueItemId reste dans le brouillon
+    // clinique. Elle ne devient jamais silencieusement une demande facturable.
+    const normalizedOrders = orderedExams
+      .filter(
+        (exam) =>
+          exam &&
+          typeof exam === 'object' &&
+          typeof exam.catalogueItemId === 'string' &&
+          Boolean(exam.catalogueItemId.trim()) &&
+          ['LABORATORY', 'IMAGING'].includes(
+            String(exam.category || '').toUpperCase(),
+          ),
+      )
+      .map((exam) => ({
+        category: String(exam.category).toUpperCase() as
+          | 'LABORATORY'
+          | 'IMAGING',
+        catalogueItemId: exam.catalogueItemId.trim(),
+        urgency:
+          typeof exam.urgency === 'string' && exam.urgency.trim()
+            ? exam.urgency.trim().toUpperCase()
+            : 'ROUTINE',
+        clinicalIndication:
+          typeof exam.clinicalIndication === 'string'
+            ? exam.clinicalIndication.trim()
+            : '',
+      }))
+      .filter(
+        (exam, index, collection) =>
+          collection.findIndex(
+            (candidate) =>
+              candidate.category === exam.category &&
+              candidate.catalogueItemId === exam.catalogueItemId,
+          ) === index,
+      );
+
+    const labOrders = normalizedOrders.filter(
+      (exam) => exam.category === 'LABORATORY',
+    );
+
+    const newLabTests: Array<{
+      order: (typeof labOrders)[number];
+      labTest: any;
+    }> = [];
+
+    for (const order of labOrders) {
+      const labTest = await tx.labTest.findFirst({
+        where: {
+          id: order.catalogueItemId,
+          clinicId: consultation.clinicId,
+          active: true,
+        },
+      });
+
+      if (!labTest) {
+        throw new BadRequestException(
+          'Un examen laboratoire sélectionné est introuvable ou inactif dans cet établissement.',
+        );
+      }
+
+      if (
+        labTest.price === null ||
+        labTest.price === undefined ||
+        Number(labTest.price) <= 0
+      ) {
+        throw new BadRequestException(
+          `Le tarif de l'examen laboratoire "${labTest.name}" n'est pas valide.`,
+        );
+      }
+
+      const existingItem = await tx.labRequestItem.findFirst({
+        where: {
+          labTestId: labTest.id,
+          deletedAt: null,
+          labRequest: {
+            consultationId: consultation.id,
+            clinicId: consultation.clinicId,
+            patientId: consultation.patientId,
+            deletedAt: null,
+            status: { not: 'CANCELLED' },
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!existingItem) {
+        newLabTests.push({ order, labTest });
+      }
+    }
+
+    if (newLabTests.length > 0) {
+      const total = newLabTests.reduce(
+        (sum, item) => sum + Number(item.labTest.price),
+        0,
+      );
+      const label = newLabTests
+        .map((item) => item.labTest.name)
+        .join(', ');
+      const priority = newLabTests.some(
+        (item) => item.order.urgency === 'URGENT',
+      )
+        ? 'URGENT'
+        : 'NORMAL';
+
+      const labRequest = await tx.labRequest.create({
+        data: {
+          consultationId: consultation.id,
+          patientId: consultation.patientId,
+          requestedById: actorId || null,
+          clinicId: consultation.clinicId,
+          specimenType:
+            newLabTests.length > 1
+              ? label
+              : newLabTests[0].labTest.name,
+          priority,
+          notes:
+            newLabTests
+              .map((item) => item.order.clinicalIndication)
+              .filter(Boolean)
+              .join(' | ') || null,
+          status: 'AWAITING_PAYMENT',
+        },
+      });
+
+      const invoice = await tx.invoice.create({
+        data: {
+          patientId: consultation.patientId,
+          issuedById: actorId || null,
+          clinicId: consultation.clinicId,
+          type: InvoiceType.LABORATORY,
+          status: 'PENDING',
+          totalAmount: total,
+          balanceDue: total,
+          remarks: `LabRequest:${labRequest.id} - Demande laboratoire ${labRequest.id} - ${label}`,
+        },
+      });
+
+      for (const { order, labTest } of newLabTests) {
+        const price = Number(labTest.price);
+
+        await tx.invoiceLine.create({
+          data: {
+            invoiceId: invoice.id,
+            label: `Examen laboratoire - ${labTest.name}`,
+            quantity: 1,
+            unitPrice: price,
+            totalAmount: price,
+          },
+        });
+
+        await tx.labRequestItem.create({
+          data: {
+            labRequestId: labRequest.id,
+            labTestId: labTest.id,
+            status: 'AWAITING_PAYMENT',
+            requestedAt: labRequest.requestedAt,
+            specimenLabel: labTest.name,
+            notes: order.clinicalIndication || null,
+          },
+        });
+      }
+
+      const handledBySubscription =
+        await this.recordSubscriptionChargeForInvoice(
+          tx,
+          consultation.patientId,
+          consultation.clinicId,
+          invoice.id,
+          newLabTests.length > 1
+            ? `Examens laboratoire - ${label}`
+            : `Examen laboratoire - ${label}`,
+          total,
+          null,
+        );
+
+      await tx.labRequest.update({
+        where: { id: labRequest.id },
+        data: {
+          externalReference: invoice.id,
+          status: handledBySubscription
+            ? 'REQUESTED'
+            : 'AWAITING_PAYMENT',
+        },
+      });
+
+      if (handledBySubscription) {
+        await tx.labRequestItem.updateMany({
+          where: {
+            labRequestId: labRequest.id,
+            status: 'AWAITING_PAYMENT',
+            deletedAt: null,
+          },
+          data: { status: 'REQUESTED' },
+        });
+      }
+
+      await tx.medicalHistory.create({
+        data: {
+          patientId: consultation.patientId,
+          kind: 'LAB_REQUEST',
+          details: JSON.stringify({
+            consultationId: consultation.id,
+            labRequestId: labRequest.id,
+            invoiceId: invoice.id,
+            labTestIds: newLabTests.map((item) => item.labTest.id),
+            examNames: newLabTests.map((item) => item.labTest.name),
+            price: total,
+            currency: 'CDF',
+            source: 'CONSULTATION_IN_PROGRESS',
+          }),
+          createdById: actorId,
+        },
+      });
+
+      const finalInvoice = handledBySubscription
+        ? await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id } })
+        : invoice;
+
+      createdInvoices.push({
+        invoiceId: invoice.id,
+        invoiceStatus: finalInvoice.status,
+        invoiceTotal: Number(finalInvoice.totalAmount),
+        kind: 'LABORATORY',
+        label,
+        priority,
       });
     }
 
-    // A draft is visible through its consultation only. It is not duplicated in
-    // the longitudinal patient history until the doctor signs it.
-    if (!isAmendment && normalizedStatus !== ConsultationStatus.FINALIZED) return updated;
+    const imagingOrders = normalizedOrders.filter(
+      (exam) => exam.category === 'IMAGING',
+    );
 
-    await this.prisma.consultationNote.create({
-      data: {
-        consultationId: id,
-        authorId: actorId,
-        noteType: isAmendment ? 'AMENDMENT' : 'FINALIZATION_SIGNATURE',
-        content: isAmendment
-          ? `Avenant v${updated.version}: ${amendmentReason}`
-          : 'Consultation relue et validée par le médecin responsable.',
+    for (const order of imagingOrders) {
+      const imagingCatalogue = await tx.imagingCatalogue.findFirst({
+        where: {
+          id: order.catalogueItemId,
+          clinicId: consultation.clinicId,
+          active: true,
+          deletedAt: null,
+        },
+      });
+
+      if (!imagingCatalogue) {
+        throw new BadRequestException(
+          'Un examen d’imagerie sélectionné est introuvable ou inactif dans cet établissement.',
+        );
+      }
+
+      const price = Number(imagingCatalogue.price || 0);
+      if (price <= 0) {
+        throw new BadRequestException(
+          `Le tarif de l'examen d'imagerie "${imagingCatalogue.name}" n'est pas valide.`,
+        );
+      }
+
+      const existingRequest = await tx.imagingRequest.findFirst({
+        where: {
+          consultationId: consultation.id,
+          patientId: consultation.patientId,
+          clinicId: consultation.clinicId,
+          imagingCatalogueId: imagingCatalogue.id,
+          deletedAt: null,
+          status: { not: 'CANCELLED' },
+        },
+        select: { id: true },
+      });
+
+      if (existingRequest) {
+        continue;
+      }
+
+      const imagingRequest = await tx.imagingRequest.create({
+        data: {
+          consultationId: consultation.id,
+          patientId: consultation.patientId,
+          requestedById: actorId || null,
+          clinicId: consultation.clinicId,
+          imagingCatalogueId: imagingCatalogue.id,
+          modality: imagingCatalogue.modality,
+          bodyPart: imagingCatalogue.name,
+          urgency: order.urgency,
+          clinicalIndication: order.clinicalIndication || null,
+          status: ImagingRequestStatus.AWAITING_PAYMENT,
+        },
+      });
+
+      const invoice = await tx.invoice.create({
+        data: {
+          patientId: consultation.patientId,
+          issuedById: actorId || null,
+          clinicId: consultation.clinicId,
+          type: InvoiceType.RADIOLOGY,
+          status: 'PENDING',
+          totalAmount: price,
+          balanceDue: price,
+          remarks: `ImagingRequest:${imagingRequest.id} - Demande imagerie ${imagingCatalogue.name}`,
+        },
+      });
+
+      await tx.invoiceLine.create({
+        data: {
+          invoiceId: invoice.id,
+          label: `Examen d'imagerie - ${imagingCatalogue.name}`,
+          quantity: 1,
+          unitPrice: price,
+          totalAmount: price,
+        },
+      });
+
+      const handledBySubscription =
+        await this.recordSubscriptionChargeForInvoice(
+          tx,
+          consultation.patientId,
+          consultation.clinicId,
+          invoice.id,
+          `Examen d'imagerie - ${imagingCatalogue.name}`,
+          price,
+          imagingCatalogue.id,
+        );
+
+      if (handledBySubscription) {
+        await tx.imagingRequest.update({
+          where: { id: imagingRequest.id },
+          data: { status: ImagingRequestStatus.REQUESTED },
+        });
+      }
+
+      await tx.medicalHistory.create({
+        data: {
+          patientId: consultation.patientId,
+          kind: 'IMAGING_REQUEST',
+          details: JSON.stringify({
+            consultationId: consultation.id,
+            imagingRequestId: imagingRequest.id,
+            invoiceId: invoice.id,
+            imagingCatalogueId: imagingCatalogue.id,
+            examName: imagingCatalogue.name,
+            clinicalIndication: order.clinicalIndication || null,
+            urgency: order.urgency,
+            price,
+            currency: 'CDF',
+            source: 'CONSULTATION_IN_PROGRESS',
+          }),
+          createdById: actorId,
+        },
+      });
+
+      const finalInvoice = handledBySubscription
+        ? await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id } })
+        : invoice;
+
+      createdInvoices.push({
+        invoiceId: invoice.id,
+        invoiceStatus: finalInvoice.status,
+        invoiceTotal: Number(finalInvoice.totalAmount),
+        kind: 'IMAGING',
+        label: imagingCatalogue.name,
+        priority: order.urgency,
+      });
+    }
+
+    if (createdInvoices.length > 0) {
+      const hasUnpaidInvoice = createdInvoices.some(
+        (invoice) => invoice.invoiceStatus !== 'PAID',
+      );
+
+      if (hasUnpaidInvoice) {
+        await this.patientWorkflow.transition(
+          tx,
+          consultation.patientId,
+          PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+          consultation.clinicId,
+        );
+      } else {
+        const hasLab = createdInvoices.some(
+          (invoice) => invoice.kind === 'LABORATORY',
+        );
+        const hasImaging = createdInvoices.some(
+          (invoice) => invoice.kind === 'IMAGING',
+        );
+
+        await this.patientWorkflow.transition(
+          tx,
+          consultation.patientId,
+          hasLab
+            ? PatientWorkflowStatus.EN_LABORATOIRE
+            : hasImaging
+              ? PatientWorkflowStatus.EN_RADIOLOGIE
+              : PatientWorkflowStatus.EN_CONSULTATION,
+          consultation.clinicId,
+        );
+      }
+    }
+
+    return createdInvoices;
+  }
+
+  private async notifyMaterializedExamInvoices(
+    clinicId: string,
+    patientId: string,
+    patientFirstName: string,
+    patientLastName: string,
+    materialized: Array<{
+      invoiceId: string;
+      invoiceStatus: string;
+      invoiceTotal: number;
+      kind: 'LABORATORY' | 'IMAGING';
+      label: string;
+      priority: string;
+    }>,
+  ) {
+    const unpaidInvoices = materialized.filter(
+      (invoice) => invoice.invoiceStatus !== 'PAID',
+    );
+
+    if (unpaidInvoices.length > 0) {
+      const cashiers = await this.prisma.user.findMany({
+        where: {
+          clinicId,
+          OR: [
+            { primaryRole: 'CASHIER' as any },
+            { roles: { some: { role: { slug: 'CASHIER' as any } } } },
+          ],
+        },
+        select: { id: true },
+      });
+
+      for (const invoice of unpaidInvoices) {
+        const notifications = await Promise.all(
+          cashiers.map((cashier) =>
+            this.prisma.notification.create({
+              data: {
+                recipientId: cashier.id,
+                patientId,
+                type: 'TASK',
+                status: 'UNREAD',
+                priority:
+                  invoice.priority === 'URGENT' ? 'HIGH' : 'MEDIUM',
+                title:
+                  invoice.kind === 'LABORATORY'
+                    ? 'Paiement examen laboratoire'
+                    : 'Paiement examen d imagerie',
+                message: `Valider ${invoice.label} pour ${patientFirstName} ${patientLastName}: ${invoice.invoiceTotal.toLocaleString('fr-FR')} CDF.`,
+                relatedEntity: 'Invoice',
+                relatedId: invoice.invoiceId,
+                sendAt: new Date(),
+              },
+            }),
+          ),
+        );
+
+        notifications.forEach((notification) => {
+          this.notificationsGateway.notifyToUser(
+            notification.recipientId,
+            'notification.created',
+            notification,
+          );
+        });
+
+        this.notificationsGateway.notify('invoice.created', {
+          id: invoice.invoiceId,
+        });
+      }
+
+      this.notificationsGateway.notify('patient.updated', {
+        id: patientId,
+        workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+      });
+      return;
+    }
+
+    // Toutes les nouvelles factures ont été prises en charge par abonnement.
+    // Les services concernés peuvent traiter immédiatement les demandes.
+    const receptionists = await this.prisma.user.findMany({
+      where: {
+        clinicId,
+        status: 'ACTIVE',
+        deletedAt: null,
+        OR: [
+          { primaryRole: 'RECEPTIONIST' as any },
+          { roles: { some: { role: { slug: 'RECEPTIONIST' as any } } } },
+        ],
       },
+      select: { id: true },
     });
+    const labels = materialized.map((invoice) => invoice.label).join(', ');
+    const receptionNotifications = await Promise.all(receptionists.map((user) =>
+      this.prisma.notification.create({
+        data: {
+          recipientId: user.id,
+          patientId,
+          type: 'SYSTEM',
+          status: 'UNREAD',
+          priority: 'MEDIUM',
+          title: 'Examens pris en charge par abonnement',
+          message: `${labels} est transmis directement au service concerné ; le montant est ajouté à la facture entreprise.`,
+          relatedEntity: 'Invoice',
+          relatedId: materialized[0]?.invoiceId,
+        },
+      }),
+    ));
+    receptionNotifications.forEach((notification) =>
+      this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification),
+    );
 
-    await this.prisma.medicalHistory.create({
-      data: {
-        patientId: consultation.patientId,
-        kind: 'MEDICAL_CONSULTATION',
-        details: JSON.stringify({
-          ...structured,
-          consultationId: id,
-          consultationStatus: updated.status,
-          chiefComplaint: updated.chiefComplaint,
-          savedAt: new Date().toISOString(),
-          amendmentReason: amendmentReason || null,
-          consultationVersion: updated.version,
-        }),
-        createdById: actorId,
-      },
+    const hasLab = materialized.some(
+      (invoice) => invoice.kind === 'LABORATORY',
+    );
+    const hasImaging = materialized.some(
+      (invoice) => invoice.kind === 'IMAGING',
+    );
+
+    this.notificationsGateway.notify('patient.updated', {
+      id: patientId,
+      workflowStatus: hasLab
+        ? PatientWorkflowStatus.EN_LABORATOIRE
+        : hasImaging
+          ? PatientWorkflowStatus.EN_RADIOLOGIE
+          : PatientWorkflowStatus.EN_CONSULTATION,
     });
-
-    return updated;
   }
 
   async createLabRequest(id: string, dto: CreateLabRequestDto, actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    const clinicId = consultation.clinicId || consultation.patient?.clinicId;
+    if (!clinicId) {
+      throw new ForbiddenException('La consultation doit être rattachée à un établissement actif.');
+    }
     const request = await this.prisma.$transaction(async (tx) => {
       const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
       const requestedLabTestIds = Array.isArray(dto.labTestIds)
@@ -601,15 +1346,29 @@ export class ConsultationsService {
 
       let selectedLabTests: Array<any> = [];
 
+      const labTestInclude = {
+        section: true,
+        category: true,
+        parameterTemplates: { where: { clinicId, active: true, archivedAt: null } },
+        sampleRequirements: { where: { clinicId, archivedAt: null }, include: { labSampleType: true } },
+        consumableRequirements: { where: { clinicId, archivedAt: null }, include: { labConsumable: true } },
+      } as const;
+
       if (requestedLabTestIds.length > 0) {
         for (const labTestId of requestedLabTestIds) {
-          const labTest = await tx.labTest.findUnique({
-            where: { id: labTestId },
-            include: { section: true, category: true },
+          const labTest = await tx.labTest.findFirst({
+            where: {
+              id: labTestId,
+              clinicId,
+              active: true,
+            },
+            include: labTestInclude,
           });
 
           if (!labTest) {
-            throw new BadRequestException('Un examen du catalogue laboratoire est introuvable.');
+            throw new BadRequestException(
+              'Un examen du catalogue laboratoire est introuvable dans cet établissement ou inactif.',
+            );
           }
 
           selectedLabTests.push(labTest);
@@ -619,13 +1378,14 @@ export class ConsultationsService {
       if (!selectedLabTests.length && trimmedExamName) {
         const exactMatch = await tx.labTest.findFirst({
           where: {
+            clinicId,
             active: true,
             OR: [
               { name: { equals: trimmedExamName, mode: 'insensitive' } },
               { code: { equals: trimmedExamName, mode: 'insensitive' } },
             ],
           },
-          include: { section: true, category: true },
+          include: labTestInclude,
           orderBy: { name: 'asc' },
         });
 
@@ -637,10 +1397,11 @@ export class ConsultationsService {
       if (!selectedLabTests.length && trimmedExamName) {
         const containsMatch = await tx.labTest.findFirst({
           where: {
+            clinicId,
             active: true,
             name: { contains: trimmedExamName, mode: 'insensitive' },
           },
-          include: { section: true, category: true },
+          include: labTestInclude,
           orderBy: { name: 'asc' },
         });
 
@@ -649,18 +1410,31 @@ export class ConsultationsService {
         }
       }
 
-      selectedLabTests = selectedLabTests.filter((labTest, index, collection) => collection.findIndex((item) => item.id === labTest.id) === index);
+      selectedLabTests = selectedLabTests.filter(
+        (labTest, index, collection) =>
+          collection.findIndex((item) => item.id === labTest.id) === index,
+      );
 
       if (!selectedLabTests.length) {
-        throw new BadRequestException('Veuillez choisir un examen du catalogue laboratoire avec un tarif valide.');
+        throw new BadRequestException(
+          'Veuillez choisir un examen laboratoire actif de cet établissement.',
+        );
       }
 
-      const invalidLabTests = selectedLabTests.filter((labTest) => Number(labTest.price || 0) <= 0);
+      const invalidLabTests = selectedLabTests.filter((labTest) =>
+        labTest.price === null || labTest.price === undefined || Number(labTest.price) <= 0,
+      );
+
       if (invalidLabTests.length > 0) {
-        throw new BadRequestException('Un ou plusieurs examens laboratoire n ont pas encore de prix valide.');
+        throw new BadRequestException(
+          'Un ou plusieurs examens laboratoire n ont pas encore de tarif valide pour cet établissement.',
+        );
       }
 
-      const examPriceTotal = selectedLabTests.reduce((total, labTest) => total + Number(labTest.price || 0), 0);
+      const examPriceTotal = selectedLabTests.reduce(
+        (total, labTest) => total + Number(labTest.price),
+        0,
+      );
       const requestLabel = selectedLabTests.map((labTest) => labTest.name).join(', ');
       const specimenTypeLabel = dto.specimenType || (selectedLabTests.length > 1 ? requestLabel : selectedLabTests[0]?.name || trimmedExamName || 'Examen');
 
@@ -669,10 +1443,11 @@ export class ConsultationsService {
           consultationId: id,
           patientId: consultation.patientId,
           requestedById: actorId,
+          clinicId,
           specimenType: specimenTypeLabel,
           priority: dto.priority || 'NORMAL',
           notes: dto.notes || null,
-          status: 'REQUESTED',
+          status: 'AWAITING_PAYMENT',
         },
         include: { patient: true, requestedBy: true, consultation: true, results: true },
       });
@@ -681,7 +1456,7 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           issuedById: actorId,
-          clinicId: consultation.clinicId || consultation.patient.clinicId || null,
+          clinicId,
           type: 'LABORATORY',
           status: 'PENDING',
           totalAmount: examPriceTotal,
@@ -691,7 +1466,7 @@ export class ConsultationsService {
       });
 
       for (const labTest of selectedLabTests) {
-        const examPrice = Number(labTest.price || 0);
+        const examPrice = Number(labTest.price);
         await tx.invoiceLine.create({
           data: {
             invoiceId: invoice.id,
@@ -703,41 +1478,10 @@ export class ConsultationsService {
         });
       }
 
-      const sectionConsumableUsage = await this.resolveSectionConsumableUsage(tx, selectedLabTests);
-      if (sectionConsumableUsage.length > 0) {
-        for (const usage of sectionConsumableUsage) {
-          const availableStock = await tx.labConsumableStock.findFirst({
-            where: { labConsumableId: usage.labConsumableId },
-            select: { id: true, quantity: true },
-          });
-          const currentQty = Number(availableStock?.quantity || 0);
-          const requiredQty = Number(usage.quantity || 0);
-          if (currentQty < requiredQty) {
-            throw new BadRequestException(`Stock insuffisant pour ${usage.consumableName}.`);
-          }
-          if (availableStock) {
-            await tx.labConsumableStock.update({
-              where: { id: availableStock.id },
-              data: { quantity: currentQty - requiredQty, lastUpdatedAt: new Date() },
-            });
-          }
-          await tx.labConsumableTransaction.create({
-            data: {
-              labConsumableId: usage.labConsumableId,
-              type: 'OUT',
-              quantity: requiredQty,
-              unit: usage.unit || 'unité',
-              reference: created.id,
-              note: `Consommation pour demande laboratoire ${created.id} - ${usage.sectionName}`,
-              performedById: actorId || null,
-            },
-          });
-        }
-      }
-
       const handledBySubscription = await this.recordSubscriptionChargeForInvoice(
         tx,
         consultation.patientId,
+        consultation.clinicId,
         invoice.id,
         selectedLabTests.length > 1 ? `Examens laboratoire - ${requestLabel}` : `Examen laboratoire - ${requestLabel}`,
         examPriceTotal,
@@ -746,13 +1490,20 @@ export class ConsultationsService {
 
       await tx.labRequest.update({
         where: { id: created.id },
-        data: { externalReference: invoice.id },
+        data: {
+          externalReference: invoice.id,
+          status: handledBySubscription
+            ? 'REQUESTED'
+            : 'AWAITING_PAYMENT',
+        },
       });
 
-      await tx.patient.update({
-        where: { id: consultation.patientId },
-        data: { workflowStatus: handledBySubscription ? PatientWorkflowStatus.EN_LABORATOIRE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
-      });
+      await this.patientWorkflow.transition(
+        tx,
+        consultation.patientId,
+        handledBySubscription ? PatientWorkflowStatus.EN_LABORATOIRE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+        clinicId,
+      );
 
       await tx.medicalHistory.create({
         data: {
@@ -776,7 +1527,9 @@ export class ConsultationsService {
           data: {
             labRequestId: created.id,
             labTestId: labTest.id,
-            status: 'REQUESTED',
+            status: handledBySubscription
+            ? 'REQUESTED'
+            : 'AWAITING_PAYMENT',
             requestedAt: created.requestedAt,
             specimenLabel: created.specimenType || labTest.name,
             notes: dto.notes || null,
@@ -784,18 +1537,26 @@ export class ConsultationsService {
         });
       }
 
-      return { ...created, invoice, labTests: selectedLabTests, labTest: selectedLabTests[0] };
+      return {
+        ...created,
+        invoice,
+        labTests: selectedLabTests,
+        labTest: selectedLabTests[0],
+        handledBySubscription,
+      };
     });
 
-    const cashiers = await this.prisma.user.findMany({
+    const cashiers = request.handledBySubscription
+      ? []
+      : await this.prisma.user.findMany({
       where: {
-        ...(consultation.clinicId || consultation.patient?.clinicId ? { clinicId: consultation.clinicId || consultation.patient?.clinicId } : {}),
+        clinicId,
         OR: [
           { primaryRole: 'CASHIER' as any },
           { roles: { some: { role: { slug: 'CASHIER' as any } } } },
         ],
       },
-    });
+      });
 
     const requestLabel = request.labTests?.length
       ? request.labTests.map((labTest: any) => labTest.name).join(', ')
@@ -823,7 +1584,44 @@ export class ConsultationsService {
     notifications.forEach((notification) => {
       this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification);
     });
-    this.notificationsGateway.notify('patient.updated', { id: consultation.patientId, workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT });
+    if (request.handledBySubscription) {
+      const receptionists = await this.prisma.user.findMany({
+        where: {
+          clinicId,
+          status: 'ACTIVE',
+          deletedAt: null,
+          OR: [
+            { primaryRole: 'RECEPTIONIST' as any },
+            { roles: { some: { role: { slug: 'RECEPTIONIST' as any } } } },
+          ],
+        },
+        select: { id: true },
+      });
+      const receptionNotifications = await Promise.all(receptionists.map((user) =>
+        this.prisma.notification.create({
+          data: {
+            recipientId: user.id,
+            patientId: consultation.patientId,
+            type: 'SYSTEM',
+            status: 'UNREAD',
+            priority: 'MEDIUM',
+            title: 'Examen pris en charge par abonnement',
+            message: `${requestLabel} est transmis directement au laboratoire ; son montant est ajouté à la facture entreprise.`,
+            relatedEntity: 'LabRequest',
+            relatedId: request.id,
+          },
+        }),
+      ));
+      receptionNotifications.forEach((notification) =>
+        this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification),
+      );
+    }
+    this.notificationsGateway.notify('patient.updated', {
+      id: consultation.patientId,
+      workflowStatus: request.handledBySubscription
+        ? PatientWorkflowStatus.EN_LABORATOIRE
+        : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+    });
     this.notificationsGateway.notify('invoice.created', request.invoice);
 
     return request;
@@ -832,6 +1630,10 @@ export class ConsultationsService {
   async createImagingRequest(id: string, dto: CreateImagingRequestDto, actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    const clinicId = consultation.clinicId || consultation.patient?.clinicId;
+    if (!clinicId) {
+      throw new ForbiddenException('La consultation doit être rattachée à un établissement actif.');
+    }
 
     const request = await this.prisma.$transaction(async (tx) => {
       const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
@@ -839,14 +1641,18 @@ export class ConsultationsService {
 
       let imagingCatalogue: any = null;
       if (imagingCatalogueId) {
-        imagingCatalogue = await tx.imagingCatalogue.findUnique({ where: { id: imagingCatalogueId } });
+        imagingCatalogue = await tx.imagingCatalogue.findFirst({
+          where: { id: imagingCatalogueId, clinicId, active: true, deletedAt: null },
+        });
         if (!imagingCatalogue) {
           throw new BadRequestException('Un examen du catalogue d imagerie est introuvable.');
         }
       } else if (trimmedExamName) {
         imagingCatalogue = await tx.imagingCatalogue.findFirst({
           where: {
+            clinicId,
             active: true,
+            deletedAt: null,
             OR: [
               { name: { equals: trimmedExamName, mode: 'insensitive' } },
               { code: { equals: trimmedExamName, mode: 'insensitive' } },
@@ -857,7 +1663,9 @@ export class ConsultationsService {
         if (!imagingCatalogue) {
           imagingCatalogue = await tx.imagingCatalogue.findFirst({
             where: {
+              clinicId,
               active: true,
+              deletedAt: null,
               name: { contains: trimmedExamName, mode: 'insensitive' },
             },
             orderBy: { name: 'asc' },
@@ -883,7 +1691,16 @@ export class ConsultationsService {
           consultationId: id,
           imagingCatalogueId: imagingCatalogue.id,
           deletedAt: null,
-          status: { in: ['REQUESTED', 'SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'VERIFIED'] },
+          status: {
+            in: [
+              'AWAITING_PAYMENT',
+              'REQUESTED',
+              'SCHEDULED',
+              'IN_PROGRESS',
+              'COMPLETED',
+              'VERIFIED',
+            ],
+          },
         },
       });
       if (duplicate && !dto.duplicateOverrideReason?.trim()) {
@@ -898,14 +1715,29 @@ export class ConsultationsService {
       const bodyPart = typeof dto.bodyPart === 'string' && dto.bodyPart.trim() ? dto.bodyPart.trim() : imagingCatalogue.name;
       const urgency = typeof dto.urgency === 'string' && dto.urgency.trim() ? dto.urgency.toUpperCase() : 'ROUTINE';
       const machineId = typeof dto.machineId === 'string' && dto.machineId ? dto.machineId : null;
+      if (machineId) {
+        const machine = await tx.imagingMachine.findFirst({
+          where: {
+            id: machineId,
+            clinicId,
+            deletedAt: null,
+            isOperational: true,
+          },
+          select: { id: true },
+        });
+        if (!machine) {
+          throw new BadRequestException('L’équipement d’imagerie sélectionné est indisponible dans cet établissement.');
+        }
+      }
       const scheduledAt = typeof dto.scheduledAt === 'string' && dto.scheduledAt.trim() ? new Date(dto.scheduledAt) : null;
-      const status = typeof dto.status === 'string' && dto.status.trim() ? dto.status.toUpperCase() as ImagingRequestStatus : 'REQUESTED';
+      const status: ImagingRequestStatus = 'AWAITING_PAYMENT';
 
       const created = await tx.imagingRequest.create({
         data: {
           consultationId: id,
           patientId: consultation.patientId,
           requestedById: actorId || null,
+          clinicId,
           imagingCatalogueId: imagingCatalogue.id,
           modality: imagingCatalogue.modality,
           bodyPart,
@@ -931,7 +1763,7 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           issuedById: actorId,
-          clinicId: consultation.clinicId || consultation.patient.clinicId || null,
+          clinicId,
           type: InvoiceType.RADIOLOGY,
           status: 'PENDING',
           totalAmount: price,
@@ -953,16 +1785,26 @@ export class ConsultationsService {
       const handledBySubscription = await this.recordSubscriptionChargeForInvoice(
         tx,
         consultation.patientId,
+        consultation.clinicId,
         invoice.id,
         `Examen d'imagerie - ${requestLabel}`,
         price,
         imagingCatalogue.id,
       );
 
-      await tx.patient.update({
-        where: { id: consultation.patientId },
-        data: { workflowStatus: handledBySubscription ? PatientWorkflowStatus.EN_RADIOLOGIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
-      });
+      if (handledBySubscription) {
+        await tx.imagingRequest.update({
+          where: { id: created.id },
+          data: { status: ImagingRequestStatus.REQUESTED },
+        });
+      }
+
+      await this.patientWorkflow.transition(
+        tx,
+        consultation.patientId,
+        handledBySubscription ? PatientWorkflowStatus.EN_RADIOLOGIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+        clinicId,
+      );
 
       await tx.medicalHistory.create({
         data: {
@@ -991,18 +1833,20 @@ export class ConsultationsService {
         },
       });
 
-      return { ...created, invoice };
+      return { ...created, invoice, handledBySubscription };
     });
 
-    const cashiers = await this.prisma.user.findMany({
+    const cashiers = request.handledBySubscription
+      ? []
+      : await this.prisma.user.findMany({
       where: {
-        ...(consultation.clinicId || consultation.patient?.clinicId ? { clinicId: consultation.clinicId || consultation.patient?.clinicId } : {}),
+        clinicId,
         OR: [
           { primaryRole: 'CASHIER' as any },
           { roles: { some: { role: { slug: 'CASHIER' as any } } } },
         ],
       },
-    });
+      });
 
     const requestLabel = request.imagingCatalogue?.name || 'examen d imagerie';
     const notificationMessage = `Valider ${requestLabel} pour ${consultation.patient.firstName} ${consultation.patient.lastName}: ${Number(request.invoice.totalAmount).toLocaleString('fr-FR')} CDF.`;
@@ -1029,7 +1873,44 @@ export class ConsultationsService {
     notifications.forEach((notification) => {
       this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification);
     });
-    this.notificationsGateway.notify('patient.updated', { id: consultation.patientId, workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT });
+    if (request.handledBySubscription) {
+      const receptionists = await this.prisma.user.findMany({
+        where: {
+          clinicId,
+          status: 'ACTIVE',
+          deletedAt: null,
+          OR: [
+            { primaryRole: 'RECEPTIONIST' as any },
+            { roles: { some: { role: { slug: 'RECEPTIONIST' as any } } } },
+          ],
+        },
+        select: { id: true },
+      });
+      const receptionNotifications = await Promise.all(receptionists.map((user) =>
+        this.prisma.notification.create({
+          data: {
+            recipientId: user.id,
+            patientId: consultation.patientId,
+            type: 'SYSTEM',
+            status: 'UNREAD',
+            priority: 'MEDIUM',
+            title: 'Examen pris en charge par abonnement',
+            message: `${requestLabel} est transmis directement à l’imagerie ; son montant est ajouté à la facture entreprise.`,
+            relatedEntity: 'ImagingRequest',
+            relatedId: request.id,
+          },
+        }),
+      ));
+      receptionNotifications.forEach((notification) =>
+        this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification),
+      );
+    }
+    this.notificationsGateway.notify('patient.updated', {
+      id: consultation.patientId,
+      workflowStatus: request.handledBySubscription
+        ? PatientWorkflowStatus.EN_RADIOLOGIE
+        : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+    });
     this.notificationsGateway.notify('invoice.created', request.invoice);
 
     return request;
@@ -1043,7 +1924,7 @@ export class ConsultationsService {
       if (!sectionId) continue;
 
       const requirements = await tx.labTestConsumableRequirement.findMany({
-        where: { labTestId: labTest.id },
+        where: { clinicId: labTest.clinicId, labTestId: labTest.id, archivedAt: null },
         include: { labConsumable: true },
       });
 
@@ -1073,6 +1954,10 @@ export class ConsultationsService {
   async createPrescription(id: string, dto: CreatePrescriptionDto, actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    const clinicId = consultation.clinicId || consultation.patient?.clinicId;
+    if (!clinicId) {
+      throw new ForbiddenException('La consultation doit être rattachée à un établissement actif.');
+    }
     const lines = Array.isArray(dto.lines) ? dto.lines : [];
     if (!lines.length) {
       throw new BadRequestException('Aucun medicament prescrit.');
@@ -1081,7 +1966,12 @@ export class ConsultationsService {
     const medicationIds = lines.map((line: any) => line.medicationId).filter(Boolean);
     const medications = await this.prisma.medication.findMany({
       where: { id: { in: medicationIds }, deletedAt: null },
-      include: { StockLot: true },
+      include: {
+        // The medication catalogue may be shared, but stock never is.  A
+        // prescription must not be accepted because another establishment has
+        // inventory for the same medication.
+        StockLot: { where: { clinicId } },
+      },
     });
     const medicationById = new Map(medications.map((item) => [item.id, item]));
 
@@ -1112,6 +2002,7 @@ export class ConsultationsService {
           consultationId: id,
           patientId: consultation.patientId,
           prescriberId: actorId,
+          clinicId,
           instruction: dto.instruction || null,
           status: 'PRESCRIBED',
           lineItems: {
@@ -1133,7 +2024,7 @@ export class ConsultationsService {
         data: {
           patientId: consultation.patientId,
           issuedById: actorId,
-          clinicId: consultation.clinicId || consultation.patient.clinicId || null,
+          clinicId,
           type: 'PHARMACY',
           status: 'PENDING',
           totalAmount: total,
@@ -1159,16 +2050,19 @@ export class ConsultationsService {
       const handledBySubscription = await this.recordSubscriptionChargeForInvoice(
         tx,
         consultation.patientId,
+        consultation.clinicId,
         invoice.id,
         `Prescription ${prescription.id}`,
         total,
         null,
       );
 
-      await tx.patient.update({
-        where: { id: consultation.patientId },
-        data: { workflowStatus: handledBySubscription ? PatientWorkflowStatus.EN_PHARMACIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT },
-      });
+      await this.patientWorkflow.transition(
+        tx,
+        consultation.patientId,
+        handledBySubscription ? PatientWorkflowStatus.EN_PHARMACIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+        consultation.clinicId || consultation.patient?.clinicId || undefined,
+      );
 
       await tx.medicalHistory.create({
         data: {
@@ -1219,7 +2113,7 @@ export class ConsultationsService {
     const medicationIds = lines.map((line: any) => line.medicationId).filter(Boolean);
     const medications = await this.prisma.medication.findMany({
       where: { id: { in: medicationIds }, deletedAt: null },
-      include: { StockLot: true },
+      include: { StockLot: { where: { clinicId: consultation.clinicId } } },
     });
     const medicationById = new Map(medications.map((item) => [item.id, item]));
 

@@ -37,6 +37,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         deletedAt: true,
         primaryRole: true,
         clinicId: true,
+        clinic: { select: { status: true, deletedAt: true } },
         serviceResponsabilites: {
           where: { actif: true },
           include: { service: true },
@@ -56,6 +57,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       // Fail closed. An old account is repaired by the explicit tenant tool;
       // it must never receive an unscoped clinical or financial session.
       throw new UnauthorizedException('Compte institutionnel non rattaché à un établissement. Contactez le Super Admin.');
+    }
+    if (isOperationalRole(user.primaryRole) && (!user.clinic || user.clinic.deletedAt || user.clinic.status !== 'ACTIVE')) {
+      throw new UnauthorizedException('Cet établissement est désactivé. Contactez la plateforme Aulia Care : contact@aulia-care.com');
     }
 
     // Access tokens are bound to a persisted session. This makes a targeted

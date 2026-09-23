@@ -76,6 +76,12 @@ export const recordPatientVitalSigns = async (
   });
 };
 
+export const reportPatientDeath = (patientId: string, payload: { occurredAt?: string; notes?: string }) =>
+  apiFetch(`/patients/${patientId}/death-report`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
 export const fetchNurseHospitalizations = async () => {
   return apiFetch("/hospitalizations/nurse/followed");
 };

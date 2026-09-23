@@ -176,7 +176,7 @@ export default function AbonnementsReception() {
                   <Input label="Email" value={companyForm.email} onChange={(value) => setCompanyForm((current) => ({ ...current, email: value }))} />
                 </div>
                 <Input label="Contact responsable" value={companyForm.contactName} onChange={(value) => setCompanyForm((current) => ({ ...current, contactName: value }))} />
-                <Input label="Jour de facturation" type="number" value={companyForm.billingDay} onChange={(value) => setCompanyForm((current) => ({ ...current, billingDay: value }))} />
+                <Input label="Délai de paiement (jours)" type="number" value={companyForm.billingDay} onChange={(value) => setCompanyForm((current) => ({ ...current, billingDay: value }))} />
                 <button onClick={saveCompany} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white"><Plus size={16} /> Enregistrer l'entreprise</button>
               </div>
             </Panel>

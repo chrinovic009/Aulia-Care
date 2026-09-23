@@ -27,10 +27,6 @@ export class CreateHospitalizationDto {
 
   @IsString()
   @IsOptional()
-  bedNumber?: string;
-
-  @IsString()
-  @IsOptional()
   bedId?: string;
 
   @IsString()

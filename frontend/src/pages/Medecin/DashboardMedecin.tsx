@@ -9,12 +9,17 @@ import {
   saveClinicalSections,
   updateConsultation,
   openConsultationForPatient,
+  certifyPatientDeath,
 } from "../../api/doctor";
 import { useAuth } from "../../context/AuthContext";
 import { usePlatformLayers } from "../../context/PlatformLayersContext";
 import { DoctorTelehealthCall } from "../../components/telehealth/TelehealthCall";
 import { ClinicalConsultationWorkspace, createInitialStructuredConsultation, type StructuredConsultation } from "./ClinicalConsultationWorkspace";
-import { ConsultationExamOrder, ConsultationPrescriptionOrder } from "./ConsultationOrders";
+import {
+  ConsultationExamOrder,
+  ConsultationPrescriptionOrder,
+  type ConsultationOrderedExam,
+} from "./ConsultationOrders";
 import { apiFetch } from "../../config/api";
 
 // Petit hook utilitaire pour gérer l'état d'une modale
@@ -231,7 +236,7 @@ type ConsultationModuleState = {
   differentialDiagnoses: string[];
   selectedDiagnosis: { codeICD: string; label: string; certaintyLevel: "PRESUMPTION" | "CONFIRMED" | "CHRONIC" };
   performedProcedures: Array<{ code: string; description: string; cost: number }>;
-  orderedExams: Array<{ category: "LABORATORY" | "IMAGING"; testName: string; urgency: "ROUTINE" | "URGENT"; clinicalIndication: string }>;
+  orderedExams: ConsultationOrderedExam[];
   prescriptions: Array<{ drugId: string; innName: string; brandName?: string; form: string; dosage: string; route: string; durationDays: number; pharmacyStockStatus: "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK" }>;
   safetyAlerts: Array<{ type: "ALLERGY_WARNING" | "DRUG_INTERACTION" | "CONTRAINDICATION"; message: string }>;
   safetyConsignes: string;
@@ -306,8 +311,8 @@ export default function DashboardMedecin() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const { isEnabled } = usePlatformLayers();
-  const aiEnabled = isEnabled("AI");
-  const [aiFeatureNotice, setAiFeatureNotice] = useState<"VOICE" | "TELEHEALTH" | null>(null);
+  const diagnosticEnabled = isEnabled("DIAGNOSTIC");
+  const [aiFeatureNotice, setAiFeatureNotice] = useState<"VOICE" | "TELEHEALTH" | "DIAGNOSTIC_SUGGESTIONS" | null>(null);
   const isConsultationPage = location.pathname.includes("/doctor/consultations");
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
   const [workLocation, setWorkLocation] = useState<{ roomName: string; roomNumber: string; location: string; service: string } | null>(null);
@@ -371,6 +376,10 @@ export default function DashboardMedecin() {
   const [diagnosisDescription, setDiagnosisDescription] = useState("");
   const [consignesDescription, setConsignesDescription] = useState("");
   const [consultationModule, setConsultationModule] = useState<ConsultationModuleState>(createInitialConsultationModule);
+  const [deathModalOpen, setDeathModalOpen] = useState(false);
+  const [deathSaving, setDeathSaving] = useState(false);
+  const [deathForm, setDeathForm] = useState({ occurredAt: new Date().toISOString().slice(0, 16), causeOfDeath: "", clinicalSummary: "" });
+  const [deathCertificate, setDeathCertificate] = useState<any>(null);
 
   useEffect(() => {
     if (!currentUser?.id) { setWorkLocation(null); return; }
@@ -430,13 +439,19 @@ export default function DashboardMedecin() {
     setError(null);
     try {
       const data = await fetchDoctorAssignedPatients();
-      const ordered = [...data].sort((a, b) => {
+      // A refresh can race with a workflow transition.  Never render a
+      // malformed/empty entry returned by a stale response as a patient.
+      const validPatients = (Array.isArray(data) ? data : []).filter(
+        (patient): patient is DoctorPatient =>
+          Boolean(patient && patient.id && patient.firstName && patient.lastName),
+      );
+      const ordered = [...validPatients].sort((a, b) => {
         const aDate = a.latestConsultation?.createdAt || a.consultations?.[0]?.createdAt || "";
         const bDate = b.latestConsultation?.createdAt || b.consultations?.[0]?.createdAt || "";
         return new Date(aDate).getTime() - new Date(bDate).getTime();
       });
       setPatients(ordered);
-      setSelectedPatient((current) => current ? ordered.find((patient) => patient.id === current.id) || current : ordered[0] || null);
+      setSelectedPatient((current) => current ? ordered.find((patient) => patient.id === current.id) || null : ordered[0] || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible de charger la file medecin.");
     } finally {
@@ -567,10 +582,19 @@ export default function DashboardMedecin() {
   const activeConsultation = openedDraft && openedDraft.id === requestedDraftId ? openedDraft : (selectedPatient?.consultations || []).find((item) => item.id === requestedDraftId && ["DRAFT", "IN_PROGRESS"].includes(String(item.status).toUpperCase()))
     || (selectedPatient?.consultations || []).find((item) => ["DRAFT", "IN_PROGRESS"].includes(String(item.status).toUpperCase()));
   const currentConsultationId = activeConsultation?.id || "";
-  const hasConsultationResults = Boolean(currentConsultationId && (
-    selectedPatient?.labRequests?.some((request) => request.consultationId === currentConsultationId && request.results?.length && ["AVAILABLE", "SENT", "COMPLETED", "VERIFIED"].includes(String(request.status).toUpperCase()))
-    || selectedPatient?.imagingRequests?.some((request) => request.consultationId === currentConsultationId && request.report && ["COMPLETED", "VERIFIED"].includes(String(request.status).toUpperCase()))
-  ));
+  const hasConsultationResults = currentConsultationId
+    ? (consultationModule.orderedExams.length === 0 || consultationModule.orderedExams.every((exam) => {
+        const category = String(exam.category || "").toUpperCase();
+        const itemId = exam.catalogueItemId || "";
+        if (category === "LABORATORY") {
+          return Boolean((selectedPatient?.labRequests || []).some((request) => request.consultationId === currentConsultationId && request.results?.length && request.labTestId === itemId && ["AVAILABLE", "SENT", "COMPLETED", "VERIFIED"].includes(String(request.status).toUpperCase())));
+        }
+        if (category === "IMAGING") {
+          return Boolean((selectedPatient?.imagingRequests || []).some((request) => request.consultationId === currentConsultationId && request.imagingCatalogueId === itemId && request.report && ["COMPLETED", "VERIFIED"].includes(String(request.status).toUpperCase())));
+        }
+        return true;
+      }))
+    : false;
   const consultationDraftKey = currentConsultationId && currentUser?.id
     ? `aulia:consultation-draft:${currentUser.id}:${currentConsultationId}`
     : "";
@@ -595,7 +619,7 @@ export default function DashboardMedecin() {
   };
 
   const changeConsultationMode = async (value: string) => {
-    if (value === "TELECONSULTATION" && !aiEnabled) {
+    if (value === "TELECONSULTATION" && !diagnosticEnabled) {
       setTelehealthReady(false);
       setAiFeatureNotice("TELEHEALTH");
       return;
@@ -727,7 +751,9 @@ export default function DashboardMedecin() {
     });
   };
 
-  const saveDraftConsultation = async (awaitingResults = false) => {
+  const saveDraftConsultation = async (
+    mode: "AUTO_DRAFT" | "IN_PROGRESS" = "AUTO_DRAFT",
+  ) => {
     if (isSavingConsultation) return;
     setIsSavingConsultation(true);
     setActionMessage(null);
@@ -781,16 +807,33 @@ export default function DashboardMedecin() {
       complementaryExams: { orderedExams: consultationModule.orderedExams },
       complementaryAnamnesis: complementDescription,
       consultationModule,
-      status: "DRAFT",
+      status: mode === "IN_PROGRESS" ? "IN_PROGRESS" : "DRAFT",
     });
       const savedDraftKey = currentUser?.id ? `aulia:consultation-draft:${currentUser.id}:${consultationId}` : consultationDraftKey;
       if (savedDraftKey) window.sessionStorage.removeItem(savedDraftKey);
-      const message = awaitingResults
-        ? "Les données cliniques ont été enregistrées en brouillon. Demandez les examens complémentaires : l’orientation et la prise en charge seront disponibles à réception de leurs résultats."
-        : "Brouillon enregistré dans le dossier médical. Vous pouvez reprendre la consultation à tout moment.";
+      const isInProgress = mode === "IN_PROGRESS";
+
+      const message = isInProgress
+        ? consultationModule.orderedExams.length > 0
+          ? "Consultation enregistrée comme en cours. Les examens demandés sont en attente de traitement et de résultats. Vous pourrez reprendre cette même consultation lorsque les résultats seront disponibles."
+          : "Consultation enregistrée comme en cours. Vous pourrez la reprendre et poursuivre le dossier clinique."
+        : "Brouillon de récupération enregistré automatiquement.";
+
       setActionMessage(message);
-      setSaveFeedback({ title: "Brouillon enregistré", message, tone: awaitingResults ? "warning" : "success" });
-      setIsConsultationOpen(false);
+
+      setSaveFeedback(
+        isInProgress
+          ? {
+              title: "Consultation en cours",
+              message,
+              tone: consultationModule.orderedExams.length > 0 ? "warning" : "success",
+            }
+          : null,
+      );
+
+      if (isInProgress) {
+        setIsConsultationOpen(false);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "La sauvegarde du brouillon a échoué.";
       setActionMessage(message);
@@ -905,6 +948,29 @@ export default function DashboardMedecin() {
     }
   };
 
+  const certifyDeath = async () => {
+    if (!selectedPatient || !deathForm.causeOfDeath.trim()) {
+      setSaveFeedback({ title: "Cause requise", message: "La cause médicale du décès doit être renseignée avant certification.", tone: "error" });
+      return;
+    }
+    try {
+      setDeathSaving(true);
+      const certificate = await certifyPatientDeath(selectedPatient.id, {
+        occurredAt: new Date(deathForm.occurredAt).toISOString(),
+        causeOfDeath: deathForm.causeOfDeath.trim(),
+        clinicalSummary: deathForm.clinicalSummary.trim() || undefined,
+      });
+      setDeathCertificate(certificate);
+      setDeathModalOpen(false);
+      setSaveFeedback({ title: "Décès certifié", message: "La certification médicale est enregistrée, auditée et prête à imprimer.", tone: "success" });
+      await loadPatients();
+    } catch (error) {
+      setSaveFeedback({ title: "Certification impossible", message: error instanceof Error ? error.message : "Le serveur a refusé la certification.", tone: "error" });
+    } finally {
+      setDeathSaving(false);
+    }
+  };
+
   const resetConsultationModule = () => {
     setConsultationModule(createInitialConsultationModule());
     setDraftAllergy({ allergen: "", reactionType: "" });
@@ -975,7 +1041,7 @@ export default function DashboardMedecin() {
 
   // 🟢 AJOUT DE LA MÉTHODE MANQUANTE : toggleVoiceAssistant
   const toggleVoiceAssistant = () => {
-    if (!aiEnabled) {
+    if (!diagnosticEnabled) {
       setIsVoiceListening(false);
       setAiFeatureNotice("VOICE");
       return;
@@ -1055,12 +1121,21 @@ export default function DashboardMedecin() {
   // case an already selected premium mode must stop immediately rather than
   // leaving a live telehealth component on a Core-only installation.
   useEffect(() => {
-    if (aiEnabled || consultationModule.consultationMode !== "TELECONSULTATION") return;
+    if (diagnosticEnabled || consultationModule.consultationMode !== "TELECONSULTATION") return;
     setTelehealthReady(false);
     setConsultationModule((current) => ({ ...current, consultationMode: "PRESENTIAL", telehealthTranscript: [] }));
-  }, [aiEnabled, consultationModule.consultationMode]);
+  }, [diagnosticEnabled, consultationModule.consultationMode]);
 
-  const aiSuggestions = useMemo(() => {
+  const diagnosticSuggestions = useMemo(() => {
+    if (!diagnosticEnabled) {
+      return {
+        diagnoses: [],
+        exams: [],
+        prescriptions: [],
+        alerts: [],
+        followUp: "",
+      };
+    }
     const complaintText = `${consultationModule.chiefComplaint} ${consultationModule.hpiDescription}`.toLowerCase();
     const diagnoses = [] as Array<{ codeICD: string; label: string; certaintyLevel: "PRESUMPTION" | "CONFIRMED" | "CHRONIC" }>;
     const exams = [] as Array<{ category: "LABORATORY" | "IMAGING"; testName: string; urgency: "ROUTINE" | "URGENT"; clinicalIndication: string }>;
@@ -1094,7 +1169,7 @@ export default function DashboardMedecin() {
       alerts,
       followUp: consultationModule.followUp.recommendedInterval || "Revoir en 48h si l’état ne s’améliore pas.",
     };
-  }, [consultationModule]);
+  }, [consultationModule, diagnosticEnabled]);
 
   const findFrenchVoice = (voices: SpeechSynthesisVoice[]) => {
     const normalized = (voice: SpeechSynthesisVoice) => `${voice.lang || ''} ${voice.name || ''}`.toLowerCase();
@@ -1176,6 +1251,21 @@ export default function DashboardMedecin() {
       prescriptions: patients.reduce((sum, patient) => sum + (patient.prescriptions?.length || 0), 0),
     };
   }, [patients]);
+
+  const featureNoticeCopy = aiFeatureNotice === "TELEHEALTH"
+    ? {
+        product: "Aulia Care Diagnostic Agent",
+        detail: "La télésanté sécurisée nécessite Aulia Care Diagnostic Agent.",
+      }
+    : aiFeatureNotice === "DIAGNOSTIC_SUGGESTIONS"
+      ? {
+          product: "Aulia Care Diagnostic Agent",
+          detail: "Les suggestions cliniques assistées nécessitent Aulia Care Diagnostic Agent.",
+        }
+      : {
+          product: "Aulia Care Diagnostic Agent",
+          detail: "L’assistance vocale clinique nécessite Aulia Care Diagnostic Agent.",
+        };
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
@@ -1261,6 +1351,13 @@ export default function DashboardMedecin() {
                   >
                     Appeler le patient
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeathModalOpen(true)}
+                    className="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
+                  >
+                    Déclarer un décès
+                  </button>
                   <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
                     {selectedPatient.workflowStatus || "Statut non renseigne"}
                   </span>
@@ -1307,7 +1404,7 @@ export default function DashboardMedecin() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => { if (aiEnabled) toggleVoiceAssistant(); else setAiFeatureNotice("VOICE"); }}
+                        onClick={() => { if (diagnosticEnabled) toggleVoiceAssistant(); else setAiFeatureNotice("VOICE"); }}
                         className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${
                           isVoiceListening
                             ? "bg-red-600 text-white hover:bg-red-700"
@@ -1315,7 +1412,7 @@ export default function DashboardMedecin() {
                         }`}
                       >
                         {isVoiceListening ? <MicOff size={16} /> : <Mic size={16} />}
-                        {!aiEnabled ? "🔒 Assistance vocale · Aulia AI" : isVoiceListening ? "Desactiver" : "Activer l'assistance vocale"}
+                        {!diagnosticEnabled ? "🔒 Assistance vocale · Aulia Care Diagnostic Agent" : isVoiceListening ? "Desactiver" : "Activer l'assistance vocale"}
                       </button>
                     </div>
                     {voiceMessage && <p className="mt-3 text-xs font-medium text-blue-800 dark:text-blue-100">{voiceMessage}</p>}
@@ -1329,7 +1426,7 @@ export default function DashboardMedecin() {
 
                   <SectionBox title="Mode de consultation">
                     <div className="grid gap-3 md:grid-cols-3">
-                      <FormSelect label="Mode" value={consultationModule.consultationMode} onChange={(value) => { if (!aiEnabled && value === "TELECONSULTATION") { setAiFeatureNotice("TELEHEALTH"); return; } void changeConsultationMode(value); }} options={[['PRESENTIAL','Présentiel'], ['TELECONSULTATION', aiEnabled ? 'Télésanté' : '🔒 Télésanté'], ['HOME_VISIT','Visite à domicile'], ['EMERGENCY','Urgence']]} />
+                      <FormSelect label="Mode" value={consultationModule.consultationMode} onChange={(value) => { if (!diagnosticEnabled && value === "TELECONSULTATION") { setAiFeatureNotice("TELEHEALTH"); return; } void changeConsultationMode(value); }} options={[['PRESENTIAL','Présentiel'], ['TELECONSULTATION', diagnosticEnabled ? 'Télésanté' : '🔒 Télésanté'], ['HOME_VISIT','Visite à domicile'], ['EMERGENCY','Urgence']]} />
                       <FormSelect label="Mode d'arrivée" value={consultationModule.arrivalMode} onChange={(value) => setConsultationModule((current) => ({ ...current, arrivalMode: value }))} options={[['SPONTANEOUS','Spontané'], ['AMBULATORY','Ambulatoire'], ['REFERRED','Orienté'], ['EMERGENCY_TRANSFER','Transfert urgence']]} />
                       <FormSelect label="Priorité de triage" value={consultationModule.triagePriority} onChange={(value) => setConsultationModule((current) => ({ ...current, triagePriority: value }))} options={[['GREEN','Normal'], ['YELLOW','Prioritaire'], ['RED','Urgent']]} />
                     </div>
@@ -1355,7 +1452,17 @@ export default function DashboardMedecin() {
                       value={consultationModule.structured}
                       onChange={(structured) => setConsultationModule((current) => ({ ...current, structured }))}
                       hasAvailableResults={hasConsultationResults}
-                      examinationsSlot={<ConsultationExamOrder ensureConsultation={ensureActiveConsultation} />}
+                      examinationsSlot={
+                        <ConsultationExamOrder
+                          orderedExams={consultationModule.orderedExams}
+                          onChange={(orderedExams) =>
+                            setConsultationModule((current) => ({
+                              ...current,
+                              orderedExams,
+                            }))
+                          }
+                        />
+                      }
                       prescriptionSlot={<ConsultationPrescriptionOrder ensureConsultation={ensureActiveConsultation} />}
                     />
                   ) : !telehealthReady ? (
@@ -1425,26 +1532,40 @@ export default function DashboardMedecin() {
                   </SectionBox>
 
                   <SectionBox title="Examens complémentaires et procédures">
-                    <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 dark:border-sky-900/40 dark:bg-sky-950/30">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Suggestions IA</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {aiSuggestions.exams.map((item) => (
-                          <button key={`${item.testName}-${item.category}`} type="button" onClick={() => addExamSuggestion(item)} className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-700">{item.testName}</button>
-                        ))}
+                    {diagnosticEnabled ? (
+                      <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 dark:border-sky-900/40 dark:bg-sky-950/30">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Suggestions du Diagnostic Agent</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {diagnosticSuggestions.exams.map((item) => (
+                            <button key={`${item.testName}-${item.category}`} type="button" onClick={() => addExamSuggestion(item)} className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-700">{item.testName}</button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <button type="button" onClick={() => setAiFeatureNotice("DIAGNOSTIC_SUGGESTIONS")} className="flex w-full items-center justify-between rounded-lg border border-amber-300 bg-amber-50 p-3 text-left text-amber-900 transition hover:bg-amber-100 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100">
+                        <span className="text-xs font-semibold uppercase tracking-wide">🔒 Suggestions du Diagnostic Agent</span>
+                        <span className="text-xs font-medium">Voir la licence</span>
+                      </button>
+                    )}
                     <div className="mt-3 space-y-2">{consultationModule.orderedExams.map((item, index) => <div key={`${item.testName}-${index}`} className="rounded-lg bg-white p-3 text-sm dark:bg-slate-900"><div className="flex items-center justify-between gap-2"><span className="font-semibold text-slate-700 dark:text-slate-200">{item.testName}</span><button type="button" onClick={() => removeEntry("orderedExams", index)} className="text-red-600">Suppr.</button></div><p className="mt-1 text-slate-500">{item.category} • {item.urgency} • {item.clinicalIndication}</p></div>)}</div>
                   </SectionBox>
 
                   <SectionBox title="Ordonnance, sécurité et pharmacie">
-                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/30">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Suggestions IA</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {aiSuggestions.prescriptions.map((item) => (
-                          <button key={`${item.drugId}-${item.innName}`} type="button" onClick={() => addPrescriptionSuggestion(item)} className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700">{item.innName} • {item.form}</button>
-                        ))}
+                    {diagnosticEnabled ? (
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/30">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Suggestions du Diagnostic Agent</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {diagnosticSuggestions.prescriptions.map((item) => (
+                            <button key={`${item.drugId}-${item.innName}`} type="button" onClick={() => addPrescriptionSuggestion(item)} className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700">{item.innName} • {item.form}</button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <button type="button" onClick={() => setAiFeatureNotice("DIAGNOSTIC_SUGGESTIONS")} className="flex w-full items-center justify-between rounded-lg border border-amber-300 bg-amber-50 p-3 text-left text-amber-900 transition hover:bg-amber-100 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100">
+                        <span className="text-xs font-semibold uppercase tracking-wide">🔒 Suggestions du Diagnostic Agent</span>
+                        <span className="text-xs font-medium">Voir la licence</span>
+                      </button>
+                    )}
                     <div className="mt-3 space-y-2">{consultationModule.prescriptions.map((item, index) => <div key={`${item.drugId}-${index}`} className="rounded-lg bg-white p-3 text-sm dark:bg-slate-900"><div className="flex items-center justify-between gap-2"><span className="font-semibold text-slate-700 dark:text-slate-200">{item.innName}</span><button type="button" onClick={() => removeEntry("prescriptions", index)} className="text-red-600">Suppr.</button></div><p className="mt-1 text-slate-500">{item.dosage} • {item.route} • {item.durationDays} jours • Stock {item.pharmacyStockStatus}</p></div>)}</div>
                     <div className="mt-3 space-y-2">{consultationModule.safetyAlerts.map((item, index) => <div key={`${item.type}-${index}`} className="rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{item.message}</div>)}</div>
                   </SectionBox>
@@ -1469,7 +1590,7 @@ export default function DashboardMedecin() {
                   {consultationModule.consultationMode !== "TELECONSULTATION" && (
                     <div className="sticky bottom-3 z-10 mt-4 flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
                       <button type="button" onClick={() => setConfirmation({ title: "Réinitialiser la consultation ?", message: "Les données non enregistrées de cette consultation seront effacées. Cette action ne peut pas être annulée.", confirmLabel: "Oui, effacer", tone: "danger", onConfirm: () => { resetConsultationModule(); setConfirmation(null); } })} disabled={isSavingConsultation} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200">Effacer / réinitialiser</button>
-                      <button type="button" onClick={() => void saveDraftConsultation()} disabled={isSavingConsultation} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{isSavingConsultation ? "Enregistrement…" : "Enregistrer brouillon"}</button>
+                      <button type="button" onClick={() => void saveDraftConsultation("IN_PROGRESS")} disabled={isSavingConsultation} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{isSavingConsultation ? "Enregistrement…" : "Enregistrer et continuer plus tard"}</button>
                       <button type="button" onClick={() => void validateConsultation()} disabled={isSavingConsultation} className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60">{isSavingConsultation ? "Enregistrement…" : "Valider et signer"}</button>
                     </div>
                   )}
@@ -1542,7 +1663,31 @@ export default function DashboardMedecin() {
           )}
         </section>
       </div>
-      {aiFeatureNotice && <div className="fixed inset-0 z-[100000] grid place-items-center bg-slate-950/60 p-4"><section role="dialog" aria-modal="true" className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-950"><p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Aulia Care AI</p><h2 className="mt-2 text-xl font-bold text-aulia-navy dark:text-white">Fonctionnalité non incluse dans Aulia Care Core</h2><p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{aiFeatureNotice === "VOICE" ? "L’assistance vocale clinique" : "La télésanté sécurisée"} nécessite l’activation de l'abonnement Aulia Care AI.</p><button type="button" onClick={() => setAiFeatureNotice(null)} className="mt-6 rounded-xl bg-aulia-teal px-4 py-2 font-semibold text-white">Retour</button></section></div>}
+      {aiFeatureNotice && (
+        <div className="fixed inset-0 z-[100000] grid place-items-center bg-slate-950/60 p-4">
+          <section role="dialog" aria-modal="true" className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-950">
+            <p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">{featureNoticeCopy.product}</p>
+            <h2 className="mt-2 text-xl font-bold text-aulia-navy dark:text-white">Fonctionnalité non incluse dans cette licence</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{featureNoticeCopy.detail}</p>
+            <button type="button" onClick={() => setAiFeatureNotice(null)} className="mt-6 rounded-xl bg-aulia-teal px-4 py-2 font-semibold text-white">Retour</button>
+          </section>
+        </div>
+      )}
+      {deathModalOpen && selectedPatient && (
+        <div className="fixed inset-0 z-[100001] grid place-items-center bg-slate-950/60 p-4">
+          <section role="dialog" aria-modal="true" className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-950">
+            <p className="text-xs font-bold uppercase tracking-[.16em] text-red-700">Certification médicale</p>
+            <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">Déclarer le décès de {formatDoctorPatientName(selectedPatient)}</h2>
+            <label className="mt-5 block text-sm font-medium">Date et heure du décès<input type="datetime-local" value={deathForm.occurredAt} onChange={(event) => setDeathForm((current) => ({ ...current, occurredAt: event.target.value }))} className="mt-2 w-full rounded-xl border px-3 py-2 dark:bg-slate-900" /></label>
+            <label className="mt-4 block text-sm font-medium">Cause médicale du décès<textarea required rows={3} value={deathForm.causeOfDeath} onChange={(event) => setDeathForm((current) => ({ ...current, causeOfDeath: event.target.value }))} className="mt-2 w-full rounded-xl border px-3 py-2 dark:bg-slate-900" /></label>
+            <label className="mt-4 block text-sm font-medium">Résumé clinique (optionnel)<textarea rows={4} value={deathForm.clinicalSummary} onChange={(event) => setDeathForm((current) => ({ ...current, clinicalSummary: event.target.value }))} className="mt-2 w-full rounded-xl border px-3 py-2 dark:bg-slate-900" /></label>
+            <div className="mt-6 flex justify-end gap-3"><button type="button" disabled={deathSaving} onClick={() => setDeathModalOpen(false)} className="rounded-xl border px-4 py-2 font-semibold">Annuler</button><button type="button" disabled={deathSaving} onClick={() => void certifyDeath()} className="rounded-xl bg-red-700 px-4 py-2 font-semibold text-white disabled:opacity-60">{deathSaving ? "Certification…" : "Certifier médicalement"}</button></div>
+          </section>
+        </div>
+      )}
+      {deathCertificate && (
+        <><style>{`@media print { body * { visibility: hidden; } #death-certificate, #death-certificate * { visibility: visible; } #death-certificate { position: fixed; inset: 0; padding: 24mm; background: white; } }`}</style><section id="death-certificate" className="fixed inset-0 z-[100002] overflow-auto bg-white p-8 text-slate-900"><div className="mx-auto max-w-2xl border-2 border-slate-900 p-8"><p className="text-center text-xs font-bold uppercase tracking-[.2em]">Certificat médical de décès</p><h2 className="mt-5 text-center text-2xl font-bold">{deathCertificate.patient?.firstName} {deathCertificate.patient?.middleName || ""} {deathCertificate.patient?.lastName}</h2><dl className="mt-8 grid gap-4 text-sm"><div><dt className="font-bold">N° certificat</dt><dd>{deathCertificate.certificateNumber}</dd></div><div><dt className="font-bold">Date et heure du décès</dt><dd>{formatDateTime(deathCertificate.occurredAt)}</dd></div><div><dt className="font-bold">Cause médicale</dt><dd>{deathCertificate.causeOfDeath}</dd></div><div><dt className="font-bold">Médecin certificateur</dt><dd>{deathCertificate.certifiedBy?.displayName || `${deathCertificate.certifiedBy?.firstName || ""} ${deathCertificate.certifiedBy?.lastName || ""}`.trim()}</dd></div></dl><p className="mt-10 whitespace-pre-wrap text-sm">{deathCertificate.clinicalSummary || ""}</p></div><div className="mx-auto mt-6 flex max-w-2xl justify-end gap-3 print:hidden"><button onClick={() => setDeathCertificate(null)} className="rounded-xl border px-4 py-2 font-semibold">Fermer</button><button onClick={() => window.print()} className="rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white">Imprimer le certificat</button></div></section></>
+      )}
     </div>
   );
 }

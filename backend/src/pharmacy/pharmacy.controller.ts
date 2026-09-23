@@ -4,6 +4,11 @@ import { PharmacyService } from './pharmacy.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { AuthenticatedActor } from '../core/clinic-context.service';
+
+interface AuthenticatedRequest {
+  user?: AuthenticatedActor;
+}
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('pharmacy')
@@ -24,66 +29,66 @@ export class PharmacyController {
   }
 
   @Post('catalogue/sections')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+  @Roles('DEV')
   createSection(@Body() body: any) {
     return this.pharmacyService.createSection(body);
   }
 
   @Post('catalogue/categories')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
+  @Roles('DEV')
   createCategory(@Body() body: any) {
     return this.pharmacyService.createCategory(body);
   }
 
   @Get('available')
   @Roles('SUPER_ADMIN', 'PHYSICIAN', 'PHARMACIST')
-  findAvailable() {
-    return this.pharmacyService.findAvailable();
+  findAvailable(@Request() req: AuthenticatedRequest) {
+    return this.pharmacyService.findAvailable(req.user?.userId || req.user?.id);
   }
 
   @Get('stock')
   @Roles('SUPER_ADMIN', 'PHARMACIST')
-  stock() {
-    return this.pharmacyService.stockCatalog();
+  stock(@Request() req: AuthenticatedRequest) {
+    return this.pharmacyService.stockCatalog(req.user?.userId || req.user?.id);
   }
 
   // 2. GESTION DES PRESCRIPTIONS
   @Get('prescriptions')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
-  findPrescriptions() {
+  findPrescriptions(@Request() req: AuthenticatedRequest) {
     // Cette méthode englobe l'affichage des prescriptions à traiter
-    return this.pharmacyService.findPrescriptions();
+    return this.pharmacyService.findPrescriptions(req.user?.userId || req.user?.id);
   }
 
   @Get('prescriptions/ready')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
-  findReadyPrescriptions() {
-    return this.pharmacyService.findReadyPrescriptions();
+  findReadyPrescriptions(@Request() req: AuthenticatedRequest) {
+    return this.pharmacyService.findReadyPrescriptions(req.user?.userId || req.user?.id);
   }
 
   // 3. HISTORIQUE & CRÉATIONS (MÉDICAMENTS, LOTS)
   @Get('history')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
-  getHistory() {
-    return this.pharmacyService.getHistory();
+  getHistory(@Request() req: AuthenticatedRequest) {
+    return this.pharmacyService.getHistory(req.user?.userId || req.user?.id);
   }
 
   @Post('medications')
-  @Roles('SUPER_ADMIN', 'PHARMACIST')
+  @Roles('DEV')
   createMedication(@Body() body: any) {
     return this.pharmacyService.createMedication(body);
   }
 
   @Post('lots')
   @Roles('SUPER_ADMIN', 'PHARMACIST')
-  createStockLot(@Body() body: any) {
-    return this.pharmacyService.createStockLot(body);
+  createStockLot(@Body() body: any, @Request() req: AuthenticatedRequest) {
+    return this.pharmacyService.createStockLot(body, req.user?.userId || req.user?.id);
   }
 
   // 4. LES CRÉATIONS DE VENTES (EXTERNES OU COMPTOIR)
   @Post('sales')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
-  createSale(@Body() body: any, @Request() req: any) {
+  createSale(@Body() body: any, @Request() req: AuthenticatedRequest) {
     // On priorise la méthode externe ou indépendante selon ce qui est défini dans ton service
     if (this.pharmacyService.createIndependentSale) {
       return this.pharmacyService.createIndependentSale(body, req.user?.userId);
@@ -101,14 +106,14 @@ export class PharmacyController {
   dispensePrescription(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: any,
-    @Request() req: any
+    @Request() req: AuthenticatedRequest
   ) {
     return this.pharmacyService.dispensePrescription(id, body, req.user?.userId);
   }
 
   @Post('prescriptions/:id/cancel-dispense')
   @Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')
-  cancelDispense(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+  cancelDispense(@Param('id', ParseUUIDPipe) id: string, @Request() req: AuthenticatedRequest) {
     return this.pharmacyService.cancelDispense(id, req.user?.userId);
   }
 

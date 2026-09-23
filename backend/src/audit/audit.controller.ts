@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Request, UseGuards } from '@nestjs/common';
 import { AuditService } from './audit.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -11,13 +11,13 @@ export class AuditController {
 
   @Get()
   @Roles('SUPER_ADMIN', 'ADMIN')
-  findAll() {
-    return this.auditService.findAll();
+  findAll(@Request() req: { user?: { userId?: string } }) {
+    return this.auditService.findAll(req.user?.userId);
   }
 
   @Get(':id')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  findOne(@Param('id') id: string) {
-    return this.auditService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req: { user?: { userId?: string } }) {
+    return this.auditService.findOne(id, req.user?.userId);
   }
 }

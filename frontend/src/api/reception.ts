@@ -316,12 +316,14 @@ export type PatientRecord = {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
-const fetchDbJson = async <T>(path: string): Promise<T> => {
+const fetchDbJson = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const url = `${API_BASE_URL.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
   const response = await fetch(url, {
+    ...init,
     headers: {
       "Content-Type": "application/json",
       ...getCookieAuthHeaders(),
+      ...(init.headers || {}),
     },
     credentials: "include",
   });
@@ -367,6 +369,34 @@ export const updatePatientRecord = async (
     if (response.ok) return (await response.json()) as PatientRecord;
   } catch { return null; }
 };
+
+export type PatientFamilyContact = {
+  id: string;
+  name: string;
+  relationship?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+};
+
+export const createPatientFamilyContact = async (
+  patientId: string,
+  payload: Omit<PatientFamilyContact, "id">,
+): Promise<PatientFamilyContact> =>
+  fetchDbJson<PatientFamilyContact>(`/patients/${encodeURIComponent(patientId)}/family-contacts`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  } as RequestInit);
+
+export const updatePatientFamilyContact = async (
+  patientId: string,
+  contactId: string,
+  payload: Omit<PatientFamilyContact, "id">,
+): Promise<PatientFamilyContact> =>
+  fetchDbJson<PatientFamilyContact>(`/patients/${encodeURIComponent(patientId)}/family-contacts/${encodeURIComponent(contactId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  } as RequestInit);
 
 export const createPatientAdmission = async (payload: Partial<PatientRecord>): Promise<PatientRecord> => {
   const url = `/patients/admissions`;

@@ -33,9 +33,45 @@ export default function DemographicCard() {
   const printReport = () => {
     const printWindow = window.open("", "aulia-provenance-print", "width=900,height=700");
     if (!printWindow) { setError("L’impression a été bloquée par le navigateur. Autorisez les fenêtres contextuelles puis réessayez."); return; }
-    const rows = displayCategories.map((item) => `<tr><td>${item.label}</td><td>${item.count}</td><td>${item.percentage}%</td></tr>`).join("");
-    printWindow.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Rapport de provenance — Aulia Care</title><style>body{font-family:Arial,sans-serif;color:#0A1D3A;padding:30px}h1{color:#0D9488}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #cbd5e1;padding:10px;text-align:left}th{background:#e6fffb}@media print{body{padding:0}}</style></head><body><h1>Aulia Care</h1><h2>Rapport officiel — provenance des patients</h2><p>Édité le ${new Intl.DateTimeFormat("fr-FR", { dateStyle:"long", timeStyle:"short" }).format(new Date())}</p><table><thead><tr><th>Zone de provenance</th><th>Patients</th><th>Part</th></tr></thead><tbody>${rows}</tbody></table><p>Document de synthèse fondé sur les adresses administratives disponibles.</p></body></html>`);
-    printWindow.document.close(); printWindow.focus(); window.setTimeout(() => printWindow.print(), 250);
+    const document = printWindow.document;
+    document.title = "Rapport de provenance — Aulia Care";
+    document.documentElement.lang = "fr";
+
+    const style = document.createElement("style");
+    style.textContent = "body{font-family:Arial,sans-serif;color:#0A1D3A;padding:30px}h1{color:#0D9488}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #cbd5e1;padding:10px;text-align:left}th{background:#e6fffb}@media print{body{padding:0}}";
+    document.head.replaceChildren(style);
+
+    const heading = document.createElement("h1");
+    heading.textContent = "Aulia Care";
+    const subtitle = document.createElement("h2");
+    subtitle.textContent = "Rapport officiel — provenance des patients";
+    const generatedAt = document.createElement("p");
+    generatedAt.textContent = `Édité le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date())}`;
+    const table = document.createElement("table");
+    const header = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    ["Zone de provenance", "Patients", "Part"].forEach((label) => {
+      const cell = document.createElement("th");
+      cell.textContent = label;
+      headerRow.append(cell);
+    });
+    header.append(headerRow);
+    const body = document.createElement("tbody");
+    displayCategories.forEach((item) => {
+      const row = document.createElement("tr");
+      [item.label, String(item.count), `${item.percentage}%`].forEach((value) => {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.append(cell);
+      });
+      body.append(row);
+    });
+    table.append(header, body);
+    const footer = document.createElement("p");
+    footer.textContent = "Document de synthèse fondé sur les adresses administratives disponibles.";
+    document.body.replaceChildren(heading, subtitle, generatedAt, table, footer);
+    printWindow.focus();
+    window.setTimeout(() => printWindow.print(), 250);
   };
 
   useEffect(() => {
@@ -114,10 +150,10 @@ export default function DemographicCard() {
             className="w-44 p-2"
           >
             <DropdownItem
-              onItemClick={() => { closeDropdown(); if (!isEnabled("AI")) setUpgradeNotice(true); }}
+              onItemClick={() => { closeDropdown(); if (!isEnabled("DIAGNOSTIC")) setUpgradeNotice(true); }}
               className="flex w-full rounded-lg text-left font-normal text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
             >
-              {isEnabled("AI") ? "Voir les statistiques" : "🔒 Voir les statistiques"}
+              {isEnabled("DIAGNOSTIC") ? "Voir les statistiques" : "🔒 Voir les statistiques"}
             </DropdownItem>
 
             <DropdownItem
@@ -135,7 +171,7 @@ export default function DemographicCard() {
           {error}
         </div>
       ) : null}
-      {upgradeNotice ? <div className="fixed inset-0 z-[100000] grid place-items-center bg-slate-950/60 p-4"><section role="dialog" aria-modal="true" className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-950"><p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Fonctionnalité Aulia AI</p><h2 className="mt-2 text-xl font-bold text-aulia-navy dark:text-white">Statistiques intelligentes indisponibles</h2><p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">L’analyse avancée des zones de provenance et les suggestions associées nécessitent la couche Aulia Care AI.</p><button type="button" onClick={() => setUpgradeNotice(false)} className="mt-6 rounded-xl bg-aulia-teal px-4 py-2 font-semibold text-white">Retour</button></section></div> : null}
+      {upgradeNotice ? <div className="fixed inset-0 z-[100000] grid place-items-center bg-slate-950/60 p-4"><section role="dialog" aria-modal="true" className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-950"><p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Fonctionnalité Aulia Care Diagnostic Agent</p><h2 className="mt-2 text-xl font-bold text-aulia-navy dark:text-white">Statistiques intelligentes indisponibles</h2><p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">L’analyse avancée des zones de provenance et les suggestions associées nécessitent la couche Aulia Care Diagnostic Agent.</p><button type="button" onClick={() => setUpgradeNotice(false)} className="mt-6 rounded-xl bg-aulia-teal px-4 py-2 font-semibold text-white">Retour</button></section></div> : null}
 
       {/* CONTENT */}
       <div className="mt-6 space-y-5">
