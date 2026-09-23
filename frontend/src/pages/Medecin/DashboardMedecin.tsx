@@ -9,6 +9,7 @@ import {
   saveClinicalSections,
   updateConsultation,
   openConsultationForPatient,
+  certifyPatientDeath,
 } from "../../api/doctor";
 import { useAuth } from "../../context/AuthContext";
 import { usePlatformLayers } from "../../context/PlatformLayersContext";
@@ -375,6 +376,10 @@ export default function DashboardMedecin() {
   const [diagnosisDescription, setDiagnosisDescription] = useState("");
   const [consignesDescription, setConsignesDescription] = useState("");
   const [consultationModule, setConsultationModule] = useState<ConsultationModuleState>(createInitialConsultationModule);
+  const [deathModalOpen, setDeathModalOpen] = useState(false);
+  const [deathSaving, setDeathSaving] = useState(false);
+  const [deathForm, setDeathForm] = useState({ occurredAt: new Date().toISOString().slice(0, 16), causeOfDeath: "", clinicalSummary: "" });
+  const [deathCertificate, setDeathCertificate] = useState<any>(null);
 
   useEffect(() => {
     if (!currentUser?.id) { setWorkLocation(null); return; }
@@ -434,13 +439,19 @@ export default function DashboardMedecin() {
     setError(null);
     try {
       const data = await fetchDoctorAssignedPatients();
-      const ordered = [...data].sort((a, b) => {
+      // A refresh can race with a workflow transition.  Never render a
+      // malformed/empty entry returned by a stale response as a patient.
+      const validPatients = (Array.isArray(data) ? data : []).filter(
+        (patient): patient is DoctorPatient =>
+          Boolean(patient && patient.id && patient.firstName && patient.lastName),
+      );
+      const ordered = [...validPatients].sort((a, b) => {
         const aDate = a.latestConsultation?.createdAt || a.consultations?.[0]?.createdAt || "";
         const bDate = b.latestConsultation?.createdAt || b.consultations?.[0]?.createdAt || "";
         return new Date(aDate).getTime() - new Date(bDate).getTime();
       });
       setPatients(ordered);
-      setSelectedPatient((current) => current ? ordered.find((patient) => patient.id === current.id) || current : ordered[0] || null);
+      setSelectedPatient((current) => current ? ordered.find((patient) => patient.id === current.id) || null : ordered[0] || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible de charger la file medecin.");
     } finally {
@@ -937,6 +948,29 @@ export default function DashboardMedecin() {
     }
   };
 
+  const certifyDeath = async () => {
+    if (!selectedPatient || !deathForm.causeOfDeath.trim()) {
+      setSaveFeedback({ title: "Cause requise", message: "La cause médicale du décès doit être renseignée avant certification.", tone: "error" });
+      return;
+    }
+    try {
+      setDeathSaving(true);
+      const certificate = await certifyPatientDeath(selectedPatient.id, {
+        occurredAt: new Date(deathForm.occurredAt).toISOString(),
+        causeOfDeath: deathForm.causeOfDeath.trim(),
+        clinicalSummary: deathForm.clinicalSummary.trim() || undefined,
+      });
+      setDeathCertificate(certificate);
+      setDeathModalOpen(false);
+      setSaveFeedback({ title: "Décès certifié", message: "La certification médicale est enregistrée, auditée et prête à imprimer.", tone: "success" });
+      await loadPatients();
+    } catch (error) {
+      setSaveFeedback({ title: "Certification impossible", message: error instanceof Error ? error.message : "Le serveur a refusé la certification.", tone: "error" });
+    } finally {
+      setDeathSaving(false);
+    }
+  };
+
   const resetConsultationModule = () => {
     setConsultationModule(createInitialConsultationModule());
     setDraftAllergy({ allergen: "", reactionType: "" });
@@ -1317,6 +1351,13 @@ export default function DashboardMedecin() {
                   >
                     Appeler le patient
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeathModalOpen(true)}
+                    className="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
+                  >
+                    Déclarer un décès
+                  </button>
                   <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
                     {selectedPatient.workflowStatus || "Statut non renseigne"}
                   </span>
@@ -1631,6 +1672,21 @@ export default function DashboardMedecin() {
             <button type="button" onClick={() => setAiFeatureNotice(null)} className="mt-6 rounded-xl bg-aulia-teal px-4 py-2 font-semibold text-white">Retour</button>
           </section>
         </div>
+      )}
+      {deathModalOpen && selectedPatient && (
+        <div className="fixed inset-0 z-[100001] grid place-items-center bg-slate-950/60 p-4">
+          <section role="dialog" aria-modal="true" className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-950">
+            <p className="text-xs font-bold uppercase tracking-[.16em] text-red-700">Certification médicale</p>
+            <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">Déclarer le décès de {formatDoctorPatientName(selectedPatient)}</h2>
+            <label className="mt-5 block text-sm font-medium">Date et heure du décès<input type="datetime-local" value={deathForm.occurredAt} onChange={(event) => setDeathForm((current) => ({ ...current, occurredAt: event.target.value }))} className="mt-2 w-full rounded-xl border px-3 py-2 dark:bg-slate-900" /></label>
+            <label className="mt-4 block text-sm font-medium">Cause médicale du décès<textarea required rows={3} value={deathForm.causeOfDeath} onChange={(event) => setDeathForm((current) => ({ ...current, causeOfDeath: event.target.value }))} className="mt-2 w-full rounded-xl border px-3 py-2 dark:bg-slate-900" /></label>
+            <label className="mt-4 block text-sm font-medium">Résumé clinique (optionnel)<textarea rows={4} value={deathForm.clinicalSummary} onChange={(event) => setDeathForm((current) => ({ ...current, clinicalSummary: event.target.value }))} className="mt-2 w-full rounded-xl border px-3 py-2 dark:bg-slate-900" /></label>
+            <div className="mt-6 flex justify-end gap-3"><button type="button" disabled={deathSaving} onClick={() => setDeathModalOpen(false)} className="rounded-xl border px-4 py-2 font-semibold">Annuler</button><button type="button" disabled={deathSaving} onClick={() => void certifyDeath()} className="rounded-xl bg-red-700 px-4 py-2 font-semibold text-white disabled:opacity-60">{deathSaving ? "Certification…" : "Certifier médicalement"}</button></div>
+          </section>
+        </div>
+      )}
+      {deathCertificate && (
+        <><style>{`@media print { body * { visibility: hidden; } #death-certificate, #death-certificate * { visibility: visible; } #death-certificate { position: fixed; inset: 0; padding: 24mm; background: white; } }`}</style><section id="death-certificate" className="fixed inset-0 z-[100002] overflow-auto bg-white p-8 text-slate-900"><div className="mx-auto max-w-2xl border-2 border-slate-900 p-8"><p className="text-center text-xs font-bold uppercase tracking-[.2em]">Certificat médical de décès</p><h2 className="mt-5 text-center text-2xl font-bold">{deathCertificate.patient?.firstName} {deathCertificate.patient?.middleName || ""} {deathCertificate.patient?.lastName}</h2><dl className="mt-8 grid gap-4 text-sm"><div><dt className="font-bold">N° certificat</dt><dd>{deathCertificate.certificateNumber}</dd></div><div><dt className="font-bold">Date et heure du décès</dt><dd>{formatDateTime(deathCertificate.occurredAt)}</dd></div><div><dt className="font-bold">Cause médicale</dt><dd>{deathCertificate.causeOfDeath}</dd></div><div><dt className="font-bold">Médecin certificateur</dt><dd>{deathCertificate.certifiedBy?.displayName || `${deathCertificate.certifiedBy?.firstName || ""} ${deathCertificate.certifiedBy?.lastName || ""}`.trim()}</dd></div></dl><p className="mt-10 whitespace-pre-wrap text-sm">{deathCertificate.clinicalSummary || ""}</p></div><div className="mx-auto mt-6 flex max-w-2xl justify-end gap-3 print:hidden"><button onClick={() => setDeathCertificate(null)} className="rounded-xl border px-4 py-2 font-semibold">Fermer</button><button onClick={() => window.print()} className="rounded-xl bg-slate-900 px-4 py-2 font-semibold text-white">Imprimer le certificat</button></div></section></>
       )}
     </div>
   );

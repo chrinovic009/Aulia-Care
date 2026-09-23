@@ -3,14 +3,38 @@ import { useLocation } from "react-router-dom";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { useAuth } from "../../context/AuthContext";
-import { fetchPatientsPage, updatePatientRecord, fetchServices } from "../../api/reception";
+import { createPatientFamilyContact, fetchPatientsPage, updatePatientFamilyContact, fetchServices } from "../../api/reception";
+import { showActionFeedback } from "../../components/common/ActionFeedbackProvider";
 import { formatPatientDossierId } from "../../utils/formatId";
 import { documentIdentityLine, documentLegalLine, documentLogoUrl, getClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
 
 type FamilyContact = {
+  id?: string;
   name: string;
   relation: string;
   phone: string;
+};
+
+const displayWorkflowStatus = (value?: string) => {
+  const labels: Record<string, string> = {
+    EN_ATTENTE_DE_PAIEMENT: "En attente de paiement",
+    EN_ATTENTE_VALIDATION_CAISSE: "En attente de validation caisse",
+    EN_ATTENTE_INFIRMERIE: "En attente de l’infirmier",
+    EN_ATTENTE_MEDECIN: "En attente du médecin",
+    EN_CONSULTATION: "En consultation",
+    EN_ATTENTE_LABORATOIRE: "En attente du laboratoire",
+    EN_ATTENTE_IMAGERIE: "En attente de l’imagerie",
+    HOSPITALISE: "Hospitalisé",
+    SORTI: "Sorti",
+  };
+  const normalized = String(value || "").trim();
+  return labels[normalized] || normalized.replace(/_/g, " ").toLocaleLowerCase("fr-FR").replace(/^./, (letter) => letter.toLocaleUpperCase("fr-FR")) || "Non renseigné";
+};
+
+const isClinicalOrParamedicalService = (service: any) => {
+  const value = `${service?.name || ""} ${service?.department?.name || ""}`
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return !/(reception|accueil|caisse|cashier|administration|secretariat|comptabilite|finance|gestion)/.test(value);
 };
 
 type InsuranceInfo = {
@@ -83,6 +107,7 @@ export default function ReceptionPatients() {
   const [selectedPatientId, setSelectedPatientId] = useState<string>("");
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [newContact, setNewContact] = useState<Partial<FamilyContact>>({});
+  const [editingContact, setEditingContact] = useState<FamilyContact | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [showInsuranceModal, setShowInsuranceModal] = useState(false);
@@ -401,8 +426,12 @@ export default function ReceptionPatients() {
             profession: profession || p.profession || '',
             nationality: p.nationality ?? '',
             alerts: p.alerts ?? [],
-            family: family && family.length > 0 ? family : (p.family ?? p.contacts ?? []),
-            insuranceInfo: p.insuranceInfo ?? (p.insurance ? { company: p.insurance.company || '', policyNumber: p.insurance.policy || '', expiryDate: '', coverageType: p.insurance.coverageType || '', status: p.insurance.status || 'En attente validation' } : { company: '', policyNumber: '', expiryDate: '', coverageType: '', status: 'En attente validation' }),
+            family: (p.familyContacts || family || p.family || p.contacts || []).map((contact: any) => ({ id: contact.id, name: contact.name || '', relation: contact.relationship || contact.relation || '', phone: contact.phone || '' })),
+            insuranceInfo: p.insuranceInfo ?? (() => {
+              const subscription = p.subscriptionEmployees?.[0];
+              const company = subscription?.company?.name || p.insurance?.company || p.insuranceProvider || '';
+              return { company, policyNumber: subscription?.policyNumber || p.insurance?.policy || p.insuranceNumber || '', expiryDate: '', coverageType: subscription ? 'Abonnement entreprise' : p.insurance?.coverageType || '', status: subscription?.company?.status === 'ACTIVE' ? 'Active' : p.insurance?.status || 'En attente validation' };
+            })(),
             history: p.history ?? [],
             workflowStatus: p.workflowStatus ?? p.status ?? '',
             assignedNurseId: p.assignedNurseId ?? p.doctor ?? undefined,
@@ -450,7 +479,7 @@ export default function ReceptionPatients() {
         // nurse list not needed by reception actions (view-only), skipping
 
         const services = await fetchServices();
-        setAppointmentTypes(services || []);
+        setAppointmentTypes((services || []).filter(isClinicalOrParamedicalService));
 
         // Reception must never query the administrative user directory. This
         // limited endpoint returns only active physicians from its own clinic.
@@ -461,6 +490,27 @@ export default function ReceptionPatients() {
       } catch (e) {}
     })();
   }, [navigationState?.openAppointment, navigationState?.patientId, page]);
+
+  const persistFamilyContact = async (contact: FamilyContact) => {
+    if (!selectedPatient?.id) return;
+    try {
+      const saved = editingContact?.id
+        ? await updatePatientFamilyContact(selectedPatient.id, editingContact.id, { name: contact.name, relationship: contact.relation, phone: contact.phone })
+        : await createPatientFamilyContact(selectedPatient.id, { name: contact.name, relationship: contact.relation, phone: contact.phone });
+      const mapped = { id: saved.id, name: saved.name, relation: saved.relationship || '', phone: saved.phone || '' };
+      setPatients((previous) => previous.map((patient) => patient.id !== selectedPatient.id ? patient : {
+        ...patient,
+        family: editingContact?.id
+          ? patient.family.map((item) => item.id === editingContact.id ? mapped : item)
+          : [...patient.family, mapped],
+      }));
+      setShowAddContactModal(false);
+      setEditingContact(null);
+      showActionFeedback({ kind: "success", title: "Contact familial enregistré", message: "Le contact est conservé dans le dossier patient et toute correction est tracée." });
+    } catch (error) {
+      showActionFeedback({ kind: "error", title: "Contact non enregistré", message: error instanceof Error ? error.message : "Le serveur a refusé la modification. Aucun changement local n’a été conservé." });
+    }
+  };
 
   const handleAddContact = async (contact: FamilyContact) => {
     if (!selectedPatient?.id) return alert('Aucun patient sélectionné');
@@ -485,6 +535,31 @@ export default function ReceptionPatients() {
       // fallback: local update
       setPatients((prev) => prev.map((p) => (p.id === selectedPatient.id ? { ...p, family: [...p.family, contact] } : p)));
       setShowAddContactModal(false);
+    }
+  };
+
+  const persistAppointment = async (opts: { datetime: string; type: string; doctorId?: string; notes?: string }) => {
+    if (!selectedPatient?.id || !opts.datetime || !opts.type) {
+      showActionFeedback({ kind: "warning", title: "Informations manquantes", message: "Choisissez la date, l’heure et un service médical ou paramédical." });
+      return;
+    }
+    const selectedService = appointmentTypes.find((item: any) => (item.id || item.name) === opts.type);
+    try {
+      const api = await import('../../api/reception');
+      await api.createAppointmentInDatabase({
+        patientId: selectedPatient.id,
+        requestedById: currentUser?.id || undefined,
+        serviceId: selectedService?.id,
+        serviceUnitId: selectedService?.serviceUnitId || selectedService?.unitId,
+        scheduledAt: opts.datetime,
+        reason: [opts.notes || selectedService?.name || "Rendez-vous", opts.doctorId ? `Médecin: ${opts.doctorId}` : ""].filter(Boolean).join(" - "),
+        status: "SCHEDULED",
+        durationMinutes: 30,
+      });
+      setShowAppointmentModal(false);
+      showActionFeedback({ kind: "success", title: "Rendez-vous créé", message: "Le rendez-vous a été enregistré dans l’établissement courant." });
+    } catch (error) {
+      showActionFeedback({ kind: "error", title: "Rendez-vous non créé", message: error instanceof Error ? error.message : "Le serveur a refusé le rendez-vous." });
     }
   };
 
@@ -598,10 +673,10 @@ export default function ReceptionPatients() {
                       <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{patient.name}</td>
                       <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{patient.phone}</td>
                       <td className="px-4 py-4">
-                        <span className={statusBadge(patient.workflowStatus || patient.status)}>{patient.workflowStatus || patient.status}</span>
+                        <span className={statusBadge(patient.workflowStatus || patient.status)}>{displayWorkflowStatus(patient.workflowStatus || patient.status)}</span>
                       </td>
                       <td className="px-4 py-4">
-                        <span className={statusBadge(patient.insurance)}>{patient.insurance}</span>
+                        <span className={statusBadge(patient.insuranceInfo.company ? "Validée" : patient.insurance)}>{patient.insuranceInfo.company || "Sans abonnement"}</span>
                       </td>
                     </tr>
                   ))}
@@ -673,6 +748,7 @@ export default function ReceptionPatients() {
                 <button
                   onClick={() => {
                     setNewContact({});
+                    setEditingContact(null);
                     setShowAddContactModal(true);
                   }}
                   className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
@@ -692,12 +768,13 @@ export default function ReceptionPatients() {
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-200 dark:bg-slate-950 dark:divide-gray-800">
                     {selectedPatient.family.map((contact) => (
-                      <tr key={contact.phone}>
+                      <tr key={contact.id || `${contact.name}-${contact.phone}`}>
                         <td className="px-4 py-3 text-slate-700 dark:text-slate-200">{contact.name}</td>
                         <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{contact.relation}</td>
                         <td className="px-4 py-3 text-slate-600 dark:text-slate-400 flex items-center justify-between">
                           <span>{contact.phone}</span>
                           <span className="flex items-center gap-2">
+                            <button onClick={() => { setEditingContact(contact); setNewContact(contact); setShowAddContactModal(true); }} aria-label={`Modifier ${contact.name}`} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200">✏️</button>
                             <a href={`tel:${contact.phone.replace(/\s+/g, "")}`} aria-label={`Appeler ${contact.name}`} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200">📞</a>
                             <button
                               onClick={() => {
@@ -790,7 +867,7 @@ export default function ReceptionPatients() {
       {showAddContactModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lg dark:bg-slate-900">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Ajouter un contact famille</h3>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{editingContact ? "Modifier le contact famille" : "Ajouter un contact famille"}</h3>
             <div className="mt-4 space-y-3">
               <div>
                 <label className="block text-sm text-slate-700 dark:text-slate-300">Nom</label>
@@ -810,8 +887,8 @@ export default function ReceptionPatients() {
               <button onClick={async () => {
                 if (!newContact.name || !newContact.phone) { alert("Remplissez le nom et le téléphone"); return; }
                 const contact: FamilyContact = { name: newContact.name!, relation: newContact.relation || "", phone: newContact.phone! };
-                await handleAddContact(contact);
-              }} className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Ajouter</button>
+                await persistFamilyContact(contact);
+              }} className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">{editingContact ? "Enregistrer" : "Ajouter"}</button>
             </div>
           </div>
         </div>
@@ -876,7 +953,7 @@ export default function ReceptionPatients() {
                 const type = selectedApptType || (document.getElementById('appt-type') as HTMLSelectElement).value;
                 const docId = selectedApptDoctor || (document.getElementById('appt-doctor') as HTMLSelectElement).value;
                 const notes = (document.getElementById('appt-notes') as HTMLTextAreaElement).value;
-                await handleCreateAppointment({ datetime: dt, type, doctorId: docId, notes });
+                await persistAppointment({ datetime: dt, type, doctorId: docId, notes });
               }} className="rounded-2xl bg-slate-900 px-4 py-2 text-white">Créer</button>
             </div>
           </div>

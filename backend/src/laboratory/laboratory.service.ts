@@ -1,6 +1,6 @@
 // backend/src/laboratory/laboratory.service.ts
 
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ClinicContextService } from '../core/clinic-context.service';
@@ -90,6 +90,16 @@ export class LaboratoryService {
     return this.clinicContext.requireOperationalActor({ userId: actorId });
   }
 
+  private async requireLabManager(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    if (actor.primaryRole !== 'LAB_MANAGER') {
+      throw new ForbiddenException(
+        'Seul le responsable du laboratoire peut modifier le catalogue de son établissement.',
+      );
+    }
+    return actor;
+  }
+
   private async technicianDirectReleaseEnabled(clinicId: string) {
     const config = await this.prisma.labConfiguration.findUnique({
       where: {
@@ -111,7 +121,7 @@ export class LaboratoryService {
   }
 
   async updateSettings(dto: { technicianDirectRelease?: boolean }, actorId?: string) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireLabManager(actorId);
     const enabled = Boolean(dto?.technicianDirectRelease);
     await this.prisma.labConfiguration.upsert({
       where: {
@@ -354,7 +364,7 @@ export class LaboratoryService {
     dto: { active?: boolean; price?: number | null; turnaroundTimeMinutes?: number | null },
     actorId?: string,
   ) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireLabManager(actorId);
     const existing = await this.prisma.labTest.findFirst({
       where: { id: labTestId, clinicId: actor.clinicId },
       select: { id: true },
@@ -1402,7 +1412,7 @@ export class LaboratoryService {
   }
 
   async createSection(dto: { name: string; description?: string; order?: string; active?: boolean }, actorId?: string) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireLabManager(actorId);
     const name = dto.name.trim();
     if (!name) throw new BadRequestException('Le nom de la section est obligatoire.');
     const duplicate = await this.prisma.labSection.findFirst({ where: { clinicId: actor.clinicId, name: { equals: name, mode: 'insensitive' } }, select: { id: true } });
@@ -1416,7 +1426,7 @@ export class LaboratoryService {
     dto: any,
     actorId?: string,
   ) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireLabManager(actorId);
     const clinicId = actor.clinicId;
 
     const ensure = async (model: any) => {
@@ -1502,7 +1512,7 @@ export class LaboratoryService {
     id: string,
     actorId?: string,
   ) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireLabManager(actorId);
     const clinicId = actor.clinicId;
     return this.prisma.$transaction(async (tx) => {
       const archivedAt = new Date();
@@ -1541,7 +1551,7 @@ export class LaboratoryService {
   }
 
   async createCategory(dto: { sectionId?: string; name: string; code?: string; description?: string; order?: string; active?: boolean }, actorId?: string) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireLabManager(actorId);
     if (!dto.sectionId) throw new BadRequestException('La section laboratoire est obligatoire.');
     const section = await this.prisma.labSection.findFirst({ where: { id: dto.sectionId, clinicId: actor.clinicId, active: true }, select: { id: true } });
     if (!section) throw new BadRequestException('Section laboratoire introuvable dans cet établissement.');
@@ -1549,7 +1559,7 @@ export class LaboratoryService {
   }
 
   async createTest(dto: any, createdById?: string) {
-    const actor = await this.requireClinic(createdById);
+    const actor = await this.requireLabManager(createdById);
     const code = String(dto.code || '').trim();
     const testName = String(dto.name || '').trim();
     if (!code || !testName) throw new BadRequestException('Le code et le nom de l examen sont obligatoires.');
@@ -1581,19 +1591,19 @@ export class LaboratoryService {
   }
 
   async createTestParameter(dto: any, actorId?: string) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireLabManager(actorId);
     const test = await this.prisma.labTest.findFirst({ where: { id: dto.labTestId, clinicId: actor.clinicId, active: true }, select: { id: true } });
     if (!test) throw new BadRequestException('Examen laboratoire introuvable dans cet établissement.');
     return this.prisma.labTestParameter.create({ data: { clinicId: actor.clinicId, labTestId: test.id, code: dto.code.trim(), name: dto.name.trim(), unit: dto.unit?.trim() || undefined, resultType: dto.resultType ? dto.resultType as any : 'NUMERIC', referenceRange: dto.referenceRange?.trim() || undefined, minValue: dto.minValue || undefined, maxValue: dto.maxValue || undefined, criticalLow: dto.criticalLow || undefined, criticalHigh: dto.criticalHigh || undefined, method: dto.method?.trim() || undefined, order: dto.order ? Number(dto.order) || 0 : 0, active: dto.active ?? true } });
   }
 
   async createSampleType(dto: { name: string; description?: string; active?: boolean }, actorId?: string) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireLabManager(actorId);
     return this.prisma.labSampleType.create({ data: { clinicId: actor.clinicId, name: dto.name.trim(), description: dto.description?.trim() || undefined, active: dto.active ?? true } });
   }
 
   async createSampleRequirement(dto: any, actorId?: string) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireLabManager(actorId);
     const [test, sample] = await Promise.all([
       this.prisma.labTest.findFirst({ where: { id: dto.labTestId, clinicId: actor.clinicId, active: true }, select: { id: true } }),
       this.prisma.labSampleType.findFirst({ where: { id: dto.labSampleTypeId, clinicId: actor.clinicId, active: true }, select: { id: true } }),
@@ -1603,12 +1613,12 @@ export class LaboratoryService {
   }
 
   async createConsumable(dto: any, actorId?: string) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireLabManager(actorId);
     return this.prisma.labConsumable.create({ data: { clinicId: actor.clinicId, name: dto.name.trim(), code: dto.code.trim(), description: dto.description?.trim() || undefined, unit: dto.unit.trim(), active: dto.active ?? true } });
   }
 
   async createConsumableRequirement(dto: any, actorId?: string) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireLabManager(actorId);
     const clinicId = actor.clinicId;
     const consumable = await this.prisma.labConsumable.findFirst({ where: { id: dto.labConsumableId, clinicId, active: true }, select: { id: true } });
     if (!consumable) throw new BadRequestException('Consommable laboratoire introuvable dans cet établissement.');
@@ -1634,14 +1644,14 @@ export class LaboratoryService {
   }
 
   async createConsumableStock(dto: any, updatedById?: string) {
-    const actor = await this.requireClinic(updatedById);
+    const actor = await this.requireLabManager(updatedById);
     const consumable = await this.prisma.labConsumable.findFirst({ where: { id: dto.labConsumableId, clinicId: actor.clinicId, active: true }, select: { id: true } });
     if (!consumable) throw new NotFoundException('Consommable de laboratoire introuvable dans cet établissement.');
     return this.prisma.labConsumableStock.create({ data: { clinicId: actor.clinicId, labConsumableId: consumable.id, quantity: dto.quantity, minimumLevel: dto.minimumLevel || undefined, criticalLevel: dto.criticalLevel || undefined, location: dto.location?.trim() || undefined, lastUpdatedAt: new Date(), updatedById: actor.id } });
   }
 
   async updateConsumableStock(id: string, dto: any, updatedById?: string) {
-    const actor = await this.requireClinic(updatedById);
+    const actor = await this.requireLabManager(updatedById);
     const stock = await this.prisma.labConsumableStock.findFirst({ where: { id, clinicId: actor.clinicId, archivedAt: null }, select: { id: true } });
     if (!stock) throw new NotFoundException('Stock de consommable de laboratoire introuvable.');
     return this.prisma.labConsumableStock.update({ where: { id: stock.id }, data: { ...(dto.quantity !== undefined ? { quantity: dto.quantity } : {}), ...(dto.minimumLevel !== undefined ? { minimumLevel: dto.minimumLevel || null } : {}), ...(dto.criticalLevel !== undefined ? { criticalLevel: dto.criticalLevel || null } : {}), ...(dto.location !== undefined ? { location: dto.location?.trim() || null } : {}), lastUpdatedAt: new Date(), updatedById: actor.id } });

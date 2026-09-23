@@ -37,6 +37,9 @@ const APPOINTMENT_INITIAL_STATUSES: AppointmentStatus[] = [
   AppointmentStatus.CHECKED_IN,
 ];
 const APPOINTMENT_RECEPTION_CLOSED_STATUSES: AppointmentStatus[] = [
+  // A received patient is in a care encounter, no longer in the scheduling
+  // workflow. Reception may read it but cannot alter its scheduling status.
+  AppointmentStatus.CHECKED_IN,
   AppointmentStatus.COMPLETED,
   AppointmentStatus.CANCELLED,
   AppointmentStatus.NO_SHOW,

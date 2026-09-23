@@ -28,13 +28,13 @@ export class ImagingController {
   }
 
   @Post('catalogue')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')
+  @Roles('RADIOLOGIST')
   createCatalogue(@Body() body: CreateImagingCatalogueDto, @Request() req: AuthenticatedRequest) {
     return this.imagingService.createCatalogue(body, req.user?.userId || req.user?.id);
   }
 
   @Delete('catalogue/:id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')
+  @Roles('RADIOLOGIST')
   removeCatalogue(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     return this.imagingService.removeCatalogue(id, req.user?.userId || req.user?.id);
   }

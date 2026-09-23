@@ -6,6 +6,9 @@ import { CreateAdmissionDto } from './dto/create-admission.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { RecordVitalSignsDto } from './dto/record-vital-signs.dto';
 import { CreateDailyCheckinDto } from './dto/create-daily-checkin.dto';
+import { ReportPatientDeathDto } from './dto/report-patient-death.dto';
+import { CertifyPatientDeathDto } from './dto/certify-patient-death.dto';
+import { UpsertPatientContactDto } from './dto/upsert-patient-contact.dto';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { AuthenticatedActor, ClinicContextService, OperationalClinicActor } from '../core/clinic-context.service';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
@@ -359,6 +362,14 @@ export class PatientsService {
               createdAt: true,
             },
           },
+          subscriptionEmployees: {
+            where: { deletedAt: null },
+            select: {
+              policyNumber: true,
+              company: { select: { name: true, status: true } },
+            },
+            take: 1,
+          },
         },
         orderBy: {
           updatedAt: 'desc',
@@ -550,21 +561,24 @@ export class PatientsService {
           );
 
         if (raw && raw.length > 0) {
-          return role === 'CASHIER'
-            ? raw.map(
-                ({
-                  id,
-                  firstName,
-                  lastName,
-                  dateOfBirth,
-                }) => ({
-                  id,
-                  firstName,
-                  lastName,
-                  dateOfBirth,
-                }),
-              )
-            : raw;
+          if (role === 'CASHIER') {
+            return raw.map(({ id, firstName, lastName, dateOfBirth }) => ({ id, firstName, lastName, dateOfBirth }));
+          }
+          // A reception result is used to decide whether a new arrival is a
+          // return visit. Resolve the same clinic-scoped clinical context as
+          // the regular Prisma search rather than returning a lossy raw row.
+          return this.prisma.patient.findMany({
+            where: { id: { in: raw.map((patient) => patient.id) }, clinicId, deletedAt: null },
+            select: {
+              id: true, firstName: true, lastName: true, middleName: true,
+              dateOfBirth: true, phone: true, email: true, address: true,
+              nationality: true, profession: true, priority: true,
+              admissionType: true, workflowStatus: true,
+              service: { select: { id: true, name: true } },
+              subscriptionEmployees: { where: { deletedAt: null }, select: { policyNumber: true, company: { select: { name: true, status: true } } }, take: 1 },
+              medicalHistories: { where: { kind: 'NURSE_ORIENTATION' }, select: { details: true }, orderBy: { eventDate: 'desc' }, take: 1 },
+            },
+          });
         }
       } catch {
         // Fallback to Prisma insensitive contains search.
@@ -636,6 +650,14 @@ export class PatientsService {
               email: true,
               externalId: true,
               workflowStatus: true,
+              admissionType: true,
+              priority: true,
+              address: true,
+              profession: true,
+              nationality: true,
+              service: { select: { id: true, name: true } },
+              subscriptionEmployees: { where: { deletedAt: null }, select: { policyNumber: true, company: { select: { name: true, status: true } } }, take: 1 },
+              medicalHistories: { where: { kind: 'NURSE_ORIENTATION' }, select: { details: true }, orderBy: { eventDate: 'desc' }, take: 1 },
             },
       take: 20,
     });
@@ -1013,6 +1035,184 @@ export class PatientsService {
     }
 
     return patient;
+  }
+
+  async reportPatientDeath(
+    patientId: string,
+    dto: ReportPatientDeathDto,
+    currentUser?: AuthenticatedActor,
+  ) {
+    const nurse = await this.requireOperationalActor(currentUser);
+    if (nurse.primaryRole !== RoleSlug.NURSE) {
+      throw new ForbiddenException('Seul un infirmier peut signaler un décès au médecin.');
+    }
+    const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
+    if (Number.isNaN(occurredAt.getTime()) || occurredAt > new Date()) {
+      throw new BadRequestException('La date et l’heure du constat sont invalides.');
+    }
+
+    const committed = await this.prisma.$transaction(async (tx) => {
+      const patient = await tx.patient.findFirst({
+        where: { id: patientId, clinicId: nurse.clinicId, deletedAt: null },
+        select: { id: true, firstName: true, lastName: true, status: true },
+      });
+      if (!patient) throw new NotFoundException('Patient introuvable dans cet établissement.');
+      if (patient.status === 'DECEASED') {
+        throw new BadRequestException('Ce décès est déjà certifié médicalement.');
+      }
+      const existing = await tx.patientDeathRecord.findFirst({
+        where: { patientId, clinicId: nurse.clinicId, status: 'REPORTED' },
+        select: { id: true },
+      });
+      if (existing) {
+        throw new BadRequestException('Un signalement de décès attend déjà la certification médicale.');
+      }
+      const record = await tx.patientDeathRecord.create({
+        data: {
+          clinicId: nurse.clinicId,
+          patientId,
+          reportedById: nurse.id,
+          reportedAt: new Date(),
+          occurredAt,
+          reportNotes: dto.notes?.trim() || null,
+          status: 'REPORTED',
+        },
+      });
+      await tx.medicalHistory.create({
+        data: {
+          patientId,
+          kind: 'NURSE_DEATH_REPORTED',
+          details: JSON.stringify({ deathRecordId: record.id, occurredAt: occurredAt.toISOString(), notes: dto.notes?.trim() || null }),
+          createdById: nurse.id,
+        },
+      });
+      await tx.auditTrail.create({
+        data: {
+          actorId: nurse.id,
+          entity: 'PatientDeathRecord',
+          entityId: record.id,
+          action: 'CREATE',
+          after: { event: 'NURSE_DEATH_REPORTED', clinicId: nurse.clinicId, patientId, occurredAt: occurredAt.toISOString() },
+        },
+      });
+      const physicians = await tx.user.findMany({
+        where: {
+          clinicId: nurse.clinicId,
+          status: 'ACTIVE',
+          deletedAt: null,
+          OR: [
+            { primaryRole: RoleSlug.PHYSICIAN },
+            { roles: { some: { active: true, role: { slug: RoleSlug.PHYSICIAN } } } },
+          ],
+        },
+        select: { id: true },
+      });
+      const notifications = await Promise.all(physicians.map((physician) =>
+        tx.notification.create({
+          data: {
+            recipientId: physician.id,
+            patientId,
+            type: 'ALERT',
+            status: 'UNREAD',
+            priority: 'CRITICAL',
+            title: 'Décès signalé : certification médicale requise',
+            message: `L’infirmier a signalé le décès de ${patient.firstName} ${patient.lastName}. Une certification médicale est requise.`,
+            relatedEntity: 'PatientDeathRecord',
+            relatedId: record.id,
+          },
+        }),
+      ));
+      return { record, notifications };
+    });
+    committed.notifications.forEach((notification) =>
+      this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification),
+    );
+    return committed.record;
+  }
+
+  async certifyPatientDeath(
+    patientId: string,
+    dto: CertifyPatientDeathDto,
+    currentUser?: AuthenticatedActor,
+  ) {
+    const physician = await this.requireOperationalActor(currentUser);
+    if (physician.primaryRole !== RoleSlug.PHYSICIAN) {
+      throw new ForbiddenException('Seul un médecin peut certifier médicalement un décès.');
+    }
+    const occurredAt = new Date(dto.occurredAt);
+    if (Number.isNaN(occurredAt.getTime()) || occurredAt > new Date()) {
+      throw new BadRequestException('La date et l’heure du décès sont invalides.');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const patient = await tx.patient.findFirst({
+        where: { id: patientId, clinicId: physician.clinicId, deletedAt: null },
+        select: { id: true, status: true },
+      });
+      if (!patient) throw new NotFoundException('Patient introuvable dans cet établissement.');
+      if (patient.status === 'DECEASED') {
+        throw new BadRequestException('Ce décès est déjà certifié médicalement.');
+      }
+      const record = await tx.patientDeathRecord.findFirst({
+        where: { patientId, clinicId: physician.clinicId, status: 'REPORTED' },
+        orderBy: { reportedAt: 'desc' },
+      });
+      const certified = record
+        ? await tx.patientDeathRecord.update({
+            where: { id: record.id },
+            data: {
+              certifiedById: physician.id,
+              certifiedAt: new Date(),
+              occurredAt,
+              causeOfDeath: dto.causeOfDeath.trim(),
+              clinicalSummary: dto.clinicalSummary?.trim() || null,
+              status: 'CERTIFIED',
+            },
+          })
+        : await tx.patientDeathRecord.create({
+            data: {
+              clinicId: physician.clinicId,
+              patientId,
+              certifiedById: physician.id,
+              certifiedAt: new Date(),
+              occurredAt,
+              causeOfDeath: dto.causeOfDeath.trim(),
+              clinicalSummary: dto.clinicalSummary?.trim() || null,
+              status: 'CERTIFIED',
+            },
+          });
+      const certificateNumber = `DEC-${new Date().getFullYear()}-${certified.id.slice(0, 8).toUpperCase()}`;
+      const certificate = await tx.patientDeathRecord.update({
+        where: { id: certified.id },
+        data: { certificateNumber },
+        include: {
+          patient: { select: { id: true, firstName: true, lastName: true, middleName: true, dateOfBirth: true, gender: true, clinicId: true } },
+          certifiedBy: { select: { id: true, displayName: true, firstName: true, lastName: true, specialty: true } },
+        },
+      });
+      await tx.patient.update({
+        where: { id: patientId },
+        data: { status: 'DECEASED', workflowStatus: PatientWorkflowStatus.TERMINE },
+      });
+      await tx.medicalHistory.create({
+        data: {
+          patientId,
+          kind: 'MEDICAL_DEATH_CERTIFIED',
+          details: JSON.stringify({ deathRecordId: certificate.id, certificateNumber, occurredAt: occurredAt.toISOString(), causeOfDeath: dto.causeOfDeath.trim() }),
+          createdById: physician.id,
+        },
+      });
+      await tx.auditTrail.create({
+        data: {
+          actorId: physician.id,
+          entity: 'PatientDeathRecord',
+          entityId: certificate.id,
+          action: 'APPROVE',
+          after: { event: 'MEDICAL_DEATH_CERTIFIED', clinicId: physician.clinicId, patientId, certificateNumber },
+        },
+      });
+      return certificate;
+    });
   }
 
   async createDailyCheckin(
@@ -2114,6 +2314,82 @@ if (isParamedicalVoucher) {
       updated,
     );
 
+    return updated;
+  }
+
+  /** Family contacts are a first-class, clinic-scoped record, never browser-only
+   * metadata.  The audit trail makes subsequent phone corrections traceable. */
+  async createFamilyContact(
+    patientId: string,
+    dto: UpsertPatientContactDto,
+    currentUser?: AuthenticatedActor,
+  ) {
+    const actor = await this.requireOperationalActor(currentUser);
+    const patient = await this.prisma.patient.findFirst({
+      where: { id: patientId, clinicId: actor.clinicId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!patient) throw new NotFoundException('Patient introuvable dans cet établissement.');
+
+    const contact = await this.prisma.patientContact.create({
+      data: {
+        patientId: patient.id,
+        name: dto.name.trim(),
+        relationship: dto.relationship?.trim() || null,
+        phone: dto.phone?.trim() || null,
+        email: dto.email?.trim().toLowerCase() || null,
+        address: dto.address?.trim() || null,
+      },
+    });
+    await this.prisma.auditTrail.create({
+      data: {
+        actorId: actor.id,
+        entity: 'PatientContact',
+        entityId: contact.id,
+        action: 'CREATE',
+        after: { clinicId: actor.clinicId, patientId: patient.id, contactId: contact.id },
+      },
+    });
+    return contact;
+  }
+
+  async updateFamilyContact(
+    patientId: string,
+    contactId: string,
+    dto: UpsertPatientContactDto,
+    currentUser?: AuthenticatedActor,
+  ) {
+    const actor = await this.requireOperationalActor(currentUser);
+    const contact = await this.prisma.patientContact.findFirst({
+      where: {
+        id: contactId,
+        patientId,
+        deletedAt: null,
+        patient: { clinicId: actor.clinicId, deletedAt: null },
+      },
+    });
+    if (!contact) throw new NotFoundException('Contact familial introuvable dans cet établissement.');
+
+    const updated = await this.prisma.patientContact.update({
+      where: { id: contact.id },
+      data: {
+        name: dto.name.trim(),
+        relationship: dto.relationship?.trim() || null,
+        phone: dto.phone?.trim() || null,
+        email: dto.email?.trim().toLowerCase() || null,
+        address: dto.address?.trim() || null,
+      },
+    });
+    await this.prisma.auditTrail.create({
+      data: {
+        actorId: actor.id,
+        entity: 'PatientContact',
+        entityId: updated.id,
+        action: 'UPDATE',
+        before: { name: contact.name, relationship: contact.relationship, phone: contact.phone, email: contact.email, address: contact.address },
+        after: { clinicId: actor.clinicId, patientId, name: updated.name, relationship: updated.relationship, phone: updated.phone, email: updated.email, address: updated.address },
+      },
+    });
     return updated;
   }
 

@@ -6,6 +6,7 @@ interface InvoicePrintProps {
   patientName: string;
   patientPhone?: string;
   patientEmail?: string;
+  patientCompany?: string | null;
   invoiceNumber?: string;
   invoiceType: string;
   totalAmount: number;
@@ -99,6 +100,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   patientName,
   patientPhone,
   patientEmail,
+  patientCompany,
   invoiceNumber,
   invoiceType,
   totalAmount,
@@ -180,6 +182,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
           <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700 }}>{patientName}</div>
           <div style={{ fontSize: 11, color: "#6b7280" }}>{patientPhone || "-"}</div>
           <div style={{ fontSize: 11, color: "#6b7280" }}>{patientEmail || "-"}</div>
+          {patientCompany && <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: "#0D9488" }}>Entreprise abonnée : {patientCompany}</div>}
         </div>
         <div style={{ flex: 1, border: "1px solid #eee", padding: "8px" }}>
           <div style={{ fontSize: 10, fontWeight: 800, color: "#0f172a" }}>ÉTABLISSEMENT ÉMETTEUR</div>

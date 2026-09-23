@@ -77,7 +77,7 @@ export class SubscriptionsController {
   }
 
   @Post('companies/:id/monthly-invoices')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER')
   generateMonthlyInvoice(@Param('id') id: string, @Body() body: { year?: number | string; month?: number | string }, @Request() request: AuthenticatedRequest) {
     const now = new Date();
     return this.subscriptionsService.generateMonthlyInvoice(

@@ -138,6 +138,8 @@ model User {
   LeaveRequest                     LeaveRequest[]
   LoginAttempt                     LoginAttempt[]
   medicalHistoriesCreated          MedicalHistory[]                 @relation("MedicalHistoryCreatedBy")
+  deathReports                     PatientDeathRecord[]             @relation("PatientDeathReportedBy")
+  deathCertifications              PatientDeathRecord[]             @relation("PatientDeathCertifiedBy")
   notificationsSent                Notification[]                   @relation("NotificationAuthor")
   notifications                    Notification[]                   @relation("NotificationRecipient")
   parentChildLinks                 ParentChildLink[]                @relation("ParentUser")
@@ -399,6 +401,7 @@ model Patient {
   labCriticalAlerts      LabCriticalAlert[]
   labRequests            LabRequest[]
   medicalHistories       MedicalHistory[]
+  deathRecords           PatientDeathRecord[]
   notifications          Notification[]
   paramedicalVouchers    ParamedicalVoucher?
   childLinks             ParentChildLink[]          @relation("ChildPatient")
@@ -770,6 +773,33 @@ model MedicalHistory {
   version     Int       @default(1)
   createdBy   User?     @relation("MedicalHistoryCreatedBy", fields: [createdById], references: [id])
   patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+}
+
+/// A death is first reported by nursing staff, then certified exclusively by
+/// a physician.  It remains tenant-scoped and immutable after certification.
+model PatientDeathRecord {
+  id                String    @id @default(uuid())
+  clinicId          String
+  patientId         String
+  reportedById      String?
+  reportedAt        DateTime  @default(now())
+  reportNotes       String?
+  certifiedById     String?
+  certifiedAt       DateTime?
+  occurredAt        DateTime?
+  causeOfDeath      String?
+  clinicalSummary   String?
+  certificateNumber String?   @unique
+  status            String    @default("REPORTED")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  patient           Patient   @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  clinic            Clinic    @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  reportedBy        User?     @relation("PatientDeathReportedBy", fields: [reportedById], references: [id])
+  certifiedBy       User?     @relation("PatientDeathCertifiedBy", fields: [certifiedById], references: [id])
+
+  @@index([clinicId, patientId])
+  @@index([clinicId, status])
 }
 
 /// Appointments and scheduling.
@@ -1671,7 +1701,7 @@ model LabDailyStatistics {
 
 model ImagingCatalogue {
   id                      String           @id @default(uuid())
-  clinicId                String?
+  clinicId                String
   code                    String
   name                    String
   description             String?
@@ -1690,7 +1720,7 @@ model ImagingCatalogue {
   config                  Json?
   supportsContrast        Boolean          @default(false)
   modality                ImagingModality
-  clinic                  Clinic?          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  clinic                  Clinic           @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   imagingRequests         ImagingRequest[]
 
   @@unique([clinicId, code])
@@ -1994,6 +2024,7 @@ model Clinic {
   prescriptions                 Prescription[]
   medicationStocks              MedicationStock[]
   patients                      Patient[]
+  deathRecords                  PatientDeathRecord[]
   patientVisits                 PatientVisit[]
   payments                      Payment[]
   pharmacies                    Pharmacy[]

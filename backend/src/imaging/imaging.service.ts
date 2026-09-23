@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ImagingModality, ImagingRequestStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateImagingCatalogueDto } from './dto/create-imaging-catalogue.dto';
@@ -19,6 +19,16 @@ export class ImagingService {
     return this.clinicContext.requireOperationalActor({ userId: actorId });
   }
 
+  private async requireRadiologist(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    if (actor.primaryRole !== 'RADIOLOGIST') {
+      throw new ForbiddenException(
+        'Seul le radiologue peut modifier le catalogue d’imagerie de son établissement.',
+      );
+    }
+    return actor;
+  }
+
   async findAll(actorId?: string) {
     const actor = await this.requireClinic(actorId);
     return this.prisma.imagingRequest.findMany({
@@ -37,7 +47,7 @@ export class ImagingService {
   }
 
   async createCatalogue(dto: CreateImagingCatalogueDto, actorId?: string) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireRadiologist(actorId);
     const code = dto.code.trim().toUpperCase();
     const name = dto.name.trim();
     if (!code || !name) throw new BadRequestException('Le code et le nom de l examen sont requis.');
@@ -67,7 +77,7 @@ export class ImagingService {
   }
 
   async removeCatalogue(id: string, actorId?: string) {
-    const actor = await this.requireClinic(actorId);
+    const actor = await this.requireRadiologist(actorId);
     const catalogue = await this.prisma.imagingCatalogue.findFirst({
       where: { id, clinicId: actor.clinicId },
       include: { _count: { select: { imagingRequests: true } } },

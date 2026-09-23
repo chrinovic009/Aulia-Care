@@ -161,7 +161,7 @@ configureClinicLabTest(
   }
 
   @Post('settings')
-  @Roles('DEV')
+  @Roles('LAB_MANAGER')
   updateSettings(
     @Body() body: any,
     @Request() req: any,
@@ -173,7 +173,7 @@ configureClinicLabTest(
   }
 
   @Post('direct-result-authorization')
-  @Roles('DEV')
+  @Roles('LAB_MANAGER')
   setDirectResultAuthorization(
     @Body() body: any,
     @Request() req: any,
@@ -379,19 +379,19 @@ configureClinicLabTest(
    */
 
   @Post('catalogue/sections')
-  @Roles('DEV')
+  @Roles('LAB_MANAGER')
   createSection(@Body() body: CreateLabSectionDto, @Request() req: any) {
     return this.laboratoryService.createSection(body, req.user?.userId || req.user?.id);
   }
 
   @Post('catalogue/categories')
-  @Roles('DEV')
+  @Roles('LAB_MANAGER')
   createCategory(@Body() body: CreateLabCategoryDto, @Request() req: any) {
     return this.laboratoryService.createCategory(body, req.user?.userId || req.user?.id);
   }
 
   @Post('catalogue/tests')
-  @Roles('DEV')
+  @Roles('LAB_MANAGER')
   createTest(
     @Body() body: CreateLabTestDto,
     @Request() req: any,
@@ -403,31 +403,31 @@ configureClinicLabTest(
   }
 
   @Post('catalogue/test-parameters')
-  @Roles('DEV')
+  @Roles('LAB_MANAGER')
   createTestParameter(@Body() body: CreateLabTestParameterDto, @Request() req: any) {
     return this.laboratoryService.createTestParameter(body, req.user?.userId || req.user?.id);
   }
 
   @Post('catalogue/sample-types')
-  @Roles('DEV')
+  @Roles('LAB_MANAGER')
   createSampleType(@Body() body: CreateLabSampleTypeDto, @Request() req: any) {
     return this.laboratoryService.createSampleType(body, req.user?.userId || req.user?.id);
   }
 
   @Post('catalogue/sample-requirements')
-  @Roles('DEV')
+  @Roles('LAB_MANAGER')
   createSampleRequirement(@Body() body: CreateLabTestSampleRequirementDto, @Request() req: any) {
     return this.laboratoryService.createSampleRequirement(body, req.user?.userId || req.user?.id);
   }
 
   @Post('catalogue/consumables')
-  @Roles('DEV')
+  @Roles('LAB_MANAGER')
   createConsumable(@Body() body: CreateLabConsumableDto, @Request() req: any) {
     return this.laboratoryService.createConsumable(body, req.user?.userId || req.user?.id);
   }
 
   @Post('catalogue/consumable-requirements')
-  @Roles('DEV')
+  @Roles('LAB_MANAGER')
   createConsumableRequirement(@Body() body: CreateLabTestConsumableRequirementDto, @Request() req: any) {
     return this.laboratoryService.createConsumableRequirement(body, req.user?.userId || req.user?.id);
   }
@@ -444,7 +444,7 @@ configureClinicLabTest(
    */
 
   @Post('catalogue/stock')
-  @Roles('DEV')
+  @Roles('LAB_MANAGER')
   createConsumableStock(
     @Body() body: CreateLabConsumableStockDto,
     @Request() req: any,
@@ -463,7 +463,7 @@ configureClinicLabTest(
  * authentifié et refuse tout stock appartenant à une autre clinique.
  */
 @Patch('catalogue/stock/:id')
-@Roles('DEV')
+@Roles('LAB_MANAGER')
 updateConsumableStock(
   @Param('id') id: string,
   @Body()
@@ -483,7 +483,7 @@ updateConsumableStock(
 }
 
 @Patch('catalogue/:kind/:id')
-@Roles('DEV')
+@Roles('LAB_MANAGER')
 updateCatalogue(
   @Param('kind') kind: string,
   @Param('id') id: string,
@@ -518,7 +518,7 @@ updateCatalogue(
 }
 
 @Delete('catalogue/:kind/:id')
-@Roles('DEV')
+@Roles('LAB_MANAGER')
 deleteCatalogue(
   @Param('kind') kind: string,
   @Param('id') id: string,

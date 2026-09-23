@@ -5,6 +5,54 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
 
+test('corporate coverage never charges a company outside the consultation clinic', async () => {
+  const employeeQueries: Array<Record<string, unknown>> = [];
+  let chargeCreated = false;
+  let invoiceUpdated = false;
+  const service = new ConsultationsService(
+    {} as PrismaService,
+    {} as NotificationsGateway,
+    {} as PatientWorkflowService,
+  );
+
+  const handled = await (service as any).recordSubscriptionChargeForInvoice(
+    {
+      subscriptionEmployee: {
+        findFirst: async (query: Record<string, unknown>) => {
+          employeeQueries.push(query);
+          return null;
+        },
+      },
+      subscriptionCharge: {
+        create: async () => {
+          chargeCreated = true;
+        },
+      },
+      invoice: {
+        update: async () => {
+          invoiceUpdated = true;
+        },
+      },
+    },
+    'patient-a',
+    'clinic-a',
+    'invoice-a',
+    'Examen laboratoire',
+    25000,
+  );
+
+  assert.equal(handled, false);
+  assert.deepEqual(employeeQueries[0]?.where, {
+    patientId: 'patient-a',
+    deletedAt: null,
+    status: 'ACTIVE',
+    patient: { clinicId: 'clinic-a', deletedAt: null },
+    company: { clinicId: 'clinic-a', status: 'ACTIVE', deletedAt: null },
+  });
+  assert.equal(chargeCreated, false);
+  assert.equal(invoiceUpdated, false);
+});
+
 test('lab requests reject inactive tests selected by id', async () => {
   const queries: Array<Record<string, unknown>> = [];
   let labRequestCreated = false;

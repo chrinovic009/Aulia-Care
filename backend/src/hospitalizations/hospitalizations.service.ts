@@ -646,7 +646,14 @@ export class HospitalizationsService {
   async getRoomInventory(currentUser?: any) {
     const scope = await this.clinicScope(currentUser);
     const rooms = await this.prisma.room.findMany({
-      where: { serviceUnit: { clinicId: scope.patient.clinicId } },
+      where: {
+        serviceUnit: {
+          clinicId: scope.patient.clinicId,
+          category: 'OTHER_CLINICAL',
+          active: true,
+          deletedAt: null,
+        },
+      },
       include: {
         serviceUnit: true,
         beds: {

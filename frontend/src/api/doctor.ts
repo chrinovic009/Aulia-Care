@@ -52,8 +52,10 @@ export type DoctorPatientsPage = {
 export const fetchDoctorVisiblePatientsPage = (page = 1, limit = 10) =>
   apiFetch<DoctorPatientsPage>(`/patients/doctor/visible?page=${Math.max(1, page)}&limit=${Math.min(Math.max(1, limit), 25)}`);
 
-export const formatDoctorPatientName = (patient: DoctorPatient) =>
-  [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(" ");
+export const formatDoctorPatientName = (patient?: DoctorPatient | null) =>
+  patient
+    ? [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(" ") || "Patient non renseigné"
+    : "Patient non renseigné";
 
 export type AvailableMedication = {
   id: string;
@@ -104,6 +106,12 @@ export const createImagingRequest = (consultationId: string, payload: Record<str
 export const createPrescription = (consultationId: string, payload: Record<string, unknown>) =>
   apiFetch(`/consultations/${consultationId}/prescriptions`, {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const certifyPatientDeath = (patientId: string, payload: { occurredAt: string; causeOfDeath: string; clinicalSummary?: string }) =>
+  apiFetch(`/patients/${patientId}/death-certification`, {
+    method: 'POST',
     body: JSON.stringify(payload),
   });
 export const updatePrescription = (consultationId: string, prescriptionId: string, payload: Record<string, unknown>) =>

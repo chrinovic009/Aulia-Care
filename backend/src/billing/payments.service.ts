@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, AuditAction, PatientWorkflowStatus, PaymentMethod, RoleSlug } from '@prisma/client';
+import { Prisma, AuditAction, InvoiceType, PatientWorkflowStatus, PaymentMethod, RoleSlug } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -58,6 +58,17 @@ export class PaymentsService {
 
     if (invoice.status === 'PAID') {
       throw new BadRequestException('Cette facture est déjà payée.');
+    }
+
+    // A monthly corporate statement can only be settled during the two days
+    // preceding its contractual deadline. This is server-side so a forged
+    // request cannot bypass the cashier UI.
+    if (invoice.type === InvoiceType.SUBSCRIPTION_MONTHLY && invoice.dueDate) {
+      const paymentWindowStartsAt = new Date(invoice.dueDate);
+      paymentWindowStartsAt.setDate(paymentWindowStartsAt.getDate() - 2);
+      if (new Date() < paymentWindowStartsAt) {
+        throw new ForbiddenException('Le règlement entreprise est disponible deux jours avant son échéance.');
+      }
     }
 
     const amount = Number(createPaymentDto.amount);

@@ -506,13 +506,17 @@ export class SubscriptionsService {
     const total = charges.reduce((sum, item) => sum + Number(item.amount), 0);
     const anchorPatient = charges.find((item) => item.patientId)?.patientId;
     if (!anchorPatient) throw new BadRequestException('Impossible de générer une facture sans patient rattaché.');
-    const dueDate = new Date(year, month, 0);
+    // The company term is counted from issuance so every invoice carries its
+    // own contractual deadline instead of inheriting a global calendar day.
+    const issuedAt = new Date();
+    const dueDate = new Date(issuedAt);
+    dueDate.setDate(dueDate.getDate() + (company.billingDay || 30));
     const result = await this.prisma.$transaction(async (tx) => {
       const existingMonthly = await tx.monthlySubscriptionInvoice.findFirst({ where: { companyId: company.id, year, month, deletedAt: null }, select: { id: true } });
       if (existingMonthly) throw new BadRequestException('La facture mensuelle de cette période existe déjà.');
       const invoice = await tx.invoice.create({
         data: { patientId: anchorPatient, issuedById: actor.id, clinicId: actor.clinicId, type: InvoiceType.SUBSCRIPTION_MONTHLY,
-          status: 'ISSUED', issuedAt: new Date(), totalAmount: total, balanceDue: total, dueDate,
+          status: 'ISSUED', issuedAt, totalAmount: total, balanceDue: total, dueDate,
           remarks: `Facture mensuelle ${company.name} - ${String(month).padStart(2, '0')}/${year}` },
       });
       await tx.invoiceLine.createMany({ data: charges.map((charge) => ({ invoiceId: invoice.id, serviceId: charge.serviceId || null,

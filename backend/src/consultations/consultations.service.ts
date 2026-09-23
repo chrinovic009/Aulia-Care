@@ -24,13 +24,20 @@ export class ConsultationsService {
   private async recordSubscriptionChargeForInvoice(
     tx: any,
     patientId: string,
+    clinicId: string,
     invoiceId: string,
     label: string,
     amount: number,
     serviceId?: string | null,
   ) {
     const employee = await tx.subscriptionEmployee.findFirst({
-      where: { patientId, deletedAt: null, status: 'ACTIVE', company: { status: 'ACTIVE', deletedAt: null } },
+      where: {
+        patientId,
+        deletedAt: null,
+        status: 'ACTIVE',
+        patient: { clinicId, deletedAt: null },
+        company: { clinicId, status: 'ACTIVE', deletedAt: null },
+      },
       include: { company: true },
     });
     if (!employee) return false;
@@ -966,6 +973,7 @@ export class ConsultationsService {
         await this.recordSubscriptionChargeForInvoice(
           tx,
           consultation.patientId,
+          consultation.clinicId,
           invoice.id,
           newLabTests.length > 1
             ? `Examens laboratoire - ${label}`
@@ -1112,6 +1120,7 @@ export class ConsultationsService {
         await this.recordSubscriptionChargeForInvoice(
           tx,
           consultation.patientId,
+          consultation.clinicId,
           invoice.id,
           `Examen d'imagerie - ${imagingCatalogue.name}`,
           price,
@@ -1271,6 +1280,38 @@ export class ConsultationsService {
 
     // Toutes les nouvelles factures ont été prises en charge par abonnement.
     // Les services concernés peuvent traiter immédiatement les demandes.
+    const receptionists = await this.prisma.user.findMany({
+      where: {
+        clinicId,
+        status: 'ACTIVE',
+        deletedAt: null,
+        OR: [
+          { primaryRole: 'RECEPTIONIST' as any },
+          { roles: { some: { role: { slug: 'RECEPTIONIST' as any } } } },
+        ],
+      },
+      select: { id: true },
+    });
+    const labels = materialized.map((invoice) => invoice.label).join(', ');
+    const receptionNotifications = await Promise.all(receptionists.map((user) =>
+      this.prisma.notification.create({
+        data: {
+          recipientId: user.id,
+          patientId,
+          type: 'SYSTEM',
+          status: 'UNREAD',
+          priority: 'MEDIUM',
+          title: 'Examens pris en charge par abonnement',
+          message: `${labels} est transmis directement au service concerné ; le montant est ajouté à la facture entreprise.`,
+          relatedEntity: 'Invoice',
+          relatedId: materialized[0]?.invoiceId,
+        },
+      }),
+    ));
+    receptionNotifications.forEach((notification) =>
+      this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification),
+    );
+
     const hasLab = materialized.some(
       (invoice) => invoice.kind === 'LABORATORY',
     );
@@ -1440,6 +1481,7 @@ export class ConsultationsService {
       const handledBySubscription = await this.recordSubscriptionChargeForInvoice(
         tx,
         consultation.patientId,
+        consultation.clinicId,
         invoice.id,
         selectedLabTests.length > 1 ? `Examens laboratoire - ${requestLabel}` : `Examen laboratoire - ${requestLabel}`,
         examPriceTotal,
@@ -1495,10 +1537,18 @@ export class ConsultationsService {
         });
       }
 
-      return { ...created, invoice, labTests: selectedLabTests, labTest: selectedLabTests[0] };
+      return {
+        ...created,
+        invoice,
+        labTests: selectedLabTests,
+        labTest: selectedLabTests[0],
+        handledBySubscription,
+      };
     });
 
-    const cashiers = await this.prisma.user.findMany({
+    const cashiers = request.handledBySubscription
+      ? []
+      : await this.prisma.user.findMany({
       where: {
         clinicId,
         OR: [
@@ -1506,7 +1556,7 @@ export class ConsultationsService {
           { roles: { some: { role: { slug: 'CASHIER' as any } } } },
         ],
       },
-    });
+      });
 
     const requestLabel = request.labTests?.length
       ? request.labTests.map((labTest: any) => labTest.name).join(', ')
@@ -1534,7 +1584,44 @@ export class ConsultationsService {
     notifications.forEach((notification) => {
       this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification);
     });
-    this.notificationsGateway.notify('patient.updated', { id: consultation.patientId, workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT });
+    if (request.handledBySubscription) {
+      const receptionists = await this.prisma.user.findMany({
+        where: {
+          clinicId,
+          status: 'ACTIVE',
+          deletedAt: null,
+          OR: [
+            { primaryRole: 'RECEPTIONIST' as any },
+            { roles: { some: { role: { slug: 'RECEPTIONIST' as any } } } },
+          ],
+        },
+        select: { id: true },
+      });
+      const receptionNotifications = await Promise.all(receptionists.map((user) =>
+        this.prisma.notification.create({
+          data: {
+            recipientId: user.id,
+            patientId: consultation.patientId,
+            type: 'SYSTEM',
+            status: 'UNREAD',
+            priority: 'MEDIUM',
+            title: 'Examen pris en charge par abonnement',
+            message: `${requestLabel} est transmis directement au laboratoire ; son montant est ajouté à la facture entreprise.`,
+            relatedEntity: 'LabRequest',
+            relatedId: request.id,
+          },
+        }),
+      ));
+      receptionNotifications.forEach((notification) =>
+        this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification),
+      );
+    }
+    this.notificationsGateway.notify('patient.updated', {
+      id: consultation.patientId,
+      workflowStatus: request.handledBySubscription
+        ? PatientWorkflowStatus.EN_LABORATOIRE
+        : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+    });
     this.notificationsGateway.notify('invoice.created', request.invoice);
 
     return request;
@@ -1698,6 +1785,7 @@ export class ConsultationsService {
       const handledBySubscription = await this.recordSubscriptionChargeForInvoice(
         tx,
         consultation.patientId,
+        consultation.clinicId,
         invoice.id,
         `Examen d'imagerie - ${requestLabel}`,
         price,
@@ -1745,10 +1833,12 @@ export class ConsultationsService {
         },
       });
 
-      return { ...created, invoice };
+      return { ...created, invoice, handledBySubscription };
     });
 
-    const cashiers = await this.prisma.user.findMany({
+    const cashiers = request.handledBySubscription
+      ? []
+      : await this.prisma.user.findMany({
       where: {
         clinicId,
         OR: [
@@ -1756,7 +1846,7 @@ export class ConsultationsService {
           { roles: { some: { role: { slug: 'CASHIER' as any } } } },
         ],
       },
-    });
+      });
 
     const requestLabel = request.imagingCatalogue?.name || 'examen d imagerie';
     const notificationMessage = `Valider ${requestLabel} pour ${consultation.patient.firstName} ${consultation.patient.lastName}: ${Number(request.invoice.totalAmount).toLocaleString('fr-FR')} CDF.`;
@@ -1783,9 +1873,41 @@ export class ConsultationsService {
     notifications.forEach((notification) => {
       this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification);
     });
+    if (request.handledBySubscription) {
+      const receptionists = await this.prisma.user.findMany({
+        where: {
+          clinicId,
+          status: 'ACTIVE',
+          deletedAt: null,
+          OR: [
+            { primaryRole: 'RECEPTIONIST' as any },
+            { roles: { some: { role: { slug: 'RECEPTIONIST' as any } } } },
+          ],
+        },
+        select: { id: true },
+      });
+      const receptionNotifications = await Promise.all(receptionists.map((user) =>
+        this.prisma.notification.create({
+          data: {
+            recipientId: user.id,
+            patientId: consultation.patientId,
+            type: 'SYSTEM',
+            status: 'UNREAD',
+            priority: 'MEDIUM',
+            title: 'Examen pris en charge par abonnement',
+            message: `${requestLabel} est transmis directement à l’imagerie ; son montant est ajouté à la facture entreprise.`,
+            relatedEntity: 'ImagingRequest',
+            relatedId: request.id,
+          },
+        }),
+      ));
+      receptionNotifications.forEach((notification) =>
+        this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification),
+      );
+    }
     this.notificationsGateway.notify('patient.updated', {
       id: consultation.patientId,
-      workflowStatus: request.invoice.status === 'PAID'
+      workflowStatus: request.handledBySubscription
         ? PatientWorkflowStatus.EN_RADIOLOGIE
         : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
     });
@@ -1928,6 +2050,7 @@ export class ConsultationsService {
       const handledBySubscription = await this.recordSubscriptionChargeForInvoice(
         tx,
         consultation.patientId,
+        consultation.clinicId,
         invoice.id,
         `Prescription ${prescription.id}`,
         total,

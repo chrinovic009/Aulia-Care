@@ -19,6 +19,9 @@ import { Roles } from '../auth/roles.decorator';
 import { CreateAdmissionDto } from './dto/create-admission.dto';
 import { RecordVitalSignsDto } from './dto/record-vital-signs.dto';
 import { CreateDailyCheckinDto } from './dto/create-daily-checkin.dto';
+import { UpsertPatientContactDto } from './dto/upsert-patient-contact.dto';
+import { ReportPatientDeathDto } from './dto/report-patient-death.dto';
+import { CertifyPatientDeathDto } from './dto/certify-patient-death.dto';
 import { AuthenticatedActor } from '../core/clinic-context.service';
 import { AuliaLayer } from '@prisma/client';
 import { RequireLayer } from '../platform/layers/require-layer.decorator';
@@ -154,6 +157,26 @@ export class PatientsController {
     );
   }
 
+  @Post(':id/death-report')
+  @Roles('NURSE')
+  reportDeath(
+    @Param('id') id: string,
+    @Body() dto: ReportPatientDeathDto,
+    @Request() req: PatientRequest,
+  ) {
+    return this.patientsService.reportPatientDeath(id, dto, req.user);
+  }
+
+  @Post(':id/death-certification')
+  @Roles('PHYSICIAN')
+  certifyDeath(
+    @Param('id') id: string,
+    @Body() dto: CertifyPatientDeathDto,
+    @Request() req: PatientRequest,
+  ) {
+    return this.patientsService.certifyPatientDeath(id, dto, req.user);
+  }
+
   @Get(':id')
   @Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
   findOne(
@@ -200,6 +223,27 @@ export class PatientsController {
       updatePatientDto,
       req.user,
     );
+  }
+
+  @Post(':id/family-contacts')
+  @Roles('ADMIN', 'RECEPTIONIST')
+  createFamilyContact(
+    @Param('id') id: string,
+    @Body() dto: UpsertPatientContactDto,
+    @Request() req: PatientRequest,
+  ) {
+    return this.patientsService.createFamilyContact(id, dto, req.user);
+  }
+
+  @Patch(':id/family-contacts/:contactId')
+  @Roles('ADMIN', 'RECEPTIONIST')
+  updateFamilyContact(
+    @Param('id') id: string,
+    @Param('contactId') contactId: string,
+    @Body() dto: UpsertPatientContactDto,
+    @Request() req: PatientRequest,
+  ) {
+    return this.patientsService.updateFamilyContact(id, contactId, dto, req.user);
   }
 
   @Delete(':id')
