@@ -261,6 +261,24 @@ const parseSuccessfulResponse = async <T>(
  * - API error normalization
  * - safe parsing of empty responses
  */
+let refreshInFlight: Promise<boolean> | null = null;
+
+const refreshSessionOnce = (): Promise<boolean> => {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(buildUrl("/auth/refresh"), {
+      method: "POST",
+      credentials: "include",
+      headers: getAuthHeaders(),
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+};
+
 export const apiFetch = async <T = any>(
   endpoint: string,
   options?: RequestInit,
@@ -325,17 +343,7 @@ export const apiFetch = async <T = any>(
       response.status === 401 &&
       canRefresh
     ) {
-      const refresh = await fetch(
-        buildUrl("/auth/refresh"),
-        {
-          method: "POST",
-          credentials: "include",
-          headers: getAuthHeaders(),
-          signal: controller.signal,
-        },
-      );
-
-      if (refresh.ok) {
+      if (await refreshSessionOnce()) {
         response = await execute(
           requestHeaders(),
         );

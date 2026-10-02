@@ -6,6 +6,7 @@ import {
   RoleSlug,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { CreateHospitalizationDto } from './dto/create-hospitalization.dto';
 import { UpdateHospitalizationDto } from './dto/update-hospitalization.dto';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -46,12 +47,12 @@ export class HospitalizationsService {
     patient: true,
     ServiceUnit: { include: { department: true } },
     bed: { include: { room: { include: { serviceUnit: true } } } },
-    physician: true,
-    nurseInCharge: true,
-    nurseAssignments: { include: { nurse: true } },
+    physician: { select: PUBLIC_USER_SELECT },
+    nurseInCharge: { select: PUBLIC_USER_SELECT },
+    nurseAssignments: { include: { nurse: { select: PUBLIC_USER_SELECT } } },
     Consultation: {
       include: {
-        provider: true,
+        provider: { select: PUBLIC_USER_SELECT },
         prescriptions: { include: { lineItems: { include: { medication: true } } } },
         labRequests: { include: { results: true } },
       },
@@ -365,8 +366,8 @@ export class HospitalizationsService {
         ...this.hospitalizationInclude,
         patient: {
           include: {
-            vitalSigns: { orderBy: { recordedAt: 'desc' }, take: 20, include: { recordedBy: true } },
-            medicalHistories: { orderBy: { eventDate: 'desc' }, take: 50, include: { createdBy: true } },
+            vitalSigns: { orderBy: { recordedAt: 'desc' }, take: 20, include: { recordedBy: { select: PUBLIC_USER_SELECT } } },
+            medicalHistories: { orderBy: { eventDate: 'desc' }, take: 50, include: { createdBy: { select: PUBLIC_USER_SELECT } } },
           },
         },
       },
@@ -523,7 +524,7 @@ export class HospitalizationsService {
         }),
         createdById: userId || null,
       },
-      include: { createdBy: true },
+      include: { createdBy: { select: PUBLIC_USER_SELECT } },
     });
 
     if (kind === 'NURSE_PROBLEM') {
@@ -557,7 +558,7 @@ export class HospitalizationsService {
       if (!assignment) throw new BadRequestException('L’infirmier choisi n’est pas affecté à cette hospitalisation.');
     }
     if (dto.prescriptionLineId) {
-      const line = await this.prisma.prescriptionLine.findFirst({ where: { id: dto.prescriptionLineId, prescription: { patientId: hospitalization.patientId } } });
+      const line = await this.prisma.prescriptionLine.findFirst({ where: { id: dto.prescriptionLineId, prescription: { patientId: hospitalization.patientId, clinicId: hospitalization.clinicId, status: { in: ['PRESCRIBED', 'PARTIALLY_DISPENSED', 'DISPENSED'] }, deletedAt: null } } });
       if (!line) throw new BadRequestException('La ligne de prescription ne correspond pas au patient hospitalisé.');
     }
     return this.prisma.nursingCareTask.create({
@@ -570,7 +571,7 @@ export class HospitalizationsService {
     const access = await this.buildNurseAccess(hospitalization, userId);
     if (!access.canWrite || !userId) throw new ForbiddenException('Administration non autorisée pour cette hospitalisation.');
     await this.auditAutomaticNurseRelay(hospitalization, userId, access, 'MEDICATION_ADMINISTRATION_RECORDED');
-    const line = await this.prisma.prescriptionLine.findFirst({ where: { id: dto.prescriptionLineId, prescription: { patientId: hospitalization.patientId, status: { in: ['PRESCRIBED', 'PARTIALLY_DISPENSED'] } } } });
+    const line = await this.prisma.prescriptionLine.findFirst({ where: { id: dto.prescriptionLineId, deletedAt: null, prescription: { patientId: hospitalization.patientId, clinicId: hospitalization.clinicId, status: { in: ['PRESCRIBED', 'PARTIALLY_DISPENSED', 'DISPENSED'] }, deletedAt: null } } });
     if (!line) throw new BadRequestException('Prescription active introuvable pour ce patient.');
     if (dto.status !== 'ADMINISTERED' && !dto.reason?.trim()) throw new BadRequestException('Un motif est obligatoire pour une dose refusée, suspendue ou manquée.');
     const now = new Date();

@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { BedStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { UpdateClinicBrandingDto } from './dto/update-clinic-branding.dto';
 import { UpdateClinicOperationalPolicyDto } from './dto/update-clinic-operational-policy.dto';
 import { CreateRoomDto, UpdateRoomDto } from './dto/room.dto';
@@ -310,7 +311,7 @@ export class AdministrationService {
           },
         },
         Employee: true,
-        departmentResponsabilites: { include: { user: true } },
+        departmentResponsabilites: { include: { user: { select: PUBLIC_USER_SELECT } } },
       },
       orderBy: { name: 'asc' },
     });
@@ -627,7 +628,7 @@ export class AdministrationService {
         include: {
           medication: true,
           lot: true,
-          performedBy: true,
+          performedBy: { select: PUBLIC_USER_SELECT },
         },
         orderBy: {
           createdAt: 'desc',
@@ -963,7 +964,7 @@ export class AdministrationService {
           deletedAt: null,
           createdAt: { gte: startOfToday, lt: startOfTomorrow },
         },
-        include: { patient: true, provider: true },
+        include: { patient: true, provider: { select: PUBLIC_USER_SELECT } },
         orderBy: { createdAt: 'desc' },
       }),
       (this.prisma as any).hospitalization.findMany({
@@ -995,7 +996,7 @@ export class AdministrationService {
       (this.prisma as any).stockLot.findMany({ where: { clinicId: actor.clinicId }, include: { medication: true } }),
       (this.prisma as any).consultation.findMany({
         where: { clinicId: actor.clinicId, deletedAt: null },
-        include: { patient: true, provider: true },
+        include: { patient: true, provider: { select: PUBLIC_USER_SELECT } },
         orderBy: { createdAt: 'desc' },
         take: 20,
       }),

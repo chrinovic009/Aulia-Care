@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { parseClockTime, resolveNursePatientCapacity } from '../core/operational-policy';
 import { clinicDate, clinicDateFromSerial, clinicDaySerial, clinicMinuteOfDay, clinicWallClockToUtc } from '../core/clinic-time';
 
@@ -49,10 +50,10 @@ export class NurseSchedulingService {
     const clock = await this.shiftClockForUser(userId);
     const registeredShift = await this.prisma.shift.findFirst({
       where: { startAt: { lte: now }, endAt: { gte: now }, employee: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) } },
-      include: { employee: { include: { user: true, serviceUnit: true } } }, orderBy: { startAt: 'desc' },
+      include: { employee: { include: { user: { select: PUBLIC_USER_SELECT }, serviceUnit: true } } }, orderBy: { startAt: 'desc' },
     });
     if (registeredShift) return registeredShift;
-    const employee = await this.prisma.employee.findFirst({ where: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) }, include: { user: true, serviceUnit: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) }, include: { user: { select: PUBLIC_USER_SELECT }, serviceUnit: true } });
     if (!employee || employee.shiftPattern === 'MANUAL') return null;
     const today = clinicDate(now, clock.timezone);
     const todaySerial = clinicDaySerial(today);
@@ -92,9 +93,9 @@ export class NurseSchedulingService {
     const endClock = coverage === 'DAY' ? clock.dayEnd : clock.nightEnd;
     const start = clinicWallClockToUtc(day, startClock.hour, startClock.minute, clock.timezone);
     const end = clinicWallClockToUtc(coverage === 'DAY' ? day : clinicDateFromSerial(daySerial + 1), endClock.hour, endClock.minute, clock.timezone);
-    const explicit = await this.prisma.shift.findFirst({ where: { employee: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) }, startAt: { lte: start }, endAt: { gte: end } }, include: { employee: { include: { user: true, serviceUnit: true } } }, orderBy: { startAt: 'desc' } });
+    const explicit = await this.prisma.shift.findFirst({ where: { employee: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) }, startAt: { lte: start }, endAt: { gte: end } }, include: { employee: { include: { user: { select: PUBLIC_USER_SELECT }, serviceUnit: true } } }, orderBy: { startAt: 'desc' } });
     if (explicit) return explicit;
-    const employee = await this.prisma.employee.findFirst({ where: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) }, include: { user: true, serviceUnit: true } });
+    const employee = await this.prisma.employee.findFirst({ where: { userId, status: 'ACTIVE', ...(serviceUnitId ? { OR: [{ serviceUnitId }, { serviceUnitId: null }] } : {}) }, include: { user: { select: PUBLIC_USER_SELECT }, serviceUnit: true } });
     if (!employee || employee.shiftPattern === 'MANUAL') return null;
     if (employee.shiftPattern === 'PERMANENT_DAY') {
       if (coverage !== 'DAY') return null;

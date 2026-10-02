@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ServiceCategory } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { ClinicContextService } from '../core/clinic-context.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
@@ -186,8 +187,8 @@ export class ServicesService {
       where: { clinicId: actor.clinicId, active: true },
       include: {
         tarifs: { where: { actif: true }, orderBy: { dateDebut: 'desc' } },
-        responsables: { where: { actif: true, user: { clinicId: actor.clinicId } }, include: { user: true } },
-        staff: { where: { actif: true, user: { clinicId: actor.clinicId } }, include: { user: true } },
+        responsables: { where: { actif: true, user: { clinicId: actor.clinicId } }, include: { user: { select: PUBLIC_USER_SELECT } } },
+        staff: { where: { actif: true, user: { clinicId: actor.clinicId } }, include: { user: { select: PUBLIC_USER_SELECT } } },
       },
       orderBy: { name: 'asc' },
       }),
@@ -210,8 +211,8 @@ export class ServicesService {
       where: { id, clinicId: actor.clinicId },
       include: {
         tarifs: true,
-        responsables: { where: { user: { clinicId: actor.clinicId } }, include: { user: true } },
-        staff: { where: { user: { clinicId: actor.clinicId } }, include: { user: true } },
+        responsables: { where: { user: { clinicId: actor.clinicId } }, include: { user: { select: PUBLIC_USER_SELECT } } },
+        staff: { where: { user: { clinicId: actor.clinicId } }, include: { user: { select: PUBLIC_USER_SELECT } } },
       },
     });
     if (!svc) throw new NotFoundException('Service introuvable');

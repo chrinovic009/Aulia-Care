@@ -1,7 +1,8 @@
 // backend/src/consultations/consultations.services.ts
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreateConsultationDto } from './dto/create-consultation.dto';
 import { OpenPatientConsultationDto } from './dto/open-patient-consultation.dto';
@@ -276,10 +277,10 @@ export class ConsultationsService {
       },
       include: {
         patient: true,
-        provider: true,
+        provider: { select: PUBLIC_USER_SELECT },
         prescriptions: {
           include: {
-            prescriber: true,
+            prescriber: { select: PUBLIC_USER_SELECT },
             lineItems: {
               include: {
                 medication: true,
@@ -287,7 +288,7 @@ export class ConsultationsService {
             },
             pharmacyDispenses: {
               include: {
-                dispensedBy: true,
+                dispensedBy: { select: PUBLIC_USER_SELECT },
                 lines: {
                   include: {
                     medication: true,
@@ -399,12 +400,12 @@ export class ConsultationsService {
       where: { id },
       include: {
         patient: true,
-        provider: true,
+        provider: { select: PUBLIC_USER_SELECT },
         prescriptions: {
           include: {
-            prescriber: true,
+            prescriber: { select: PUBLIC_USER_SELECT },
             lineItems: { include: { medication: true } },
-            pharmacyDispenses: { include: { dispensedBy: true, lines: { include: { medication: true } } } },
+            pharmacyDispenses: { include: { dispensedBy: { select: PUBLIC_USER_SELECT }, lines: { include: { medication: true } } } },
           },
         },
       },
@@ -680,7 +681,7 @@ export class ConsultationsService {
             : normalizedStatus,
           version: { increment: 1 },
         } as any,
-        include: { patient: true, provider: true },
+        include: { patient: true, provider: { select: PUBLIC_USER_SELECT } },
       });
 
       let materialized: Array<{
@@ -1449,7 +1450,7 @@ export class ConsultationsService {
           notes: dto.notes || null,
           status: 'AWAITING_PAYMENT',
         },
-        include: { patient: true, requestedBy: true, consultation: true, results: true },
+        include: { patient: true, requestedBy: { select: PUBLIC_USER_SELECT }, consultation: true, results: true },
       });
 
       const invoice = await tx.invoice.create({
@@ -1756,7 +1757,7 @@ export class ConsultationsService {
           scheduledAt,
           status,
         },
-        include: { patient: true, requestedBy: true, consultation: true, imagingCatalogue: true, report: true },
+        include: { patient: true, requestedBy: { select: PUBLIC_USER_SELECT }, consultation: true, imagingCatalogue: true, report: true },
       });
 
       const invoice = await tx.invoice.create({
@@ -2017,7 +2018,7 @@ export class ConsultationsService {
             })),
           },
         },
-        include: { lineItems: { include: { medication: true } }, patient: true, prescriber: true },
+        include: { lineItems: { include: { medication: true } }, patient: true, prescriber: { select: PUBLIC_USER_SELECT } },
       });
 
       const invoice = await tx.invoice.create({
@@ -2026,6 +2027,8 @@ export class ConsultationsService {
           issuedById: actorId,
           clinicId,
           type: 'PHARMACY',
+          prescriptionId: prescription.id,
+          prescriptionVersion: prescription.version,
           status: 'PENDING',
           totalAmount: total,
           balanceDue: total,
@@ -2093,6 +2096,28 @@ export class ConsultationsService {
     if (!prescription || prescription.consultationId !== consultationId) {
       throw new NotFoundException('Prescription introuvable pour cette consultation.');
     }
+    if (prescription.clinicId !== consultation.clinicId || prescription.patientId !== consultation.patientId) {
+      throw new NotFoundException('Prescription introuvable dans cet établissement.');
+    }
+
+    // An invoice snapshots the prescribed lines. Until a versioned financial
+    // replacement workflow exists, never mutate those lines behind a cashier's
+    // back (including when the invoice is only partially paid).
+    const billedInvoice = await this.prisma.invoice.findFirst({
+      where: {
+        clinicId: prescription.clinicId,
+        patientId: prescription.patientId,
+        type: 'PHARMACY',
+        OR: [
+          { prescriptionId: prescription.id },
+          { prescriptionId: null, remarks: `Prescription:${prescription.id}` },
+        ],
+      },
+      select: { id: true },
+    });
+    if (billedInvoice) {
+      throw new ConflictException('Cette ordonnance est déjà facturée. Une modification exige un remplacement clinique et financier tracé.');
+    }
 
     const now = new Date();
     const createdAt = new Date(prescription.createdAt);
@@ -2133,6 +2158,14 @@ export class ConsultationsService {
     });
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.medicalHistory.create({
+        data: {
+          patientId: prescription.patientId,
+          kind: 'PRESCRIPTION_VERSION_REPLACED',
+          details: JSON.stringify({ prescriptionId, previousVersion: prescription.version, instruction: prescription.instruction, lines: prescription.lineItems }),
+          createdById: actorId,
+        },
+      });
       await tx.prescriptionLine.deleteMany({ where: { prescriptionId } });
       await tx.prescription.update({
         where: { id: prescriptionId },
@@ -2152,7 +2185,7 @@ export class ConsultationsService {
             })),
           },
         },
-        include: { lineItems: { include: { medication: true } }, patient: true, prescriber: true, consultation: true },
+        include: { lineItems: { include: { medication: true } }, patient: true, prescriber: { select: PUBLIC_USER_SELECT }, consultation: true },
       });
 
       return { updated: true, prescriptionId };

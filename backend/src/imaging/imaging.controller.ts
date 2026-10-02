@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CreateImagingCatalogueDto } from './dto/create-imaging-catalogue.dto';
+import { AmendImagingReportDto } from './dto/amend-imaging-report.dto';
 import { AuthenticatedActor } from '../core/clinic-context.service';
 
 interface AuthenticatedRequest {
@@ -70,8 +71,14 @@ export class ImagingController {
   }
 
   @Post(':id/report')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')
+  @Roles('RADIOLOGIST')
   saveReport(@Param('id') id: string, @Body() body: { findings: string; impression: string; recommendations?: string; verified?: boolean }, @Request() req: AuthenticatedRequest) {
     return this.imagingService.saveReport(id, body, req.user?.userId);
+  }
+
+  @Post(':id/report/amendments')
+  @Roles('RADIOLOGIST')
+  amendReport(@Param('id') id: string, @Body() body: AmendImagingReportDto, @Request() req: AuthenticatedRequest) {
+    return this.imagingService.amendReport(id, body, req.user?.userId || req.user?.id);
   }
 }

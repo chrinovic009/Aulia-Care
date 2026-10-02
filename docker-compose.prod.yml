@@ -120,6 +120,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      AULIA_ENABLE_DIAGNOSTIC_AGENT: ${AULIA_ENABLE_DIAGNOSTIC_AGENT:-true}
+      AULIA_ENABLE_CONNECTED_CARE: ${AULIA_ENABLE_CONNECTED_CARE:-true}
 
     depends_on:
       migration:

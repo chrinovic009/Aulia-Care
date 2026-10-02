@@ -151,12 +151,13 @@ test(
         },
       });
 
-      const labSection = await prisma.labSection.create({ data: { name: `Lab ${suffix}` } });
+      const labSection = await prisma.labSection.create({ data: { clinicId: clinic.id, name: `Lab ${suffix}` } });
       const labCategory = await prisma.labCategory.create({
-        data: { sectionId: labSection.id, name: `Bio ${suffix}`, code: `BIO-${suffix}` },
+        data: { clinicId: clinic.id, sectionId: labSection.id, name: `Bio ${suffix}`, code: `BIO-${suffix}` },
       });
       const labTest = await prisma.labTest.create({
         data: {
+          clinicId: clinic.id,
           sectionId: labSection.id,
           categoryId: labCategory.id,
           code: `GLU-${suffix}`,
@@ -166,6 +167,7 @@ test(
       });
       const labParameter = await prisma.labTestParameter.create({
         data: {
+          clinicId: clinic.id,
           labTestId: labTest.id,
           code: `GLU-P-${suffix}`,
           name: 'Glycémie',
@@ -206,6 +208,7 @@ test(
           batchNumber: `LOT-${suffix}`,
           quantity: 100,
           purchasePrice: 500,
+          expiryDate: new Date(Date.now() + 365 * 86_400_000),
         },
       });
       const operatingRoom = await prisma.operatingRoom.create({
@@ -341,6 +344,13 @@ test(
         .send({ lines: [{ medicationId: medication.id, dosage: '500 mg', quantity: 2, durationDays: 1 }] })
         .expect(201);
       const prescriptionId = prescription.body.prescription.id as string;
+      assert.equal(prescription.body.invoice.prescriptionId, prescriptionId);
+      assert.equal(prescription.body.invoice.prescriptionVersion, prescription.body.prescription.version);
+      await request(server)
+        .patch(`/api/consultations/${consultationId}/prescriptions/${prescriptionId}`)
+        .set('Cookie', physicianCookies)
+        .send({ lines: [{ medicationId: medication.id, dosage: '1 g', quantity: 1, durationDays: 1 }] })
+        .expect(409);
       await request(server)
         .post('/api/payments')
         .set('Cookie', cashierCookies)

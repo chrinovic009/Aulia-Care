@@ -1,3 +1,6 @@
+// Optional module membership is decided while this file is evaluated, before
+// ConfigModule.forRoot() runs. Load the same local environment first.
+import 'dotenv/config';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';

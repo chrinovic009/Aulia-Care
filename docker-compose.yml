@@ -70,6 +70,8 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3000
+      AULIA_ENABLE_DIAGNOSTIC_AGENT: ${AULIA_ENABLE_DIAGNOSTIC_AGENT:-true}
+      AULIA_ENABLE_CONNECTED_CARE: ${AULIA_ENABLE_CONNECTED_CARE:-true}
 
       # Never point a container at the host loopback interface: inside Docker
       # it would refer to the backend container itself. These URLs use service

@@ -230,7 +230,6 @@ export function ClinicalConsultationWorkspace({
       impact: "",
     });
 
-  if (!patient) return null;
   useEffect(() => {
     if (mode === "EMERGENCY") setStep(4);
   }, [mode]);
@@ -241,13 +240,14 @@ export function ClinicalConsultationWorkspace({
   const vitalMap = useMemo(
     () =>
       new Map(
-        (patient.vitalSigns || []).map((v) => [
+        (patient?.vitalSigns || []).map((v) => [
           v.type,
           `${v.value}${v.unit ? ` ${v.unit}` : ""}`,
         ]),
       ),
-    [patient.vitalSigns],
+    [patient?.vitalSigns],
   );
+  if (!patient) return null;
   const rawHeight = parseNumber(vitalMap.get("HEIGHT"));
   const height = rawHeight > 3 ? rawHeight / 100 : rawHeight;
   const weight = parseNumber(vitalMap.get("WEIGHT"));

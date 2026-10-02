@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UnauthorizedException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -89,31 +90,106 @@ test('five failed PIN attempts preserve the evidence and lock the account for fi
   assert.ok(userUpdates[1]?.pinLockedUntil instanceof Date);
 });
 
-test('reusing a consumed refresh token revokes the server session', async () => {
-  const replayedToken = 'consumed-refresh-token';
-  const oldHash = await bcrypt.hash(replayedToken, 10);
-  const currentHash = await bcrypt.hash('current-refresh-token', 10);
-  let revoked: Record<string, unknown> | undefined;
-  const prisma = {
+const fingerprint = (token: string) => `sha256:${createHash('sha256').update(token).digest('hex')}`;
+
+function refreshFixture(initialToken: string, initialHash = fingerprint(initialToken)) {
+  const jwt = new JwtService();
+  const history: string[] = [];
+  const session = {
+    id: 'session-1', userId: 'user-1', tokenHash: initialHash,
+    status: 'ACTIVE', expiresAt: new Date(Date.now() + 60_000),
+    revocationReason: null as string | null,
+  };
+  const user = {
+    id: 'user-1', email: 'user@example.test', username: 'user-1',
+    primaryRole: 'NURSE', status: 'ACTIVE', deletedAt: null,
+  };
+  const database = {
     session: {
-      findFirst: async () => ({ id: 'session-1', tokenHash: currentHash }),
-      update: async ({ data }: { data: Record<string, unknown> }) => {
-        revoked = data;
-        return {};
+      findFirst: async () => session.status === 'ACTIVE' && session.expiresAt > new Date() ? { ...session } : null,
+      updateMany: async ({ where, data }: {
+        where: { tokenHash?: string; status?: string };
+        data: { tokenHash?: string; status?: string; revocationReason?: string };
+      }) => {
+        if (where.status && where.status !== session.status) return { count: 0 };
+        if (where.tokenHash && where.tokenHash !== session.tokenHash) return { count: 0 };
+        if (data.tokenHash) session.tokenHash = data.tokenHash;
+        if (data.status) session.status = data.status;
+        if (data.revocationReason) session.revocationReason = data.revocationReason;
+        return { count: 1 };
       },
     },
     sessionRefreshTokenHistory: {
-      findMany: async () => [{ tokenHash: oldHash }],
+      findFirst: async ({ where }: { where: { tokenHash: string } }) =>
+        history.includes(where.tokenHash) ? { id: 'consumed' } : null,
+      create: async ({ data }: { data: { tokenHash: string } }) => {
+        history.push(data.tokenHash);
+        return { id: 'consumed' };
+      },
     },
+    user: { findUnique: async () => user },
     auditTrail: { create: async () => ({}) },
+    $transaction: async (callback: (tx: typeof database) => Promise<unknown>) => callback(database),
   };
+  const service = new AuthService(database as unknown as PrismaService, jwt, configuration);
+  return { jwt, service, session, user, history };
+}
 
-  await assert.rejects(
-    () => makeService(prisma).refreshAccessToken(replayedToken),
-    (error: unknown) => error instanceof UnauthorizedException,
+function signedRefresh(jwt: JwtService, jti: string) {
+  return jwt.sign(
+    { sub: 'user-1', email: 'user@example.test', username: 'user-1', role: 'NURSE', type: 'refresh', sid: 'session-1', jti },
+    { secret: 'test-secret', expiresIn: '7d' },
   );
-  assert.equal(revoked?.status, 'REVOKED');
-  assert.equal(revoked?.revocationReason, 'REFRESH_TOKEN_REUSE');
+}
+
+test('rotates a signed refresh token and records its full-token fingerprint', async () => {
+  const jwt = new JwtService();
+  const token = signedRefresh(jwt, 'first');
+  const fixture = refreshFixture(token);
+  const rotated = await fixture.service.refreshAccessToken(token);
+  assert.ok(rotated.accessToken);
+  assert.notEqual(rotated.refreshToken, token);
+  assert.equal(fixture.history[0], fingerprint(token));
+  assert.equal(fixture.session.tokenHash, fingerprint(rotated.refreshToken));
+});
+
+test('reusing a signed consumed refresh token revokes the session', async () => {
+  const jwt = new JwtService();
+  const token = signedRefresh(jwt, 'first');
+  const fixture = refreshFixture(token);
+  await fixture.service.refreshAccessToken(token);
+  await assert.rejects(() => fixture.service.refreshAccessToken(token), UnauthorizedException);
+  assert.equal(fixture.session.status, 'REVOKED');
+  assert.equal(fixture.session.revocationReason, 'REFRESH_TOKEN_REUSE');
+});
+
+test('different signed JWTs with the same first 72 bytes cannot share a session', async () => {
+  const jwt = new JwtService();
+  const first = signedRefresh(jwt, 'aaaaaaaa-aaaaaaaa');
+  const second = signedRefresh(jwt, 'bbbbbbbb-bbbbbbbb');
+  assert.equal(first.slice(0, 72), second.slice(0, 72));
+  const fixture = refreshFixture(first);
+  await assert.rejects(() => fixture.service.refreshAccessToken(second), UnauthorizedException);
+  assert.equal(fixture.session.status, 'ACTIVE');
+});
+
+test('simultaneous signed refresh attempts cannot both rotate one token', async () => {
+  const jwt = new JwtService();
+  const token = signedRefresh(jwt, 'concurrent');
+  const fixture = refreshFixture(token);
+  const outcomes = await Promise.allSettled([
+    fixture.service.refreshAccessToken(token), fixture.service.refreshAccessToken(token),
+  ]);
+  assert.equal(outcomes.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(outcomes.filter((result) => result.status === 'rejected').length, 1);
+});
+
+test('legacy bcrypt refresh hash requires reconnection', async () => {
+  const jwt = new JwtService();
+  const token = signedRefresh(jwt, 'legacy');
+  const fixture = refreshFixture(token, await bcrypt.hash(token, 10));
+  await assert.rejects(() => fixture.service.refreshAccessToken(token), UnauthorizedException);
+  assert.equal(fixture.session.revocationReason, 'LEGACY_REFRESH_HASH');
 });
 
 test('profile updates persist trimmed phone and bio instead of dropping them', async () => {

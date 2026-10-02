@@ -143,7 +143,7 @@ test(
             clinicId: clinicA.id,
             departmentId: departmentA.id,
             name: `Unité A ${suffix}`,
-            category: ServiceCategory.CONSULTATION,
+            category: ServiceCategory.OTHER_CLINICAL,
           },
         }),
         prisma.serviceUnit.create({
@@ -151,7 +151,7 @@ test(
             clinicId: clinicB.id,
             departmentId: departmentB.id,
             name: `Unité B ${suffix}`,
-            category: ServiceCategory.CONSULTATION,
+            category: ServiceCategory.OTHER_CLINICAL,
           },
         }),
       ]);
@@ -226,10 +226,11 @@ test(
       });
 
       const labSection = await prisma.labSection.create({
-        data: { name: `Section ${suffix}` },
+        data: { clinicId: clinicA.id, name: `Section ${suffix}` },
       });
       const labCategory = await prisma.labCategory.create({
         data: {
+          clinicId: clinicA.id,
           sectionId: labSection.id,
           name: `Catégorie ${suffix}`,
           code: `CAT-${suffix}`,
@@ -237,6 +238,7 @@ test(
       });
       const labTest = await prisma.labTest.create({
         data: {
+          clinicId: clinicA.id,
           code: `LAB-${suffix}`,
           name: `Examen ${suffix}`,
           categoryId: labCategory.id,
@@ -246,6 +248,7 @@ test(
       });
       const labParameter = await prisma.labTestParameter.create({
         data: {
+          clinicId: clinicA.id,
           labTestId: labTest.id,
           code: `P-${suffix}`,
           name: 'Paramètre critique E2E',
@@ -348,7 +351,7 @@ test(
           bedId: bedA.id,
           admissionReason: 'Surveillance postopératoire',
         })
-        .expect(201);
+        .expect((response) => assert.equal(response.status, 201, JSON.stringify(response.body)));
 
       await request(server)
         .patch(`/api/hospitalizations/${hospitalization.body.id}`)

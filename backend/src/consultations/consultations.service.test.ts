@@ -4,6 +4,42 @@ import { ConsultationsService } from './consultations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
+import { CreatePrescriptionDto } from './dto/create-prescription.dto';
+
+test('a billed prescription cannot be rewritten behind an invoice or payment', async () => {
+  let transactionStarted = false;
+  const service = new ConsultationsService(
+    {
+      prescription: { findUnique: async () => ({
+        id: 'prescription-a', consultationId: 'consultation-a', patientId: 'patient-a', clinicId: 'clinic-a',
+        createdAt: new Date(), status: 'PRESCRIBED', pharmacyDispenses: [], lineItems: [],
+      }) },
+      invoice: { findFirst: async (query: Record<string, unknown>) => {
+        assert.deepEqual(query.where, {
+          clinicId: 'clinic-a', patientId: 'patient-a', type: 'PHARMACY',
+          OR: [
+            { prescriptionId: 'prescription-a' },
+            { prescriptionId: null, remarks: 'Prescription:prescription-a' },
+          ],
+        });
+        return { id: 'invoice-a' };
+      } },
+      $transaction: async () => { transactionStarted = true; },
+    } as unknown as PrismaService,
+    {} as NotificationsGateway,
+    {} as PatientWorkflowService,
+  );
+  Object.defineProperty(service, 'findOne', { value: async () => ({
+    id: 'consultation-a', providerId: 'physician-a', clinicId: 'clinic-a', patientId: 'patient-a',
+  }) });
+  Object.defineProperty(service, 'ensureWriteAccess', { value: async () => undefined });
+
+  await assert.rejects(
+    service.updatePrescription('consultation-a', 'prescription-a', { lines: [] } as CreatePrescriptionDto, 'physician-a'),
+    /déjà facturée/,
+  );
+  assert.equal(transactionStarted, false);
+});
 
 test('corporate coverage never charges a company outside the consultation clinic', async () => {
   const employeeQueries: Array<Record<string, unknown>> = [];

@@ -8,7 +8,7 @@
     "build": "vite build --config vite.config.ts",
     "preview": "vite preview --config vite.config.ts",
     "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -b tsconfig.app.json tsconfig.node.json --pretty false",
     "test": "tsx --test src/**/*.test.ts",
     "test:unit": "tsx --test src/**/*.test.ts"
   },

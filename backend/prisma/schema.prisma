@@ -112,6 +112,7 @@ model User {
   roomAssignments                  RoomStaffAssignment[]
   imagingReportsInterpreted        ImagingReport[]                  @relation("ImagingReportInterpreter")
   imagingReportsRadiologist        ImagingReport[]                  @relation("ImagingReportRadiologist")
+  imagingReportAmendments           ImagingReportAmendment[]         @relation("ImagingReportAmendmentAuthor")
   imagingRequestsRequested         ImagingRequest[]                 @relation("ImagingRequestRequester")
   imagingRequestsTechnician        ImagingRequest[]                 @relation("ImagingRequestTechnician")
   InsuranceAuthorization           InsuranceAuthorization[]
@@ -993,6 +994,7 @@ model Prescription {
   sourceNode        String?
   version           Int                @default(1)
   pharmacyDispenses PharmacyDispense[]
+  billingInvoices   Invoice[]
   consultation      Consultation       @relation(fields: [consultationId], references: [id], onDelete: Cascade)
   patient           Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
   clinic            Clinic             @relation(fields: [clinicId], references: [id], onDelete: Restrict)
@@ -1177,6 +1179,7 @@ model PharmacyDispense {
   dispensedBy    User?                  @relation("PharmacyDispenseDispenser", fields: [dispensedById], references: [id])
   prescription   Prescription           @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
   lines          PharmacyDispenseLine[]
+  stockTransactions StockTransaction[]
 
   @@index([clinicId])
 }
@@ -1816,8 +1819,29 @@ model ImagingReport {
   imagingRequest        ImagingRequest @relation(fields: [imagingRequestId], references: [id], onDelete: Cascade)
   interpretedBy         User?          @relation("ImagingReportInterpreter", fields: [interpretedById], references: [id])
   radiologist           User?          @relation("ImagingReportRadiologist", fields: [radiologistId], references: [id])
+  amendments            ImagingReportAmendment[]
 
   @@index([radiologistId])
+}
+
+/// A verified report is immutable. Corrections are append-only amendments.
+model ImagingReportAmendment {
+  id              String        @id @default(uuid())
+  reportId        String
+  clinicId        String
+  authorId        String
+  version         Int
+  reason          String
+  findings        String
+  impression      String
+  recommendations String?
+  createdAt       DateTime      @default(now())
+  report          ImagingReport @relation(fields: [reportId], references: [id], onDelete: Restrict)
+  clinic          Clinic        @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  author          User          @relation("ImagingReportAmendmentAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@unique([reportId, version])
+  @@index([clinicId, createdAt])
 }
 
 /// Surgery and bloc operatoire.
@@ -1938,8 +1962,11 @@ model Invoice {
   sourceNode                  String?
   version                     Int                          @default(1)
   clinicId                    String
+  prescriptionId              String?
+  prescriptionVersion         Int?
   InsuranceClaim              InsuranceClaim[]
   clinic                      Clinic                       @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  prescription                Prescription?                @relation(fields: [prescriptionId], references: [id], onDelete: Restrict)
   issuedBy                    User?                        @relation("InvoiceIssuer", fields: [issuedById], references: [id])
   patient                     Patient                      @relation(fields: [patientId], references: [id], onDelete: Cascade)
   discountRequests            InvoiceDiscountRequest[]
@@ -1952,6 +1979,7 @@ model Invoice {
 
   @@index([status])
   @@index([clinicId])
+  @@index([prescriptionId, prescriptionVersion])
 }
 
 model Payment {
@@ -2018,6 +2046,7 @@ model Clinic {
   invoices                      Invoice[]
   hospitalizations              Hospitalization[]
   imagingRequests               ImagingRequest[]
+  imagingReportAmendments        ImagingReportAmendment[]
   labRequests                   LabRequest[]
   consultations                 Consultation[]
   appointments                  Appointment[]
@@ -3025,14 +3054,17 @@ model StockTransaction {
   reference     String?
   performedById String?
   clinicId      String
+  pharmacyDispenseId String?
   createdAt     DateTime   @default(now())
   clinic        Clinic     @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   lot           StockLot?  @relation(fields: [lotId], references: [id])
   medication    Medication @relation(fields: [medicationId], references: [id])
   performedBy   User?      @relation(fields: [performedById], references: [id])
+  pharmacyDispense PharmacyDispense? @relation(fields: [pharmacyDispenseId], references: [id], onDelete: Restrict)
 
   @@index([clinicId])
   @@index([medicationId, createdAt])
+  @@index([pharmacyDispenseId])
 }
 
 model Employee {

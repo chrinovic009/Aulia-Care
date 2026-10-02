@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ClinicContextService } from '../core/clinic-context.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { CreateSurgeryDto } from './dto/create-surgery.dto';
 import { UpsertSurgerySafetyChecklistDto } from './dto/upsert-surgery-safety-checklist.dto';
 
@@ -21,10 +22,10 @@ export class SurgeryService {
       where: { deletedAt: null, patient: { clinicId: actor.clinicId } },
       include: {
         patient: true,
-        consultation: { include: { provider: true } },
+        consultation: { include: { provider: { select: PUBLIC_USER_SELECT } } },
         operatingRoom: true,
-        surgeon: true,
-        anesthesiologist: true,
+        surgeon: { select: PUBLIC_USER_SELECT },
+        anesthesiologist: { select: PUBLIC_USER_SELECT },
       },
       orderBy: [{ scheduledAt: 'asc' }, { createdAt: 'desc' }],
     });
@@ -104,7 +105,7 @@ export class SurgeryService {
           status: 'PLANNED',
           postoperativePlan: data.postoperativePlan || null,
         },
-        include: { patient: true, operatingRoom: true, surgeon: true, consultation: true },
+        include: { patient: true, operatingRoom: true, surgeon: { select: PUBLIC_USER_SELECT }, consultation: true },
       });
       await tx.medicalHistory.create({
         data: {
@@ -129,7 +130,7 @@ export class SurgeryService {
     const actor = await this.requireClinic(actorId);
     const surgery = await this.prisma.surgery.findFirst({
       where: { id, deletedAt: null, patient: { clinicId: actor.clinicId } },
-      include: { patient: true, consultation: true, operatingRoom: true, surgeon: true, anesthesiologist: true },
+      include: { patient: true, consultation: true, operatingRoom: true, surgeon: { select: PUBLIC_USER_SELECT }, anesthesiologist: { select: PUBLIC_USER_SELECT } },
     });
     if (!surgery) throw new NotFoundException('Intervention chirurgicale introuvable dans cet établissement.');
     return surgery;

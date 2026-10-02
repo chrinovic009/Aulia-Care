@@ -2,6 +2,7 @@
 
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ClinicContextService } from '../core/clinic-context.service';
 
@@ -164,8 +165,8 @@ export class LaboratoryService {
       },
       include: {
         patient: true,
-        requestedBy: true,
-        consultation: { include: { provider: true } },
+        requestedBy: { select: PUBLIC_USER_SELECT },
+        consultation: { include: { provider: { select: PUBLIC_USER_SELECT } } },
         items: {
           include: {
             labTest: {
@@ -190,12 +191,12 @@ export class LaboratoryService {
                 },
               },
             },
-            assignedTo: true,
+            assignedTo: { select: PUBLIC_USER_SELECT },
             samples: { include: { labSampleType: true } },
-            results: { include: { parameters: { include: { labTestParameter: true } }, reportedBy: true } },
+            results: { include: { parameters: { include: { labTestParameter: true } }, reportedBy: { select: PUBLIC_USER_SELECT } } },
           },
         },
-        results: { include: { reportedBy: true }, orderBy: { reportedAt: 'desc' } },
+        results: { include: { reportedBy: { select: PUBLIC_USER_SELECT } }, orderBy: { reportedAt: 'desc' } },
       },
       orderBy: { requestedAt: 'desc' },
     });
@@ -207,8 +208,8 @@ export class LaboratoryService {
       where: { id, clinicId: actor.clinicId, deletedAt: null },
       include: {
         patient: true,
-        requestedBy: true,
-        consultation: { include: { provider: true } },
+        requestedBy: { select: PUBLIC_USER_SELECT },
+        consultation: { include: { provider: { select: PUBLIC_USER_SELECT } } },
         items: {
           include: {
             labTest: {
@@ -233,12 +234,12 @@ export class LaboratoryService {
                 },
               },
             },
-            assignedTo: true,
+            assignedTo: { select: PUBLIC_USER_SELECT },
             samples: { include: { labSampleType: true } },
-            results: { include: { parameters: { include: { labTestParameter: true } }, reportedBy: true } },
+            results: { include: { parameters: { include: { labTestParameter: true } }, reportedBy: { select: PUBLIC_USER_SELECT } } },
           },
         },
-        results: { include: { reportedBy: true }, orderBy: { reportedAt: 'desc' } },
+        results: { include: { reportedBy: { select: PUBLIC_USER_SELECT } }, orderBy: { reportedAt: 'desc' } },
       },
     });
     if (!request) {
@@ -538,9 +539,9 @@ export class LaboratoryService {
         where: visibilityWhere,
         include: {
           patient: true,
-          requestedBy: true,
-          consultation: { include: { provider: true } },
-          items: { include: { labTest: true, assignedTo: true } },
+          requestedBy: { select: PUBLIC_USER_SELECT },
+          consultation: { include: { provider: { select: PUBLIC_USER_SELECT } } },
+          items: { include: { labTest: true, assignedTo: { select: PUBLIC_USER_SELECT } } },
           samples: { include: { labSampleType: true } },
           results: true,
         },
@@ -557,7 +558,7 @@ export class LaboratoryService {
           assignedToId: { not: null },
           labRequest: visibilityWhere,
         },
-        include: { assignedTo: true, labTest: true, labRequest: { include: { patient: true } } },
+        include: { assignedTo: { select: PUBLIC_USER_SELECT }, labTest: true, labRequest: { include: { patient: true } } },
       }),
       this.technicianDirectReleaseEnabled(actor.clinicId),
     ]);
@@ -823,7 +824,7 @@ export class LaboratoryService {
         },
       },
       include: {
-        assignedTo: true,
+        assignedTo: { select: PUBLIC_USER_SELECT },
         results: true,
       },
     });
@@ -1085,7 +1086,7 @@ export class LaboratoryService {
       this.prisma.labRequestItem.findMany({
         where: { deletedAt: null, assignedToId: { not: null }, labRequest: visibilityWhere },
         include: {
-          assignedTo: true,
+          assignedTo: { select: PUBLIC_USER_SELECT },
           labRequest: { include: { patient: true } },
           labTest: true,
           results: true,
@@ -1095,7 +1096,7 @@ export class LaboratoryService {
       this.prisma.labRequestEvent.findMany({
         where: { labRequestItemId: { not: null }, labRequest: visibilityWhere },
         include: {
-          performedBy: true,
+          performedBy: { select: PUBLIC_USER_SELECT },
           labRequest: { include: { patient: true } },
           labRequestItem: { include: { labTest: true } },
         },
@@ -1360,7 +1361,7 @@ export class LaboratoryService {
     const actor = await this.requireClinic(currentUser?.userId || currentUser?.id);
     const item = await this.prisma.labRequestItem.findFirst({
       where: { id: itemId, labRequest: { clinicId: actor.clinicId, deletedAt: null } },
-      include: { labRequest: true, assignedTo: true },
+      include: { labRequest: true, assignedTo: { select: PUBLIC_USER_SELECT } },
     });
     if (!item) throw new NotFoundException('Analyse introuvable dans cet établissement.');
 
@@ -1674,17 +1675,17 @@ export class LaboratoryService {
       },
       include: {
         patient: true,
-        consultation: { include: { provider: true } },
+        consultation: { include: { provider: { select: PUBLIC_USER_SELECT } } },
         items: {
           include: {
             labTest: true,
-            assignedTo: true,
+            assignedTo: { select: PUBLIC_USER_SELECT },
             results: {
               include: {
-                reportedBy: true,
+                reportedBy: { select: PUBLIC_USER_SELECT },
                 parameters: { include: { labTestParameter: true } },
-                technicalValidatedBy: true,
-                biologicalValidatedBy: true,
+                technicalValidatedBy: { select: PUBLIC_USER_SELECT },
+                biologicalValidatedBy: { select: PUBLIC_USER_SELECT },
               },
             },
           },
@@ -1692,9 +1693,9 @@ export class LaboratoryService {
         results: {
           include: {
             parameters: { include: { labTestParameter: true } },
-            reportedBy: true,
-            technicalValidatedBy: true,
-            biologicalValidatedBy: true,
+            reportedBy: { select: PUBLIC_USER_SELECT },
+            technicalValidatedBy: { select: PUBLIC_USER_SELECT },
+            biologicalValidatedBy: { select: PUBLIC_USER_SELECT },
           },
         },
       },
@@ -2088,7 +2089,7 @@ export class LaboratoryService {
     const technicianDirectRelease = await this.technicianDirectReleaseEnabled(actor.clinicId);
     const recipientId = request.requestedById || request.consultation?.providerId;
     const itemForResult = dto.labRequestItemId
-      ? await this.prisma.labRequestItem.findFirst({ where: { id: dto.labRequestItemId, labRequestId: request.id }, include: { assignedTo: true } })
+      ? await this.prisma.labRequestItem.findFirst({ where: { id: dto.labRequestItemId, labRequestId: request.id }, include: { assignedTo: { select: PUBLIC_USER_SELECT } } })
       : null;
     const reporter = reportedById
       ? await this.prisma.user.findFirst({ where: { id: reportedById, clinicId: actor.clinicId, status: 'ACTIVE', deletedAt: null }, select: { primaryRole: true } })

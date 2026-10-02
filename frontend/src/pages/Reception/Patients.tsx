@@ -454,19 +454,6 @@ export default function ReceptionPatients() {
           setPatients([]);
           setSelectedPatientId("");
         }
-        // After loading, ensure ages are synchronized with birthDate and persist to DB if mismatch
-        try {
-          for (const p of (ps && ps.length > 0 ? (ps as any[]) : [])) {
-            const normalizedP = ensurePatientDefaults(p);
-            const calc = computeAgeFromBirthDate(normalizedP.birthDate);
-            if (calc && calc !== normalizedP.age) {
-              // update backend record age (best-effort, cast to any to allow flexible payload)
-              try {
-                await updatePatientRecord({ id: normalizedP.id, age: calc } as any);
-              } catch {}
-            }
-          }
-        } catch {}
       } catch (e) {
         // backend error: leave list empty and no selection
         setPatients([]);
@@ -509,32 +496,6 @@ export default function ReceptionPatients() {
       showActionFeedback({ kind: "success", title: "Contact familial enregistré", message: "Le contact est conservé dans le dossier patient et toute correction est tracée." });
     } catch (error) {
       showActionFeedback({ kind: "error", title: "Contact non enregistré", message: error instanceof Error ? error.message : "Le serveur a refusé la modification. Aucun changement local n’a été conservé." });
-    }
-  };
-
-  const handleAddContact = async (contact: FamilyContact) => {
-    if (!selectedPatient?.id) return alert('Aucun patient sélectionné');
-    try {
-      // Backend does not expose a contacts array; persist into emergencyContact/Phone as best-effort
-      const payload: any = { id: selectedPatient.id };
-      if (!selectedPatient.emergencyContact) payload.emergencyContact = contact.name;
-      if (!selectedPatient.emergencyPhone) payload.emergencyPhone = contact.phone;
-      const bothExist = selectedPatient.emergencyContact && selectedPatient.emergencyPhone;
-      if (bothExist) {
-        alert("Le backend actuel ne prend en charge qu'un contact d'urgence. Contactez l'administrateur pour ajouter plusieurs contacts. Le contact sera ajouté localement en attendant.");
-      }
-      if (Object.keys(payload).length > 1) {
-        await updatePatientRecord(payload as any);
-      }
-      // update local UI list for immediate feedback
-      setPatients((prev) => prev.map((p) => (p.id === selectedPatient.id ? { ...p, family: [...p.family, contact], emergencyContact: payload.emergencyContact ?? p.emergencyContact, emergencyPhone: payload.emergencyPhone ?? p.emergencyPhone } : p)));
-      setShowAddContactModal(false);
-      return;
-    } catch (e) {
-      console.error('Failed to save contact to backend', e);
-      // fallback: local update
-      setPatients((prev) => prev.map((p) => (p.id === selectedPatient.id ? { ...p, family: [...p.family, contact] } : p)));
-      setShowAddContactModal(false);
     }
   };
 

@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, AuditAction, InvoiceType, PatientWorkflowStatus, PaymentMethod, RoleSlug } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import * as bcrypt from 'bcrypt';
@@ -32,7 +33,7 @@ export class PaymentsService {
   async createPayment(createPaymentDto: CreatePaymentDto, actorId?: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: createPaymentDto.invoiceId },
-      include: { patient: { include: { service: { include: { responsables: { where: { actif: true }, include: { user: true } }, staff: { where: { actif: true }, include: { user: true } } } } } } },
+      include: { patient: { include: { service: { include: { responsables: { where: { actif: true }, include: { user: { select: PUBLIC_USER_SELECT } } }, staff: { where: { actif: true }, include: { user: { select: PUBLIC_USER_SELECT } } } } } } } },
     });
 
     if (!invoice) {
@@ -89,11 +90,11 @@ export class PaymentsService {
                 include: {
                   responsables: {
                     where: { actif: true },
-                    include: { user: true },
+                    include: { user: { select: PUBLIC_USER_SELECT } },
                   },
                   staff: {
                     where: { actif: true },
-                    include: { user: true },
+                    include: { user: { select: PUBLIC_USER_SELECT } },
                   },
                 },
               },
@@ -215,7 +216,7 @@ export class PaymentsService {
           },
           include: {
             patient: true,
-            requestedBy: true,
+            requestedBy: { select: PUBLIC_USER_SELECT },
             items: { include: { labTest: true } },
           },
         });
@@ -236,7 +237,7 @@ export class PaymentsService {
               },
               include: {
                 patient: true,
-                requestedBy: true,
+                requestedBy: { select: PUBLIC_USER_SELECT },
                 items: { include: { labTest: true } },
               },
             });
@@ -249,7 +250,7 @@ export class PaymentsService {
             data: { status: 'REQUESTED', receivedAt: null },
             include: {
               patient: true,
-              requestedBy: true,
+              requestedBy: { select: PUBLIC_USER_SELECT },
               items: { include: { labTest: true } },
             },
           });

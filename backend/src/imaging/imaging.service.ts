@@ -1,6 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ImagingModality, ImagingRequestStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { CreateImagingCatalogueDto } from './dto/create-imaging-catalogue.dto';
 import { ClinicContextService } from '../core/clinic-context.service';
 
@@ -33,7 +34,7 @@ export class ImagingService {
     const actor = await this.requireClinic(actorId);
     return this.prisma.imagingRequest.findMany({
       where: { deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
-      include: { patient: true, requestedBy: true, consultation: true, report: true, machine: true, imagingCatalogue: true },
+      include: { patient: true, requestedBy: { select: PUBLIC_USER_SELECT }, consultation: true, report: { include: { amendments: { include: { author: { select: PUBLIC_USER_SELECT } }, orderBy: { version: 'asc' } } } }, machine: true, imagingCatalogue: true },
       orderBy: [{ urgency: 'desc' }, { createdAt: 'asc' }],
     });
   }
@@ -123,7 +124,7 @@ export class ImagingService {
     const actor = await this.requireClinic(actorId);
     const imagingRequest = await this.prisma.imagingRequest.findFirst({
       where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
-      include: { patient: true, requestedBy: true, consultation: true, report: true, machine: true, imagingCatalogue: true },
+      include: { patient: true, requestedBy: { select: PUBLIC_USER_SELECT }, consultation: true, report: { include: { amendments: { include: { author: { select: PUBLIC_USER_SELECT } }, orderBy: { version: 'asc' } } } }, machine: true, imagingCatalogue: true },
     });
     if (!imagingRequest) {
       throw new NotFoundException("Demande d'imagerie introuvable");
@@ -366,22 +367,73 @@ export class ImagingService {
   }
 
   async saveReport(id: string, body: { findings: string; impression: string; recommendations?: string; verified?: boolean }, interpretedById?: string) {
-    const actor = await this.requireClinic(interpretedById);
+    const actor = await this.requireRadiologist(interpretedById);
     await this.findOne(id, actor.id);
     await this.assertRequestPaid(id, actor.clinicId);
     if (!body.findings?.trim() || !body.impression?.trim()) throw new BadRequestException('Les constatations et la conclusion sont obligatoires.');
     return this.prisma.$transaction(async (tx) => {
-      const report = await tx.imagingReport.upsert({
-        where: { imagingRequestId: id },
-        create: { imagingRequestId: id, interpretedById: interpretedById || null, findings: body.findings.trim(), impression: body.impression.trim(), recommendations: body.recommendations?.trim() || null, verified: Boolean(body.verified), verifiedAt: body.verified ? new Date() : null },
-        update: { interpretedById: interpretedById || undefined, findings: body.findings.trim(), impression: body.impression.trim(), recommendations: body.recommendations?.trim() || null, verified: Boolean(body.verified), verifiedAt: body.verified ? new Date() : null },
-      });
+      // Serialize report creation, draft edits and verification for this request.
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "ImagingRequest" WHERE id = ${id} FOR UPDATE`);
+      const existing = await tx.imagingReport.findUnique({ where: { imagingRequestId: id } });
+      if (existing?.verified) {
+        throw new ConflictException('Ce compte rendu est vérifié. Utilisez un avenant motivé.');
+      }
+      const data = {
+        interpretedById: actor.id,
+        findings: body.findings.trim(),
+        impression: body.impression.trim(),
+        recommendations: body.recommendations?.trim() || null,
+        verified: Boolean(body.verified),
+        verifiedAt: body.verified ? new Date() : null,
+      };
+      const report = existing
+        ? await tx.imagingReport.update({ where: { id: existing.id }, data: { ...data, version: { increment: 1 } } })
+        : await tx.imagingReport.create({ data: { imagingRequestId: id, ...data } });
       const mutation = await tx.imagingRequest.updateMany({
         where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
         data: { status: body.verified ? 'VERIFIED' : 'COMPLETED', completedAt: new Date() },
       });
       if (mutation.count !== 1) throw new NotFoundException("Demande d'imagerie introuvable");
       return report;
+    });
+  }
+
+  async amendReport(id: string, body: { reason: string; findings: string; impression: string; recommendations?: string; expectedVersion: number }, authorId?: string) {
+    const actor = await this.requireRadiologist(authorId);
+    if (!body.reason?.trim() || !body.findings?.trim() || !body.impression?.trim()) {
+      throw new BadRequestException('Motif, constatations et conclusion sont obligatoires.');
+    }
+    if (!Number.isSafeInteger(body.expectedVersion) || body.expectedVersion < 1) {
+      throw new BadRequestException('Version attendue invalide.');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "ImagingRequest" WHERE id = ${id} FOR UPDATE`);
+      const request = await tx.imagingRequest.findFirst({
+        where: { id, clinicId: actor.clinicId, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+        select: { report: { select: { id: true, version: true, verified: true } } },
+      });
+      if (!request) throw new NotFoundException("Demande d'imagerie introuvable dans cet établissement.");
+      if (!request.report?.verified) throw new ConflictException('Seul un rapport vérifié peut recevoir un avenant.');
+      if (request.report.version !== body.expectedVersion) throw new ConflictException('Le compte rendu a changé. Rechargez sa version avant de créer un avenant.');
+      const version = request.report.version + 1;
+      const mutation = await tx.imagingReport.updateMany({
+        where: { id: request.report.id, version: body.expectedVersion, verified: true },
+        data: { version },
+      });
+      if (mutation.count !== 1) throw new ConflictException('Modification concurrente du compte rendu.');
+      return tx.imagingReportAmendment.create({
+        data: {
+          reportId: request.report.id,
+          clinicId: actor.clinicId,
+          authorId: actor.id,
+          version,
+          reason: body.reason.trim(),
+          findings: body.findings.trim(),
+          impression: body.impression.trim(),
+          recommendations: body.recommendations?.trim() || null,
+        },
+        include: { author: { select: PUBLIC_USER_SELECT } },
+      });
     });
   }
 

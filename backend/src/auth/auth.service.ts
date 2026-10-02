@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
@@ -80,11 +80,21 @@ export class AuthService {
       role: user.primaryRole,
       type: 'refresh',
       sid: sessionId,
+      jti: randomUUID(),
     };
     return this.jwtService.sign(payload as any, {
       secret: this.refreshTokenSecret,
       expiresIn: this.refreshTokenExpires,
     } as any);
+  }
+
+  private refreshFingerprint(token: string) {
+    return `sha256:${createHash('sha256').update(token, 'utf8').digest('hex')}`;
+  }
+
+  private fingerprintMatches(left: string, right: string) {
+    if (!/^sha256:[a-f0-9]{64}$/.test(right)) return false;
+    return timingSafeEqual(Buffer.from(left), Buffer.from(right));
   }
 
   async login(user: { id: string; email: string; username: string; displayName: string; primaryRole: string | null; status?: string }) {
@@ -100,7 +110,7 @@ export class AuthService {
           userId: user.id,
           // The raw token is never persisted.  A hash is sufficient for an
           // auditable session trail and future selective revocation.
-          tokenHash: await bcrypt.hash(refreshToken, 10),
+          tokenHash: this.refreshFingerprint(refreshToken),
           lastSeenAt: now,
           expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
         },
@@ -229,7 +239,7 @@ export class AuthService {
       });
 
       // Vérifier que c'est bien un refresh token
-      if (payload.type !== 'refresh') {
+      if (payload.type !== 'refresh' || typeof payload.sub !== 'string') {
         throw new UnauthorizedException('Invalid token type');
       }
 
@@ -241,18 +251,25 @@ export class AuthService {
       if (!session) {
         throw new UnauthorizedException('Session refresh révoquée ou expirée');
       }
-      const currentTokenMatches = await bcrypt.compare(token, session.tokenHash);
-      if (!currentTokenMatches) {
-        const consumedTokens = await this.prisma.sessionRefreshTokenHistory.findMany({
-          where: { sessionId },
-          select: { tokenHash: true },
-          orderBy: { consumedAt: 'desc' },
-          take: 50,
+      // Legacy bcrypt hashes cannot safely identify the entire JWT. Require a
+      // fresh login rather than interpreting them as full-token fingerprints.
+      if (!/^sha256:[a-f0-9]{64}$/.test(session.tokenHash)) {
+        await this.prisma.session.updateMany({
+          where: { id: sessionId, userId: payload.sub, status: 'ACTIVE', tokenHash: session.tokenHash },
+          data: { status: 'REVOKED', revokedAt: new Date(), revocationReason: 'LEGACY_REFRESH_HASH' },
         });
-        const replayed = (await Promise.all(consumedTokens.map((entry) => bcrypt.compare(token, entry.tokenHash)))).some(Boolean);
+        throw new UnauthorizedException('Reconnexion requise');
+      }
+
+      const fingerprint = this.refreshFingerprint(token);
+      const currentTokenMatches = this.fingerprintMatches(fingerprint, session.tokenHash);
+      if (!currentTokenMatches) {
+        const replayed = await this.prisma.sessionRefreshTokenHistory.findFirst({
+          where: { sessionId, tokenHash: fingerprint }, select: { id: true },
+        });
         if (replayed) {
-          await this.prisma.session.update({
-            where: { id: sessionId },
+          await this.prisma.session.updateMany({
+            where: { id: sessionId, userId: payload.sub, status: 'ACTIVE' },
             data: { status: 'REVOKED', revokedAt: new Date(), revocationReason: 'REFRESH_TOKEN_REUSE' },
           });
           await this.audit(payload.sub, 'AUTH_SESSION', sessionId, { event: 'REFRESH_REUSE_DETECTED' });
@@ -269,10 +286,30 @@ export class AuthService {
 
       const accessToken = this.signAccessToken(user, sessionId);
       const refreshToken = this.signRefreshToken(user, sessionId);
-      await this.prisma.$transaction([
-        this.prisma.sessionRefreshTokenHistory.create({ data: { sessionId, tokenHash: session.tokenHash } }),
-        this.prisma.session.update({ where: { id: sessionId }, data: { tokenHash: await bcrypt.hash(refreshToken, 10), lastSeenAt: new Date() } }),
-      ]);
+      const rotated = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.session.updateMany({
+          where: { id: sessionId, userId: user.id, status: 'ACTIVE', tokenHash: fingerprint, expiresAt: { gt: new Date() } },
+          data: { tokenHash: this.refreshFingerprint(refreshToken), lastSeenAt: new Date() },
+        });
+        if (updated.count !== 1) return false;
+        await tx.sessionRefreshTokenHistory.create({ data: { sessionId, tokenHash: fingerprint } });
+        return true;
+      });
+      if (!rotated) {
+        // Another request consumed this token first. Confirm that history was
+        // committed before treating it as reuse and revoking the session.
+        const consumed = await this.prisma.sessionRefreshTokenHistory.findFirst({
+          where: { sessionId, tokenHash: fingerprint }, select: { id: true },
+        });
+        if (consumed) {
+          await this.prisma.session.updateMany({
+            where: { id: sessionId, userId: user.id, status: 'ACTIVE' },
+            data: { status: 'REVOKED', revokedAt: new Date(), revocationReason: 'REFRESH_TOKEN_REUSE' },
+          });
+          await this.audit(user.id, 'AUTH_SESSION', sessionId, { event: 'REFRESH_REUSE_DETECTED' });
+        }
+        throw new UnauthorizedException('Session refresh révoquée ou expirée');
+      }
       return { accessToken, refreshToken };
     } catch (error) {
       throw new UnauthorizedException('Invalid refresh token');

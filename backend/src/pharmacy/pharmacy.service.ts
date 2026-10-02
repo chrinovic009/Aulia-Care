@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PatientWorkflowStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { ClinicContextService } from '../core/clinic-context.service';
 
 @Injectable()
@@ -55,11 +56,14 @@ export class PharmacyService {
 
   async findAvailable(actorId?: string) {
     const actor = await this.requireClinic(actorId);
+    const todayUtc = new Date();
+    todayUtc.setUTCHours(0, 0, 0, 0);
+    const eligibleLot = { clinicId: actor.clinicId, quantity: { gt: 0 }, expiryDate: { gte: todayUtc } };
     const medications = await this.prisma.medication.findMany({
-      where: { deletedAt: null, StockLot: { some: { clinicId: actor.clinicId, quantity: { gt: 0 } } } },
+      where: { deletedAt: null, StockLot: { some: eligibleLot } },
       include: {
         category: { include: { section: true } },
-        StockLot: { where: { clinicId: actor.clinicId }, orderBy: { receivedAt: 'desc' } },
+        StockLot: { where: eligibleLot, orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'asc' }] },
         StockTransaction: { where: { clinicId: actor.clinicId }, orderBy: { createdAt: 'desc' }, take: 20 },
       },
       orderBy: { name: 'asc' },
@@ -68,13 +72,11 @@ export class PharmacyService {
     return medications
       .map((medication) => {
         const quantity = medication.StockLot.reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
-        const latestLot = medication.StockLot
-          .slice()
-          .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())[0];
         return {
           ...medication,
           availableQuantity: quantity,
-          unitPrice: latestLot?.purchasePrice || null,
+          // Acquisition cost is not a patient-facing sale tariff.
+          unitPrice: null,
           lots: medication.StockLot,
         };
       })
@@ -102,10 +104,10 @@ export class PharmacyService {
       where: { deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
       include: {
         patient: true,
-        prescriber: true,
+        prescriber: { select: PUBLIC_USER_SELECT },
         consultation: true,
         lineItems: { include: { medication: true } },
-        pharmacyDispenses: { include: { dispensedBy: true, lines: { include: { medication: true } } } },
+        pharmacyDispenses: { include: { dispensedBy: { select: PUBLIC_USER_SELECT }, lines: { include: { medication: true } } } },
       },
       orderBy: { prescribingDate: 'desc' },
     });
@@ -126,44 +128,36 @@ export class PharmacyService {
 
   async dispensePrescription(id: string, body: any, actorId?: string) {
     const actor = await this.requireClinic(actorId);
-    const paidInvoice = await this.prisma.invoice.findFirst({
-      where: {
-        clinicId: actor.clinicId,
-        remarks: { contains: `Prescription:${id}` },
-        status: 'PAID',
-      },
-    });
-
-    const paidInvoiceLines = paidInvoice ? await this.prisma.invoiceLine.findMany({
-      where: { invoiceId: paidInvoice.id },
-    }) : [];
-
-    if (!paidInvoice) {
-      throw new BadRequestException('La prescription doit être payée avant délivrance.');
-    }
-
-    const prescription = await this.prisma.prescription.findFirst({
-      where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
-      include: {
-        lineItems: { include: { medication: true } },
-        patient: true,
-        prescriber: true,
-      },
-    });
-
-    if (!prescription) {
-      throw new NotFoundException('Prescription introuvable.');
-    }
-
-    if (prescription.status === 'DISPENSED') {
-      throw new BadRequestException('Cette ordonnance a déjà été délivrée.');
-    }
-
     return await this.prisma.$transaction(async (tx) => {
-      for (const line of prescription.lineItems) {
-        const quantity = Number(line.quantity);
-        await this.consumeMedication(tx, line.medicationId, quantity, actor.clinicId, actor.id, `Prescription:${id}`);
+      // Serialize all dispenses and cancellations for this prescription.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id" FROM "Prescription" WHERE "id" = ${id} AND "clinicId" = ${actor.clinicId} FOR UPDATE
+      `);
+      if (!locked.length) throw new NotFoundException('Prescription introuvable.');
+      const prescription = await tx.prescription.findFirst({
+        where: { id, clinicId: actor.clinicId, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+        include: { lineItems: { where: { deletedAt: null }, include: { medication: true } } },
+      });
+      if (!prescription) throw new NotFoundException('Prescription introuvable.');
+      if (prescription.status === 'DISPENSED' || prescription.status === 'CANCELLED') {
+        throw new BadRequestException('Cette ordonnance n’est plus délivrable.');
       }
+      if (!prescription.lineItems.length) throw new BadRequestException('Ordonnance sans ligne active.');
+      const activeDispense = await tx.pharmacyDispense.findFirst({
+        where: { prescriptionId: id, clinicId: actor.clinicId, status: { not: 'CANCELLED' }, deletedAt: null },
+        select: { id: true },
+      });
+      if (activeDispense) throw new ConflictException('Cette ordonnance a déjà une délivrance active.');
+      const paidInvoice = await tx.invoice.findFirst({
+        where: { clinicId: actor.clinicId, patientId: prescription.patientId, deletedAt: null,
+          OR: [
+            { prescriptionId: id, prescriptionVersion: prescription.version },
+            { prescriptionId: null, remarks: `Prescription:${id}` },
+          ], status: 'PAID' },
+        select: { id: true },
+      });
+      if (!paidInvoice) throw new BadRequestException('La prescription doit être payée avant délivrance.');
+      const paidInvoiceLines = await tx.invoiceLine.findMany({ where: { invoiceId: paidInvoice.id } });
 
       const dispense = await tx.pharmacyDispense.create({
         data: {
@@ -175,6 +169,12 @@ export class PharmacyService {
           location: body?.location || null,
         },
       });
+
+      // Lock medications in a stable order across prescription and sale paths.
+      for (const line of [...prescription.lineItems].sort((left, right) => left.medicationId.localeCompare(right.medicationId))) {
+        await this.consumeMedication(tx, line.medicationId, line.quantity, actor.clinicId, actor.id,
+          `Prescription:${id}`, dispense.id);
+      }
 
       await Promise.all(
         prescription.lineItems.map(async (line) => {
@@ -201,7 +201,7 @@ export class PharmacyService {
       );
 
       const prescriptionUpdate = await tx.prescription.updateMany({
-        where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+        where: { id, clinicId: actor.clinicId, status: prescription.status, deletedAt: null },
         data: { status: 'DISPENSED' },
       });
       if (prescriptionUpdate.count !== 1) throw new NotFoundException('Prescription introuvable.');
@@ -209,8 +209,8 @@ export class PharmacyService {
       return tx.pharmacyDispense.findUnique({
         where: { id: dispense.id },
         include: {
-          prescription: { include: { patient: true, prescriber: true } },
-          dispensedBy: true,
+          prescription: { include: { patient: true, prescriber: { select: PUBLIC_USER_SELECT } } },
+          dispensedBy: { select: PUBLIC_USER_SELECT },
           lines: { include: { medication: true } },
         },
       });
@@ -219,85 +219,14 @@ export class PharmacyService {
 
   async createIndependentSale(data: any, actorId?: string) {
     const actor = await this.requireClinic(actorId);
-    if (!actorId) {
-      throw new BadRequestException('Utilisateur non identifié.');
-    }
-
-    const medicationId = data?.medicationId;
-    const quantity = Number(data?.quantity || 0);
-
-    if (!medicationId || !quantity || quantity <= 0) {
+    const medicationId = typeof data?.medicationId === 'string' ? data.medicationId : '';
+    const quantity = Number(data?.quantity);
+    if (!medicationId || !Number.isSafeInteger(quantity) || quantity <= 0) {
       throw new BadRequestException('Médicament et quantité requis.');
     }
-
-    const medication = await this.prisma.medication.findUnique({
-      where: { id: medicationId },
-      include: { StockLot: { where: { clinicId: actor.clinicId } } },
-    });
-
-    if (!medication) {
-      throw new NotFoundException('Médicament introuvable.');
-    }
-
-    const available = medication.StockLot.reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
-    if (available < quantity) {
-      throw new BadRequestException(`Stock insuffisant pour ${medication.name}.`);
-    }
-
-    const lots = await this.prisma.stockLot.findMany({
-      where: { medicationId, clinicId: actor.clinicId, quantity: { gt: 0 } },
-      orderBy: [{ receivedAt: 'asc' }, { expiryDate: 'asc' }],
-    });
-
-    const stockUpdates: Array<{ id: string; quantity: number }> = [];
-    const stockTransactions: Array<any> = [];
-    let remaining = quantity;
-
-    for (const lot of lots) {
-      if (remaining <= 0) break;
-      const used = Math.min(Number(lot.quantity || 0), remaining);
-      if (used <= 0) continue;
-      remaining -= used;
-      const newQuantity = Number(lot.quantity || 0) - used;
-      stockUpdates.push({ id: lot.id, quantity: newQuantity });
-      stockTransactions.push({
-        medicationId,
-        lotId: lot.id,
-        type: 'SALE',
-        quantity: -used,
-        unitPrice: Number(lot.purchasePrice || 0),
-        reference: 'Vente:client externe',
-        performedById: actor.id,
-        clinicId: actor.clinicId,
-      });
-    }
-
-    if (remaining > 0) {
-      throw new BadRequestException(`Stock insuffisant pour ${medication.name}.`);
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      for (const update of stockUpdates) {
-        await tx.stockLot.update({ where: { id: update.id }, data: { quantity: update.quantity } });
-      }
-
-      for (const transaction of stockTransactions) {
-        await tx.stockTransaction.create({ data: transaction });
-      }
-
-      return tx.stockTransaction.findMany({
-        where: {
-          clinicId: actor.clinicId,
-          reference: {
-            contains: data?.source || 'PHARMACY',
-          },
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        take: 1,
-      });
-    });
+    return this.prisma.$transaction((tx) =>
+      this.consumeMedication(tx, medicationId, quantity, actor.clinicId, actor.id, 'Vente:client externe'),
+    );
   }
 
   async getHistory(actorId?: string) {
@@ -317,8 +246,8 @@ export class PharmacyService {
       this.prisma.pharmacyDispense.findMany({
         where: { deletedAt: null, clinicId: actor.clinicId },
         include: {
-          prescription: { include: { patient: true, prescriber: true, consultation: true } },
-          dispensedBy: true,
+          prescription: { include: { patient: true, prescriber: { select: PUBLIC_USER_SELECT }, consultation: true } },
+          dispensedBy: { select: PUBLIC_USER_SELECT },
           lines: { include: { medication: true } },
         },
         orderBy: { dispensedAt: 'desc' },
@@ -327,7 +256,7 @@ export class PharmacyService {
         where: { clinicId: actor.clinicId, type: { in: ['SALE', 'OUT'] } },
         include: {
           medication: true,
-          performedBy: true,
+          performedBy: { select: PUBLIC_USER_SELECT },
           lot: true,
         },
         orderBy: { createdAt: 'desc' },
@@ -432,108 +361,54 @@ export class PharmacyService {
 
   async cancelDispense(id: string, actorId?: string) {
     const actor = await this.requireClinic(actorId);
-    const prescription = await this.prisma.prescription.findFirst({
-      where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
-      include: {
-        pharmacyDispenses: {
-          include: {
-            lines: true,
-          },
-        },
-      },
-    });
-
-    if (!prescription) {
-      throw new NotFoundException('Prescription introuvable.');
-    }
-
-    const activeDispense = prescription.pharmacyDispenses.find((dispense) => dispense.status !== 'CANCELLED');
-    if (!activeDispense) {
-      throw new BadRequestException('Aucune délivrance active à annuler pour cette prescription.');
-    }
-
-    const now = Date.now();
-    const createdAt = new Date(prescription.createdAt).getTime();
-    const hasDoctorModification = Number(prescription.version || 0) > 1;
-    const withinEditWindow = now - createdAt <= 24 * 60 * 60 * 1000;
-
-    if (!hasDoctorModification || !withinEditWindow) {
-      throw new BadRequestException('La délivrance ne peut être annulée que si le médecin a modifié la prescription avant la délivrance et dans les 24h.');
-    }
-
     return this.prisma.$transaction(async (tx) => {
-      const consumedTransactions = await tx.stockTransaction.findMany({
-        where: {
-          type: 'OUT',
-          clinicId: actor.clinicId,
-          reference: { contains: `Prescription:${id}` },
-          createdAt: {
-            gte: activeDispense.dispensedAt,
-            lt: new Date(activeDispense.dispensedAt.getTime() + 5 * 60 * 1000),
-          },
-        },
-        orderBy: { createdAt: 'asc' },
+      const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id" FROM "Prescription" WHERE "id" = ${id} AND "clinicId" = ${actor.clinicId} FOR UPDATE
+      `);
+      if (!locked.length) throw new NotFoundException('Prescription introuvable.');
+      const prescription = await tx.prescription.findFirst({
+        where: { id, clinicId: actor.clinicId, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+        select: { id: true, createdAt: true, version: true },
       });
-
-      const fallbackTransactions = consumedTransactions.length === 0
-        ? await tx.stockTransaction.findMany({
-            where: {
-              type: 'OUT',
-              clinicId: actor.clinicId,
-              createdAt: {
-                gte: activeDispense.dispensedAt,
-                lt: new Date(activeDispense.dispensedAt.getTime() + 5 * 60 * 1000),
-              },
-            },
-            orderBy: { createdAt: 'asc' },
-          })
-        : [];
-
-      const transactionsToRestore = consumedTransactions.length > 0 ? consumedTransactions : fallbackTransactions;
-
-      if (transactionsToRestore.length === 0) {
-        throw new BadRequestException('Aucune transaction de stock à annuler pour cette délivrance.');
+      if (!prescription) throw new NotFoundException('Prescription introuvable.');
+      const activeDispense = await tx.pharmacyDispense.findFirst({
+        where: { prescriptionId: id, clinicId: actor.clinicId, status: 'DISPENSED', deletedAt: null },
+        select: { id: true, notes: true },
+      });
+      if (!activeDispense) throw new BadRequestException('Aucune délivrance active à annuler pour cette prescription.');
+      const withinEditWindow = Date.now() - prescription.createdAt.getTime() <= 24 * 60 * 60 * 1000;
+      if (prescription.version <= 1 || !withinEditWindow) {
+        throw new BadRequestException('La délivrance ne peut être annulée que si le médecin a modifié la prescription et dans les 24h.');
       }
-
-      for (const transaction of transactionsToRestore) {
-        const lot = transaction.lotId
-          ? await tx.stockLot.findFirst({ where: { id: transaction.lotId, clinicId: actor.clinicId } })
-          : null;
-
-        if (!lot) {
-          continue;
-        }
-
-        const restoredQuantity = Math.abs(Number(transaction.quantity || 0));
-        await tx.stockLot.update({
-          where: { id: lot.id },
-          data: { quantity: Number(lot.quantity || 0) + restoredQuantity },
+      const movements = await tx.stockTransaction.findMany({
+        where: { pharmacyDispenseId: activeDispense.id, clinicId: actor.clinicId, type: 'OUT' },
+        orderBy: { id: 'asc' },
+      });
+      if (!movements.length || movements.some((movement) => !movement.lotId || !Number.isSafeInteger(movement.quantity) || movement.quantity <= 0)) {
+        throw new ConflictException('Mouvements de stock non attribuables à cette délivrance. Réconciliation manuelle requise.');
+      }
+      const claimed = await tx.pharmacyDispense.updateMany({
+        where: { id: activeDispense.id, clinicId: actor.clinicId, status: 'DISPENSED' },
+        data: { status: 'CANCELLED', notes: `${activeDispense.notes || ''} | Annulé`.trim() },
+      });
+      if (claimed.count !== 1) throw new ConflictException('Cette délivrance a déjà été annulée.');
+      for (const movement of movements) {
+        const restored = await tx.stockLot.updateMany({
+          where: { id: movement.lotId!, clinicId: actor.clinicId, medicationId: movement.medicationId },
+          data: { quantity: { increment: movement.quantity } },
         });
-
+        if (restored.count !== 1) throw new ConflictException('Lot de stock introuvable pour la restitution.');
         await tx.stockTransaction.create({
-          data: {
-            medicationId: transaction.medicationId,
-            lotId: lot.id,
-            type: 'IN',
-            quantity: restoredQuantity,
-            unitPrice: transaction.unitPrice,
-            reference: `Annulation délivrance:${id}`,
-            performedById: actor.id,
-            clinicId: actor.clinicId,
-          },
+          data: { medicationId: movement.medicationId, lotId: movement.lotId,
+            pharmacyDispenseId: activeDispense.id, type: 'IN', quantity: movement.quantity,
+            unitPrice: movement.unitPrice, reference: `Annulation délivrance:${id}`,
+            performedById: actor.id, clinicId: actor.clinicId },
         });
       }
-
-      await tx.pharmacyDispense.updateMany({
-        where: { id: activeDispense.id, clinicId: actor.clinicId },
-        data: { status: 'CANCELLED', notes: `${activeDispense.notes || ''} | Annulé`.trim() || 'Annulé' },
-      });
-
       await tx.prescription.updateMany({
-        where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+        where: { id, clinicId: actor.clinicId, status: 'DISPENSED', deletedAt: null },
         data: { status: 'PRESCRIBED' },
       });
-
       return { cancelled: true, prescriptionId: id };
     });
   }
@@ -563,7 +438,7 @@ export class PharmacyService {
         },
         orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'desc' }],
       }),
-      this.prisma.stockTransaction.findMany({ where: { clinicId: actor.clinicId }, include: { medication: true, lot: true, performedBy: true }, orderBy: { createdAt: 'desc' }, take: 100 }),
+      this.prisma.stockTransaction.findMany({ where: { clinicId: actor.clinicId }, include: { medication: true, lot: true, performedBy: { select: PUBLIC_USER_SELECT } }, orderBy: { createdAt: 'desc' }, take: 100 }),
       this.prisma.pharmacyDispense.findMany({ where: { clinicId: actor.clinicId, deletedAt: null }, include: { prescription: { include: { patient: true } }, lines: { include: { medication: true } } }, orderBy: { dispensedAt: 'desc' }, take: 50 }),
     ]);
 
@@ -660,7 +535,7 @@ export class PharmacyService {
       },
       include: {
         patient: true,
-        prescriber: true,
+        prescriber: { select: PUBLIC_USER_SELECT },
         lineItems: {
           include: {
             medication: {
@@ -681,7 +556,7 @@ export class PharmacyService {
                 medication: true,
               },
             },
-            dispensedBy: true,
+            dispensedBy: { select: PUBLIC_USER_SELECT },
           },
         },
       },
@@ -695,13 +570,19 @@ export class PharmacyService {
     const actor = await this.requireClinic(actorId);
     const lines = Array.isArray(body?.lines) ? body.lines : [];
     if (!lines.length) throw new BadRequestException('Aucun medicament a vendre.');
+    const validatedLines = lines.map((line: { medicationId?: unknown; quantity?: unknown }) => {
+      const medicationId = typeof line.medicationId === 'string' ? line.medicationId.trim() : '';
+      const quantity = Number(line.quantity);
+      if (!medicationId || !Number.isSafeInteger(quantity) || quantity <= 0) {
+        throw new BadRequestException('Chaque vente externe requiert un médicament et une quantité entière positive.');
+      }
+      return { medicationId, quantity };
+    }).sort((a, b) => a.medicationId.localeCompare(b.medicationId));
     return this.prisma.$transaction(async (tx) => {
       const results = [];
-      for (const line of lines) {
-        const quantity = Number(line.quantity || 0);
-        if (!line.medicationId || quantity <= 0) continue;
-        await this.consumeMedication(tx, line.medicationId, quantity, actor.clinicId, actor.id, body?.clientName ? `Vente externe - ${body.clientName}` : 'Vente externe');
-        results.push({ medicationId: line.medicationId, quantity });
+      for (const line of validatedLines) {
+        await this.consumeMedication(tx, line.medicationId, line.quantity, actor.clinicId, actor.id, body?.clientName ? `Vente externe - ${body.clientName}` : 'Vente externe');
+        results.push(line);
       }
       return { soldAt: new Date(), clientName: body?.clientName || null, lines: results };
     });
@@ -714,23 +595,47 @@ export class PharmacyService {
     clinicId: string,
     actorId: string,
     reason?: string,
+    pharmacyDispenseId?: string,
   ) {
-    if (quantity <= 0) throw new BadRequestException('Quantite invalide.');
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+      throw new BadRequestException('La quantité doit être un entier positif fini.');
+    }
+    const todayUtc = new Date();
+    todayUtc.setUTCHours(0, 0, 0, 0);
+    // FEFO: an expiry date remains usable through that UTC calendar day.
+    // Undated lots are not eligible for dispensing until a date is recorded.
+    const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT "id" FROM "StockLot"
+      WHERE "medicationId" = ${medicationId}
+        AND "clinicId" = ${clinicId}
+        AND "quantity" > 0
+        AND "expiryDate" >= ${todayUtc}
+      ORDER BY "expiryDate" ASC, "receivedAt" ASC, "id" ASC
+      FOR UPDATE
+    `);
+    const lotIds = locked.map((lot) => lot.id);
     const lots = await tx.stockLot.findMany({
-      where: { medicationId, clinicId, quantity: { gt: 0 } },
-      orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'asc' }],
+      where: { id: { in: lotIds }, medicationId, clinicId, quantity: { gt: 0 }, expiryDate: { gte: todayUtc } },
     });
+    const lotsById = new Map(lots.map((lot) => [lot.id, lot]));
     const available = lots.reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
     if (available < quantity) {
       throw new BadRequestException('Stock insuffisant pour ce medicament.');
     }
 
     let remaining = quantity;
-    for (const lot of lots) {
+    const movements = [];
+    for (const lotId of lotIds) {
       if (remaining <= 0) break;
+      const lot = lotsById.get(lotId);
+      if (!lot) throw new ConflictException('Le lot de stock a changé pendant la délivrance.');
       const used = Math.min(Number(lot.quantity || 0), remaining);
-      await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: Number(lot.quantity || 0) - used } });
-      await tx.stockTransaction.create({
+      const updated = await tx.stockLot.updateMany({
+        where: { id: lot.id, medicationId, clinicId, quantity: { gte: used } },
+        data: { quantity: { decrement: used } },
+      });
+      if (updated.count !== 1) throw new ConflictException('Le stock a changé pendant la délivrance.');
+      const movement = await tx.stockTransaction.create({
         data: {
           medicationId,
           lotId: lot.id,
@@ -739,9 +644,12 @@ export class PharmacyService {
           performedById: actorId,
           clinicId,
           reference: reason,
+          pharmacyDispenseId,
         },
       });
+      movements.push(movement);
       remaining -= used;
     }
+    return movements;
   }
 }

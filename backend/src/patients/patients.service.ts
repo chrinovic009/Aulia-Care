@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, AuditAction, PatientWorkflowStatus, RoleSlug, VitalType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { CreateAdmissionDto } from './dto/create-admission.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
@@ -3653,7 +3654,7 @@ if (isParamedicalVoucher) {
                     this.getVisibleLabRequestsWhere(),
                   include: {
                     results: true,
-                    requestedBy: true,
+                    requestedBy: { select: PUBLIC_USER_SELECT },
                   },
                 },
 
@@ -3682,7 +3683,7 @@ if (isParamedicalVoucher) {
                     },
                   },
                 },
-                requestedBy: true,
+                requestedBy: { select: PUBLIC_USER_SELECT },
               },
             },
 
@@ -3693,7 +3694,7 @@ if (isParamedicalVoucher) {
               take: 10,
               include: {
                 report: true,
-                requestedBy: true,
+                requestedBy: { select: PUBLIC_USER_SELECT },
               },
             },
 
@@ -3708,7 +3709,7 @@ if (isParamedicalVoucher) {
                     medication: true,
                   },
                 },
-                prescriber: true,
+                prescriber: { select: PUBLIC_USER_SELECT },
               },
             },
 
@@ -3718,8 +3719,8 @@ if (isParamedicalVoucher) {
               },
               take: 5,
               include: {
-                physician: true,
-                nurseInCharge: true,
+                physician: { select: PUBLIC_USER_SELECT },
+                nurseInCharge: { select: PUBLIC_USER_SELECT },
               },
             },
 
