@@ -89,6 +89,61 @@ test('corporate coverage never charges a company outside the consultation clinic
   assert.equal(invoiceUpdated, false);
 });
 
+test('corporate charge keeps the clinical invoice reference and does not duplicate an invoice charge', async () => {
+  const charges: Array<Record<string, unknown>> = [];
+  const updates: Array<Record<string, unknown>> = [];
+  let alreadyCharged = false;
+  const service = new ConsultationsService(
+    {} as PrismaService, {} as NotificationsGateway, {} as PatientWorkflowService,
+  );
+  const tx = {
+    subscriptionEmployee: { findFirst: async () => ({ id: 'employee-a', companyId: 'company-a', company: { name: 'Company A' } }) },
+    subscriptionCharge: {
+      findFirst: async () => alreadyCharged ? { id: 'charge-a' } : null,
+      create: async (input: { data: Record<string, unknown> }) => { charges.push(input.data); alreadyCharged = true; },
+    },
+    invoice: { update: async (input: { data: Record<string, unknown> }) => { updates.push(input.data); } },
+  };
+  const charge = (service as any).recordSubscriptionChargeForInvoice.bind(service);
+  assert.equal(await charge(tx, 'patient-a', 'clinic-a', 'invoice-a', 'Imagerie', 100, null), true);
+  assert.equal(await charge(tx, 'patient-a', 'clinic-a', 'invoice-a', 'Imagerie', 100, null), true);
+  assert.equal(charges.length, 1);
+  assert.equal(charges[0].serviceId, null);
+  assert.equal(updates.length, 1);
+  assert.equal(Object.hasOwn(updates[0], 'remarks'), false);
+});
+
+test('a covered exam notifies its clinic service and reception even beside an unpaid exam', async () => {
+  const sent: Array<{ userId: string; event: string }> = [];
+  const service = new ConsultationsService(
+    {
+      user: { findMany: async (query: { where: { OR: unknown[]; clinicId: string } }) => {
+        assert.equal(query.where.clinicId, 'clinic-a');
+        return query.where.OR.some((item) => JSON.stringify(item).includes('RECEPTIONIST'))
+          ? [{ id: 'reception-a' }]
+          : query.where.OR.some((item) => JSON.stringify(item).includes('CASHIER'))
+            ? [{ id: 'cashier-a' }]
+            : [{ id: 'laboratory-a' }];
+      } },
+      notification: { create: async (input: { data: { recipientId: string } }) => input.data },
+    } as unknown as PrismaService,
+    {
+      notifyToUser: (userId: string, event: string) => { sent.push({ userId, event }); },
+      notify: () => undefined,
+    } as unknown as NotificationsGateway,
+    {} as PatientWorkflowService,
+  );
+
+  await (service as any).notifyMaterializedExamInvoices('clinic-a', 'patient-a', 'A', 'Patient', [
+    { invoiceId: 'covered-a', invoiceStatus: 'PAID', invoiceTotal: 100, kind: 'LABORATORY', label: 'Test', priority: 'NORMAL' },
+    { invoiceId: 'unpaid-a', invoiceStatus: 'PENDING', invoiceTotal: 200, kind: 'IMAGING', label: 'Image', priority: 'NORMAL' },
+  ]);
+
+  assert.ok(sent.some((entry) => entry.userId === 'laboratory-a' && entry.event === 'lab.request.created'));
+  assert.ok(sent.some((entry) => entry.userId === 'reception-a' && entry.event === 'notification.created'));
+  assert.ok(sent.some((entry) => entry.userId === 'cashier-a' && entry.event === 'notification.created'));
+});
+
 test('lab requests reject inactive tests selected by id', async () => {
   const queries: Array<Record<string, unknown>> = [];
   let labRequestCreated = false;

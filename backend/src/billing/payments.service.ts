@@ -333,6 +333,8 @@ export class PaymentsService {
       const targetUsers = remainingBalance > 0 ? [] : await prisma.user.findMany({
         where: {
           clinicId: invoiceClinicId,
+          status: 'ACTIVE',
+          deletedAt: null,
           ...(serviceUserIds.length ? { id: { in: serviceUserIds } } : {}),
           OR: serviceUserIds.length
             ? undefined

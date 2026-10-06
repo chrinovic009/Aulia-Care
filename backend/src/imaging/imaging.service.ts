@@ -33,7 +33,12 @@ export class ImagingService {
   async findAll(actorId?: string) {
     const actor = await this.requireClinic(actorId);
     return this.prisma.imagingRequest.findMany({
-      where: { deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+      where: {
+        clinicId: actor.clinicId,
+        deletedAt: null,
+        status: { not: ImagingRequestStatus.AWAITING_PAYMENT },
+        patient: { clinicId: actor.clinicId, deletedAt: null },
+      },
       include: { patient: true, requestedBy: { select: PUBLIC_USER_SELECT }, consultation: true, report: { include: { amendments: { include: { author: { select: PUBLIC_USER_SELECT } }, orderBy: { version: 'asc' } } } }, machine: true, imagingCatalogue: true },
       orderBy: [{ urgency: 'desc' }, { createdAt: 'asc' }],
     });
@@ -200,6 +205,9 @@ export class ImagingService {
     }
 
     const where: Prisma.ImagingRequestWhereInput = {
+      clinicId: actor.clinicId,
+      deletedAt: null,
+      status: { not: ImagingRequestStatus.AWAITING_PAYMENT },
       patient: { clinicId: actor.clinicId, deletedAt: null },
       createdAt: {
         gte: startDate,
@@ -442,6 +450,7 @@ export class ImagingService {
       where: {
         type: 'RADIOLOGY',
         clinicId,
+        deletedAt: null,
         remarks: { contains: `ImagingRequest:${imagingRequestId}` },
       },
       orderBy: { issuedAt: 'desc' },

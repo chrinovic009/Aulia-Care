@@ -1,6 +1,6 @@
 // backend/src/consultations/consultations.services.ts
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus, Prisma } from '@prisma/client';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus, Prisma, RoleSlug } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
@@ -16,6 +16,7 @@ import { PatientWorkflowService } from '../core/patient-workflow.service';
 
 @Injectable()
 export class ConsultationsService {
+  private readonly logger = new Logger(ConsultationsService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsGateway: NotificationsGateway,
@@ -43,6 +44,14 @@ export class ConsultationsService {
     });
     if (!employee) return false;
 
+    // The invoice is the immutable origin of a corporate charge. Replaying an
+    // order must not add the same expense twice to the monthly statement.
+    const existingCharge = await tx.subscriptionCharge.findFirst({
+      where: { invoiceId, companyId: employee.companyId, deletedAt: null },
+      select: { id: true },
+    });
+    if (existingCharge) return true;
+
     const serviceDate = new Date();
     await tx.subscriptionCharge.create({
       data: {
@@ -65,7 +74,6 @@ export class ConsultationsService {
       data: {
         status: 'PAID',
         balanceDue: 0,
-        remarks: `${label} - pris en charge par abonnement entreprise ${employee.company.name}`,
       },
     });
 
@@ -768,13 +776,19 @@ export class ConsultationsService {
     // après le commit. Une transaction annulée ne doit jamais annoncer une
     // facture qui n'existe pas.
     if (transactionResult.materialized.length > 0) {
-      await this.notifyMaterializedExamInvoices(
-        clinicId,
-        consultation.patientId,
-        consultation.patient.firstName,
-        consultation.patient.lastName,
-        transactionResult.materialized,
-      );
+      try {
+        await this.notifyMaterializedExamInvoices(
+          clinicId,
+          consultation.patientId,
+          consultation.patient.firstName,
+          consultation.patient.lastName,
+          transactionResult.materialized,
+        );
+      } catch (error) {
+        // The clinical order and invoice are already committed. Returning a
+        // creation error here would invite the client to retry a real order.
+        this.logger.warn(`Post-commit exam notification failed for consultation ${id}: ${error instanceof Error ? error.name : 'unknown error'}`);
+      }
     }
 
     return transactionResult.updated;
@@ -1125,7 +1139,7 @@ export class ConsultationsService {
           invoice.id,
           `Examen d'imagerie - ${imagingCatalogue.name}`,
           price,
-          imagingCatalogue.id,
+          null,
         );
 
       if (handledBySubscription) {
@@ -1222,11 +1236,53 @@ export class ConsultationsService {
     const unpaidInvoices = materialized.filter(
       (invoice) => invoice.invoiceStatus !== 'PAID',
     );
+    const coveredInvoices = materialized.filter(
+      (invoice) => invoice.invoiceStatus === 'PAID',
+    );
+
+    for (const invoice of coveredInvoices) {
+      const serviceRoles = invoice.kind === 'LABORATORY'
+        ? [RoleSlug.LAB_MANAGER, RoleSlug.LAB_TECHNICIAN]
+        : [RoleSlug.RADIOLOGIST];
+      const staff = await this.prisma.user.findMany({
+        where: {
+          clinicId,
+          status: 'ACTIVE',
+          deletedAt: null,
+          OR: [
+            { primaryRole: { in: serviceRoles } },
+            { roles: { some: { role: { slug: { in: serviceRoles } } } } },
+          ],
+        },
+        select: { id: true },
+      });
+      for (const user of staff) {
+        const notification = await this.prisma.notification.create({
+          data: {
+            recipientId: user.id,
+            patientId,
+            type: 'TASK',
+            status: 'UNREAD',
+            priority: invoice.priority === 'URGENT' ? 'HIGH' : 'MEDIUM',
+            title: invoice.kind === 'LABORATORY' ? 'Examen laboratoire pris en charge' : 'Examen imagerie pris en charge',
+            message: `La demande ${invoice.label} est disponible dans votre service.`,
+            relatedEntity: 'Invoice',
+            relatedId: invoice.invoiceId,
+          },
+        });
+        this.notificationsGateway.notifyToUser(user.id, 'notification.created', notification);
+        if (invoice.kind === 'LABORATORY') {
+          this.notificationsGateway.notifyToUser(user.id, 'lab.request.created', { patientId });
+        }
+      }
+    }
 
     if (unpaidInvoices.length > 0) {
       const cashiers = await this.prisma.user.findMany({
         where: {
           clinicId,
+          status: 'ACTIVE',
+          deletedAt: null,
           OR: [
             { primaryRole: 'CASHIER' as any },
             { roles: { some: { role: { slug: 'CASHIER' as any } } } },
@@ -1276,58 +1332,61 @@ export class ConsultationsService {
         id: patientId,
         workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
       });
-      return;
     }
 
-    // Toutes les nouvelles factures ont été prises en charge par abonnement.
-    // Les services concernés peuvent traiter immédiatement les demandes.
-    const receptionists = await this.prisma.user.findMany({
-      where: {
-        clinicId,
-        status: 'ACTIVE',
-        deletedAt: null,
-        OR: [
-          { primaryRole: 'RECEPTIONIST' as any },
-          { roles: { some: { role: { slug: 'RECEPTIONIST' as any } } } },
-        ],
-      },
-      select: { id: true },
-    });
-    const labels = materialized.map((invoice) => invoice.label).join(', ');
-    const receptionNotifications = await Promise.all(receptionists.map((user) =>
-      this.prisma.notification.create({
-        data: {
-          recipientId: user.id,
-          patientId,
-          type: 'SYSTEM',
-          status: 'UNREAD',
-          priority: 'MEDIUM',
-          title: 'Examens pris en charge par abonnement',
-          message: `${labels} est transmis directement au service concerné ; le montant est ajouté à la facture entreprise.`,
-          relatedEntity: 'Invoice',
-          relatedId: materialized[0]?.invoiceId,
+    // Prévenir la réception pour chaque examen couvert, y compris dans une
+    // consultation mêlant factures particulières et prises en charge.
+    if (coveredInvoices.length > 0) {
+      const receptionists = await this.prisma.user.findMany({
+        where: {
+          clinicId,
+          status: 'ACTIVE',
+          deletedAt: null,
+          OR: [
+            { primaryRole: RoleSlug.RECEPTIONIST },
+            { roles: { some: { role: { slug: RoleSlug.RECEPTIONIST } } } },
+          ],
         },
-      }),
-    ));
-    receptionNotifications.forEach((notification) =>
-      this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification),
-    );
+        select: { id: true },
+      });
+      const labels = coveredInvoices.map((invoice) => invoice.label).join(', ');
+      const receptionNotifications = await Promise.all(receptionists.map((user) =>
+        this.prisma.notification.create({
+          data: {
+            recipientId: user.id,
+            patientId,
+            type: 'SYSTEM',
+            status: 'UNREAD',
+            priority: 'MEDIUM',
+            title: 'Examens pris en charge par abonnement',
+            message: `${labels} est transmis directement au service concerné ; le montant est ajouté à la facture entreprise.`,
+            relatedEntity: 'Invoice',
+            relatedId: coveredInvoices[0].invoiceId,
+          },
+        }),
+      ));
+      receptionNotifications.forEach((notification) =>
+        this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification),
+      );
+    }
 
-    const hasLab = materialized.some(
+    const hasLab = coveredInvoices.some(
       (invoice) => invoice.kind === 'LABORATORY',
     );
-    const hasImaging = materialized.some(
+    const hasImaging = coveredInvoices.some(
       (invoice) => invoice.kind === 'IMAGING',
     );
 
-    this.notificationsGateway.notify('patient.updated', {
-      id: patientId,
-      workflowStatus: hasLab
-        ? PatientWorkflowStatus.EN_LABORATOIRE
-        : hasImaging
-          ? PatientWorkflowStatus.EN_RADIOLOGIE
-          : PatientWorkflowStatus.EN_CONSULTATION,
-    });
+    if (unpaidInvoices.length === 0) {
+      this.notificationsGateway.notify('patient.updated', {
+        id: patientId,
+        workflowStatus: hasLab
+          ? PatientWorkflowStatus.EN_LABORATOIRE
+          : hasImaging
+            ? PatientWorkflowStatus.EN_RADIOLOGIE
+            : PatientWorkflowStatus.EN_CONSULTATION,
+      });
+    }
   }
 
   async createLabRequest(id: string, dto: CreateLabRequestDto, actorId?: string) {
@@ -1538,9 +1597,13 @@ export class ConsultationsService {
         });
       }
 
+      const finalInvoice = handledBySubscription
+        ? await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id } })
+        : invoice;
+
       return {
         ...created,
-        invoice,
+        invoice: finalInvoice,
         labTests: selectedLabTests,
         labTest: selectedLabTests[0],
         handledBySubscription,
@@ -1552,6 +1615,8 @@ export class ConsultationsService {
       : await this.prisma.user.findMany({
       where: {
         clinicId,
+        status: 'ACTIVE',
+        deletedAt: null,
         OR: [
           { primaryRole: 'CASHIER' as any },
           { roles: { some: { role: { slug: 'CASHIER' as any } } } },
@@ -1790,7 +1855,7 @@ export class ConsultationsService {
         invoice.id,
         `Examen d'imagerie - ${requestLabel}`,
         price,
-        imagingCatalogue.id,
+        null,
       );
 
       if (handledBySubscription) {
@@ -1834,7 +1899,10 @@ export class ConsultationsService {
         },
       });
 
-      return { ...created, invoice, handledBySubscription };
+      const finalInvoice = handledBySubscription
+        ? await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id } })
+        : invoice;
+      return { ...created, invoice: finalInvoice, handledBySubscription };
     });
 
     const cashiers = request.handledBySubscription
@@ -1842,6 +1910,8 @@ export class ConsultationsService {
       : await this.prisma.user.findMany({
       where: {
         clinicId,
+        status: 'ACTIVE',
+        deletedAt: null,
         OR: [
           { primaryRole: 'CASHIER' as any },
           { roles: { some: { role: { slug: 'CASHIER' as any } } } },
@@ -2076,7 +2146,10 @@ export class ConsultationsService {
         },
       });
 
-      return { prescription, invoice };
+      const finalInvoice = handledBySubscription
+        ? await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id } })
+        : invoice;
+      return { prescription, invoice: finalInvoice };
     });
   }
 

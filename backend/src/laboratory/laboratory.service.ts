@@ -154,15 +154,9 @@ export class LaboratoryService {
 
   async findAll(actorId?: string) {
     const actor = await this.requireClinic(actorId);
+    const visibilityWhere = await this.buildLabRequestVisibilityWhere(actor.clinicId);
     return this.prisma.labRequest.findMany({
-      where: {
-        clinicId: actor.clinicId,
-        deletedAt: null,
-        OR: [
-          { externalReference: null },
-          { status: { not: 'REQUESTED' as any } },
-        ],
-      },
+      where: visibilityWhere,
       include: {
         patient: true,
         requestedBy: { select: PUBLIC_USER_SELECT },
@@ -424,7 +418,7 @@ export class LaboratoryService {
 
   private async buildLabRequestVisibilityWhere(clinicId: string) {
     const paidInvoices = await this.prisma.invoice.findMany({
-      where: { clinicId, type: 'LABORATORY', status: 'PAID' },
+      where: { clinicId, type: 'LABORATORY', status: 'PAID', deletedAt: null },
       select: { id: true, remarks: true },
     });
 
@@ -440,17 +434,15 @@ export class LaboratoryService {
     }
 
     const paidRequestIds = Array.from(new Set(ids)).filter(Boolean);
-    const paidInvoiceConditions: any[] = [];
+    // Legacy/direct requests without a linked invoice remain visible. Billed
+    // requests enter the worklist only after the invoice is fully settled.
+    const paidInvoiceConditions: any[] = [{ externalReference: null }];
 
     if (paidInvoiceIds.length > 0) {
       paidInvoiceConditions.push({ externalReference: { in: paidInvoiceIds } });
     }
     if (paidRequestIds.length > 0) {
       paidInvoiceConditions.push({ id: { in: paidRequestIds } });
-    }
-
-    if (paidInvoiceConditions.length === 0) {
-      return { clinicId, deletedAt: null, id: { in: [] } };
     }
 
     return {
@@ -2081,7 +2073,7 @@ export class LaboratoryService {
     const request = await this.findOne(id, actor.id);
     if (request.externalReference) {
       const invoice = await this.prisma.invoice.findFirst({ where: { id: request.externalReference, clinicId: actor.clinicId } });
-      if (invoice && invoice.status !== 'PAID') {
+      if (!invoice || invoice.deletedAt || invoice.status !== 'PAID') {
         throw new BadRequestException('Le resultat ne peut pas etre saisi avant validation du paiement par la caisse.');
       }
     }

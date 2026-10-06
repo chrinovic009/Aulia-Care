@@ -70,7 +70,9 @@ test('imaging requests are read only through the patient clinic boundary', async
   await service.findAll('radiologist-a');
 
   assert.deepEqual(queries[0]?.where, {
+    clinicId: 'clinic-a',
     deletedAt: null,
+    status: { not: 'AWAITING_PAYMENT' },
     patient: { clinicId: 'clinic-a', deletedAt: null },
   });
 });

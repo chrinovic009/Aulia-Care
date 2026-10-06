@@ -6,6 +6,40 @@ import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ClinicContextService } from '../core/clinic-context.service';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
 
+test('cashier queue is invoice-driven, clinic-scoped and includes imaging during consultation', async () => {
+  let patientQuery: Record<string, unknown> | undefined;
+  const service = new PatientsService(
+    {
+      user: { findUnique: async () => ({ clinicId: 'clinic-a', status: 'ACTIVE', deletedAt: null }) },
+      patient: { findMany: async (query: Record<string, unknown>) => {
+        patientQuery = query;
+        return [{
+          id: 'patient-a', firstName: 'A', lastName: 'Patient',
+          workflowStatus: 'EN_CONSULTATION', arrivalAt: new Date(), createdAt: new Date(),
+          invoices: [{ id: 'imaging-a', type: 'RADIOLOGY', totalAmount: 100, balanceDue: 100,
+            status: 'PENDING', issuedAt: new Date(), dueDate: null }],
+          service: null, receptionist: null,
+        }];
+      } },
+    } as unknown as PrismaService,
+    {} as NotificationsGateway,
+    { requireOperationalActor: async () => ({ id: 'cashier-a', clinicId: 'clinic-a' }) } as unknown as ClinicContextService,
+    {} as PatientWorkflowService,
+  );
+
+  const result = await service.getPatientsAwaitingPayment({ userId: 'cashier-a' });
+  assert.equal(result[0].workflowStatus, 'EN_CONSULTATION');
+  assert.equal(result[0].invoices[0].type, 'RADIOLOGY');
+  const where = patientQuery?.where as Record<string, unknown>;
+  assert.equal(where.clinicId, 'clinic-a');
+  const include = patientQuery?.include as Record<string, unknown>;
+  const invoices = include.invoices as { where: Record<string, unknown> };
+  assert.equal(invoices.where.clinicId, 'clinic-a');
+  assert.deepEqual(invoices.where.status, { in: ['PENDING', 'PARTIALLY_PAID'] });
+  assert.deepEqual(invoices.where.balanceDue, { gt: 0 });
+  assert.ok((invoices.where.type as { in: string[] }).in.includes('RADIOLOGY'));
+});
+
 test('patient portal never links a medical record from a matching e-mail address', async () => {
   const patientLookups: Array<Record<string, unknown>> = [];
   const prisma = {

@@ -2814,26 +2814,28 @@ if (isParamedicalVoucher) {
       throw new ForbiddenException('Utilisateur actif rattaché à un établissement requis.');
     }
 
+    const payableInvoices: Prisma.InvoiceWhereInput = {
+      clinicId: actor.clinicId,
+      deletedAt: null,
+      type: { in: ['ADMISSION_FEE', 'SERVICE', 'LABORATORY', 'RADIOLOGY', 'PHARMACY'] },
+      status: { in: ['PENDING', 'PARTIALLY_PAID'] },
+      balanceDue: { gt: 0 },
+      subscriptionCharges: { none: { deletedAt: null } },
+    };
+
     const patients = await this.prisma.patient.findMany({
       where: {
         clinicId: actor.clinicId,
         deletedAt: null,
-        workflowStatus: {
-          in: [
-            PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
-            PatientWorkflowStatus.EN_ATTENTE_VALIDATION_CAISSE,
-          ],
-        },
+        OR: [
+          { invoices: { some: payableInvoices } },
+          { workflowStatus: PatientWorkflowStatus.EN_ATTENTE_VALIDATION_CAISSE },
+        ],
       },
       include: {
         invoices: {
-          where: {
-            clinicId: actor.clinicId,
-            type: { in: ['ADMISSION_FEE', 'SERVICE', 'LABORATORY', 'PHARMACY'] },
-            OR: [{ status: { in: ['PENDING', 'PARTIALLY_PAID'] } }, { balanceDue: { gt: 0 } }],
-          },
+          where: payableInvoices,
           orderBy: { issuedAt: 'desc' },
-          take: 5,
         },
         service: { select: { id: true, name: true } },
         receptionist: { select: { id: true, firstName: true, lastName: true, displayName: true } },
@@ -2855,6 +2857,15 @@ if (isParamedicalVoucher) {
       receptionist: patient.receptionist
         ? `${patient.receptionist.displayName || `${patient.receptionist.firstName} ${patient.receptionist.lastName}`.trim()}`
         : 'N/A',
+      invoices: patient.invoices.map((invoice) => ({
+        id: invoice.id,
+        type: invoice.type,
+        totalAmount: invoice.totalAmount,
+        balanceDue: invoice.balanceDue,
+        status: invoice.status,
+        issuedAt: invoice.issuedAt,
+        dueDate: invoice.dueDate,
+      })),
       invoice: patient.invoices[0]
         ? {
             id: patient.invoices[0].id,
