@@ -418,7 +418,7 @@ export class LaboratoryService {
 
   private async buildLabRequestVisibilityWhere(clinicId: string) {
     const paidInvoices = await this.prisma.invoice.findMany({
-      where: { clinicId, type: 'LABORATORY', status: 'PAID', deletedAt: null },
+      where: { clinicId, type: 'LABORATORY', status: { in: ['PAID', 'COVERED'] }, deletedAt: null },
       select: { id: true, remarks: true },
     });
 
@@ -2073,7 +2073,7 @@ export class LaboratoryService {
     const request = await this.findOne(id, actor.id);
     if (request.externalReference) {
       const invoice = await this.prisma.invoice.findFirst({ where: { id: request.externalReference, clinicId: actor.clinicId } });
-      if (!invoice || invoice.deletedAt || invoice.status !== 'PAID') {
+      if (!invoice || invoice.deletedAt || !['PAID', 'COVERED'].includes(invoice.status)) {
         throw new BadRequestException('Le resultat ne peut pas etre saisi avant validation du paiement par la caisse.');
       }
     }

@@ -44,7 +44,7 @@ test('subscription admission refuses a service from another clinic before any pa
         lastName: 'Abonné',
         gender: 'F',
         dateOfBirth: new Date('1990-01-01T00:00:00.000Z'),
-        company: { id: 'company-a', name: 'Entreprise A', status: 'ACTIVE' },
+        company: { id: 'company-a', name: 'Entreprise A', status: 'ACTIVE', coversAllServices: true, creditLimit: null },
       }),
     },
     service: {
@@ -95,9 +95,10 @@ test('subscription admission atomically creates a clinic-scoped patient and Pati
     lastName: 'Abonné',
     gender: 'F',
     dateOfBirth: new Date('1990-01-01T00:00:00.000Z'),
-    company: { id: 'company-a', name: 'Entreprise A', status: 'ACTIVE' },
+    company: { id: 'company-a', name: 'Entreprise A', status: 'ACTIVE', coversAllServices: true, creditLimit: null },
   };
   const transaction = {
+    $executeRaw: async () => 1,
     subscriptionEmployee: {
       findFirst: async () => employee,
       updateMany: async () => ({ count: 1 }),

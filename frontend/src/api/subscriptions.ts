@@ -10,6 +10,8 @@ export type SubscriptionCompany = {
   contactName?: string | null;
   status: "ACTIVE" | "SUSPENDED" | "INACTIVE";
   billingDay?: number;
+  coversAllServices?: boolean;
+  creditLimit?: string | number | null;
   employees?: SubscriptionEmployee[];
   charges?: SubscriptionCharge[];
   monthlyInvoices?: MonthlySubscriptionInvoice[];
@@ -61,19 +63,25 @@ export type MonthlySubscriptionInvoice = {
   invoiceId?: string | null;
 };
 
+export type SubscriptionCompanyInput = Omit<Partial<SubscriptionCompany>, "billingDay" | "creditLimit"> & {
+  billingDay?: number | string;
+  creditLimit?: number | string | null;
+  coversAllServices?: boolean;
+};
+
 export const fetchSubscriptionCompanies = () =>
   apiFetch<SubscriptionCompany[]>("/subscriptions/companies");
 
 export const fetchSubscriptionCompany = (id: string) =>
   apiFetch<SubscriptionCompany>(`/subscriptions/companies/${id}`);
 
-export const createSubscriptionCompany = (payload: Partial<SubscriptionCompany>) =>
+export const createSubscriptionCompany = (payload: SubscriptionCompanyInput) =>
   apiFetch<SubscriptionCompany>("/subscriptions/companies", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 
-export const updateSubscriptionCompany = (id: string, payload: Partial<SubscriptionCompany>) =>
+export const updateSubscriptionCompany = (id: string, payload: SubscriptionCompanyInput) =>
   apiFetch<SubscriptionCompany>(`/subscriptions/companies/${id}`, {
     method: "PATCH",
     body: JSON.stringify(payload),

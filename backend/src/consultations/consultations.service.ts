@@ -29,7 +29,7 @@ export class ConsultationsService {
     clinicId: string,
     invoiceId: string,
     label: string,
-    amount: number,
+    amount: number | Prisma.Decimal,
     serviceId?: string | null,
   ) {
     const employee = await tx.subscriptionEmployee.findFirst({
@@ -43,14 +43,42 @@ export class ConsultationsService {
       include: { company: true },
     });
     if (!employee) return false;
+    if (!employee.company.coversAllServices) return false;
+
+    // The company lock protects both credit-limit decisions and monthly
+    // consolidation from concurrent charges for this establishment.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`subscription-company:${employee.companyId}`}))`;
 
     // The invoice is the immutable origin of a corporate charge. Replaying an
     // order must not add the same expense twice to the monthly statement.
     const existingCharge = await tx.subscriptionCharge.findFirst({
-      where: { invoiceId, companyId: employee.companyId, deletedAt: null },
+      where: { sourceInvoiceId: invoiceId, companyId: employee.companyId, deletedAt: null },
       select: { id: true },
     });
     if (existingCharge) return true;
+
+    if (employee.company.creditLimit !== null) {
+      const [unbilled, billed] = await Promise.all([
+        tx.subscriptionCharge.aggregate({
+          where: { companyId: employee.companyId, status: 'PENDING_MONTHLY_INVOICE', deletedAt: null },
+          _sum: { amount: true },
+        }),
+        tx.invoice.aggregate({
+          where: {
+            clinicId,
+            type: 'SUBSCRIPTION_MONTHLY',
+            deletedAt: null,
+            status: { not: 'CANCELLED' },
+            monthlySubscriptionInvoices: { some: { companyId: employee.companyId, deletedAt: null } },
+          },
+          _sum: { balanceDue: true },
+        }),
+      ]);
+      const exposure = new Prisma.Decimal(unbilled._sum.amount || 0)
+        .plus(billed._sum.balanceDue || 0)
+        .plus(amount);
+      if (exposure.gt(employee.company.creditLimit)) return false;
+    }
 
     const serviceDate = new Date();
     await tx.subscriptionCharge.create({
@@ -59,6 +87,7 @@ export class ConsultationsService {
         employeeId: employee.id,
         patientId,
         invoiceId,
+        sourceInvoiceId: invoiceId,
         serviceId: serviceId || null,
         label,
         amount,
@@ -72,7 +101,8 @@ export class ConsultationsService {
     await tx.invoice.update({
       where: { id: invoiceId },
       data: {
-        status: 'PAID',
+        // Coverage authorizes service, but is not money collected by a cashier.
+        status: 'COVERED',
         balanceDue: 0,
       },
     });
@@ -485,7 +515,7 @@ export class ConsultationsService {
       capturedAt: new Date().toISOString(),
       disclaimer: 'Transcription automatisée à relire et valider par le médecin.',
     };
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.consultation.update({
         where: { id },
         data: { clinicalSummary: JSON.stringify(summary), version: { increment: 1 } },
@@ -1185,7 +1215,7 @@ export class ConsultationsService {
 
     if (createdInvoices.length > 0) {
       const hasUnpaidInvoice = createdInvoices.some(
-        (invoice) => invoice.invoiceStatus !== 'PAID',
+        (invoice) => invoice.invoiceStatus !== 'COVERED',
       );
 
       if (hasUnpaidInvoice) {
@@ -1234,10 +1264,10 @@ export class ConsultationsService {
     }>,
   ) {
     const unpaidInvoices = materialized.filter(
-      (invoice) => invoice.invoiceStatus !== 'PAID',
+      (invoice) => invoice.invoiceStatus !== 'COVERED',
     );
     const coveredInvoices = materialized.filter(
-      (invoice) => invoice.invoiceStatus === 'PAID',
+      (invoice) => invoice.invoiceStatus === 'COVERED',
     );
 
     for (const invoice of coveredInvoices) {
@@ -2035,39 +2065,46 @@ export class ConsultationsService {
     }
 
     const medicationIds = lines.map((line: any) => line.medicationId).filter(Boolean);
-    const medications = await this.prisma.medication.findMany({
-      where: { id: { in: medicationIds }, deletedAt: null },
-      include: {
-        // The medication catalogue may be shared, but stock never is.  A
-        // prescription must not be accepted because another establishment has
-        // inventory for the same medication.
-        StockLot: { where: { clinicId } },
-      },
-    });
+    const todayUtc = new Date();
+    todayUtc.setUTCHours(0, 0, 0, 0);
+    const [medications, salePrices] = await Promise.all([
+      this.prisma.medication.findMany({
+        where: { id: { in: medicationIds }, deletedAt: null },
+        include: {
+          // The medication catalogue may be shared; the billable stock is not.
+          StockLot: { where: { clinicId, quantity: { gt: 0 }, expiryDate: { gte: todayUtc } } },
+        },
+      }),
+      this.prisma.medicationSalePrice.findMany({
+        where: { clinicId, medicationId: { in: medicationIds }, currency: 'CDF' },
+      }),
+    ]);
     const medicationById = new Map(medications.map((item) => [item.id, item]));
+    const priceByMedicationId = new Map(salePrices.map((price) => [price.medicationId, price.amount]));
 
     const enrichedLines = lines.map((line: any) => {
       const medication = medicationById.get(line.medicationId);
       if (!medication) throw new BadRequestException('Medicament introuvable.');
       const available = medication.StockLot.reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
       const quantity = Number(line.quantity || 1);
+      if (!Number.isSafeInteger(quantity) || quantity < 1) throw new BadRequestException('Quantité prescrite invalide.');
       if (available < quantity) {
         throw new BadRequestException(`Stock insuffisant pour ${medication.name}.`);
       }
-
-      const latestLot = medication.StockLot
-        .slice()
-        .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())[0];
-      const stockPrice = Number(latestLot?.purchasePrice ?? 0);
-      // Billing values are computed by the server; a browser must never set a price.
-      const unitPrice = stockPrice;
+      const unitPrice = priceByMedicationId.get(line.medicationId);
+      if (!unitPrice || unitPrice.lte(0)) {
+        throw new BadRequestException(`Aucun tarif de vente CDF n'est configuré pour ${medication.name} dans cet établissement.`);
+      }
 
       return { ...line, quantity, unitPrice, medication };
     });
 
-    const total = enrichedLines.reduce((sum: number, line: any) => sum + Number(line.unitPrice || 0) * Number(line.quantity || 1), 0);
+    const total = enrichedLines.reduce(
+      (sum: Prisma.Decimal, line: { unitPrice: Prisma.Decimal; quantity: number }) => sum.plus(line.unitPrice.times(line.quantity)),
+      new Prisma.Decimal(0),
+    );
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const prescription = await tx.prescription.create({
         data: {
           consultationId: id,
@@ -2114,7 +2151,7 @@ export class ConsultationsService {
               label: `${line.medication.name} ${line.dosage || ''}`.trim(),
               quantity: line.quantity,
               unitPrice: line.unitPrice,
-              totalAmount: line.unitPrice * line.quantity,
+              totalAmount: line.unitPrice.times(line.quantity),
             },
           }),
         ),
@@ -2151,6 +2188,102 @@ export class ConsultationsService {
         : invoice;
       return { prescription, invoice: finalInvoice };
     });
+
+    // Routing is deliberately post-commit: failure to push a notification
+    // must never make a doctor retry an already-created prescription.
+    try {
+      await this.notifyPrescriptionRouting(
+        clinicId,
+        consultation.patientId,
+        result.prescription.id,
+        result.invoice.id,
+        result.invoice.status === 'COVERED',
+      );
+    } catch (error) {
+      this.logger.warn(`Post-commit prescription notification failed for consultation ${id}: ${error instanceof Error ? error.name : 'unknown error'}`);
+    }
+    return result;
+  }
+
+  private async notifyPrescriptionRouting(
+    clinicId: string,
+    patientId: string,
+    prescriptionId: string,
+    invoiceId: string,
+    covered: boolean,
+  ) {
+    const role = covered ? RoleSlug.PHARMACIST : RoleSlug.CASHIER;
+    const recipients = await this.prisma.user.findMany({
+      where: {
+        clinicId,
+        status: 'ACTIVE',
+        deletedAt: null,
+        OR: [
+          { primaryRole: role },
+          { roles: { some: { role: { slug: role } } } },
+        ],
+      },
+      select: { id: true },
+    });
+    const title = covered ? 'Ordonnance prise en charge' : 'Paiement ordonnance requis';
+    const message = covered
+      ? 'Une ordonnance prise en charge est disponible à la pharmacie.'
+      : 'Une ordonnance est en attente de paiement à la caisse.';
+    for (const recipient of recipients) {
+      const notification = await this.prisma.notification.create({
+        data: {
+          recipientId: recipient.id,
+          patientId,
+          type: 'TASK',
+          status: 'UNREAD',
+          priority: 'MEDIUM',
+          title,
+          message,
+          relatedEntity: 'Prescription',
+          relatedId: prescriptionId,
+        },
+      });
+      this.notificationsGateway.notifyToUser(recipient.id, 'notification.created', notification);
+      if (covered) {
+        this.notificationsGateway.notifyToUser(recipient.id, 'prescription.created', {
+          prescriptionId,
+          invoiceId,
+          patientId,
+          covered: true,
+        });
+      }
+    }
+
+    if (covered) {
+      const receptionists = await this.prisma.user.findMany({
+        where: {
+          clinicId,
+          status: 'ACTIVE',
+          deletedAt: null,
+          OR: [
+            { primaryRole: RoleSlug.RECEPTIONIST },
+            { roles: { some: { role: { slug: RoleSlug.RECEPTIONIST } } } },
+          ],
+        },
+        select: { id: true },
+      });
+      for (const receptionist of receptionists) {
+        const notification = await this.prisma.notification.create({
+          data: {
+            recipientId: receptionist.id,
+            patientId,
+            type: 'SYSTEM',
+            status: 'UNREAD',
+            priority: 'MEDIUM',
+            title: 'Ordonnance prise en charge par abonnement',
+            message: 'L’ordonnance a été transmise à la pharmacie et ajoutée à la facture entreprise.',
+            relatedEntity: 'Invoice',
+            relatedId: invoiceId,
+          },
+        });
+        this.notificationsGateway.notifyToUser(receptionist.id, 'notification.created', notification);
+      }
+    }
   }
 
   async updatePrescription(consultationId: string, prescriptionId: string, dto: CreatePrescriptionDto, actorId?: string) {
@@ -2221,12 +2354,9 @@ export class ConsultationsService {
       const quantity = Number(line.quantity || 1);
       const available = medication.StockLot.reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
       if (available < quantity) throw new BadRequestException(`Stock insuffisant pour ${medication.name}.`);
-      const latestLot = medication.StockLot.slice().sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())[0];
-      const stockPrice = Number(latestLot?.purchasePrice ?? 0);
       return {
         ...line,
         quantity,
-        unitPrice: stockPrice,
       };
     });
 

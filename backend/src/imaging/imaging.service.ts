@@ -456,7 +456,7 @@ export class ImagingService {
       orderBy: { issuedAt: 'desc' },
       select: { status: true },
     });
-    if (!invoice || invoice.status !== 'PAID') {
+    if (!invoice || !['PAID', 'COVERED'].includes(invoice.status)) {
       throw new BadRequestException('Cet examen d’imagerie ne peut pas être programmé ou réalisé avant validation du paiement.');
     }
   }

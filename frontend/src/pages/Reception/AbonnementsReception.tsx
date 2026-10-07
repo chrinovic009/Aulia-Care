@@ -14,6 +14,7 @@ import {
   fetchSubscriptionCompanies,
   fetchSubscriptionCompany,
   generateMonthlySubscriptionInvoice,
+  updateSubscriptionCompany,
 } from "../../api/subscriptions";
 
 const statusTone = (status?: string) => {
@@ -47,8 +48,10 @@ export default function AbonnementsReception() {
   const [admissibleEmployees, setAdmissibleEmployees] = useState<SubscriptionEmployee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [coverageChoice, setCoverageChoice] = useState(false);
+  const [creditLimitChoice, setCreditLimitChoice] = useState("");
   const companyPagination = useClientPagination(companies, 10);
-  const [companyForm, setCompanyForm] = useState({ name: "", legalName: "", contractNumber: "", phone: "", email: "", contactName: "", billingDay: "30" });
+  const [companyForm, setCompanyForm] = useState({ name: "", legalName: "", contractNumber: "", phone: "", email: "", contactName: "", billingDay: "30", coversAllServices: false, creditLimit: "" });
   const [employeeForm, setEmployeeForm] = useState({ firstName: "", lastName: "", middleName: "", gender: "", profession: "", dateOfBirth: "", age: "", policyNumber: "", employeeNumber: "", phone: "", email: "" });
   const [admissionForm, setAdmissionForm] = useState({ consultationKind: "CONSULTATION_GENERALE", gender: "", dateOfBirth: "", phone: "", email: "", address: "", nationality: "", priority: "normal" });
   const [invoicePeriod, setInvoicePeriod] = useState({ month: String(currentMonth), year: String(currentYear) });
@@ -66,6 +69,8 @@ export default function AbonnementsReception() {
     if (nextCompanyId) {
       const details = await fetchSubscriptionCompany(nextCompanyId);
       setSelectedCompany(details);
+      setCoverageChoice(details.coversAllServices === true);
+      setCreditLimitChoice(details.creditLimit == null ? "" : String(details.creditLimit));
       const employees = await fetchAdmissibleSubscriptionEmployees(nextCompanyId);
       setAdmissibleEmployees(employees);
       setSelectedEmployeeId((current) => current || employees[0]?.id || "");
@@ -82,9 +87,24 @@ export default function AbonnementsReception() {
   const saveCompany = async () => {
     setMessage(null);
     const created = await createSubscriptionCompany(companyForm);
-    setCompanyForm({ name: "", legalName: "", contractNumber: "", phone: "", email: "", contactName: "", billingDay: "30" });
+    setCompanyForm({ name: "", legalName: "", contractNumber: "", phone: "", email: "", contactName: "", billingDay: "30", coversAllServices: false, creditLimit: "" });
     setMessage("Entreprise abonnée enregistrée.");
     await load(created.id);
+  };
+
+  const saveCoverage = async () => {
+    if (!selectedCompanyId) return;
+    setMessage(null);
+    try {
+      await updateSubscriptionCompany(selectedCompanyId, {
+        coversAllServices: coverageChoice,
+        creditLimit: creditLimitChoice.trim() || null,
+      });
+      await load(selectedCompanyId);
+      setMessage("Politique de couverture enregistrée pour cette entreprise.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "La politique de couverture n'a pas été enregistrée.");
+    }
   };
 
   const saveEmployee = async () => {
@@ -177,6 +197,11 @@ export default function AbonnementsReception() {
                 </div>
                 <Input label="Contact responsable" value={companyForm.contactName} onChange={(value) => setCompanyForm((current) => ({ ...current, contactName: value }))} />
                 <Input label="Délai de paiement (jours)" type="number" value={companyForm.billingDay} onChange={(value) => setCompanyForm((current) => ({ ...current, billingDay: value }))} />
+                <Input label="Plafond de crédit CDF (vide = sans plafond)" type="number" value={companyForm.creditLimit} onChange={(value) => setCompanyForm((current) => ({ ...current, creditLimit: value }))} />
+                <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+                  <input type="checkbox" checked={companyForm.coversAllServices} onChange={(event) => setCompanyForm((current) => ({ ...current, coversAllServices: event.target.checked }))} />
+                  Le contrat couvre toutes les prestations Core. Sinon, chaque prestation suit le circuit de paiement particulier.
+                </label>
                 <button onClick={saveCompany} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white"><Plus size={16} /> Enregistrer l'entreprise</button>
               </div>
             </Panel>
@@ -204,6 +229,16 @@ export default function AbonnementsReception() {
           </div>
 
           <div className="space-y-6">
+            {selectedCompany && <Panel title="Couverture du contrat" subtitle="La prise en charge directe nécessite une autorisation explicite ; les anciens contrats restent non couverts jusqu'à validation.">
+              <div className="grid gap-3">
+                <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+                  <input type="checkbox" checked={coverageChoice} onChange={(event) => setCoverageChoice(event.target.checked)} />
+                  Couverture globale des prestations Core de cette entreprise
+                </label>
+                <Input label="Plafond de crédit CDF (vide = sans plafond)" type="number" value={creditLimitChoice} onChange={setCreditLimitChoice} />
+                <button onClick={saveCoverage} className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white">Enregistrer la politique de couverture</button>
+              </div>
+            </Panel>}
             <Panel title="Employés de l'entreprise" subtitle="Pré-enregistrez les agents couverts avant leur première admission.">
               <div className="mb-5 grid gap-3 lg:grid-cols-4">
                 <Input label="Prénom" value={employeeForm.firstName} onChange={(value) => setEmployeeForm((current) => ({ ...current, firstName: value }))} />

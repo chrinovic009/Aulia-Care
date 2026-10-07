@@ -57,7 +57,7 @@ export class PaymentsService {
       }
     }
 
-    if (invoice.status === 'PAID') {
+    if (invoice.status === 'PAID' || invoice.status === 'COVERED') {
       throw new BadRequestException('Cette facture est déjà payée.');
     }
 
@@ -105,7 +105,7 @@ export class PaymentsService {
       if (!invoice || invoice.deletedAt || invoice.clinicId !== invoiceClinicId || invoice.patient.clinicId !== invoiceClinicId) {
         throw new ForbiddenException('La facture ou son patient n’est pas rattaché de façon cohérente à un établissement.');
       }
-      if (invoice.status === 'PAID' || Number(invoice.balanceDue) <= 0) {
+      if (invoice.status === 'PAID' || invoice.status === 'COVERED' || Number(invoice.balanceDue) <= 0) {
         throw new BadRequestException('Cette facture est déjà payée.');
       }
       const balanceDue = Number(invoice.balanceDue.toString());

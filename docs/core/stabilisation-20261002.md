@@ -1,6 +1,79 @@
 # Stabilisation Core — état vérifié le 2026-10-02
 
-Branche locale : `codex/core-stabilisation-20261002`, issue de `feature/durcissement` à `6ab45dce0a2a667d7eeb1747cd8bbf045be90e63`. Aucun déploiement ni accès à la base `aulia_care` de développement n'a été effectué pour les tests de mutation : ils ont utilisé une instance PostgreSQL 16 temporaire sur `127.0.0.1:55433`, base `aulia_core_test`, initialisée en UTF-8.
+## Complément vérifié le 2026-10-06
+
+Le travail a été poursuivi localement, sans déploiement et uniquement contre un
+cluster PostgreSQL 16 jetable (`127.0.0.1:55434`). Les migrations additives
+`20261006000000_medication_sale_price`,
+`20261006010000_subscription_charge_provenance` et
+`20261006010100_subscription_company_explicit_coverage` passent depuis une
+base vide (26 migrations).
+
+### Flux pharmacie et entreprise
+
+- `MedicationSalePrice` sépare désormais le coût d'achat du lot et le tarif de
+  vente par médicament et par clinique. Seul `ADMIN` ou `PHARMACIST` peut le
+  modifier. Une ordonnance sans tarif de vente explicite est rejetée ; aucune
+  facture à zéro ni prix dérivé de `purchasePrice` n'est créé.
+- Les lignes de facture d'ordonnance figent le prix de vente en `Decimal` et la
+  quantité. Les tests couvrent le tarif manquant et `12,35 × 3 = 37,05`.
+- Une prise en charge entreprise est maintenant distinguée de l'encaissement :
+  la facture source passe à `COVERED`, jamais à `PAID`, et aucun paiement
+  personnel fictif n'est généré. Laboratoire, imagerie et pharmacie acceptent
+  `PAID` ou `COVERED` pour l'exécution.
+- Les nouveaux `SubscriptionCharge` conservent `sourceInvoiceId` de manière
+  immuable et utilisent `monthlyInvoiceId` pour la consolidation. La
+  consolidation ne remplace plus la provenance source. Les valeurs historiques
+  de `invoiceId` restent intactes et ambiguës : aucun rapprochement automatique
+  n'a été fait.
+- La couverture globale est un choix explicite de contrat (`coversAllServices`,
+  faux par défaut). Un employé actif sous un contrat non validé suit le circuit
+  particulier. Le plafond de crédit, lorsqu'il est défini, additionne les
+  charges non consolidées et les soldes des factures mensuelles avant une
+  nouvelle prise en charge. Des verrous transactionnels PostgreSQL sérialisent
+  cette décision et la consolidation mensuelle d'une période.
+- Après une ordonnance validée, les notifications sont routées après commit vers
+  la caisse ou la pharmacie, puis vers la réception lorsqu'elle est couverte.
+  Une panne de diffusion n'annule pas la création clinique ou financière.
+
+### Preuves exécutées
+
+| Contrôle | Résultat |
+| --- | --- |
+| `prisma validate` backend | PASS |
+| Typecheck backend | PASS |
+| Build backend | PASS |
+| Tests unitaires backend | PASS — 98/98 |
+| Tests intégration backend | PASS — 1/1 |
+| E2E HTTP/PostgreSQL backend | PASS — 10/10 |
+| Audit tenant sur base fraîche | PASS — 0 anomalie |
+| Build frontend Vite | PASS |
+| Tests unitaires frontend | PASS — 11/11 |
+| Typecheck frontend | ÉCHEC — 95 erreurs restantes sur des écrans cliniques et composants (hors dépendances absentes corrigées) |
+
+Les deux composants de carte dépendaient d'une bibliothèque incompatible avec
+React 19. Ils sont devenus des aperçus d'emplacements sans dépendance externe,
+ce qui garde l'information visible et rétablit le build sans forcer un pair
+dependency incompatible. Le composant de dépôt de fichiers est également
+devenu natif, sans dépendance manquante.
+
+### Limites qui empêchent encore un verdict « pilote validé »
+
+- Le typecheck frontend est encore non nul ; il reste des contrats de données
+  incohérents sur plusieurs écrans médicaux, laboratoire, téléconsultation et
+  patient. Le build Vite ne remplace pas cette preuve.
+- Les notifications post-commit sont best-effort. Elles ne font pas échouer le
+  soin, mais il n'existe pas encore d'outbox persistante avec reprise et
+  déduplication.
+- Le remplacement versionné d'une ordonnance déjà facturée (avoir, complément,
+  restitution et cas de dispensation partielle) reste à concevoir et à faire
+  valider métier ; le blocage protecteur actuel est conservé.
+- Docker n'est pas disponible dans cet environnement : aucune recette Docker,
+  TLS ou navigateur de la pile restaurée n'est déclarée réussie. La migration
+  sur une vraie copie historique reste également à faire après sauvegarde et
+  accord explicite.
+
+Branche locale : `codex/core-stabilisation-20261002`, issue de `feature/durcissement` à `d493455b90ebbf17fa9dc962a5c7854f7f74c111`. Aucun déploiement ni accès à la base `aulia_care` de développement n'a été effectué pour les tests de mutation : ils ont utilisé une instance PostgreSQL 16 temporaire sur `127.0.0.1:55434`, base `aulia_core_test`, initialisée en UTF-8.
 
 ## Corrections prouvées
 
@@ -33,8 +106,14 @@ Les trois migrations additives `20261002000000`, `20261002000001` et `2026100200
 
 ## Gates encore ouverts — verdict : bloqué pour pilote
 
-- Typecheck frontend : échec (159 erreurs lors du relevé, principalement contrats d'écrans cliniques et éléments de template). Le build Vite seul n'est pas une preuve de typage.
-- Facturation médicament : le prix de vente est encore déduit du coût d'achat du lot. Aucun tarif de vente institutionnel dédié n'est prouvé. Les modifications d'ordonnances facturées sont bloquées, faute de workflow de remplacement/avoir.
+- Typecheck frontend : échec (95 erreurs lors du dernier relevé, principalement contrats d'écrans cliniques et éléments de template). Le build Vite seul n'est pas une preuve de typage.
+- Facturation médicament : un tarif de vente explicite et tenant-scopé est désormais requis et figé sur la ligne de facture. Les modifications d'ordonnances facturées restent bloquées tant qu'un workflow métier versionné (avoir, complément, restitution) n'a pas été validé et implémenté.
 - Tests PostgreSQL spécifiques : la vente concurrente est couverte, mais la double délivrance, l'annulation concurrente, les remboursements et les interactions délivrance/vente ne le sont pas encore tous.
 - Pas de migration sur base historique représentative, de recette navigateur, de validation HTTP de la base restaurée ni de validation Docker/TLS dans cet environnement.
 - Lint backend termine avec 615 avertissements et zéro erreur ; ce n'est pas un gate de qualité suffisant pour l'usage réel.
+
+### Relevé local du 2026-10-07
+
+- `npm audit --omit=dev --workspace backend --workspace frontend` : **PASS, 0 vulnérabilité** après verrouillage de `proxy-addr` 2.0.8 et `engine.io` 6.6.11.
+- `prisma validate`, build backend et 98 tests unitaires backend : **PASS**. Le build frontend est également **PASS**.
+- Une nouvelle relance d'intégration/E2E a été tentée avec `TEST_DATABASE_URL` vers l'instance PostgreSQL isolée. Elle ne peut pas constituer une preuve ce jour : le serveur isolé était arrêté et la politique locale Windows a empêché PostgreSQL d'ouvrir son socket TCP sur `127.0.0.1:55434`. Ce n'est ni converti en PASS ni masqué ; il faudra redémarrer une instance PostgreSQL de test autorisée puis relancer ces suites.

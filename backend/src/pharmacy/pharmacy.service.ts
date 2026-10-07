@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-import { PatientWorkflowStatus, Prisma } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { PatientWorkflowStatus, Prisma, RoleSlug } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { ClinicContextService } from '../core/clinic-context.service';
+import { SetMedicationSalePriceDto } from './dto/set-medication-sale-price.dto';
 
 @Injectable()
 export class PharmacyService {
@@ -13,6 +14,52 @@ export class PharmacyService {
 
   private requireClinic(actorId?: string) {
     return this.clinicContext.requireOperationalActor({ userId: actorId });
+  }
+
+  async getSalePrice(medicationId: string, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    return this.prisma.medicationSalePrice.findUnique({
+      where: { clinicId_medicationId: { clinicId: actor.clinicId, medicationId } },
+      select: { medicationId: true, amount: true, currency: true, updatedAt: true },
+    });
+  }
+
+  async setSalePrice(medicationId: string, dto: SetMedicationSalePriceDto, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    if (actor.primaryRole !== RoleSlug.ADMIN && actor.primaryRole !== RoleSlug.PHARMACIST) {
+      throw new ForbiddenException('Seuls l’administrateur et le pharmacien peuvent fixer le tarif de vente.');
+    }
+    if (typeof dto.amount !== 'string' || !/^\d{1,10}(?:\.\d{1,2})?$/.test(dto.amount)) {
+      throw new BadRequestException('Un tarif de vente CDF positif avec au plus deux décimales est requis.');
+    }
+    const amount = new Prisma.Decimal(dto.amount);
+    if (!amount.isFinite() || amount.lte(0) || amount.decimalPlaces() > 2) {
+      throw new BadRequestException('Un tarif de vente CDF positif avec au plus deux décimales est requis.');
+    }
+    const medication = await this.prisma.medication.findFirst({
+      where: { id: medicationId, deletedAt: null }, select: { id: true },
+    });
+    if (!medication) throw new NotFoundException('Médicament introuvable.');
+    return this.prisma.$transaction(async (tx) => {
+      const key = { clinicId: actor.clinicId, medicationId };
+      const before = await tx.medicationSalePrice.findUnique({ where: { clinicId_medicationId: key } });
+      const price = await tx.medicationSalePrice.upsert({
+        where: { clinicId_medicationId: key },
+        create: { ...key, amount, currency: 'CDF' },
+        update: { amount },
+      });
+      await tx.auditTrail.create({
+        data: {
+          actorId: actor.id,
+          entity: 'MedicationSalePrice',
+          entityId: price.id,
+          action: before ? 'UPDATE' : 'CREATE',
+          before: before ? { clinicId: actor.clinicId, medicationId, amount: before.amount.toString() } : undefined,
+          after: { clinicId: actor.clinicId, medicationId, amount: price.amount.toString(), currency: 'CDF' },
+        },
+      });
+      return price;
+    });
   }
 
   findAll() {
@@ -65,6 +112,7 @@ export class PharmacyService {
         category: { include: { section: true } },
         StockLot: { where: eligibleLot, orderBy: [{ expiryDate: 'asc' }, { receivedAt: 'asc' }] },
         StockTransaction: { where: { clinicId: actor.clinicId }, orderBy: { createdAt: 'desc' }, take: 20 },
+        salePrices: { where: { clinicId: actor.clinicId }, take: 1 },
       },
       orderBy: { name: 'asc' },
     });
@@ -76,7 +124,7 @@ export class PharmacyService {
           ...medication,
           availableQuantity: quantity,
           // Acquisition cost is not a patient-facing sale tariff.
-          unitPrice: null,
+          unitPrice: medication.salePrices[0]?.amount ?? null,
           lots: medication.StockLot,
         };
       })
@@ -153,7 +201,7 @@ export class PharmacyService {
           OR: [
             { prescriptionId: id, prescriptionVersion: prescription.version },
             { prescriptionId: null, remarks: `Prescription:${id}` },
-          ], status: 'PAID' },
+          ], status: { in: ['PAID', 'COVERED'] } },
         select: { id: true },
       });
       if (!paidInvoice) throw new BadRequestException('La prescription doit être payée avant délivrance.');

@@ -1049,6 +1049,7 @@ model Medication {
   PurchaseOrderLine     PurchaseOrderLine[]
   StockLot              StockLot[]
   StockTransaction      StockTransaction[]
+  salePrices            MedicationSalePrice[]
 
   @@index([categoryId])
 }
@@ -1975,6 +1976,8 @@ model Invoice {
   payments                    Payment[]
   refundRequests              RefundRequest[]
   subscriptionCharges         SubscriptionCharge[]
+  sourceSubscriptionCharges   SubscriptionCharge[]         @relation("SubscriptionChargeSourceInvoice")
+  monthlySubscriptionCharges  SubscriptionCharge[]         @relation("SubscriptionChargeMonthlyInvoice")
   wearableSubscriptions       WearableSubscription[]
 
   @@index([status])
@@ -2052,6 +2055,7 @@ model Clinic {
   appointments                  Appointment[]
   prescriptions                 Prescription[]
   medicationStocks              MedicationStock[]
+  medicationSalePrices           MedicationSalePrice[]
   patients                      Patient[]
   deathRecords                  PatientDeathRecord[]
   patientVisits                 PatientVisit[]
@@ -2380,6 +2384,23 @@ model MedicationStock {
   @@index([clinicId, medicationId])
   @@index([expiryDate])
   @@index([clinicId])
+}
+
+/// Current institutional selling price. Purchase costs remain exclusively on stock lots.
+/// Invoice lines snapshot this amount so later price changes never alter past bills.
+model MedicationSalePrice {
+  id           String     @id @default(uuid())
+  clinicId     String
+  medicationId String
+  amount       Decimal    @db.Decimal(12, 2)
+  currency     String     @default("CDF")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  clinic       Clinic     @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  medication   Medication @relation(fields: [medicationId], references: [id], onDelete: Restrict)
+
+  @@unique([clinicId, medicationId])
+  @@index([medicationId])
 }
 
 model StockMovement {
@@ -2804,6 +2825,8 @@ model SubscriptionCompany {
   status             SubscriptionCompanyStatus    @default(ACTIVE)
   billingDay         Int                          @default(30)
   creditLimit        Decimal?                     @db.Decimal(12, 2)
+  /// Explicit contractual opt-in. False means services follow the personal payment circuit.
+  coversAllServices  Boolean                      @default(false)
   createdAt          DateTime                     @default(now())
   updatedAt          DateTime                     @updatedAt
   deletedAt          DateTime?
@@ -2854,6 +2877,9 @@ model SubscriptionCharge {
   employeeId  String?
   patientId   String?
   invoiceId   String?
+  /// Immutable origin for new charges; historical invoiceId values need manual classification.
+  sourceInvoiceId String? @unique
+  monthlyInvoiceId String?
   serviceId   String?
   label       String
   amount      Decimal                  @db.Decimal(12, 2)
@@ -2868,12 +2894,15 @@ model SubscriptionCharge {
   company     SubscriptionCompany      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee    SubscriptionEmployee?    @relation(fields: [employeeId], references: [id])
   invoice     Invoice?                 @relation(fields: [invoiceId], references: [id])
+  sourceInvoice Invoice? @relation("SubscriptionChargeSourceInvoice", fields: [sourceInvoiceId], references: [id], onDelete: Restrict)
+  monthlyInvoice Invoice? @relation("SubscriptionChargeMonthlyInvoice", fields: [monthlyInvoiceId], references: [id], onDelete: Restrict)
   patient     Patient?                 @relation(fields: [patientId], references: [id])
   service     Service?                 @relation(fields: [serviceId], references: [id])
 
   @@index([companyId, year, month])
   @@index([patientId])
   @@index([status])
+  @@index([monthlyInvoiceId])
 }
 
 model MonthlySubscriptionInvoice {
@@ -3654,6 +3683,7 @@ enum InvoiceStatus {
   PENDING
   ISSUED
   PAID
+  COVERED
   PARTIALLY_PAID
   CANCELLED
 }

@@ -68,3 +68,12 @@ tmp_*.py
 
 # PostgreSQL production backups
 /backups/
+
+# Local Core verification artifacts; never publish database files or session cookies.
+/.tmp-core-pg-20261002/
+/.tmp-core-pg-utf8/
+/.tmp-core-pg-20261006/
+/.tmp-core-backup-20261002.dump
+/.tmp-core-backup-chain-20261002.dump
+/.aulia-test-cookies.txt
+/backend/tsc-all.txt

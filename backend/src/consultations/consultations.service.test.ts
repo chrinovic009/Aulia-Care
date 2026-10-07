@@ -5,6 +5,53 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
+import { Prisma } from '@prisma/client';
+
+test('prescription rejects a missing clinic sale price without opening a transaction', async () => {
+  let transactionStarted = false;
+  const service = new ConsultationsService({
+    medication: { findMany: async () => [{ id: 'med-a', name: 'Médicament A', StockLot: [{ quantity: 10, purchasePrice: new Prisma.Decimal('1.00') }] }] },
+    medicationSalePrice: { findMany: async () => [] },
+    $transaction: async () => { transactionStarted = true; },
+  } as unknown as PrismaService, {} as NotificationsGateway, {} as PatientWorkflowService);
+  Object.defineProperty(service, 'findOne', { value: async () => ({ providerId: 'doctor-a', clinicId: 'clinic-a', patientId: 'patient-a' }) });
+  Object.defineProperty(service, 'ensureWriteAccess', { value: async () => undefined });
+
+  await assert.rejects(
+    service.createPrescription('consultation-a', { lines: [{ medicationId: 'med-a', quantity: 2 }] } as CreatePrescriptionDto, 'doctor-a'),
+    /Aucun tarif de vente CDF/,
+  );
+  assert.equal(transactionStarted, false);
+});
+
+test('prescription snapshots clinic sale price rather than stock purchase cost', async () => {
+  const invoiceRows: Array<Record<string, unknown>> = [];
+  const lineRows: Array<Record<string, unknown>> = [];
+  const service = new ConsultationsService({
+    medication: { findMany: async () => [{ id: 'med-a', name: 'Médicament A', StockLot: [{ quantity: 10, purchasePrice: new Prisma.Decimal('1.00') }] }] },
+    medicationSalePrice: { findMany: async () => [{ medicationId: 'med-a', amount: new Prisma.Decimal('12.35') }] },
+    user: { findMany: async () => [] },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      prescription: { create: async () => ({ id: 'prescription-a', version: 1 }) },
+      invoice: { create: async (input: { data: Record<string, unknown> }) => {
+        invoiceRows.push(input.data);
+        return { id: 'invoice-a', ...input.data };
+      } },
+      invoiceLine: { create: async (input: { data: Record<string, unknown> }) => { lineRows.push(input.data); } },
+      subscriptionEmployee: { findFirst: async () => null },
+      medicalHistory: { create: async () => undefined },
+    }),
+  } as unknown as PrismaService, {} as NotificationsGateway, {
+    transition: async () => undefined,
+  } as unknown as PatientWorkflowService);
+  Object.defineProperty(service, 'findOne', { value: async () => ({ providerId: 'doctor-a', clinicId: 'clinic-a', patientId: 'patient-a' }) });
+  Object.defineProperty(service, 'ensureWriteAccess', { value: async () => undefined });
+
+  await service.createPrescription('consultation-a', { lines: [{ medicationId: 'med-a', quantity: 3 }] } as CreatePrescriptionDto, 'doctor-a');
+  assert.equal(String(invoiceRows[0].totalAmount), '37.05');
+  assert.equal(String(lineRows[0].unitPrice), '12.35');
+  assert.equal(String(lineRows[0].totalAmount), '37.05');
+});
 
 test('a billed prescription cannot be rewritten behind an invoice or payment', async () => {
   let transactionStarted = false;
@@ -97,7 +144,8 @@ test('corporate charge keeps the clinical invoice reference and does not duplica
     {} as PrismaService, {} as NotificationsGateway, {} as PatientWorkflowService,
   );
   const tx = {
-    subscriptionEmployee: { findFirst: async () => ({ id: 'employee-a', companyId: 'company-a', company: { name: 'Company A' } }) },
+    $executeRaw: async () => 1,
+    subscriptionEmployee: { findFirst: async () => ({ id: 'employee-a', companyId: 'company-a', company: { name: 'Company A', coversAllServices: true, creditLimit: null } }) },
     subscriptionCharge: {
       findFirst: async () => alreadyCharged ? { id: 'charge-a' } : null,
       create: async (input: { data: Record<string, unknown> }) => { charges.push(input.data); alreadyCharged = true; },
@@ -109,8 +157,38 @@ test('corporate charge keeps the clinical invoice reference and does not duplica
   assert.equal(await charge(tx, 'patient-a', 'clinic-a', 'invoice-a', 'Imagerie', 100, null), true);
   assert.equal(charges.length, 1);
   assert.equal(charges[0].serviceId, null);
+  assert.equal(charges[0].sourceInvoiceId, 'invoice-a');
   assert.equal(updates.length, 1);
+  assert.equal(updates[0].status, 'COVERED');
   assert.equal(Object.hasOwn(updates[0], 'remarks'), false);
+});
+
+test('an active corporate employee without explicit global coverage remains on the personal payment circuit', async () => {
+  let written = false;
+  const service = new ConsultationsService({} as PrismaService, {} as NotificationsGateway, {} as PatientWorkflowService);
+  const covered = await (service as any).recordSubscriptionChargeForInvoice({
+    subscriptionEmployee: { findFirst: async () => ({ company: { coversAllServices: false } }) },
+    subscriptionCharge: { create: async () => { written = true; } },
+  }, 'patient-a', 'clinic-a', 'invoice-a', 'Examen', 100);
+  assert.equal(covered, false);
+  assert.equal(written, false);
+});
+
+test('credit limit includes pending charges and monthly balances before authorizing coverage', async () => {
+  let written = false;
+  const service = new ConsultationsService({} as PrismaService, {} as NotificationsGateway, {} as PatientWorkflowService);
+  const covered = await (service as any).recordSubscriptionChargeForInvoice({
+    $executeRaw: async () => 1,
+    subscriptionEmployee: { findFirst: async () => ({ companyId: 'company-a', company: { coversAllServices: true, creditLimit: new Prisma.Decimal('100.00') } }) },
+    subscriptionCharge: {
+      findFirst: async () => null,
+      aggregate: async () => ({ _sum: { amount: new Prisma.Decimal('20.00') } }),
+      create: async () => { written = true; },
+    },
+    invoice: { aggregate: async () => ({ _sum: { balanceDue: new Prisma.Decimal('60.00') } }) },
+  }, 'patient-a', 'clinic-a', 'invoice-a', 'Examen', new Prisma.Decimal('25.00'));
+  assert.equal(covered, false);
+  assert.equal(written, false);
 });
 
 test('a covered exam notifies its clinic service and reception even beside an unpaid exam', async () => {
@@ -135,7 +213,7 @@ test('a covered exam notifies its clinic service and reception even beside an un
   );
 
   await (service as any).notifyMaterializedExamInvoices('clinic-a', 'patient-a', 'A', 'Patient', [
-    { invoiceId: 'covered-a', invoiceStatus: 'PAID', invoiceTotal: 100, kind: 'LABORATORY', label: 'Test', priority: 'NORMAL' },
+    { invoiceId: 'covered-a', invoiceStatus: 'COVERED', invoiceTotal: 100, kind: 'LABORATORY', label: 'Test', priority: 'NORMAL' },
     { invoiceId: 'unpaid-a', invoiceStatus: 'PENDING', invoiceTotal: 200, kind: 'IMAGING', label: 'Image', priority: 'NORMAL' },
   ]);
 

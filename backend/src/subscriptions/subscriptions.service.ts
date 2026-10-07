@@ -9,6 +9,7 @@ import {
   InvoiceType,
   PatientVisitStatus,
   PatientWorkflowStatus,
+  Prisma,
   SubscriptionChargeStatus,
   SubscriptionCompanyStatus,
   SubscriptionEmployeeStatus,
@@ -31,6 +32,7 @@ export interface SubscriptionCompanyInput {
   contractNumber?: string;
   billingDay?: number | string;
   creditLimit?: number | string;
+  coversAllServices?: boolean;
   status?: SubscriptionCompanyStatus;
   allowExistingCompany?: boolean;
 }
@@ -204,6 +206,7 @@ export class SubscriptionsService {
         contractNumber,
         billingDay: validBillingDay(dto.billingDay),
         creditLimit: validMoneyOrNull(dto.creditLimit),
+        coversAllServices: dto.coversAllServices === true,
         status: dto.status || SubscriptionCompanyStatus.ACTIVE,
       },
     });
@@ -265,6 +268,7 @@ export class SubscriptionsService {
         email: normalizeEmail(company.email) || null, contactName: company.contactName?.trim() || null,
         contactPhone: normalizePhone(company.contactPhone) || null, contactEmail: normalizeEmail(company.contactEmail) || null,
         billingDay: validBillingDay(company.billingDay), creditLimit: validMoneyOrNull(company.creditLimit),
+        coversAllServices: company.coversAllServices === true,
         status: company.status || SubscriptionCompanyStatus.ACTIVE,
       };
       const savedCompany = existing
@@ -304,6 +308,7 @@ export class SubscriptionsService {
         ...(dto.contactEmail !== undefined ? { contactEmail: normalizeEmail(dto.contactEmail) || null } : {}),
         ...(dto.billingDay !== undefined ? { billingDay: validBillingDay(dto.billingDay) } : {}),
         ...(dto.creditLimit !== undefined ? { creditLimit: validMoneyOrNull(dto.creditLimit) } : {}),
+        ...(dto.coversAllServices !== undefined ? { coversAllServices: dto.coversAllServices === true } : {}),
         ...(dto.status !== undefined ? { status: dto.status } : {}),
       },
     });
@@ -390,6 +395,9 @@ export class SubscriptionsService {
     if (employee.status !== SubscriptionEmployeeStatus.ACTIVE || employee.company.status !== SubscriptionCompanyStatus.ACTIVE) {
       throw new BadRequestException('Cet employé ou son entreprise n’est pas actif.');
     }
+    if (!employee.company.coversAllServices) {
+      throw new BadRequestException('Ce contrat ne couvre pas encore les prestations Core. Validez sa couverture ou utilisez le circuit particulier.');
+    }
     if (employee.patientId) throw new BadRequestException('Cet employé possède déjà une fiche patient. Utilisez une nouvelle visite.');
     const { service: billingService, price } = await this.resolveReceptionBillingService(dto.consultationKind || 'CONSULTATION_GENERALE', actor.clinicId);
     const selectedService = dto.serviceId
@@ -410,6 +418,27 @@ export class SubscriptionsService {
         }, include: { company: true },
       });
       if (!currentEmployee) throw new BadRequestException('Cet employé a déjà été admis ou n’est plus disponible.');
+      if (!currentEmployee.company.coversAllServices) {
+        throw new BadRequestException('Ce contrat ne couvre pas les prestations Core.');
+      }
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`subscription-company:${currentEmployee.companyId}`}))`;
+      if (currentEmployee.company.creditLimit !== null) {
+        const [unbilled, billed] = await Promise.all([
+          tx.subscriptionCharge.aggregate({
+            where: { companyId: currentEmployee.companyId, status: SubscriptionChargeStatus.PENDING_MONTHLY_INVOICE, deletedAt: null },
+            _sum: { amount: true },
+          }),
+          tx.invoice.aggregate({
+            where: { clinicId: actor.clinicId, type: InvoiceType.SUBSCRIPTION_MONTHLY, deletedAt: null,
+              status: { not: 'CANCELLED' }, monthlySubscriptionInvoices: { some: { companyId: currentEmployee.companyId, deletedAt: null } } },
+            _sum: { balanceDue: true },
+          }),
+        ]);
+        if (new Prisma.Decimal(unbilled._sum.amount || 0).plus(billed._sum.balanceDue || 0).plus(price)
+          .gt(currentEmployee.company.creditLimit)) {
+          throw new BadRequestException('Le plafond de crédit de ce contrat est atteint. Utilisez le circuit particulier ou réglez la dette entreprise.');
+        }
+      }
       const patient = await tx.patient.create({
         data: {
           clinicId: actor.clinicId, firstName: currentEmployee.firstName, lastName: currentEmployee.lastName,
@@ -484,7 +513,9 @@ export class SubscriptionsService {
       if (!invoice) throw new NotFoundException('Facture introuvable dans cet établissement.');
     }
     const charge = await this.prisma.subscriptionCharge.create({
-      data: { companyId: company.id, employeeId: dto.employeeId || null, patientId: dto.patientId || null, invoiceId: dto.invoiceId || null,
+      data: { companyId: company.id, employeeId: dto.employeeId || null, patientId: dto.patientId || null,
+        // invoiceId is retained for legacy readers; sourceInvoiceId is immutable provenance for new writes.
+        invoiceId: dto.invoiceId || null, sourceInvoiceId: dto.invoiceId || null,
         serviceId: dto.serviceId || null, label: dto.label.trim(), amount, serviceDate,
         month: dto.month ? Number(dto.month) : serviceDate.getMonth() + 1, year: dto.year ? Number(dto.year) : serviceDate.getFullYear() },
     });
@@ -496,24 +527,28 @@ export class SubscriptionsService {
     const actor = await this.requireClinic(actorId);
     if (!Number.isInteger(year) || year < 2000 || !Number.isInteger(month) || month < 1 || month > 12) throw new BadRequestException('La période de facturation est invalide.');
     const company = await this.findCompanyInClinic(companyId, actor.clinicId);
-    const charges = await this.prisma.subscriptionCharge.findMany({
-      where: { companyId: company.id, year, month, status: SubscriptionChargeStatus.PENDING_MONTHLY_INVOICE, deletedAt: null,
-        company: { clinicId: actor.clinicId, deletedAt: null } },
-      include: { employee: true, patient: true, service: true }, orderBy: { serviceDate: 'asc' },
-    });
-    if (!charges.length) throw new BadRequestException('Aucune dépense à facturer pour cette période.');
-    if (charges.some((charge) => charge.patient?.clinicId !== actor.clinicId)) throw new ForbiddenException('Une dépense abonnement est incohérente avec cet établissement.');
-    const total = charges.reduce((sum, item) => sum + Number(item.amount), 0);
-    const anchorPatient = charges.find((item) => item.patientId)?.patientId;
-    if (!anchorPatient) throw new BadRequestException('Impossible de générer une facture sans patient rattaché.');
     // The company term is counted from issuance so every invoice carries its
     // own contractual deadline instead of inheriting a global calendar day.
     const issuedAt = new Date();
     const dueDate = new Date(issuedAt);
     dueDate.setDate(dueDate.getDate() + (company.billingDay || 30));
     const result = await this.prisma.$transaction(async (tx) => {
+      // A transaction-scoped lock serializes generation for one company and
+      // billing period. Read pending charges only after acquiring it.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`subscription-company:${company.id}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`subscription:${company.id}:${year}:${month}`}))`;
       const existingMonthly = await tx.monthlySubscriptionInvoice.findFirst({ where: { companyId: company.id, year, month, deletedAt: null }, select: { id: true } });
       if (existingMonthly) throw new BadRequestException('La facture mensuelle de cette période existe déjà.');
+      const charges = await tx.subscriptionCharge.findMany({
+        where: { companyId: company.id, year, month, status: SubscriptionChargeStatus.PENDING_MONTHLY_INVOICE, deletedAt: null,
+          company: { clinicId: actor.clinicId, deletedAt: null } },
+        include: { employee: true, patient: true, service: true }, orderBy: { serviceDate: 'asc' },
+      });
+      if (!charges.length) throw new BadRequestException('Aucune dépense à facturer pour cette période.');
+      if (charges.some((charge) => charge.patient?.clinicId !== actor.clinicId)) throw new ForbiddenException('Une dépense abonnement est incohérente avec cet établissement.');
+      const total = charges.reduce((sum, item) => sum.plus(item.amount), new Prisma.Decimal(0));
+      const anchorPatient = charges.find((item) => item.patientId)?.patientId;
+      if (!anchorPatient) throw new BadRequestException('Impossible de générer une facture sans patient rattaché.');
       const invoice = await tx.invoice.create({
         data: { patientId: anchorPatient, issuedById: actor.id, clinicId: actor.clinicId, type: InvoiceType.SUBSCRIPTION_MONTHLY,
           status: 'ISSUED', issuedAt, totalAmount: total, balanceDue: total, dueDate,
@@ -528,7 +563,7 @@ export class SubscriptionsService {
       });
       const updatedCharges = await tx.subscriptionCharge.updateMany({
         where: { id: { in: charges.map((charge) => charge.id) }, companyId: company.id, status: SubscriptionChargeStatus.PENDING_MONTHLY_INVOICE },
-        data: { status: SubscriptionChargeStatus.INVOICED, invoiceId: invoice.id },
+        data: { status: SubscriptionChargeStatus.INVOICED, monthlyInvoiceId: invoice.id },
       });
       if (updatedCharges.count !== charges.length) throw new BadRequestException('La période a changé pendant la génération. Réessayez.');
       await tx.auditTrail.create({

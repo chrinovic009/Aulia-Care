@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Post, UseGuards, Request, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, UseGuards, Request, Query } from '@nestjs/common';
 import { ParseUUIDPipe } from '@nestjs/common'; // Ajoutez cet import s'il n'est pas présent
 import { PharmacyService } from './pharmacy.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { AuthenticatedActor } from '../core/clinic-context.service';
+import { SetMedicationSalePriceDto } from './dto/set-medication-sale-price.dto';
 
 interface AuthenticatedRequest {
   user?: AuthenticatedActor;
@@ -50,6 +51,18 @@ export class PharmacyController {
   @Roles('SUPER_ADMIN', 'PHARMACIST')
   stock(@Request() req: AuthenticatedRequest) {
     return this.pharmacyService.stockCatalog(req.user?.userId || req.user?.id);
+  }
+
+  @Get('medications/:id/sale-price')
+  @Roles('ADMIN', 'PHARMACIST', 'PHYSICIAN', 'CASHIER')
+  salePrice(@Param('id', ParseUUIDPipe) id: string, @Request() req: AuthenticatedRequest) {
+    return this.pharmacyService.getSalePrice(id, req.user?.userId || req.user?.id);
+  }
+
+  @Put('medications/:id/sale-price')
+  @Roles('ADMIN', 'PHARMACIST')
+  setSalePrice(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetMedicationSalePriceDto, @Request() req: AuthenticatedRequest) {
+    return this.pharmacyService.setSalePrice(id, dto, req.user?.userId || req.user?.id);
   }
 
   // 2. GESTION DES PRESCRIPTIONS

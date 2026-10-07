@@ -201,6 +201,9 @@ test(
           unit: 'comprimé',
         },
       });
+      await prisma.medicationSalePrice.create({
+        data: { clinicId: clinic.id, medicationId: medication.id, amount: '750.00', currency: 'CDF' },
+      });
       await prisma.stockLot.create({
         data: {
           clinicId: clinic.id,
@@ -346,6 +349,7 @@ test(
       const prescriptionId = prescription.body.prescription.id as string;
       assert.equal(prescription.body.invoice.prescriptionId, prescriptionId);
       assert.equal(prescription.body.invoice.prescriptionVersion, prescription.body.prescription.version);
+      assert.equal(Number(prescription.body.invoice.totalAmount), 1_500);
       await request(server)
         .patch(`/api/consultations/${consultationId}/prescriptions/${prescriptionId}`)
         .set('Cookie', physicianCookies)
@@ -354,7 +358,7 @@ test(
       await request(server)
         .post('/api/payments')
         .set('Cookie', cashierCookies)
-        .send({ invoiceId: prescription.body.invoice.id, amount: 1_000, method: PaymentMethod.CASH })
+        .send({ invoiceId: prescription.body.invoice.id, amount: 1_500, method: PaymentMethod.CASH })
         .expect(201);
       await request(server)
         .post(`/api/pharmacy/prescriptions/${prescriptionId}/dispense`)
@@ -434,7 +438,7 @@ test(
       const company = await request(server)
         .post('/api/subscriptions/companies')
         .set('Cookie', receptionCookies)
-        .send({ name: `Entreprise ${suffix}`, contractNumber: `SUB-${suffix}`, billingDay: 28 })
+        .send({ name: `Entreprise ${suffix}`, contractNumber: `SUB-${suffix}`, billingDay: 28, coversAllServices: true })
         .expect(201);
       const subscriber = await request(server)
         .post(`/api/subscriptions/companies/${company.body.id}/employees`)
@@ -466,10 +470,13 @@ test(
         await prisma.labResult.deleteMany({ where: { labRequest: clinicScope } }).catch(() => undefined);
         await prisma.labRequest.deleteMany({ where: clinicScope }).catch(() => undefined);
         await prisma.payment.deleteMany({ where: clinicScope }).catch(() => undefined);
+        await prisma.subscriptionCharge.deleteMany({ where: { company: clinicScope } }).catch(() => undefined);
+        await prisma.monthlySubscriptionInvoice.deleteMany({ where: { company: clinicScope } }).catch(() => undefined);
         await prisma.invoice.deleteMany({ where: clinicScope }).catch(() => undefined);
         await prisma.patient.deleteMany({ where: clinicScope }).catch(() => undefined);
         await prisma.subscriptionCompany.deleteMany({ where: clinicScope }).catch(() => undefined);
         await prisma.stockLot.deleteMany({ where: clinicScope }).catch(() => undefined);
+        await prisma.medicationSalePrice.deleteMany({ where: clinicScope }).catch(() => undefined);
         await prisma.operatingRoom.deleteMany({ where: clinicScope }).catch(() => undefined);
         await prisma.imagingCatalogue.deleteMany({ where: clinicScope }).catch(() => undefined);
         await prisma.serviceUnit.deleteMany({ where: clinicScope }).catch(() => undefined);
