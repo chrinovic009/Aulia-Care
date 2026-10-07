@@ -68,3 +68,6 @@ tmp_*.py
 
 # PostgreSQL production backups
 /backups/
+# Local Aulia Care temporary/test artifacts
+/.aulia-test-cookies.txt
+/.tmp-*
