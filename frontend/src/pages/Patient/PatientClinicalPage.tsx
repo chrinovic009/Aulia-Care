@@ -115,7 +115,7 @@ export default function PatientClinicalPage({ mode }: PatientClinicalPageProps) 
               {profile.gender || "-"} - {profile.phone || "Telephone non renseigne"} - {profile.service?.name || "Service non renseigne"}
             </p>
             <div className="mt-4 grid gap-3 sm:grid-cols-4">
-              <Metric label="Statut" value={profile.workflowStatus || "-"} />
+              <Metric label="Statut" value={workflowStatusLabel(profile.workflowStatus)} />
               <Metric label="Priorite" value={profile.priority || "Normale"} />
               <Metric label="Groupe sanguin" value={profile.bloodType || "-"} />
               <Metric label="Reception" value={profile.receptionist?.displayName || "-"} />
@@ -142,11 +142,11 @@ export default function PatientClinicalPage({ mode }: PatientClinicalPageProps) 
                             <span className="text-slate-600 dark:text-slate-400">{contact.phone || "Téléphone non renseigné"}</span>
                             {contact.phone ? (
                               <span className="flex items-center gap-2">
-                                <a href={`tel:${contact.phone.replace(/\s+/g, "")}`} aria-label={`Appeler ${contact.name}`} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200">📞</a>
+                                <a href={`tel:${String(contact.phone).replace(/\s+/g, "")}`} aria-label={`Appeler ${contact.name}`} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200">📞</a>
                                 <button
                                   onClick={() => {
                                     const useWhatsApp = window.confirm("Ouvrir WhatsApp pour discuter ? OK = WhatsApp, Annuler = SMS");
-                                    const digits = contact.phone.replace(/\D/g, "");
+                                    const digits = String(contact.phone).replace(/\D/g, "");
                                     if (useWhatsApp) {
                                       window.open(`https://wa.me/${digits}`, "_blank");
                                     } else {
@@ -356,7 +356,7 @@ function humanizeKey(key: string) {
     .replace(/^./, (char) => char.toUpperCase());
 }
 
-function formatObjectValue(value: unknown) {
+function formatObjectValue(value: unknown): string {
   if (Array.isArray(value)) {
     return value
       .map((item) => (typeof item === "object" ? Object.values(item as Record<string, unknown>).filter(Boolean).join(" ") : String(item)))

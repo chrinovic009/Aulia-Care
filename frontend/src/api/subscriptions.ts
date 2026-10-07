@@ -40,6 +40,7 @@ export type SubscriptionEmployee = {
 
 export type SubscriptionCharge = {
   id: string;
+  prescriptionReplacementId?: string | null;
   label: string;
   amount: string | number;
   currency?: string;

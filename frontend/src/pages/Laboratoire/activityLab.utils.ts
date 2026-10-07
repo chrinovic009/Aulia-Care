@@ -22,7 +22,7 @@ export const buildLabRequestDisplayId = (position?: number, patient?: LabRequest
 };
 
 export const formatNfsParameterReference = (
-  parameter: { referenceRange?: string | null; unit?: string | null; name: string },
+  parameter: { referenceRange?: string | null; unit?: string | null; name?: string | null },
   patientGender?: string | null,
 ) => {
   const referenceValue = String(parameter.referenceRange || "").trim();

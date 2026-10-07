@@ -1,28 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Mic, MicOff, Phone, PhoneOff, Video } from 'lucide-react';
+import { Camera, Mic, Phone, PhoneOff, Video } from 'lucide-react';
 import { useRealtime } from '../../context/RealtimeContext';
 import { saveTelehealthTranscript } from '../../api/doctor';
 
 type TranscriptEntry = { id: string; speaker: 'MEDECIN' | 'PATIENT'; text: string; at: string };
 type Signal = { type: 'offer' | 'answer' | 'candidate'; sdp?: string; candidate?: RTCIceCandidateInit };
 
-declare global {
-  interface Window {
-    SpeechRecognition?: new () => SpeechRecognitionLike;
-    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-  }
-}
-
-type SpeechRecognitionLike = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  start: () => void;
-  stop: () => void;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: { error?: string }) => void) | null;
-};
-type SpeechRecognitionEventLike = { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> };
 
 const readHospitalIceServers = (): RTCIceServer[] => {
   try {
@@ -90,7 +73,7 @@ function useWebRtcCall(role: 'PHYSICIAN' | 'PATIENT', onTranscript?: (entries: T
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const activeCallRef = useRef<string | null>(null);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const recognitionRef = useRef<AuliaSpeechRecognition | null>(null);
   const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
 
   const cleanUp = () => {
@@ -110,7 +93,7 @@ function useWebRtcCall(role: 'PHYSICIAN' | 'PATIENT', onTranscript?: (entries: T
     setTranscript((current) => {
       // Browser recognition receives the local physician microphone only; it
       // must never pretend to have identified the remote patient speaker.
-      const next = [...current, { id: crypto.randomUUID(), speaker: 'MEDECIN', text: clean, at: new Date().toISOString() }];
+      const next: TranscriptEntry[] = [...current, { id: crypto.randomUUID(), speaker: 'MEDECIN', text: clean, at: new Date().toISOString() }];
       onTranscript?.(next);
       return next;
     });
@@ -197,14 +180,18 @@ function useWebRtcCall(role: 'PHYSICIAN' | 'PATIENT', onTranscript?: (entries: T
         setLocalStream(stream);
         return stream;
       } catch (fallbackError) {
-        const error = fallbackError instanceof DOMException ? fallbackError : preferredError;
-        if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
+        const errorName = fallbackError instanceof DOMException
+          ? fallbackError.name
+          : preferredError instanceof DOMException
+            ? preferredError.name
+            : undefined;
+        if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
           throw new Error('Autorisation caméra ou microphone refusée. Autorisez les deux dans les réglages du navigateur puis relancez l’appel.');
         }
-        if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
+        if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
           throw new Error('Aucune caméra ou aucun microphone détecté par le navigateur. Vérifiez les autorisations système et qu’aucune autre application ne les utilise.');
         }
-        if (error?.name === 'NotReadableError') {
+        if (errorName === 'NotReadableError') {
           throw new Error('La caméra ou le microphone est déjà utilisé par une autre application. Fermez-la puis réessayez.');
         }
         throw new Error("Impossible d’activer la caméra et le microphone. Vérifiez HTTPS, les permissions du navigateur et les réglages système.");

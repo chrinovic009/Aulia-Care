@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { Mic, MicOff, Sparkles } from "lucide-react";
 import PageMeta from "../../components/common/PageMeta";
 import {
@@ -23,13 +23,6 @@ import {
 import { apiFetch } from "../../config/api";
 
 // Petit hook utilitaire pour gérer l'état d'une modale
-function useModal(initialState = false) {
-  const [isOpen, setIsOpen] = useState(initialState);
-  const openModal = () => setIsOpen(true);
-  const closeModal = () => setIsOpen(false);
-  return { isOpen, openModal, closeModal };
-}
-
 const formatDateTime = (value?: string | null) => {
   if (!value) return "-";
   return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -58,13 +51,6 @@ const summarizeClinicalSummary = (value?: string | null, fallback?: string | nul
     return value || fallback || "Aucune note clinique.";
   }
 };
-
-declare global {
-  interface Window {
-    SpeechRecognition?: any;
-    webkitSpeechRecognition?: any;
-  }
-}
 
 const normalizeVoiceText = (value: string) =>
   value
@@ -308,7 +294,6 @@ const splitList = (value: string) => value.split(/\n|,/).map((item) => item.trim
 
 export default function DashboardMedecin() {
   const location = useLocation();
-  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const { isEnabled } = usePlatformLayers();
   const diagnosticEnabled = isEnabled("DIAGNOSTIC");
@@ -562,7 +547,7 @@ export default function DashboardMedecin() {
       auscultation: parsed.clinicalExam?.auscultation || "",
       palpation: parsed.clinicalExam?.palpation || "",
       focusedExam: parsed.clinicalExam?.focusedExam || "",
-      principalDiagnosis: parsed.diagnosis?.principal || consultation.diagnosis || "",
+      principalDiagnosis: parsed.diagnosis?.principal || "",
       hypotheses: Array.isArray(parsed.diagnosis?.hypotheses) ? parsed.diagnosis.hypotheses.join("\n") : "",
       treatmentPlan: parsed.treatmentPlan?.notes || "",
       followUp: parsed.followUp?.notes || "",
@@ -667,8 +652,8 @@ export default function DashboardMedecin() {
       });
       return;
       if (window.confirm(`Un brouillon non envoyé du ${formatDateTime(draft.capturedAt)} a été retrouvé. Le restaurer ?`)) {
-        setClinicalForm(draft.clinicalForm);
-        setConsultationModule(hydrateConsultationModule(draft.consultationModule));
+       setClinicalForm(draft.clinicalForm!);
+       setConsultationModule(hydrateConsultationModule(draft.consultationModule!));
         setActionMessage("Brouillon local restauré. Enregistrez-le pour le sécuriser sur le serveur.");
       }
     } catch {
@@ -858,7 +843,7 @@ export default function DashboardMedecin() {
   const validateConsultation = async () => {
     if (isSavingConsultation) return;
     if (!hasConsultationResults) {
-      await saveDraftConsultation(true);
+      await saveDraftConsultation("IN_PROGRESS");
       return;
     }
     setIsSavingConsultation(true);
@@ -1011,24 +996,10 @@ export default function DashboardMedecin() {
     setDraftMedication({ drugName: "", dosage: "", compliance: "GOOD" });
   };
 
-  const addExamSuggestion = (exam: { category: "LABORATORY" | "IMAGING"; testName: string; urgency: "ROUTINE" | "URGENT"; clinicalIndication: string }) => {
-    setConsultationModule((current) => ({
-      ...current,
-      orderedExams: [...current.orderedExams, exam],
-    }));
-  };
-
   const addPrescriptionSuggestion = (prescription: ConsultationModuleState["prescriptions"][number]) => {
     setConsultationModule((current) => ({
       ...current,
       prescriptions: [...current.prescriptions, prescription],
-    }));
-  };
-
-  const addSafetyAlert = (message: string) => {
-    setConsultationModule((current) => ({
-      ...current,
-      safetyAlerts: [...current.safetyAlerts, { type: "CONTRAINDICATION", message }],
     }));
   };
 
@@ -1537,7 +1508,7 @@ export default function DashboardMedecin() {
                         <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Suggestions du Diagnostic Agent</p>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {diagnosticSuggestions.exams.map((item) => (
-                            <button key={`${item.testName}-${item.category}`} type="button" onClick={() => addExamSuggestion(item)} className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-700">{item.testName}</button>
+                            <span key={`${item.testName}-${item.category}`} className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-700">{item.testName}</span>
                           ))}
                         </div>
                       </div>

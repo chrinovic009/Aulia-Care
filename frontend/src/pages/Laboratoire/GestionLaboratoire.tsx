@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, ShieldCheck, ClipboardList, ListChecks, Users } from "lucide-react";
-import PageBreadcrumb from "../../components/common/PageBreadCrumb";
-import PageMeta from "../../components/common/PageMeta";
-import { apiFetch } from "../../config/api";
+import { Search, ShieldCheck, ClipboardList, ListChecks, Users } from "lucide-react";
 import { AdminPageShell, Panel, StatCard, DataTable, formatDate } from "../Administration/adminUi";
 import { fetchLaboratoryRequests } from "../../api/laboratory";
 
@@ -20,11 +17,9 @@ export default function GestionLaboratoire() {
   const [requests, setRequests] = useState<LabRequestListItem[]>([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [isLoading, setIsLoading] = useState(true);
   const [labMetrics, setLabMetrics] = useState({ total: 0, pending: 0, completed: 0, rejected: 0 });
 
   const loadRequests = async () => {
-    setIsLoading(true);
     try {
       const data = await fetchLaboratoryRequests();
       setRequests(data);
@@ -35,7 +30,6 @@ export default function GestionLaboratoire() {
         rejected: data.filter((item) => ["REJECTED", "CANCELLED"].includes(item.status)).length,
       });
     } finally {
-      setIsLoading(false);
     }
   };
 

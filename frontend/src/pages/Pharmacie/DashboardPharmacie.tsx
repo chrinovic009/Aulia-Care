@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { apiFetch } from "../../config/api";
@@ -18,37 +18,24 @@ type MedicationCatalogItem = {
   currentQuantity?: number | string | null;
 };
 
-type ConsultationSummary = {
-  prescriptions?: PharmacyPrescription[];
-};
-
-type StockData = {
-  lots?: Array<{ medicationId: string; quantity?: number | string | null }>;
-  stocks?: Array<{ medicationId: string; quantity?: number | string | null }>;
-  medications?: MedicationCatalogItem[];
-};
-
 export default function DashboardPharmacie() {
   const [medications, setMedications] = useState<MedicationCatalogItem[]>([]);
-  const [consultations, setConsultations] = useState<ConsultationSummary[]>([]);
+  const [prescriptions, setPrescriptions] = useState<PharmacyPrescription[]>([]);
   const [readyPrescriptions, setReadyPrescriptions] = useState<PharmacyPrescription[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [stock, setStock] = useState<StockData>({});
 
   const load = async () => {
     setIsLoading(true);
     try {
-      const [meds, consults, stockData] = await Promise.all([
+       const [meds, prescriptionList] = await Promise.all([
         apiFetch<MedicationCatalogItem[]>("/pharmacy").catch(() => []),
         fetchPrescriptions().catch(() => []),
-        apiFetch<StockData>("/administration/stock").catch(() => ({})),
       ]);
       const ready = await fetchReadyPrescriptions().catch(() => []);
       setMedications(meds);
-      setConsultations(consults);
+       setPrescriptions(prescriptionList);
       setReadyPrescriptions(ready);
-      setStock(stockData || {});
     } finally {
       setIsLoading(false);
     }
@@ -65,20 +52,9 @@ export default function DashboardPharmacie() {
     };
   }, []);
 
-  const prescriptions = useMemo(
-    () => consultations.flatMap((consultation) => consultation.prescriptions || []),
-    [consultations],
-  );
-
   const pending = prescriptions.filter((item) => item.status !== "DISPENSED");
   const lowStock = medications.filter((item) => Number(item.stockQuantity || item.quantity || 0) <= Number(item.lowStockLevel || 10));
   const readyCount = readyPrescriptions.length;
-
-  const getMedicationStockQuantity = (medicationId: string) => {
-    const lotsQuantity = (stock.lots || []).filter((lot) => lot.medicationId === medicationId).reduce((sum: number, lot) => sum + Number(lot.quantity || 0), 0);
-    const stocksQuantity = (stock.stocks || []).filter((item) => item.medicationId === medicationId).reduce((sum: number, item) => sum + Number(item.quantity || 0), 0);
-    return lotsQuantity || stocksQuantity || 0;
-  };
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">

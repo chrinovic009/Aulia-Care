@@ -12,8 +12,8 @@ export function callPatientToWaitingRoom({ patientName, destination, staffName }
     ? `${cleanPatientName}, veuillez vous rendre a ${cleanDestination}, aupres de ${cleanStaffName}.`
     : `${cleanPatientName}, veuillez vous rendre a ${cleanDestination}.`;
 
-  if (!("speechSynthesis" in window)) {
-    window.alert(message);
+  if (typeof SpeechSynthesisUtterance === "undefined") {
+    globalThis.alert(message);
     return message;
   }
 

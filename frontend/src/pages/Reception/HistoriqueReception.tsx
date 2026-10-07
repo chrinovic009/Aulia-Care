@@ -25,7 +25,7 @@ const formatDate = (value?: string | null) =>
   value ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(new Date(value)) : "-";
 
 const patientName = (patient: ReceptionVisitRecord["patient"]) =>
-  [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(" ") || patient.name || "Patient";
+  [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(" ") || "Patient";
 
 const serviceName = (visit: ReceptionVisitRecord) => visit.service?.name || "Non affecté";
 

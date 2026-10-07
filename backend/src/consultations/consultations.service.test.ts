@@ -4,7 +4,7 @@ import { ConsultationsService } from './consultations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
-import { CreatePrescriptionDto } from './dto/create-prescription.dto';
+import { CreatePrescriptionDto, RequestPrescriptionReplacementDto } from './dto/create-prescription.dto';
 import { Prisma } from '@prisma/client';
 
 test('prescription rejects a missing clinic sale price without opening a transaction', async () => {
@@ -27,6 +27,7 @@ test('prescription rejects a missing clinic sale price without opening a transac
 test('prescription snapshots clinic sale price rather than stock purchase cost', async () => {
   const invoiceRows: Array<Record<string, unknown>> = [];
   const lineRows: Array<Record<string, unknown>> = [];
+  const outboxRows: Array<Record<string, unknown>> = [];
   const service = new ConsultationsService({
     medication: { findMany: async () => [{ id: 'med-a', name: 'Médicament A', StockLot: [{ quantity: 10, purchasePrice: new Prisma.Decimal('1.00') }] }] },
     medicationSalePrice: { findMany: async () => [{ medicationId: 'med-a', amount: new Prisma.Decimal('12.35') }] },
@@ -40,6 +41,7 @@ test('prescription snapshots clinic sale price rather than stock purchase cost',
       invoiceLine: { create: async (input: { data: Record<string, unknown> }) => { lineRows.push(input.data); } },
       subscriptionEmployee: { findFirst: async () => null },
       medicalHistory: { create: async () => undefined },
+      notificationOutbox: { create: async (input: { data: Record<string, unknown> }) => { outboxRows.push(input.data); } },
     }),
   } as unknown as PrismaService, {} as NotificationsGateway, {
     transition: async () => undefined,
@@ -51,6 +53,7 @@ test('prescription snapshots clinic sale price rather than stock purchase cost',
   assert.equal(String(invoiceRows[0].totalAmount), '37.05');
   assert.equal(String(lineRows[0].unitPrice), '12.35');
   assert.equal(String(lineRows[0].totalAmount), '37.05');
+  assert.equal(outboxRows[0].deduplicationKey, 'prescription-routing:prescription-a:v1');
 });
 
 test('a billed prescription cannot be rewritten behind an invoice or payment', async () => {
@@ -86,6 +89,51 @@ test('a billed prescription cannot be rewritten behind an invoice or payment', a
     /déjà facturée/,
   );
   assert.equal(transactionStarted, false);
+});
+
+test('a billed prescription replacement is tenant-scoped and records a reasoned finance request', async () => {
+  const replacementRows: Array<Record<string, unknown>> = [];
+  const service = new ConsultationsService(
+    {
+      prescription: {
+        findFirst: async (query: { where: Record<string, unknown> }) => {
+          assert.equal(query.where.clinicId, 'clinic-a');
+          assert.equal(query.where.patientId, 'patient-a');
+          return {
+            id: 'prescription-a',
+            billingInvoices: [{
+              id: 'invoice-a', status: 'PENDING', payments: [], subscriptionCharges: [],
+            }],
+            pharmacyDispenses: [],
+          };
+        },
+      },
+      $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+        prescriptionReplacement: {
+          findFirst: async () => null,
+          create: async (input: { data: Record<string, unknown> }) => {
+            replacementRows.push(input.data);
+            return { id: 'replacement-a', ...input.data };
+          },
+        },
+        medicalHistory: { create: async () => undefined },
+      }),
+    } as unknown as PrismaService,
+    {} as NotificationsGateway,
+    {} as PatientWorkflowService,
+  );
+  Object.defineProperty(service, 'findOne', { value: async () => ({ providerId: 'physician-a', clinicId: 'clinic-a', patientId: 'patient-a' }) });
+  Object.defineProperty(service, 'ensureWriteAccess', { value: async () => undefined });
+
+  await service.requestPrescriptionReplacement('consultation-a', 'prescription-a', {
+    reason: 'Réaction indésirable documentée',
+    lines: [{ medicationId: 'med-a', quantity: 1 }],
+  } as RequestPrescriptionReplacementDto, 'physician-a');
+
+  assert.equal(replacementRows[0].clinicId, 'clinic-a');
+  assert.equal(replacementRows[0].originalInvoiceId, 'invoice-a');
+  assert.equal(replacementRows[0].requestedById, 'physician-a');
+  assert.equal(replacementRows[0].financialHandling, 'CANCEL_UNPAID');
 });
 
 test('corporate coverage never charges a company outside the consultation clinic', async () => {

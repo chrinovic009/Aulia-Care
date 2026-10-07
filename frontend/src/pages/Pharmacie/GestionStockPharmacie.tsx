@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, PackagePlus, Pill, ShoppingCart } from "lucide-react";
 import { apiFetch } from "../../config/api";
+import { setMedicationSalePrice } from "../../api/pharmacy";
 import { AdminPageShell, DataTable, Panel, StatCard, formatDate, formatMoney } from "../Administration/adminUi";
 
 type Medication = {
@@ -11,6 +12,7 @@ type Medication = {
   strength?: string | null;
   manufacturer?: string | null;
   category?: { id: string; name: string; section?: { id: string; name: string } | null } | null;
+  salePrices?: Array<{ amount: string | number; currency: "CDF"; updatedAt: string }>;
 };
 
 type StockLot = {
@@ -53,6 +55,7 @@ export default function GestionStockPharmacie() {
   const [lotCategoryId, setLotCategoryId] = useState("");
   const [lotSearch, setLotSearch] = useState("");
   const [saleForm, setSaleForm] = useState({ clientName: "", medicationId: "", quantity: "1" });
+  const [tariffForm, setTariffForm] = useState({ medicationId: "", amount: "" });
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -236,6 +239,22 @@ export default function GestionStockPharmacie() {
     }
   };
 
+  const saveSalePrice = async () => {
+    const amount = tariffForm.amount.trim();
+    if (!tariffForm.medicationId || !/^\d{1,10}(?:\.\d{1,2})?$/.test(amount) || Number(amount) <= 0) {
+      setMessage("Choisis un médicament et un tarif CDF positif avec au plus deux décimales.");
+      return;
+    }
+    try {
+      await setMedicationSalePrice(tariffForm.medicationId, amount);
+      setMessage("Tarif de vente enregistré pour cet établissement. Il ne modifie jamais le coût d’achat des lots ni les factures existantes.");
+      setTariffForm({ medicationId: "", amount: "" });
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Le tarif de vente n’a pas pu être enregistré.");
+    }
+  };
+
   return (
     <AdminPageShell title="Stock pharmacie" subtitle="Catalogue, lots, sorties de stock et ventes externes en CDF.">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -325,6 +344,21 @@ export default function GestionStockPharmacie() {
             <button onClick={sellExternal} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white">Valider la vente</button>
           </div>
         </Panel>
+
+        <Panel title="Tarif de vente établissement">
+          <div className="grid gap-3">
+            <p className="text-xs text-slate-500">Le tarif patient est distinct du coût d’achat d’un lot. Une ordonnance sans tarif de vente valide est refusée.</p>
+            <select value={tariffForm.medicationId} onChange={(event) => {
+              const medication = medications.find((item) => item.id === event.target.value);
+              setTariffForm({ medicationId: event.target.value, amount: medication?.salePrices?.[0]?.amount?.toString() || "" });
+            }} className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white">
+              <option value="">Médicament</option>
+              {medications.map((medication) => <option key={medication.id} value={medication.id}>{medication.name} — {medication.salePrices?.[0] ? `${medication.salePrices[0].amount} CDF` : "tarif manquant"}</option>)}
+            </select>
+            <input value={tariffForm.amount} onChange={(event) => setTariffForm((current) => ({ ...current, amount: event.target.value }))} type="number" min="0.01" step="0.01" placeholder="Prix de vente CDF" className="h-11 rounded-lg border border-slate-200 px-3 text-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
+            <button onClick={saveSalePrice} className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white">Enregistrer le tarif</button>
+          </div>
+        </Panel>
       </div>
 
       <Panel title="Lots et disponibilités">
@@ -332,8 +366,6 @@ export default function GestionStockPharmacie() {
           headers={["Section", "Catégorie", "Médicament", "Lot", "Quantité", "Prix CDF", "Expiration"]}
           empty={isLoading ? 'Chargement du stock...' : 'Aucun lot enregistré.'}
           rows={lots.map((lot) => {
-            const critical = Number(lot.quantity || 0) <= 3;
-            const low = Number(lot.quantity || 0) <= 10;
             return [
               lot.medication?.category?.section?.name || '-',
               lot.medication?.category?.name || '-',

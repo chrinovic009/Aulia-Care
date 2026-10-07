@@ -23,7 +23,7 @@ export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
 
   @Get('companies')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER', 'FINANCE')
   findCompanies(@Request() request: AuthenticatedRequest) {
     return this.subscriptionsService.findCompanies(actorIdFrom(request));
   }
@@ -41,7 +41,7 @@ export class SubscriptionsController {
   }
 
   @Get('companies/:id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER', 'FINANCE')
   getCompany(@Param('id') id: string, @Request() request: AuthenticatedRequest) {
     return this.subscriptionsService.getCompany(id, actorIdFrom(request));
   }

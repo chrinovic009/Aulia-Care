@@ -184,7 +184,6 @@ export default function ReceptionPatients() {
   };
 
   const generateInsurancePDF = async () => {
-    const clinic = await getClinicDocumentBranding();
     const selectedPatientPosition = patients.findIndex((p) => p.id === selectedPatient.id) + 1;
     const info = selectedPatient.insuranceInfo;
     const html = `
@@ -521,36 +520,6 @@ export default function ReceptionPatients() {
       showActionFeedback({ kind: "success", title: "Rendez-vous créé", message: "Le rendez-vous a été enregistré dans l’établissement courant." });
     } catch (error) {
       showActionFeedback({ kind: "error", title: "Rendez-vous non créé", message: error instanceof Error ? error.message : "Le serveur a refusé le rendez-vous." });
-    }
-  };
-
-  const handleCreateAppointment = async (opts: { datetime: string; type: string; doctorId?: string; notes?: string }) => {
-    if (!selectedPatient?.id) return alert('Aucun patient sélectionné');
-    const { datetime, type, doctorId, notes } = opts;
-    const selectedService = appointmentTypes.find((item: any) => {
-      const id = item.id || "";
-      const name = item.name || item.title || "";
-      return id === type || name === type;
-    });
-    const payload = {
-      patientId: selectedPatient.id,
-      requestedById: currentUser?.id || undefined,
-      serviceId: selectedService?.id || undefined,
-      serviceUnitId: selectedService?.serviceUnitId || selectedService?.unitId || undefined,
-      scheduledAt: datetime,
-      reason: [notes || type || "Nouvelle visite", doctorId ? `Medecin: ${doctorId}` : ""].filter(Boolean).join(" - "),
-      status: "SCHEDULED",
-      durationMinutes: 30,
-    };
-    try {
-      const api = await import('../../api/reception');
-      const created = await api.createAppointmentInDatabase(payload);
-      alert('Rendez-vous créé');
-      setShowAppointmentModal(false);
-      return created;
-    } catch (e) {
-      console.error('Appointment create error', e);
-      alert('Impossible de créer le rendez-vous (erreur serveur).');
     }
   };
 

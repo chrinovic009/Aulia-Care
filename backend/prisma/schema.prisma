@@ -160,6 +160,8 @@ model User {
   Payroll                          Payroll[]
   pharmacyDispenses                PharmacyDispense[]               @relation("PharmacyDispenseDispenser")
   prescriptionsPrescribed          Prescription[]                   @relation("PrescriptionPrescriber")
+  prescriptionReplacementRequests  PrescriptionReplacement[]        @relation("PrescriptionReplacementRequester")
+  prescriptionReplacementReviews   PrescriptionReplacement[]        @relation("PrescriptionReplacementReviewer")
   ProblemList                      ProblemList[]
   refreshTokens                    RefreshToken[]
   serviceResponsabilites           ServiceResponsable[]
@@ -995,6 +997,8 @@ model Prescription {
   version           Int                @default(1)
   pharmacyDispenses PharmacyDispense[]
   billingInvoices   Invoice[]
+  replacementRequestsAsOriginal PrescriptionReplacement[] @relation("OriginalPrescriptionReplacement")
+  replacementRequestAsReplacement PrescriptionReplacement? @relation("ReplacementPrescriptionReplacement")
   consultation      Consultation       @relation(fields: [consultationId], references: [id], onDelete: Cascade)
   patient           Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
   clinic            Clinic             @relation(fields: [clinicId], references: [id], onDelete: Restrict)
@@ -1024,6 +1028,40 @@ model PrescriptionLine {
   medication                Medication                 @relation(fields: [medicationId], references: [id])
   prescription              Prescription               @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
   medicationAdministrations MedicationAdministration[]
+}
+
+/// A billed prescription is immutable. Corrections create a linked request
+/// instead of rewriting the original clinical or financial document.
+model PrescriptionReplacement {
+  id                        String                         @id @default(uuid())
+  clinicId                  String
+  originalPrescriptionId    String
+  originalInvoiceId         String
+  replacementPrescriptionId String?                        @unique
+  replacementInvoiceId      String?                        @unique
+  reason                    String
+  requestedPayload          Json
+  status                    PrescriptionReplacementStatus  @default(PENDING_FINANCE)
+  financialHandling         PrescriptionReplacementFinancialHandling
+  requestedById             String
+  requestedAt               DateTime                       @default(now())
+  reviewedById              String?
+  reviewedAt                DateTime?
+  reviewNote                String?
+  createdAt                 DateTime                       @default(now())
+  updatedAt                 DateTime                       @updatedAt
+  clinic                    Clinic                         @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  originalPrescription      Prescription                   @relation("OriginalPrescriptionReplacement", fields: [originalPrescriptionId], references: [id], onDelete: Restrict)
+  replacementPrescription   Prescription?                  @relation("ReplacementPrescriptionReplacement", fields: [replacementPrescriptionId], references: [id], onDelete: Restrict)
+  originalInvoice           Invoice                        @relation("OriginalInvoiceReplacement", fields: [originalInvoiceId], references: [id], onDelete: Restrict)
+  replacementInvoice        Invoice?                       @relation("ReplacementInvoiceReplacement", fields: [replacementInvoiceId], references: [id], onDelete: Restrict)
+  requestedBy               User                           @relation("PrescriptionReplacementRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+  reviewedBy                User?                          @relation("PrescriptionReplacementReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  subscriptionAdjustment    SubscriptionCharge?
+
+  @@index([clinicId, status, requestedAt])
+  @@index([originalPrescriptionId])
+  @@index([originalInvoiceId])
 }
 
 model Medication {
@@ -1979,6 +2017,8 @@ model Invoice {
   sourceSubscriptionCharges   SubscriptionCharge[]         @relation("SubscriptionChargeSourceInvoice")
   monthlySubscriptionCharges  SubscriptionCharge[]         @relation("SubscriptionChargeMonthlyInvoice")
   wearableSubscriptions       WearableSubscription[]
+  replacementRequestsAsOriginal PrescriptionReplacement[]  @relation("OriginalInvoiceReplacement")
+  replacementRequestAsReplacement PrescriptionReplacement? @relation("ReplacementInvoiceReplacement")
 
   @@index([status])
   @@index([clinicId])
@@ -2054,12 +2094,14 @@ model Clinic {
   consultations                 Consultation[]
   appointments                  Appointment[]
   prescriptions                 Prescription[]
+  prescriptionReplacements       PrescriptionReplacement[]
   medicationStocks              MedicationStock[]
   medicationSalePrices           MedicationSalePrice[]
   patients                      Patient[]
   deathRecords                  PatientDeathRecord[]
   patientVisits                 PatientVisit[]
   payments                      Payment[]
+  notificationOutboxEvents      NotificationOutbox[]
   pharmacies                    Pharmacy[]
   PurchaseOrder                 PurchaseOrder[]
   GoodsReceipt                  GoodsReceipt[]
@@ -2524,11 +2566,37 @@ model Notification {
   syncedAt      DateTime?
   sourceNode    String?
   version       Int                  @default(1)
+  outboxEventId String?
   author        User?                @relation("NotificationAuthor", fields: [authorId], references: [id])
   patient       Patient?             @relation(fields: [patientId], references: [id], onDelete: Cascade)
   recipient     User?                @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  outboxEvent   NotificationOutbox?  @relation(fields: [outboxEventId], references: [id], onDelete: SetNull)
 
   @@index([recipientId, status])
+  @@unique([outboxEventId, recipientId])
+}
+
+/// Transactional delivery queue for durable, clinic-scoped operational alerts.
+/// Business commands write an event here inside their database transaction; a
+/// worker emits it only after commit and retries transient gateway failures.
+model NotificationOutbox {
+  id               String                  @id @default(uuid())
+  clinicId         String
+  eventType        String
+  deduplicationKey String                  @unique
+  payload          Json
+  status           NotificationOutboxStatus @default(PENDING)
+  attempts         Int                     @default(0)
+  availableAt      DateTime                @default(now())
+  processedAt      DateTime?
+  lastError        String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  clinic           Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  notifications    Notification[]
+
+  @@index([status, availableAt])
+  @@index([clinicId, createdAt])
 }
 
 model ChatMessage {
@@ -2879,6 +2947,8 @@ model SubscriptionCharge {
   invoiceId   String?
   /// Immutable origin for new charges; historical invoiceId values need manual classification.
   sourceInvoiceId String? @unique
+  /// Explicit next-period correction for a replacement of a consolidated prescription.
+  prescriptionReplacementId String? @unique
   monthlyInvoiceId String?
   serviceId   String?
   label       String
@@ -2896,6 +2966,7 @@ model SubscriptionCharge {
   invoice     Invoice?                 @relation(fields: [invoiceId], references: [id])
   sourceInvoice Invoice? @relation("SubscriptionChargeSourceInvoice", fields: [sourceInvoiceId], references: [id], onDelete: Restrict)
   monthlyInvoice Invoice? @relation("SubscriptionChargeMonthlyInvoice", fields: [monthlyInvoiceId], references: [id], onDelete: Restrict)
+  prescriptionReplacement PrescriptionReplacement? @relation(fields: [prescriptionReplacementId], references: [id], onDelete: Restrict)
   patient     Patient?                 @relation(fields: [patientId], references: [id])
   service     Service?                 @relation(fields: [serviceId], references: [id])
 
@@ -3650,6 +3721,20 @@ enum PrescriptionStatus {
   COMPLETED
 }
 
+enum PrescriptionReplacementStatus {
+  PENDING_FINANCE
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+enum PrescriptionReplacementFinancialHandling {
+  CANCEL_UNPAID
+  REFUND_REQUIRED
+  SUBSCRIPTION_REVERSE
+  SUBSCRIPTION_NEXT_PERIOD_ADJUSTMENT
+}
+
 enum MedicationRoute {
   ORAL
   INTRAVENOUS
@@ -3733,6 +3818,13 @@ enum NotificationPriority {
   MEDIUM
   HIGH
   CRITICAL
+}
+
+enum NotificationOutboxStatus {
+  PENDING
+  PROCESSING
+  DELIVERED
+  FAILED
 }
 
 enum PatientWorkflowStatus {

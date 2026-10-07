@@ -444,11 +444,6 @@ const Admission: React.FC = () => {
     };
   };
 
-  const buildDefaultEmail = (firstName: string, lastName: string) => {
-    const local = normalizeEmailLocalPart(`${firstName}${lastName}`);
-    return `${local || `patient${Date.now()}`}@gmail.com`;
-  };
-
   const emailLocalPart = useMemo(() => {
     const currentEmail = form.email || "";
     const atIndex = currentEmail.indexOf("@");

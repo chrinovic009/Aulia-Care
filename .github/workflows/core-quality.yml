@@ -2,7 +2,7 @@ name: Core quality
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, codex/core-stabilisation-20261002]
   pull_request:
 
 permissions:

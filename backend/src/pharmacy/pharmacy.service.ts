@@ -474,7 +474,10 @@ export class PharmacyService {
     const [medications, lots, transactions, dispenses] = await Promise.all([
       this.prisma.medication.findMany({
         where: { deletedAt: null, StockLot: { some: { clinicId: actor.clinicId } } },
-        include: { category: { include: { section: true } } },
+        include: {
+          category: { include: { section: true } },
+          salePrices: { where: { clinicId: actor.clinicId }, select: { amount: true, currency: true, updatedAt: true } },
+        },
         orderBy: { name: 'asc' },
       }),
       this.prisma.stockLot.findMany({

@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchMyPatientProfile, fetchWearableDashboard, submitDailyCheckin, WearableDashboard } from "../../api/patient";
 
-type SpeechEvent = { resultIndex: number; results: ArrayLike<{ 0: { transcript: string } }> };
-type Recognition = { lang: string; continuous: boolean; interimResults: boolean; onresult: ((event: SpeechEvent) => void) | null; onerror: (() => void) | null; onend: (() => void) | null; start(): void; stop(): void };
-declare global { interface Window { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition; } }
 
 const labels: Record<string, string> = { HEART_RATE_BPM: "Fréquence cardiaque", BLOOD_PRESSURE_SYSTOLIC_MMHG: "Tension systolique", BLOOD_PRESSURE_DIASTOLIC_MMHG: "Tension diastolique", BLOOD_GLUCOSE_MG_DL: "Glycémie", SPO2_PERCENT: "Saturation en oxygène", WEIGHT_KG: "Poids", BODY_FAT_PERCENT: "Masse grasse" };
 const questions = ["Bonjour. Comment vous sentez-vous aujourd’hui ?", "Avez-vous un symptôme ou une préoccupation que vous souhaitez signaler ?", "Depuis quand ressentez-vous cela et est-ce que cela s’améliore ou s’aggrave ?"];
 
 export default function SuiviPreventif() {
-  const [data, setData] = useState<WearableDashboard | null>(null); const [error, setError] = useState(""); const [step, setStep] = useState(0); const [answers, setAnswers] = useState<string[]>([]); const [draft, setDraft] = useState(""); const [listening, setListening] = useState(false); const [sending, setSending] = useState(false); const [notice, setNotice] = useState(""); const recognition = useRef<Recognition | null>(null);
+  const [data, setData] = useState<WearableDashboard | null>(null); const [error, setError] = useState(""); const [step, setStep] = useState(0); const [answers, setAnswers] = useState<string[]>([]); const [draft, setDraft] = useState(""); const [listening, setListening] = useState(false); const [sending, setSending] = useState(false); const [notice, setNotice] = useState(""); const recognition = useRef<AuliaSpeechRecognition | null>(null);
   const load = async () => { try { const profile = await fetchMyPatientProfile(); setData(await fetchWearableDashboard(profile.id)); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : "Le suivi connecté est indisponible."); } };
   useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 30000); return () => window.clearInterval(timer); }, []);
   useEffect(() => () => recognition.current?.stop(), []);

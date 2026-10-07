@@ -104,7 +104,6 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   invoiceNumber,
   invoiceType,
   totalAmount,
-  balanceDue,
   status,
   issuedAt,
   dueDate,
@@ -118,9 +117,6 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   payments,
   visitItems,
   visitTotalAmount,
-  visitPaidAmount,
-  visitBalanceDue,
-  visitWorkflowStatus,
   clinicBranding,
 }) => {
   const resolvedBranding: ClinicDocumentBranding = clinicBranding || { name: "Aulia Care" };
@@ -130,7 +126,6 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
     lastName: restNames[restNames.length - 1] || "",
   });
   const defaultDescription = buildFrenchDescription(invoiceType, remarks);
-  const headlineType = visitItems ? "FACTURE TOTALE" : "FACTURE";
   const invoiceTypeLabel = invoiceType === "ADMISSION_FEE" ? "Frais d'Admission" : invoiceType;
   // The saved hospital identity always wins over legacy print props.
   const clinicDisplayName = resolvedBranding.brandDisplayName || resolvedBranding.name || clinicName || "Aulia Care";

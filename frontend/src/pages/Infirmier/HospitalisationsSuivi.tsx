@@ -178,27 +178,11 @@ export default function HospitalisationsSuivi() {
   };
 
   const [dischargeModalOpen, setDischargeModalOpen] = useState(false);
-  const [modalDischarge, setModalDischarge] = useState<Hospitalisation | null>(null);
+  const [modalDischarge] = useState<Hospitalisation | null>(null);
 
-  const openDischargeModal = (h: Hospitalisation) => {
-    setModalDischarge(h);
-    setDischargeModalOpen(true);
-  };
-
-  const finalizeDischarge = (id: string) => {
+  const finalizeDischarge = () => {
     setError("La finalisation de sortie est réservée au workflow médical validé. Aucun changement local n’a été effectué.");
     setDischargeModalOpen(false);
-  };
-
-  const formatSince = (iso?: string | null) => {
-    if (!iso) return "";
-    const diff = Date.now() - new Date(iso).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 60) return `Sortie depuis ${mins} min`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `Sortie depuis ${hours} h`;
-    const days = Math.floor(hours / 24);
-    return `Sortie depuis ${days} j`;
   };
 
   const canEditSelected = selected ? currentUser?.primaryRole === "ADMIN" || currentUser?.primaryRole === "SUPER_ADMIN" || Boolean(selected.access?.canWrite) : false;
@@ -566,7 +550,7 @@ export default function HospitalisationsSuivi() {
             </div>
 
             <div className="mt-4 flex gap-2">
-              <button onClick={() => finalizeDischarge(modalDischarge.id)} className="flex-1 rounded-2xl bg-amber-600 text-white px-4 py-2">Finaliser</button>
+              <button onClick={finalizeDischarge} className="flex-1 rounded-2xl bg-amber-600 text-white px-4 py-2">Finaliser</button>
               <button onClick={() => setDischargeModalOpen(false)} className="flex-1 rounded-2xl border px-4 py-2">Annuler</button>
             </div>
           </div>

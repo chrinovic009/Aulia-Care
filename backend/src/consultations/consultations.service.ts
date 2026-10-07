@@ -1,6 +1,6 @@
 // backend/src/consultations/consultations.services.ts
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus, Prisma, RoleSlug } from '@prisma/client';
+import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus, PrescriptionReplacementFinancialHandling, Prisma, RoleSlug } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
@@ -10,7 +10,7 @@ import { CreateImagingRequestDto } from './dto/create-imaging-request.dto';
 import { UpdateConsultationDto } from './dto/update-consultation.dto';
 import { ClinicalSectionsDto } from './dto/clinical-sections.dto';
 import { CreateLabRequestDto } from './dto/create-lab-request.dto';
-import { CreatePrescriptionDto } from './dto/create-prescription.dto';
+import { CreatePrescriptionDto, RequestPrescriptionReplacementDto, ReviewPrescriptionReplacementDto } from './dto/create-prescription.dto';
 import { TelehealthTranscriptEntryDto } from './dto/save-telehealth-transcript.dto';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
 
@@ -2183,25 +2183,28 @@ export class ConsultationsService {
         },
       });
 
+      await tx.notificationOutbox.create({
+        data: {
+          clinicId,
+          eventType: 'PRESCRIPTION_ROUTING',
+          deduplicationKey: `prescription-routing:${prescription.id}:v${prescription.version}`,
+          payload: {
+            patientId: consultation.patientId,
+            prescriptionId: prescription.id,
+            invoiceId: invoice.id,
+            covered: handledBySubscription,
+          },
+        },
+      });
+
       const finalInvoice = handledBySubscription
         ? await tx.invoice.findUniqueOrThrow({ where: { id: invoice.id } })
         : invoice;
       return { prescription, invoice: finalInvoice };
     });
 
-    // Routing is deliberately post-commit: failure to push a notification
-    // must never make a doctor retry an already-created prescription.
-    try {
-      await this.notifyPrescriptionRouting(
-        clinicId,
-        consultation.patientId,
-        result.prescription.id,
-        result.invoice.id,
-        result.invoice.status === 'COVERED',
-      );
-    } catch (error) {
-      this.logger.warn(`Post-commit prescription notification failed for consultation ${id}: ${error instanceof Error ? error.name : 'unknown error'}`);
-    }
+    // The outbox row is committed with the prescription. A delivery failure
+    // therefore never makes the physician retry an already billed command.
     return result;
   }
 
@@ -2392,6 +2395,344 @@ export class ConsultationsService {
       });
 
       return { updated: true, prescriptionId };
+    });
+  }
+
+  /**
+   * A billed prescription is never changed in place. This registers the
+   * requested clinical correction and the financial path that must be applied
+   * before a replacement can be issued. The tenant is always derived from the
+   * consultation resolved for the authenticated clinician.
+   */
+  async requestPrescriptionReplacement(
+    consultationId: string,
+    prescriptionId: string,
+    dto: RequestPrescriptionReplacementDto,
+    actorId?: string,
+  ) {
+    const consultation = await this.findOne(consultationId, actorId);
+    await this.ensureWriteAccess(consultation.providerId, actorId);
+
+    const prescription = await this.prisma.prescription.findFirst({
+      where: {
+        id: prescriptionId,
+        consultationId,
+        clinicId: consultation.clinicId,
+        patientId: consultation.patientId,
+        deletedAt: null,
+      },
+      include: {
+        pharmacyDispenses: { where: { status: { in: ['DISPENSED', 'PARTIALLY_DISPENSED'] } } },
+        billingInvoices: {
+          where: { clinicId: consultation.clinicId, deletedAt: null, type: InvoiceType.PHARMACY },
+          include: {
+            payments: { where: { deletedAt: null }, select: { id: true, amount: true } },
+            subscriptionCharges: { where: { deletedAt: null }, select: { id: true, status: true, monthlyInvoiceId: true } },
+          },
+          orderBy: { issuedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!prescription) {
+      throw new NotFoundException('Ordonnance introuvable dans cet établissement.');
+    }
+    const invoice = prescription.billingInvoices[0];
+    if (!invoice) {
+      throw new ConflictException('Cette ordonnance non facturée doit être modifiée par le parcours de modification standard.');
+    }
+
+    const reason = dto.reason?.trim();
+    if (!reason) throw new BadRequestException('Le motif clinique du remplacement est obligatoire.');
+    if (prescription.pharmacyDispenses.length > 0) {
+      // A new clinical order can still be evaluated, but no stock is ever put
+      // back automatically. The pharmacist must validate a physical return.
+      throw new ConflictException('Cette ordonnance a déjà été délivrée. Une restitution pharmaceutique validée est requise avant tout remplacement.');
+    }
+
+    const hasPayment = invoice.payments.length > 0 || invoice.status === 'PAID' || invoice.status === 'PARTIALLY_PAID';
+    const charge = invoice.subscriptionCharges[0];
+    const financialHandling = charge
+      ? charge.monthlyInvoiceId || charge.status === 'INVOICED'
+        ? PrescriptionReplacementFinancialHandling.SUBSCRIPTION_NEXT_PERIOD_ADJUSTMENT
+        : PrescriptionReplacementFinancialHandling.SUBSCRIPTION_REVERSE
+      : hasPayment
+        ? PrescriptionReplacementFinancialHandling.REFUND_REQUIRED
+        : PrescriptionReplacementFinancialHandling.CANCEL_UNPAID;
+
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.prescriptionReplacement.findFirst({
+        where: {
+          originalPrescriptionId: prescription.id,
+          status: { in: ['PENDING_FINANCE', 'APPROVED'] },
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        throw new ConflictException('Un remplacement est déjà en cours pour cette ordonnance.');
+      }
+
+      const replacement = await tx.prescriptionReplacement.create({
+        data: {
+          clinicId: consultation.clinicId,
+          originalPrescriptionId: prescription.id,
+          originalInvoiceId: invoice.id,
+          reason,
+          requestedPayload: {
+            instruction: dto.instruction || null,
+            lines: dto.lines.map((line) => ({
+              medicationId: line.medicationId,
+              dosage: line.dosage || null,
+              route: line.route || null,
+              frequency: line.frequency || null,
+              quantity: line.quantity,
+              durationDays: line.durationDays || null,
+              notes: line.notes || null,
+            })),
+            dispensedOriginal: false,
+          },
+          financialHandling,
+          requestedById: actorId!,
+        },
+      });
+      await tx.medicalHistory.create({
+        data: {
+          patientId: prescription.patientId,
+          kind: 'PRESCRIPTION_REPLACEMENT_REQUESTED',
+          details: JSON.stringify({
+            replacementId: replacement.id,
+            originalPrescriptionId: prescription.id,
+            originalInvoiceId: invoice.id,
+            financialHandling,
+            reason,
+          }),
+          createdById: actorId,
+        },
+      });
+      return replacement;
+    });
+  }
+
+  async reviewPrescriptionReplacement(
+    consultationId: string,
+    prescriptionId: string,
+    replacementId: string,
+    dto: ReviewPrescriptionReplacementDto,
+    actorId?: string,
+  ) {
+    if (!actorId) throw new ForbiddenException('Utilisateur authentifié requis.');
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actorId },
+      select: { id: true, clinicId: true, primaryRole: true, status: true, deletedAt: true },
+    });
+    if (!actor || actor.deletedAt || actor.status !== 'ACTIVE' || !actor.clinicId || !['FINANCE', 'ADMIN', 'SUPER_ADMIN'].includes(String(actor.primaryRole))) {
+      throw new ForbiddenException('Une validation finance ou administrative de cet établissement est requise.');
+    }
+
+    const reviewed = await this.prisma.$transaction(async (tx) => {
+      const replacement = await tx.prescriptionReplacement.findFirst({
+        where: {
+          id: replacementId,
+          clinicId: actor.clinicId,
+          originalPrescriptionId: prescriptionId,
+          originalPrescription: { consultationId, clinicId: actor.clinicId },
+          status: 'PENDING_FINANCE',
+        },
+        include: { originalInvoice: { include: { payments: { where: { deletedAt: null } } } }, originalPrescription: true },
+      });
+      if (!replacement) throw new NotFoundException('Demande de remplacement introuvable dans cet établissement.');
+      if (replacement.requestedById === actor.id && actor.primaryRole === 'FINANCE') {
+        throw new ForbiddenException('La finance ne peut pas valider sa propre demande.');
+      }
+
+      const status = dto.decision === 'APPROVED' ? 'APPROVED' : 'REJECTED';
+      const updated = await tx.prescriptionReplacement.update({
+        where: { id: replacement.id },
+        data: {
+          status,
+          reviewedById: actor.id,
+          reviewedAt: new Date(),
+          reviewNote: dto.note?.trim() || null,
+        },
+      });
+      await tx.medicalHistory.create({
+        data: {
+          patientId: replacement.originalPrescription.patientId,
+          kind: 'PRESCRIPTION_REPLACEMENT_REVIEWED',
+          details: JSON.stringify({ replacementId: replacement.id, decision: dto.decision, financialHandling: replacement.financialHandling, note: dto.note?.trim() || null }),
+          createdById: actor.id,
+        },
+      });
+      return updated;
+    });
+
+    if (dto.decision === 'REJECTED') return reviewed;
+
+    const payload = reviewed.requestedPayload as unknown as {
+      instruction?: string | null;
+      lines?: CreatePrescriptionDto['lines'];
+    };
+    if (!payload.lines?.length) {
+      throw new BadRequestException('La demande approuvée ne contient aucune ligne de remplacement.');
+    }
+
+    // Reuse the ordinary prescription path: sale prices, subscription
+    // eligibility, tenant checks, workflow transition and durable outbox are
+    // therefore identical to a new clinical prescription.
+    const created = await this.createPrescription(
+      consultationId,
+      { instruction: payload.instruction || undefined, lines: payload.lines },
+      reviewed.requestedById,
+    );
+
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.prescriptionReplacement.findFirst({
+        where: { id: reviewed.id, clinicId: actor.clinicId, status: 'APPROVED' },
+        include: { originalInvoice: { include: { payments: { where: { deletedAt: null } } } } },
+      });
+      if (!current) throw new ConflictException('La demande de remplacement a déjà été finalisée.');
+
+      if (current.financialHandling === PrescriptionReplacementFinancialHandling.CANCEL_UNPAID) {
+        await tx.invoice.update({
+          where: { id: current.originalInvoiceId },
+          data: { status: 'CANCELLED', balanceDue: new Prisma.Decimal(0), remarks: `${current.originalInvoice.remarks || ''}\nAnnulée par remplacement ${current.id}`.trim() },
+        });
+        await tx.prescription.update({
+          where: { id: current.originalPrescriptionId },
+          data: { status: 'CANCELLED' },
+        });
+      }
+
+      if (current.financialHandling === PrescriptionReplacementFinancialHandling.REFUND_REQUIRED) {
+        const paid = current.originalInvoice.payments.reduce(
+          (sum: Prisma.Decimal, payment: { amount: Prisma.Decimal }) => sum.plus(payment.amount),
+          new Prisma.Decimal(0),
+        );
+        if (paid.gt(0)) {
+          await tx.refundRequest.create({
+            data: {
+              clinicId: actor.clinicId,
+              invoiceId: current.originalInvoiceId,
+              amount: paid,
+              reason: `Remplacement d'ordonnance ${current.id}: ${current.reason}`,
+              requestedById: actor.id,
+            },
+          });
+        }
+      }
+
+      if (current.financialHandling === PrescriptionReplacementFinancialHandling.SUBSCRIPTION_REVERSE) {
+        await tx.subscriptionCharge.updateMany({
+          where: {
+            sourceInvoiceId: current.originalInvoiceId,
+            status: 'PENDING_MONTHLY_INVOICE',
+            deletedAt: null,
+          },
+          data: { status: 'CANCELLED' },
+        });
+        await tx.invoice.update({
+          where: { id: current.originalInvoiceId },
+          data: { status: 'CANCELLED', balanceDue: new Prisma.Decimal(0), remarks: `${current.originalInvoice.remarks || ''}\nAnnulée par remplacement ${current.id}`.trim() },
+        });
+        await tx.prescription.update({ where: { id: current.originalPrescriptionId }, data: { status: 'CANCELLED' } });
+      }
+
+      if (current.financialHandling === PrescriptionReplacementFinancialHandling.SUBSCRIPTION_NEXT_PERIOD_ADJUSTMENT) {
+        const originalCharge = await tx.subscriptionCharge.findFirst({
+          where: {
+            sourceInvoiceId: current.originalInvoiceId,
+            status: 'INVOICED',
+            deletedAt: null,
+          },
+          select: { companyId: true, employeeId: true, patientId: true, amount: true, monthlyInvoiceId: true },
+        });
+        if (!originalCharge?.monthlyInvoiceId) {
+          throw new ConflictException('La charge entreprise consolidée d’origine est introuvable. Aucune régularisation ne peut être devinée.');
+        }
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`subscription-company:${originalCharge.companyId}`}))`;
+        const closedPeriod = await tx.monthlySubscriptionInvoice.findFirst({
+          where: { companyId: originalCharge.companyId, invoiceId: originalCharge.monthlyInvoiceId, deletedAt: null },
+          select: { month: true, year: true },
+        });
+        if (!closedPeriod) {
+          throw new ConflictException('La période consolidée d’origine est introuvable. Aucune régularisation ne peut être créée.');
+        }
+
+        let year = closedPeriod.year;
+        let month = closedPeriod.month;
+        do {
+          month += 1;
+          if (month > 12) {
+            month = 1;
+            year += 1;
+          }
+        } while (await tx.monthlySubscriptionInvoice.findFirst({
+          where: { companyId: originalCharge.companyId, year, month, deletedAt: null },
+          select: { id: true },
+        }));
+
+        const replacementCharge = await tx.subscriptionCharge.findFirst({
+          where: {
+            sourceInvoiceId: created.invoice.id,
+            companyId: originalCharge.companyId,
+            status: 'PENDING_MONTHLY_INVOICE',
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        if (!replacementCharge) {
+          throw new ConflictException('La nouvelle ordonnance n’est plus couverte par cette entreprise. Finance doit traiter explicitement l’écart de couverture.');
+        }
+
+        // Both sides are placed in the first open period. The original monthly
+        // invoice remains untouched while the next statement shows a clear
+        // credit and the replacement service separately.
+        await tx.subscriptionCharge.update({
+          where: { id: replacementCharge.id },
+          data: { month, year },
+        });
+        await tx.subscriptionCharge.create({
+          data: {
+            companyId: originalCharge.companyId,
+            employeeId: originalCharge.employeeId,
+            patientId: originalCharge.patientId,
+            invoiceId: current.originalInvoiceId,
+            label: `Régularisation remplacement ordonnance ${current.originalPrescriptionId}`,
+            amount: new Prisma.Decimal(originalCharge.amount).negated(),
+            currency: 'CDF',
+            serviceDate: new Date(),
+            month,
+            year,
+            prescriptionReplacementId: current.id,
+          },
+        });
+      }
+
+      const completed = await tx.prescriptionReplacement.update({
+        where: { id: current.id },
+        data: {
+          status: 'COMPLETED',
+          replacementPrescriptionId: created.prescription.id,
+          replacementInvoiceId: created.invoice.id,
+        },
+      });
+      await tx.medicalHistory.create({
+        data: {
+          patientId: current.originalInvoice.patientId,
+          kind: 'PRESCRIPTION_REPLACED',
+          details: JSON.stringify({
+            replacementId: current.id,
+            originalPrescriptionId: current.originalPrescriptionId,
+            replacementPrescriptionId: created.prescription.id,
+            originalInvoiceId: current.originalInvoiceId,
+            replacementInvoiceId: created.invoice.id,
+            financialHandling: current.financialHandling,
+          }),
+          createdById: actor.id,
+        },
+      });
+      return completed;
     });
   }
 

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { playNotificationSound } from "../../utils/notificationSound";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import {
@@ -17,7 +16,6 @@ import {
 } from "../../api/nurse";
 import { apiFetch } from "../../config/api";
 import { fetchServices } from "../../api/reception";
-import { callPatientToWaitingRoom } from "../../utils/patientCall";
 import { ClientPagination, useClientPagination } from "../../components/common/ClientPagination";
 
 type VitalsForm = RecordVitalSignsPayload;

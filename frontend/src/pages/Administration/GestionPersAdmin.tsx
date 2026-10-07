@@ -125,7 +125,6 @@ function calculateAge(dateOfBirth: string) {
   if (beforeBirthday) age -= 1;
   return age >= 0 ? age : null;
 }
-
 function phoneValidation(countryCode: PhoneCountry, value: string) {
   const country = phoneCountries.find((item) => item.code === countryCode) || phoneCountries[0];
   const digits = value.replace(/\D/g, '').replace(/^0+/, '');
@@ -237,7 +236,7 @@ export default function GestionPersAdmin() {
         apiFetch<ServiceRecord[]>("/services").catch(() => []),
         apiFetch<DepartmentRecord[]>("/administration/departments").catch(() => []),
         apiFetch<HrReport>("/administration/reports").catch(() => ({})),
-        apiFetch<ClinicBranding>("/administration/clinic-branding").catch(() => ({ name: "Aulia Care" })),
+        apiFetch<ClinicBranding>("/administration/clinic-branding").catch((): ClinicBranding => ({ name: "Aulia Care" })),
         apiFetch<AttendanceSummary>("/users/attendance/summary?days=30").catch(() => null),
       ]);
       setUsers(usersData.filter((user) => user.primaryRole !== "SUPER_ADMIN" && user.primaryRole !== "ADMIN"));
@@ -672,7 +671,6 @@ export default function GestionPersAdmin() {
         <EmployeeForm
           form={form}
           departments={departments}
-          services={services}
           isSaving={isSaving}
           editing={Boolean(editingUser)}
           onChange={updateForm}
@@ -833,7 +831,6 @@ function ConfirmActionModal({
 
 function EmployeeForm({
   form,
-  services,
   departments,
   isSaving,
   editing,
@@ -844,7 +841,6 @@ function EmployeeForm({
   passwordPreview,
 }: {
   form: typeof emptyForm;
-  services: ServiceRecord[];
   departments: DepartmentRecord[];
   isSaving: boolean;
   editing: boolean;
@@ -1076,10 +1072,3 @@ function buildUsername(firstName: string, lastName: string) {
     .toLowerCase();
 }
 
-function normalizeText(value?: string | null) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
