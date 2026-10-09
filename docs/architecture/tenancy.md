@@ -28,7 +28,7 @@ Chaque valeur vient du compte authentifié ou du workflow de provisioning DEV.
 - Une absence de tenant bloque une action ; elle ne retire jamais un filtre.
 - Départements, unités, salles et affectations de salle sont contrôlés dans la
   clinique de l’acteur.
-- Une licence AI ou Connected est lue par `clinicId`, jamais globalement.
+- Une licence Diagnostic Agent ou Connected Care est lue par `clinicId`, jamais globalement.
 
 ## Données historiques
 

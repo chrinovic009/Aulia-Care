@@ -25,7 +25,7 @@ export default defineConfig(({ mode }) => {
   const backendUrl =
     process.env.AULIA_BACKEND_URL ||
     env.AULIA_BACKEND_URL ||
-    "http://host.docker.internal:3000";
+    "http://localhost:3000";
 
   return {
     root: ".",

@@ -1,19 +1,22 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { CLINICAL_AI_CONTRACT_VERSION, ClinicalAIRequest } from '../platform/contracts/clinical-ai.contract';
+import {
+  DIAGNOSTIC_AGENT_CONTRACT_VERSION,
+  DiagnosticAgentRequest,
+} from '../platform/contracts/diagnostic-agent.contract';
 
 type Actor = { userId?: string; role?: string };
 
 /**
  * Core-side adapter. It is the only component allowed to translate Core records
- * to the IA contract. The IA engine never receives a Prisma client or a Core ID.
+ * to the Diagnostic Agent contract. The agent never receives a Prisma client or a Core ID.
  */
 @Injectable()
 export class CoreConsultationSnapshotService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async forClinicalAI(consultationId: string, actor: Actor): Promise<ClinicalAIRequest> {
+  async forDiagnosticAgent(consultationId: string, actor: Actor): Promise<DiagnosticAgentRequest> {
     const consultation = await this.prisma.consultation.findUnique({
       where: { id: consultationId },
       include: {
@@ -36,8 +39,8 @@ export class CoreConsultationSnapshotService {
     const clinicalText = [consultation.chiefComplaint, consultation.clinicalSummary, histories].filter(Boolean).join('\n');
 
     return {
-      contractVersion: CLINICAL_AI_CONTRACT_VERSION,
-      tenantId: consultation.patient.clinicId || 'local-unassigned-clinic',
+      contractVersion: DIAGNOSTIC_AGENT_CONTRACT_VERSION,
+      tenantId: this.requireClinicId(consultation.patient.clinicId),
       requestId: randomUUID(),
       idempotencyKey: `consultation:${consultation.id}:updated:${consultation.updatedAt.toISOString()}`,
       purpose: 'DETECT_RISKS',
@@ -51,5 +54,14 @@ export class CoreConsultationSnapshotService {
         observedAt: vital.recordedAt.toISOString(),
       })),
     };
+  }
+
+  private requireClinicId(clinicId: string | null): string {
+    if (!clinicId) {
+      throw new ForbiddenException(
+        'La consultation doit être rattachée à un établissement avant toute analyse Diagnostic Agent.',
+      );
+    }
+    return clinicId;
   }
 }

@@ -72,8 +72,19 @@ export class HealthService {
       return false;
     }
 
+    const encodeRedisCommand = (arguments_: string[]) => {
+      const items = arguments_
+        .map((value) => {
+          const byteLength = Buffer.byteLength(value, 'utf8');
+          return `$${byteLength}\r\n${value}\r\n`;
+        })
+        .join('');
+      return `*${arguments_.length}\r\n${items}`;
+    };
+
     return new Promise<boolean>((resolve) => {
       const socket = new Socket();
+      let response = '';
 
       let settled = false;
 
@@ -93,7 +104,35 @@ export class HealthService {
       socket.setTimeout(this.dependencyTimeoutMs);
 
       socket.once('connect', () => {
-        finish(true);
+        const password = decodeURIComponent(parsedUrl.password || '');
+        const username = decodeURIComponent(parsedUrl.username || '');
+
+        // A TCP connection only proves that a port is open. Readiness requires
+        // an authenticated Redis command so a paused, hung or misconfigured
+        // Redis service is reported as unavailable.
+        if (password) {
+          socket.write(
+            encodeRedisCommand(
+              username
+                ? ['AUTH', username, password]
+                : ['AUTH', password],
+            ),
+          );
+        }
+        socket.write(encodeRedisCommand(['PING']));
+      });
+
+      socket.on('data', (chunk: Buffer) => {
+        response += chunk.toString('utf8');
+
+        if (response.includes('+PONG\r\n')) {
+          finish(true);
+          return;
+        }
+
+        if (response.includes('\r\n-') || response.startsWith('-')) {
+          finish(false);
+        }
       });
 
       socket.once('timeout', () => {

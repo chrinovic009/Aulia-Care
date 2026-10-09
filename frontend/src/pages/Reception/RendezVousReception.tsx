@@ -39,6 +39,10 @@ type ReceptionRequest = {
   [key: string]: any;
 };
 
+const isReceivedAppointment = (request: ReceptionRequest) =>
+  ["CHECKED_IN", "COMPLETED"].includes(String(request.appointmentStatus || "").toUpperCase()) ||
+  ["REÇU · EN CONSULTATION", "CONSULTATION EFFECTUÉE", "DÉJÀ EFFECTUÉ"].includes(String(request.status || "").toUpperCase());
+
 function toReceptionRequest(appointment: any): ReceptionRequest {
   const patient = appointment.patient || {};
   const rawStatus = String(appointment.status || "SCHEDULED").toUpperCase();
@@ -595,19 +599,19 @@ export default function RendezVousReception() {
                     <h4 className="text-base font-semibold text-slate-900 dark:text-white">Actions réceptionniste</h4>
                     <div className="mt-4 space-y-3">
                       {actionError ? <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{actionError}</p> : null}
-                      <button onClick={handleConfirm} className="w-full rounded-2xl bg-emerald-900 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800">✅ Confirmer</button>
+                      <button disabled={isReceivedAppointment(selectedRequest)} onClick={handleConfirm} className="w-full rounded-2xl bg-emerald-900 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-45">✅ Confirmer</button>
                       <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">🔄 Reprogrammer</p>
                         <div className="mt-4 space-y-3">
                           <input type="date" value={reprogramDate} onChange={(e) => setReprogramDate(e.target.value)} className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white" />
                           <input type="time" value={reprogramTime} onChange={(e) => setReprogramTime(e.target.value)} className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white" />
-                          <button onClick={handleReprogram} className="w-full rounded-2xl bg-sky-900 px-4 py-3 text-sm font-semibold text-white hover:bg-sky-800">Reprogrammer</button>
+                          <button disabled={isReceivedAppointment(selectedRequest)} onClick={handleReprogram} className="w-full rounded-2xl bg-sky-900 px-4 py-3 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-45">Reprogrammer</button>
                         </div>
                       </div>
                       <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">❌ Refuser</p>
                         <textarea placeholder="Motif de refus" value={refusalReason} onChange={(e) => setRefusalReason(e.target.value)} className="mt-3 h-24 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white" />
-                        <button onClick={handleRefuse} className="mt-3 w-full rounded-2xl bg-red-900 px-4 py-3 text-sm font-semibold text-white hover:bg-red-800">Refuser</button>
+                        <button disabled={isReceivedAppointment(selectedRequest)} onClick={handleRefuse} className="mt-3 w-full rounded-2xl bg-red-900 px-4 py-3 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-45">Refuser</button>
                       </div>
                     </div>
                   </div>

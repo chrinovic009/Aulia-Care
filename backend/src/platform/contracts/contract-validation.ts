@@ -1,4 +1,7 @@
-import { CLINICAL_AI_CONTRACT_VERSION, ClinicalAIRequest } from './clinical-ai.contract';
+import {
+  DIAGNOSTIC_AGENT_CONTRACT_VERSION,
+  DiagnosticAgentRequest,
+} from './diagnostic-agent.contract';
 import { CONNECTED_CARE_CONTRACT_VERSION, DeviceObservation } from './connected-care.contract';
 
 const nonEmpty = (value: unknown, maximum = 10_000) => typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;
@@ -6,11 +9,11 @@ const isoDate = (value: unknown) =>
   typeof value === 'string' && nonEmpty(value, 64) && !Number.isNaN(new Date(value).getTime());
 
 /** Runtime validation is required because TypeScript interfaces disappear at HTTP boundaries. */
-export function isClinicalAIRequest(value: unknown): value is ClinicalAIRequest {
-  const request = value as ClinicalAIRequest | undefined;
+export function isDiagnosticAgentRequest(value: unknown): value is DiagnosticAgentRequest {
+  const request = value as DiagnosticAgentRequest | undefined;
   return Boolean(
     request
-    && request.contractVersion === CLINICAL_AI_CONTRACT_VERSION
+    && request.contractVersion === DIAGNOSTIC_AGENT_CONTRACT_VERSION
     && nonEmpty(request.tenantId, 200)
     && nonEmpty(request.requestId, 200)
     && nonEmpty(request.idempotencyKey, 500)

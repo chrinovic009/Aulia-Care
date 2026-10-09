@@ -1,7 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ImagingRequestStatus } from '@prisma/client';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ImagingModality, ImagingRequestStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { CreateImagingCatalogueDto } from './dto/create-imaging-catalogue.dto';
+import { ClinicContextService } from '../core/clinic-context.service';
 
 type DashboardPeriod = 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH';
 
@@ -9,23 +11,49 @@ type DashboardServiceFilter = 'ALL' | 'EMERGENCY' | 'HOSPITALIZATION' | 'AMBULAT
 
 @Injectable()
 export class ImagingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly clinicContext: ClinicContextService,
+  ) {}
 
-  findAll() {
+  private requireClinic(actorId?: string) {
+    return this.clinicContext.requireOperationalActor({ userId: actorId });
+  }
+
+  private async requireRadiologist(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    if (actor.primaryRole !== 'RADIOLOGIST') {
+      throw new ForbiddenException(
+        'Seul le radiologue peut modifier le catalogue d’imagerie de son établissement.',
+      );
+    }
+    return actor;
+  }
+
+  async findAll(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     return this.prisma.imagingRequest.findMany({
-      include: { patient: true, requestedBy: true, consultation: true, report: true, machine: true, imagingCatalogue: true },
+      where: {
+        clinicId: actor.clinicId,
+        deletedAt: null,
+        status: { not: ImagingRequestStatus.AWAITING_PAYMENT },
+        patient: { clinicId: actor.clinicId, deletedAt: null },
+      },
+      include: { patient: true, requestedBy: { select: PUBLIC_USER_SELECT }, consultation: true, report: { include: { amendments: { include: { author: { select: PUBLIC_USER_SELECT } }, orderBy: { version: 'asc' } } } }, machine: true, imagingCatalogue: true },
       orderBy: [{ urgency: 'desc' }, { createdAt: 'asc' }],
     });
   }
 
-  findCatalogue() {
+  async findCatalogue(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     return this.prisma.imagingCatalogue.findMany({
-      where: { active: true },
+      where: { clinicId: actor.clinicId, active: true, deletedAt: null },
       orderBy: [{ category: 'asc' }, { name: 'asc' }],
     });
   }
 
-  async createCatalogue(dto: CreateImagingCatalogueDto) {
+  async createCatalogue(dto: CreateImagingCatalogueDto, actorId?: string) {
+    const actor = await this.requireRadiologist(actorId);
     const code = dto.code.trim().toUpperCase();
     const name = dto.name.trim();
     if (!code || !name) throw new BadRequestException('Le code et le nom de l examen sont requis.');
@@ -42,18 +70,24 @@ export class ImagingService {
         turnaroundTimeMinutes: dto.turnaroundTimeMinutes ?? null,
         active: dto.active !== false,
       };
-    const existing = await this.prisma.imagingCatalogue.findUnique({ where: { code } });
+    const existing = await this.prisma.imagingCatalogue.findFirst({
+      where: { code, clinicId: actor.clinicId },
+    });
     // An archived catalogue item is revived so administrators can recreate a
     // previously removed examination without violating its unique code.
     if (existing && (existing.deletedAt || !existing.active)) {
       return this.prisma.imagingCatalogue.update({ where: { id: existing.id }, data: { ...data, deletedAt: null } });
     }
     if (existing) throw new BadRequestException('Un examen d’imagerie actif utilise déjà ce code.');
-    return this.prisma.imagingCatalogue.create({ data });
+    return this.prisma.imagingCatalogue.create({ data: { ...data, clinicId: actor.clinicId } });
   }
 
-  async removeCatalogue(id: string) {
-    const catalogue = await this.prisma.imagingCatalogue.findUnique({ where: { id }, include: { _count: { select: { imagingRequests: true } } } });
+  async removeCatalogue(id: string, actorId?: string) {
+    const actor = await this.requireRadiologist(actorId);
+    const catalogue = await this.prisma.imagingCatalogue.findFirst({
+      where: { id, clinicId: actor.clinicId },
+      include: { _count: { select: { imagingRequests: true } } },
+    });
     if (!catalogue) throw new NotFoundException('Examen d’imagerie introuvable.');
     if (catalogue._count.imagingRequests === 0) {
       await this.prisma.imagingCatalogue.delete({ where: { id } });
@@ -63,13 +97,19 @@ export class ImagingService {
     return { success: true, id, deleted: false, archived: true };
   }
 
-  findMachines() {
+  async findMachines(actorId?: string) {
+    const actor = await this.requireClinic(actorId);
     return this.prisma.imagingMachine.findMany({
+      where: { clinicId: actor.clinicId, deletedAt: null },
       orderBy: [{ name: 'asc' }],
     });
   }
 
-  createMachine(dto: { name: string; roomNumber?: string; isOperational?: boolean }) {
+  async createMachine(
+    dto: { name: string; roomNumber?: string; isOperational?: boolean },
+    actorId?: string,
+  ) {
+    const actor = await this.requireClinic(actorId);
     const name = typeof dto.name === 'string' ? dto.name.trim() : '';
     if (!name) {
       throw new BadRequestException('Le nom de l équipement est requis.');
@@ -77,6 +117,7 @@ export class ImagingService {
 
     return this.prisma.imagingMachine.create({
       data: {
+        clinicId: actor.clinicId,
         name,
         roomNumber: typeof dto.roomNumber === 'string' && dto.roomNumber.trim() ? dto.roomNumber.trim() : null,
         isOperational: dto.isOperational !== false,
@@ -84,16 +125,21 @@ export class ImagingService {
     });
   }
 
-  async findOne(id: string) {
-    const imagingRequest = await this.prisma.imagingRequest.findUnique({ where: { id }, include: { patient: true, requestedBy: true, consultation: true, report: true, machine: true, imagingCatalogue: true } });
+  async findOne(id: string, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    const imagingRequest = await this.prisma.imagingRequest.findFirst({
+      where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+      include: { patient: true, requestedBy: { select: PUBLIC_USER_SELECT }, consultation: true, report: { include: { amendments: { include: { author: { select: PUBLIC_USER_SELECT } }, orderBy: { version: 'asc' } } } }, machine: true, imagingCatalogue: true },
+    });
     if (!imagingRequest) {
       throw new NotFoundException("Demande d'imagerie introuvable");
     }
     return imagingRequest;
   }
 
-  async updateStatus(id: string, rawStatus: string) {
-    const request = await this.findOne(id);
+  async updateStatus(id: string, rawStatus: string, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    const request = await this.findOne(id, actor.id);
     const status = String(rawStatus || '').toUpperCase() as ImagingRequestStatus;
     if (!Object.values(ImagingRequestStatus).includes(status)) throw new BadRequestException('Statut de radiologie invalide.');
     const allowedTransitions: Partial<Record<ImagingRequestStatus, ImagingRequestStatus[]>> = {
@@ -106,12 +152,26 @@ export class ImagingService {
       throw new BadRequestException(`Transition radiologique interdite : ${request.status} vers ${status}.`);
     }
     if (['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'VERIFIED'].includes(status)) {
-      await this.assertRequestPaid(id);
+      await this.assertRequestPaid(id, actor.clinicId);
     }
-    return this.prisma.imagingRequest.update({ where: { id }, data: { status, ...(status === 'COMPLETED' ? { completedAt: new Date() } : {}) }, include: { patient: true, report: true } });
+    const mutation = await this.prisma.imagingRequest.updateMany({
+      where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+      data: { status, ...(status === 'COMPLETED' ? { completedAt: new Date() } : {}) },
+    });
+    if (mutation.count !== 1) throw new NotFoundException("Demande d'imagerie introuvable");
+    return this.prisma.imagingRequest.findFirstOrThrow({
+      where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+      include: { patient: true, report: true },
+    });
   }
 
-  async getDashboardOverview(rawPeriod: string = 'TODAY', rawModality: string = 'ALL', rawService: string = 'ALL') {
+  async getDashboardOverview(
+    rawPeriod: string = 'TODAY',
+    rawModality: string = 'ALL',
+    rawService: string = 'ALL',
+    actorId?: string,
+  ) {
+    const actor = await this.requireClinic(actorId);
     const period = (rawPeriod || 'TODAY').toUpperCase() as DashboardPeriod;
     const modality = (rawModality || 'ALL').toUpperCase();
     const service = (rawService || 'ALL').toUpperCase() as DashboardServiceFilter;
@@ -144,7 +204,11 @@ export class ImagingService {
         break;
     }
 
-    const where: any = {
+    const where: Prisma.ImagingRequestWhereInput = {
+      clinicId: actor.clinicId,
+      deletedAt: null,
+      status: { not: ImagingRequestStatus.AWAITING_PAYMENT },
+      patient: { clinicId: actor.clinicId, deletedAt: null },
       createdAt: {
         gte: startDate,
         lte: endDate,
@@ -152,7 +216,7 @@ export class ImagingService {
     };
 
     if (modality !== 'ALL') {
-      where.modality = modality;
+      where.modality = modality as ImagingModality;
     }
 
     const requests = await this.prisma.imagingRequest.findMany({
@@ -195,7 +259,9 @@ export class ImagingService {
     const averageWaitMinutes = waitDurations.length ? Math.round(waitDurations.reduce((sum: number, value: number) => sum + value, 0) / waitDurations.length) : 0;
     const averageDurationMinutes = durationDurations.length ? Math.round(durationDurations.reduce((sum: number, value: number) => sum + value, 0) / durationDurations.length) : 0;
 
-    const machineCount = await this.prisma.imagingMachine.count({ where: { isOperational: true } });
+    const machineCount = await this.prisma.imagingMachine.count({
+      where: { clinicId: actor.clinicId, deletedAt: null, isOperational: true },
+    });
     const machineWorkMinutes = durationDurations.reduce((sum: number, value: number) => sum + value, 0);
     const occupancyRate = machineCount > 0 ? Math.min(100, Math.round((machineWorkMinutes / 60) / (12 * machineCount) * 100)) : 0;
 
@@ -203,7 +269,7 @@ export class ImagingService {
     const modalityBreakdown = this.buildModalityBreakdown(filteredRequests);
     const workflowAlerts = this.buildWorkflowAlerts(filteredRequests);
     const activeQueue = this.buildActiveQueue(filteredRequests);
-    const equipmentStatus = await this.buildEquipmentStatus();
+    const equipmentStatus = await this.buildEquipmentStatus(actor.clinicId);
 
     return {
       period,
@@ -292,8 +358,11 @@ export class ImagingService {
       .slice(0, 8);
   }
 
-  private async buildEquipmentStatus() {
-    const machines = await this.prisma.imagingMachine.findMany({ orderBy: [{ name: 'asc' }] });
+  private async buildEquipmentStatus(clinicId: string) {
+    const machines = await this.prisma.imagingMachine.findMany({
+      where: { clinicId, deletedAt: null },
+      orderBy: [{ name: 'asc' }],
+    });
     return machines.map((machine: any) => ({
       id: machine.id,
       name: machine.name,
@@ -306,30 +375,88 @@ export class ImagingService {
   }
 
   async saveReport(id: string, body: { findings: string; impression: string; recommendations?: string; verified?: boolean }, interpretedById?: string) {
-    await this.findOne(id);
-    await this.assertRequestPaid(id);
+    const actor = await this.requireRadiologist(interpretedById);
+    await this.findOne(id, actor.id);
+    await this.assertRequestPaid(id, actor.clinicId);
     if (!body.findings?.trim() || !body.impression?.trim()) throw new BadRequestException('Les constatations et la conclusion sont obligatoires.');
     return this.prisma.$transaction(async (tx) => {
-      const report = await tx.imagingReport.upsert({
-        where: { imagingRequestId: id },
-        create: { imagingRequestId: id, interpretedById: interpretedById || null, findings: body.findings.trim(), impression: body.impression.trim(), recommendations: body.recommendations?.trim() || null, verified: Boolean(body.verified), verifiedAt: body.verified ? new Date() : null },
-        update: { interpretedById: interpretedById || undefined, findings: body.findings.trim(), impression: body.impression.trim(), recommendations: body.recommendations?.trim() || null, verified: Boolean(body.verified), verifiedAt: body.verified ? new Date() : null },
+      // Serialize report creation, draft edits and verification for this request.
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "ImagingRequest" WHERE id = ${id} FOR UPDATE`);
+      const existing = await tx.imagingReport.findUnique({ where: { imagingRequestId: id } });
+      if (existing?.verified) {
+        throw new ConflictException('Ce compte rendu est vérifié. Utilisez un avenant motivé.');
+      }
+      const data = {
+        interpretedById: actor.id,
+        findings: body.findings.trim(),
+        impression: body.impression.trim(),
+        recommendations: body.recommendations?.trim() || null,
+        verified: Boolean(body.verified),
+        verifiedAt: body.verified ? new Date() : null,
+      };
+      const report = existing
+        ? await tx.imagingReport.update({ where: { id: existing.id }, data: { ...data, version: { increment: 1 } } })
+        : await tx.imagingReport.create({ data: { imagingRequestId: id, ...data } });
+      const mutation = await tx.imagingRequest.updateMany({
+        where: { id, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+        data: { status: body.verified ? 'VERIFIED' : 'COMPLETED', completedAt: new Date() },
       });
-      await tx.imagingRequest.update({ where: { id }, data: { status: body.verified ? 'VERIFIED' : 'COMPLETED', completedAt: new Date() } });
+      if (mutation.count !== 1) throw new NotFoundException("Demande d'imagerie introuvable");
       return report;
     });
   }
 
-  private async assertRequestPaid(imagingRequestId: string) {
+  async amendReport(id: string, body: { reason: string; findings: string; impression: string; recommendations?: string; expectedVersion: number }, authorId?: string) {
+    const actor = await this.requireRadiologist(authorId);
+    if (!body.reason?.trim() || !body.findings?.trim() || !body.impression?.trim()) {
+      throw new BadRequestException('Motif, constatations et conclusion sont obligatoires.');
+    }
+    if (!Number.isSafeInteger(body.expectedVersion) || body.expectedVersion < 1) {
+      throw new BadRequestException('Version attendue invalide.');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "ImagingRequest" WHERE id = ${id} FOR UPDATE`);
+      const request = await tx.imagingRequest.findFirst({
+        where: { id, clinicId: actor.clinicId, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+        select: { report: { select: { id: true, version: true, verified: true } } },
+      });
+      if (!request) throw new NotFoundException("Demande d'imagerie introuvable dans cet établissement.");
+      if (!request.report?.verified) throw new ConflictException('Seul un rapport vérifié peut recevoir un avenant.');
+      if (request.report.version !== body.expectedVersion) throw new ConflictException('Le compte rendu a changé. Rechargez sa version avant de créer un avenant.');
+      const version = request.report.version + 1;
+      const mutation = await tx.imagingReport.updateMany({
+        where: { id: request.report.id, version: body.expectedVersion, verified: true },
+        data: { version },
+      });
+      if (mutation.count !== 1) throw new ConflictException('Modification concurrente du compte rendu.');
+      return tx.imagingReportAmendment.create({
+        data: {
+          reportId: request.report.id,
+          clinicId: actor.clinicId,
+          authorId: actor.id,
+          version,
+          reason: body.reason.trim(),
+          findings: body.findings.trim(),
+          impression: body.impression.trim(),
+          recommendations: body.recommendations?.trim() || null,
+        },
+        include: { author: { select: PUBLIC_USER_SELECT } },
+      });
+    });
+  }
+
+  private async assertRequestPaid(imagingRequestId: string, clinicId: string) {
     const invoice = await this.prisma.invoice.findFirst({
       where: {
         type: 'RADIOLOGY',
+        clinicId,
+        deletedAt: null,
         remarks: { contains: `ImagingRequest:${imagingRequestId}` },
       },
       orderBy: { issuedAt: 'desc' },
       select: { status: true },
     });
-    if (!invoice || invoice.status !== 'PAID') {
+    if (!invoice || !['PAID', 'COVERED'].includes(invoice.status)) {
       throw new BadRequestException('Cet examen d’imagerie ne peut pas être programmé ou réalisé avant validation du paiement.');
     }
   }

@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { fetchAllInvoices } from "../../api/cashier";
+import { createPayment, fetchAllInvoices } from "../../api/cashier";
+import { showActionFeedback } from "../../components/common/ActionFeedbackProvider";
+import { Modal } from "../../components/ui/modal";
 import { InvoicePrintTemplate } from "./InvoicePrintTemplate";
 import { formatInvoiceId } from "../../utils/formatId";
 import { getClinicDocumentBranding, type ClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
@@ -10,6 +12,7 @@ interface InvoiceDetail {
   patientName: string;
   patientPhone?: string;
   patientEmail?: string;
+  patientCompany?: string | null;
   patientWorkflowStatus?: string | null;
   invoiceNumber?: string;
   type: string;
@@ -135,6 +138,52 @@ const FacturationCaissier: React.FC = () => {
   const [printingVisit, setPrintingVisit] = useState<VisitSummary | null>(null);
   const [printBranding, setPrintBranding] = useState<ClinicDocumentBranding | null>(null);
   const [previewActive, setPreviewActive] = useState(false);
+  const [settlementInvoice, setSettlementInvoice] = useState<InvoiceDetail | null>(null);
+  const [settlementIsFull, setSettlementIsFull] = useState(true);
+  const [settlementAmount, setSettlementAmount] = useState("");
+  const [settlementSaving, setSettlementSaving] = useState(false);
+
+  const canSettleSubscriptionInvoice = (invoice: InvoiceDetail) => {
+    if (invoice.type !== "SUBSCRIPTION_MONTHLY" || Number(invoice.balanceDue) <= 0 || !invoice.dueDate) return false;
+    const windowStartsAt = new Date(invoice.dueDate);
+    windowStartsAt.setDate(windowStartsAt.getDate() - 2);
+    return new Date() >= windowStartsAt;
+  };
+
+  const openSettlement = (invoice: InvoiceDetail) => {
+    setSettlementInvoice(invoice);
+    setSettlementIsFull(true);
+    setSettlementAmount(String(Number(invoice.balanceDue)));
+  };
+
+  const settleSubscriptionInvoice = async () => {
+    if (!settlementInvoice) return;
+    const amount = settlementIsFull ? Number(settlementInvoice.balanceDue) : Number(settlementAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > Number(settlementInvoice.balanceDue)) {
+      showActionFeedback({ kind: "warning", title: "Montant invalide", message: "Saisissez un montant supérieur à zéro et inférieur ou égal au solde dû." });
+      return;
+    }
+    try {
+      setSettlementSaving(true);
+      await createPayment({
+        invoiceId: settlementInvoice.id,
+        amount,
+        method: "BANK_TRANSFER",
+        reference: `REG-ENT-${settlementInvoice.id.slice(0, 8)}-${Date.now()}`,
+      });
+      setSettlementInvoice(null);
+      await load();
+      showActionFeedback({
+        kind: "success",
+        title: settlementIsFull ? "Facture entreprise réglée" : "Paiement partiel enregistré",
+        message: settlementIsFull ? "Le règlement total a été tracé." : "Le montant versé a été déduit. Le solde reste exigible.",
+      });
+    } catch (error) {
+      showActionFeedback({ kind: "error", title: "Paiement non enregistré", message: error instanceof Error ? error.message : "Le serveur a refusé ce règlement." });
+    } finally {
+      setSettlementSaving(false);
+    }
+  };
 
   const load = async () => {
     try {
@@ -459,7 +508,7 @@ const FacturationCaissier: React.FC = () => {
                 return (
                 <tr key={inv.id} className="border-t hover:bg-gray-50">
                   <td className="p-3 font-medium text-blue-600">{formatInvoiceId(idx + 1, patient)}</td>
-                  <td className="p-3">{inv.patientName}</td>
+                  <td className="p-3"><div>{inv.patientName}</div>{inv.type === "SUBSCRIPTION_MONTHLY" && inv.patientCompany ? <div className="mt-1 text-xs font-medium text-aulia-teal">Abonné · {inv.patientCompany}</div> : null}</td>
                   <td className="p-3 text-sm">{inv.patientPhone || "—"}</td>
                   <td className="p-3 text-right font-medium">
                     {inv.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 0 })} CDF
@@ -490,6 +539,17 @@ const FacturationCaissier: React.FC = () => {
                     >
                       Prévisualiser
                     </button>
+                    {inv.type === "SUBSCRIPTION_MONTHLY" && (
+                      canSettleSubscriptionInvoice(inv) ? (
+                        <button onClick={() => openSettlement(inv)} className="px-3 py-1 rounded text-xs bg-emerald-700 text-white hover:bg-emerald-800">
+                          Enregistrer règlement
+                        </button>
+                      ) : inv.balanceDue > 0 ? (
+                        <span className="max-w-32 text-xs text-slate-500">
+                          Règlement disponible le {new Date(new Date(inv.dueDate).getTime() - 2 * 86_400_000).toLocaleDateString("fr-FR")}
+                        </span>
+                      ) : null
+                    )}
                     {previewActive && (
                       <button
                         onClick={() => {
@@ -528,6 +588,7 @@ const FacturationCaissier: React.FC = () => {
           patientName={printingInvoice.patientName}
           patientPhone={printingInvoice.patientPhone}
           patientEmail={printingInvoice.patientEmail}
+          patientCompany={printingInvoice.patientCompany}
           invoiceNumber={printingInvoice.invoiceNumber}
           invoiceType={printingInvoice.type}
           totalAmount={printingInvoice.totalAmount}
@@ -578,6 +639,34 @@ const FacturationCaissier: React.FC = () => {
         />
       )}
     </div>
+    <Modal isOpen={Boolean(settlementInvoice)} onClose={() => !settlementSaving && setSettlementInvoice(null)} className="max-w-lg p-6">
+      {settlementInvoice && (
+        <section>
+          <p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Aulia Care · règlement entreprise</p>
+          <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">Confirmer le paiement</h2>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+            {settlementInvoice.patientCompany || "Entreprise abonnée"} · solde actuel : <strong>{Number(settlementInvoice.balanceDue).toLocaleString("fr-FR")} CDF</strong>
+          </p>
+          <p className="mt-1 text-sm text-slate-500">Échéance : {new Date(settlementInvoice.dueDate).toLocaleDateString("fr-FR")}</p>
+          <label className="mt-5 flex items-center gap-3 rounded-xl border border-slate-200 p-3 text-sm font-medium dark:border-slate-700">
+            <input type="checkbox" checked={settlementIsFull} onChange={(event) => setSettlementIsFull(event.target.checked)} />
+            L’entreprise a réglé la totalité de la facture.
+          </label>
+          {!settlementIsFull && (
+            <label className="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              Montant effectivement versé (CDF)
+              <input type="number" min="1" max={Number(settlementInvoice.balanceDue)} value={settlementAmount} onChange={(event) => setSettlementAmount(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-900" />
+            </label>
+          )}
+          <div className="mt-6 flex justify-end gap-3">
+            <button type="button" onClick={() => setSettlementInvoice(null)} disabled={settlementSaving} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold dark:border-slate-700">Annuler</button>
+            <button type="button" onClick={settleSubscriptionInvoice} disabled={settlementSaving} className="rounded-xl bg-aulia-teal px-4 py-2 text-sm font-bold text-white disabled:opacity-60">
+              {settlementSaving ? "Enregistrement…" : settlementIsFull ? "Confirmer le règlement total" : "Enregistrer le paiement partiel"}
+            </button>
+          </div>
+        </section>
+      )}
+    </Modal>
     </>
   );
 };

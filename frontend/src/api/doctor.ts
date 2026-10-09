@@ -22,15 +22,15 @@ export type DoctorPatient = {
   familyContacts?: Array<{ id?: string; name: string; relationship?: string | null; phone?: string | null; email?: string | null; address?: string | null }>;
   vitalSigns?: Array<{ type: string; value: string; unit?: string | null; recordedAt: string; note?: string | null; recordedBy?: { displayName?: string | null } | null }>;
   medicalHistories?: Array<{ id: string; kind: string; details: string; eventDate: string; createdBy?: { displayName?: string | null; primaryRole?: string | null } | null }>;
-  consultations?: Array<{ id: string; status: string; chiefComplaint?: string | null; clinicalSummary?: string | null; diagnosis?: string | null; createdAt: string; provider?: { id: string; displayName?: string | null; firstName?: string | null; lastName?: string | null; specialty?: string | null } | null }>;
-  prescriptions?: Array<{ id: string; status: string; prescribingDate: string; instruction?: string | null; prescriber?: { displayName?: string | null } | null; lineItems?: Array<{ dosage?: string | null; frequency?: string | null; notes?: string | null; quantity?: number; medication?: { name?: string | null; unit?: string | null; strength?: string | null } | null }> }>;
-  labRequests?: Array<{ id: string; consultationId?: string; status: string; requestedAt: string; specimenType?: string | null; notes?: string | null; results?: Array<{ resultName: string; resultValue: string; units?: string | null; referenceRange?: string | null; verified?: boolean; interpretation?: string | null; parameters?: Array<{ id?: string; labTestParameter?: { name?: string | null; unit?: string | null; referenceRange?: string | null }; valueNumeric?: number | string | null; valueText?: string | null; interpretation?: string | null }> }> }>;
-  imagingRequests?: Array<{ id: string; consultationId?: string; status: string; createdAt: string; modality: string; bodyPart: string; report?: { impression?: string | null } | null }>;
+  consultations?: Array<{ id: string; status: string; chiefComplaint?: string | null; clinicalSummary?: string | null; diagnosis?: string | null; createdAt: string; updatedAt?: string; provider?: { id: string; displayName?: string | null; firstName?: string | null; lastName?: string | null; specialty?: string | null } | null }>;
+  prescriptions?: Array<{ id: string; status: string; prescribingDate: string; instruction?: string | null; prescriber?: { displayName?: string | null } | null; lineItems?: Array<{ dosage?: string | null; frequency?: string | null; notes?: string | null; route?: string | null; routeOfAdministration?: string | null; voie?: string | null; instruction?: string | null; quantity?: number; strength?: string | null; medication?: { name?: string | null; unit?: string | null; strength?: string | null } | null }> }>;
+  labRequests?: Array<{ id: string; consultationId?: string; labTestId?: string | null; labTest?: { id?: string; name?: string | null; code?: string | null } | null; examName?: string | null; departmentId?: string | null; departmentName?: string | null; price?: string | number | null; charge?: string | number | null; chargeAmount?: string | number | null; completedAt?: string | null; status: string; requestedAt: string; specimenType?: string | null; notes?: string | null; interpretation?: string | null; results?: Array<{ resultName: string; resultValue: string; units?: string | null; referenceRange?: string | null; reference?: string | null; reference_range?: string | null; reportedAt?: string | null; createdAt?: string | null; notes?: string | null; verified?: boolean; interpretation?: string | null; parameters?: Array<{ id?: string; labTestParameter?: { name?: string | null; unit?: string | null; referenceRange?: string | null }; valueNumeric?: number | string | null; valueText?: string | null; interpretation?: string | null }> }> }>;
+  imagingRequests?: Array<{ id: string; consultationId?: string; imagingCatalogueId?: string | null; status: string; createdAt: string; modality: string; bodyPart: string; report?: { impression?: string | null } | null }>;
   hospitalizations?: Array<{ id: string; status: string; admittedAt: string; admissionReason?: string | null; bedNumber?: string | null; physician?: { displayName?: string | null } | null; nurseInCharge?: { displayName?: string | null } | null }>;
   hasPendingAppointmentWithoutConsultation?: boolean;
   assignedDoctor?: { id: string; displayName?: string | null; firstName?: string | null; lastName?: string | null; specialty?: string | null } | null;
   access?: { mode: "WRITE" | "READ_ONLY"; canWrite: boolean; reason: string };
-  latestConsultation?: { id: string; status: string; chiefComplaint?: string | null; clinicalSummary?: string | null; diagnosis?: string | null; createdAt: string; providerId?: string | null; provider?: { id: string; displayName?: string | null; firstName?: string | null; lastName?: string | null } | null } | null;
+  latestConsultation?: { id: string; status: string; chiefComplaint?: string | null; clinicalSummary?: string | null; diagnosis?: string | null; createdAt: string; updatedAt?: string; providerId?: string | null; provider?: { id: string; displayName?: string | null; firstName?: string | null; lastName?: string | null } | null } | null;
 };
 
 export const fetchDoctorAssignedPatients = () => {
@@ -52,8 +52,10 @@ export type DoctorPatientsPage = {
 export const fetchDoctorVisiblePatientsPage = (page = 1, limit = 10) =>
   apiFetch<DoctorPatientsPage>(`/patients/doctor/visible?page=${Math.max(1, page)}&limit=${Math.min(Math.max(1, limit), 25)}`);
 
-export const formatDoctorPatientName = (patient: DoctorPatient) =>
-  [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(" ");
+export const formatDoctorPatientName = (patient?: DoctorPatient | null) =>
+  patient
+    ? [patient.firstName, patient.middleName, patient.lastName].filter(Boolean).join(" ") || "Patient non renseigné"
+    : "Patient non renseigné";
 
 export type AvailableMedication = {
   id: string;
@@ -106,10 +108,25 @@ export const createPrescription = (consultationId: string, payload: Record<strin
     method: "POST",
     body: JSON.stringify(payload),
   });
+
+export const certifyPatientDeath = (patientId: string, payload: { occurredAt: string; causeOfDeath: string; clinicalSummary?: string }) =>
+  apiFetch(`/patients/${patientId}/death-certification`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 export const updatePrescription = (consultationId: string, prescriptionId: string, payload: Record<string, unknown>) =>
   apiFetch(`/consultations/${consultationId}/prescriptions/${prescriptionId}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
+
+export const requestPrescriptionReplacement = (
+  consultationId: string,
+  prescriptionId: string,
+  payload: Record<string, unknown>,
+) => apiFetch(`/consultations/${consultationId}/prescriptions/${prescriptionId}/replacements`, {
+  method: 'POST',
+  body: JSON.stringify(payload),
+});
 export const fetchAvailableMedications = () =>
   apiFetch<AvailableMedication[]>("/pharmacy/available");

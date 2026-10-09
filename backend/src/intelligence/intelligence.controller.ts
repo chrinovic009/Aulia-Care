@@ -4,9 +4,12 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { IntelligenceService } from './intelligence.service';
+import { AuliaLayer } from '@prisma/client';
+import { RequireLayer } from '../platform/layers/require-layer.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('intelligence')
+@RequireLayer(AuliaLayer.DIAGNOSTIC)
 export class IntelligenceController {
   constructor(private readonly intelligence: IntelligenceService) {}
 

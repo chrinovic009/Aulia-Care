@@ -5,12 +5,14 @@ import { OpenPatientConsultationDto } from './dto/open-patient-consultation.dto'
 import { CreateImagingRequestDto } from './dto/create-imaging-request.dto';
 import { ClinicalSectionsDto } from './dto/clinical-sections.dto';
 import { CreateLabRequestDto } from './dto/create-lab-request.dto';
-import { CreatePrescriptionDto } from './dto/create-prescription.dto';
+import { CreatePrescriptionDto, RequestPrescriptionReplacementDto, ReviewPrescriptionReplacementDto } from './dto/create-prescription.dto';
 import { UpdateConsultationDto } from './dto/update-consultation.dto';
 import { SaveTelehealthTranscriptDto } from './dto/save-telehealth-transcript.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { AuliaLayer } from '@prisma/client';
+import { RequireLayer } from '../platform/layers/require-layer.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('consultations')
@@ -77,6 +79,9 @@ export class ConsultationsController {
 
   @Post(':id/telehealth-transcript')
   @Roles('PHYSICIAN')
+  // Telehealth and its transcription belong to the Diagnostic Agent.
+  // Connected Care is reserved for devices and parent/child connectivity.
+  @RequireLayer(AuliaLayer.DIAGNOSTIC)
   saveTelehealthTranscript(@Param('id') id: string, @Body() body: SaveTelehealthTranscriptDto, @Request() req: any) {
     return this.consultationsService.saveTelehealthTranscript(id, body.sessionId, body.entries, req.user?.userId);
   }
@@ -108,6 +113,29 @@ export class ConsultationsController {
     @Request() req: any,
   ) {
     return this.consultationsService.updatePrescription(id, prescriptionId, body, req.user?.userId);
+  }
+
+  @Post(':id/prescriptions/:prescriptionId/replacements')
+  @Roles('PHYSICIAN')
+  requestPrescriptionReplacement(
+    @Param('id') id: string,
+    @Param('prescriptionId') prescriptionId: string,
+    @Body() body: RequestPrescriptionReplacementDto,
+    @Request() req: any,
+  ) {
+    return this.consultationsService.requestPrescriptionReplacement(id, prescriptionId, body, req.user?.userId);
+  }
+
+  @Post(':id/prescriptions/:prescriptionId/replacements/:replacementId/review')
+  @Roles('FINANCE', 'ADMIN', 'SUPER_ADMIN')
+  reviewPrescriptionReplacement(
+    @Param('id') id: string,
+    @Param('prescriptionId') prescriptionId: string,
+    @Param('replacementId') replacementId: string,
+    @Body() body: ReviewPrescriptionReplacementDto,
+    @Request() req: any,
+  ) {
+    return this.consultationsService.reviewPrescriptionReplacement(id, prescriptionId, replacementId, body, req.user?.userId);
   }
 
   @Delete(':id')

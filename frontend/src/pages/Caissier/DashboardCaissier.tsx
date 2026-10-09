@@ -8,34 +8,13 @@ import {
   fetchPatientBillingSummary,
   fetchPatientsAwaitingPayment,
   PatientBillingSummary,
+  CashierPatient,
 } from "../../api/cashier";
 
 const fmt = (value: number | string | { toString: () => string }) => {
   const num = typeof value === "number" ? value : Number(value?.toString?.() ?? value);
   return Number.isFinite(num) ? num.toLocaleString("fr-FR", { maximumFractionDigits: 0 }) : "0";
 };
-
-interface CashierPatient {
-  id: string;
-  firstName: string;
-  lastName: string;
-  phone: string;
-  email: string;
-  workflowStatus: string;
-  arrivalAt: string;
-  createdAt: string;
-  service: string;
-  serviceId: string;
-  receptionist: string;
-  invoice: {
-    id: string;
-    totalAmount: number;
-    balanceDue: number;
-    status: string;
-    issuedAt: string;
-    dueDate: string;
-  } | null;
-}
 
 interface PaymentRecord {
   id: string;
@@ -89,7 +68,11 @@ const DashboardCaissier: React.FC = () => {
   }, []);
 
   const filteredPatients = useMemo(() => {
-    const list = filter === "ALL" ? patients : patients.filter((patient) => patient.workflowStatus === filter);
+    const list = filter === "ALL" ? patients : patients.filter((patient) =>
+      filter === "EN_ATTENTE_DE_PAIEMENT"
+        ? patient.invoices.length > 0
+        : patient.workflowStatus === filter,
+    );
     return [...list].sort(
       (a, b) => new Date(b.arrivalAt || b.createdAt).getTime() - new Date(a.arrivalAt || a.createdAt).getTime(),
     );
@@ -101,7 +84,7 @@ const DashboardCaissier: React.FC = () => {
     const totalCollected = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
     const totalCollectedToday = paymentsToday.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
     const totalOutstanding = invoices.reduce((sum, invoice) => sum + Number(invoice.balanceDue || 0), 0);
-    const pendingCount = patients.filter((patient) => patient.workflowStatus === "EN_ATTENTE_DE_PAIEMENT").length;
+    const pendingCount = patients.filter((patient) => patient.invoices.length > 0).length;
     const validationCount = patients.filter((patient) => patient.workflowStatus === "EN_ATTENTE_VALIDATION_CAISSE").length;
 
     return {
@@ -111,36 +94,22 @@ const DashboardCaissier: React.FC = () => {
       paymentsTodayCount: paymentsToday.length,
       pendingCount,
       validationCount,
-      totalCount: pendingCount + validationCount,
+      totalCount: patients.length,
     };
   }, [payments, invoices, patients]);
 
-  const handleProcessPayment = async (patient: CashierPatient) => {
-    if (!patient.invoice) return;
-
+  const handleProcessPayment = async (patient: CashierPatient, invoice: CashierPatient['invoices'][number]) => {
     try {
-      setProcessing(patient.id);
+      setProcessing(invoice.id);
       await createPayment({
-        invoiceId: patient.invoice.id,
-        amount: Number(patient.invoice.balanceDue),
+        invoiceId: invoice.id,
+        amount: Number(invoice.balanceDue),
         method: "CASH",
         reference: `AU-${patient.firstName.charAt(0)}${patient.lastName.charAt(0)}-${Date.now()}`,
       });
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur lors du traitement du paiement");
-    } finally {
-      setProcessing(null);
-    }
-  };
-
-  const handleDeferPaymentToDischarge = async (patient: CashierPatient) => {
-    try {
-      setProcessing(patient.id);
-      await updatePatientWorkflowStatus(patient.id, "EN_ATTENTE_INFIRMERIE");
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erreur lors du report du paiement");
     } finally {
       setProcessing(null);
     }
@@ -238,38 +207,32 @@ const DashboardCaissier: React.FC = () => {
                       <div className="text-lg font-bold">{patient.firstName} {patient.lastName}</div>
                       <div className="mt-1 text-sm text-gray-600">Service: {patient.service} - Tel: {patient.phone || "-"}</div>
                       <div className="mt-2 text-sm">
-                        {patient.invoice ? (
-                          <>
-                            <span className="font-semibold">Facture admission: {fmt(patient.invoice.totalAmount)} CDF</span>
-                            <span className="ml-3 rounded bg-red-100 px-2 py-1 text-xs text-red-800">
-                              Reste: {fmt(patient.invoice.balanceDue)} CDF
-                            </span>
-                          </>
+                        {patient.invoices.length ? (
+                          <span className="font-semibold">{patient.invoices.length} facture(s) à régler</span>
                         ) : (
-                          <span className="text-gray-500">Aucune facture admission</span>
+                          <span className="text-gray-500">Aucune facture à régler</span>
                         )}
                       </div>
                       <div className="mt-2 text-xs text-gray-500">Arrivee: {new Date(patient.arrivalAt || patient.createdAt).toLocaleString("fr-FR")}</div>
                     </div>
                     <div className="flex flex-col gap-2">
-                      {patient.workflowStatus === "EN_ATTENTE_DE_PAIEMENT" ? (
-                        <>
-                          <button
-                            onClick={() => handleProcessPayment(patient)}
-                            disabled={!patient.invoice || processing === patient.id}
-                            className="rounded bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
-                          >
-                            {processing === patient.id ? "Traitement..." : "Traiter paiement"}
-                          </button>
-                          <button
-                            onClick={() => handleDeferPaymentToDischarge(patient)}
-                            disabled={processing === patient.id}
-                            className="rounded border px-4 py-2 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
-                          >
-                            Reporter a la sortie
-                          </button>
-                        </>
-                      ) : (
+                      {patient.invoices.length > 0 && (
+                        <div className="space-y-2">
+                          {patient.invoices.map((invoice) => (
+                            <div key={invoice.id} className="rounded border p-2 text-sm">
+                              <div>{invoice.type} — reste {fmt(invoice.balanceDue)} CDF</div>
+                              <button
+                                onClick={() => handleProcessPayment(patient, invoice)}
+                                disabled={processing === invoice.id}
+                                className="mt-2 rounded bg-green-600 px-4 py-2 font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                              >
+                                {processing === invoice.id ? "Traitement..." : "Régler cette facture"}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {patient.workflowStatus === "EN_ATTENTE_VALIDATION_CAISSE" ? (
                         <button
                           onClick={() => openAuthorization(patient)}
                           disabled={processing === patient.id}
@@ -277,7 +240,7 @@ const DashboardCaissier: React.FC = () => {
                         >
                           {processing === patient.id ? "Chargement..." : "Autorisation sortie"}
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 </article>

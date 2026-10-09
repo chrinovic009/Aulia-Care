@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { createImagingRequest, createLabRequest, createPrescription, fetchAvailableMedications, type AvailableMedication } from "../../api/doctor";
+import {
+  createPrescription,
+  fetchAvailableMedications,
+  type AvailableMedication,
+} from "../../api/doctor";
 import { fetchImagingCatalogue, type ImagingCatalogueItem } from "../../api/imaging";
 import { fetchLaboratoryCatalogue, type LabCataloguePayload } from "../../api/laboratory";
 
@@ -11,17 +15,258 @@ const input = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => <label className="block text-sm"><span className="mb-1 block font-medium text-slate-700 dark:text-slate-200">{label}</span>{children}</label>;
 const Alert = ({ value }: { value: Notice }) => value ? <p className={`rounded-lg p-3 text-sm ${value.error ? "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-200" : "bg-aulia-mist text-aulia-navy dark:bg-aulia-teal/15 dark:text-aulia-mist"}`}>{value.text}</p> : null;
 
-export function ConsultationExamOrder({ ensureConsultation }: { ensureConsultation: Ensure }) {
-  const [catalogue, setCatalogue] = useState<LabCataloguePayload | null>(null); const [imaging, setImaging] = useState<ImagingCatalogueItem[]>([]);
-  const [kind, setKind] = useState<Exam["kind"]>("LAB"); const [itemId, setItemId] = useState(""); const [priority, setPriority] = useState("NORMAL"); const [indication, setIndication] = useState(""); const [items, setItems] = useState<Exam[]>([]); const [notice, setNotice] = useState<Notice>(null); const [saving, setSaving] = useState(false);
-  useEffect(() => { void Promise.all([fetchLaboratoryCatalogue(), fetchImagingCatalogue()]).then(([labs, scans]) => { setCatalogue(labs); setImaging(scans); }).catch(() => setNotice({ error: true, text: "Le catalogue des examens est indisponible." })); }, []);
-  const choices = useMemo(() => kind === "LAB" ? (catalogue?.tests || []).filter((x) => x.active).map((x) => ({ id: x.id, name: x.name, price: String(x.price) })) : imaging.filter((x) => x.active).map((x) => ({ id: x.id, name: x.name, price: String(x.price) })), [catalogue, imaging, kind]);
-  useEffect(() => { if (!choices.some((x) => x.id === itemId)) setItemId(choices[0]?.id || ""); }, [choices, itemId]);
-  const add = () => { const choice = choices.find((x) => x.id === itemId); if (!choice || items.some((x) => x.id === choice.id && x.kind === kind)) return; setItems((x) => [...x, { ...choice, kind, priority, indication }]); setIndication(""); };
-  const change = (index: number, patch: Partial<Exam>) => setItems((current) => current.map((x, i) => i === index ? { ...x, ...patch } : x));
-  const submit = async () => { if (!items.length || saving) return; setSaving(true); setNotice(null); try { const id = await ensureConsultation(); if (!id) throw new Error("Impossible d’ouvrir la consultation."); const labs = items.filter((x) => x.kind === "LAB"); const scans = items.filter((x) => x.kind === "IMAGING"); if (labs.length) await createLabRequest(id, { labTestIds: labs.map((x) => x.id), priority: labs.some((x) => x.priority === "URGENT") ? "URGENT" : "NORMAL", notes: labs.map((x) => `${x.name}: ${x.indication || "Indication à préciser"}`).join("\n") }); await Promise.all(scans.map((x) => createImagingRequest(id, { imagingCatalogueId: x.id, examName: x.name, bodyPart: "À préciser", urgency: x.priority === "URGENT" ? "URGENT" : "ROUTINE", contrastAgentUsed: false, notes: x.indication }))); setItems([]); setNotice({ text: "Toutes les demandes sélectionnées sont enregistrées et rattachées à la consultation." }); } catch (e) { setNotice({ error: true, text: e instanceof Error ? e.message : "Les demandes n’ont pas été enregistrées." }); } finally { setSaving(false); } };
-  return <div className="space-y-4"><div className="grid gap-3 md:grid-cols-3"><Field label="Type"><select className={input} value={kind} onChange={(e) => setKind(e.target.value as Exam["kind"])}><option value="LAB">Laboratoire</option><option value="IMAGING">Imagerie</option></select></Field><Field label="Examen"><select className={input} value={itemId} onChange={(e) => setItemId(e.target.value)}>{choices.map((x) => <option key={x.id} value={x.id}>{x.name} · {x.price} CDF</option>)}</select></Field><Field label="Priorité"><select className={input} value={priority} onChange={(e) => setPriority(e.target.value)}><option value="NORMAL">Routine</option><option value="URGENT">Urgent</option></select></Field></div><Field label="Indication clinique"><textarea className={input} rows={2} value={indication} onChange={(e) => setIndication(e.target.value)} placeholder="Contexte et justification" /></Field><button type="button" className="rounded-lg border border-aulia-teal/30 px-4 py-2 text-sm font-bold text-aulia-teal" onClick={add}>Ajouter à la sélection</button>{items.length > 0 && <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800"><table className="min-w-[700px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900"><tr><th className="p-3">Examen</th><th className="p-3">Priorité</th><th className="p-3">Indication</th><th className="p-3" /></tr></thead><tbody>{items.map((x, i) => <tr key={`${x.kind}-${x.id}`} className="border-t border-slate-100 dark:border-slate-800"><td className="p-3 font-semibold text-slate-800 dark:text-white">{x.name}<span className="block text-xs font-normal text-slate-500">{x.kind === "LAB" ? "Laboratoire" : "Imagerie"} · {x.price} CDF</span></td><td className="p-3"><select className={input} value={x.priority} onChange={(e) => change(i, { priority: e.target.value })}><option value="NORMAL">Routine</option><option value="URGENT">Urgent</option></select></td><td className="p-3"><input className={input} value={x.indication} onChange={(e) => change(i, { indication: e.target.value })}/></td><td className="p-3"><button type="button" className="font-semibold text-red-600" onClick={() => setItems((current) => current.filter((_, index) => index !== i))}>Retirer</button></td></tr>)}</tbody></table></div>}<Alert value={notice}/><button type="button" disabled={!items.length || saving} onClick={() => void submit()} className="rounded-lg bg-aulia-teal px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{saving ? "Enregistrement…" : `Enregistrer ${items.length} examen(s)`}</button></div>;
-}
+export type ConsultationOrderedExam = {
+  category: "LABORATORY" | "IMAGING";
+  catalogueItemId: string;
+  testName: string;
+  urgency: "ROUTINE" | "URGENT";
+  clinicalIndication: string;
+};
+
+export function ConsultationExamOrder({
+    orderedExams,
+    onChange,
+  }: {
+    orderedExams: ConsultationOrderedExam[];
+    onChange: (items: ConsultationOrderedExam[]) => void;
+  }) {
+    const [catalogue, setCatalogue] = useState<LabCataloguePayload | null>(null);
+    const [imaging, setImaging] = useState<ImagingCatalogueItem[]>([]);
+    const [kind, setKind] = useState<Exam["kind"]>("LAB");
+    const [itemId, setItemId] = useState("");
+    const [priority, setPriority] = useState("NORMAL");
+    const [indication, setIndication] = useState("");
+    const [notice, setNotice] = useState<Notice>(null);
+
+    useEffect(() => {
+      void Promise.all([
+        fetchLaboratoryCatalogue(),
+        fetchImagingCatalogue(),
+      ])
+        .then(([labs, scans]) => {
+          setCatalogue(labs);
+          setImaging(scans);
+        })
+        .catch(() =>
+          setNotice({
+            error: true,
+            text: "Le catalogue des examens est indisponible.",
+          }),
+        );
+    }, []);
+
+    const choices = useMemo(
+      () =>
+        kind === "LAB"
+          ? (catalogue?.tests || [])
+              .filter((x) => x.active)
+              .map((x) => ({
+                id: x.id,
+                name: x.name,
+                price: String(x.price),
+              }))
+          : imaging
+              .filter((x) => x.active)
+              .map((x) => ({
+                id: x.id,
+                name: x.name,
+                price: String(x.price),
+              })),
+      [catalogue, imaging, kind],
+    );
+
+    useEffect(() => {
+      if (!choices.some((x) => x.id === itemId)) {
+        setItemId(choices[0]?.id || "");
+      }
+    }, [choices, itemId]);
+
+    const add = () => {
+      const choice = choices.find((x) => x.id === itemId);
+      if (!choice) return;
+
+      const category: ConsultationOrderedExam["category"] =
+        kind === "LAB" ? "LABORATORY" : "IMAGING";
+
+      const alreadyExists = orderedExams.some(
+        (exam) =>
+          exam.category === category &&
+          exam.catalogueItemId === choice.id,
+      );
+
+      if (alreadyExists) {
+        setNotice({
+          error: true,
+          text: "Cet examen est déjà présent dans la consultation.",
+        });
+        return;
+      }
+
+      const exam: ConsultationOrderedExam = {
+        category,
+        catalogueItemId: choice.id,
+        testName: choice.name,
+        urgency: priority === "URGENT" ? "URGENT" : "ROUTINE",
+        clinicalIndication: indication.trim(),
+      };
+
+      onChange([...orderedExams, exam]);
+
+      setIndication("");
+      setNotice({
+        text:
+          "Examen ajouté à la consultation. La demande sera transmise lors de l’enregistrement de la consultation en cours.",
+      });
+    };
+
+    const remove = (index: number) => {
+      onChange(orderedExams.filter((_, itemIndex) => itemIndex !== index));
+    };
+
+    const change = (
+      index: number,
+      patch: Partial<ConsultationOrderedExam>,
+    ) => {
+      onChange(
+        orderedExams.map((exam, itemIndex) =>
+          itemIndex === index ? { ...exam, ...patch } : exam,
+        ),
+      );
+    };
+
+    return (
+      <div className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          <Field label="Type">
+            <select
+              className={input}
+              value={kind}
+              onChange={(e) => setKind(e.target.value as Exam["kind"])}
+            >
+              <option value="LAB">Laboratoire</option>
+              <option value="IMAGING">Imagerie</option>
+            </select>
+          </Field>
+
+          <Field label="Examen">
+            <select
+              className={input}
+              value={itemId}
+              onChange={(e) => setItemId(e.target.value)}
+            >
+              {choices.map((choice) => (
+                <option key={choice.id} value={choice.id}>
+                  {choice.name} · {choice.price} CDF
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Priorité">
+            <select
+              className={input}
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+            >
+              <option value="NORMAL">Routine</option>
+              <option value="URGENT">Urgent</option>
+            </select>
+          </Field>
+        </div>
+
+        <Field label="Indication clinique">
+          <textarea
+            className={input}
+            rows={2}
+            value={indication}
+            onChange={(e) => setIndication(e.target.value)}
+            placeholder="Contexte et justification"
+          />
+        </Field>
+
+        <button
+          type="button"
+          disabled={!itemId}
+          className="rounded-lg border border-aulia-teal/30 px-4 py-2 text-sm font-bold text-aulia-teal disabled:opacity-50"
+          onClick={add}
+        >
+          Ajouter à la consultation
+        </button>
+
+        {orderedExams.length > 0 && (
+          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+            <table className="min-w-[700px] w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500 dark:bg-slate-900">
+                <tr>
+                  <th className="p-3">Examen</th>
+                  <th className="p-3">Priorité</th>
+                  <th className="p-3">Indication</th>
+                  <th className="p-3" />
+                </tr>
+              </thead>
+
+              <tbody>
+                {orderedExams.map((exam, index) => (
+                  <tr
+                    key={`${exam.category}-${exam.catalogueItemId}`}
+                    className="border-t border-slate-100 dark:border-slate-800"
+                  >
+                    <td className="p-3 font-semibold text-slate-800 dark:text-white">
+                      {exam.testName}
+                      <span className="block text-xs font-normal text-slate-500">
+                        {exam.category === "LABORATORY"
+                          ? "Laboratoire"
+                          : "Imagerie"}
+                      </span>
+                    </td>
+
+                    <td className="p-3">
+                      <select
+                        className={input}
+                        value={exam.urgency}
+                        onChange={(e) =>
+                          change(index, {
+                            urgency: e.target.value as "ROUTINE" | "URGENT",
+                          })
+                        }
+                      >
+                        <option value="ROUTINE">Routine</option>
+                        <option value="URGENT">Urgent</option>
+                      </select>
+                    </td>
+
+                    <td className="p-3">
+                      <input
+                        className={input}
+                        value={exam.clinicalIndication}
+                        onChange={(e) =>
+                          change(index, {
+                            clinicalIndication: e.target.value,
+                          })
+                        }
+                      />
+                    </td>
+
+                    <td className="p-3">
+                      <button
+                        type="button"
+                        className="font-semibold text-red-600"
+                        onClick={() => remove(index)}
+                      >
+                        Retirer
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <Alert value={notice} />
+      </div>
+    );
+  }
 
 export function ConsultationPrescriptionOrder({ ensureConsultation }: { ensureConsultation: Ensure }) {
   const [medications, setMedications] = useState<AvailableMedication[]>([]); const [search, setSearch] = useState(""); const [draft, setDraft] = useState<Rx>({ medicationId: "", dosage: "", quantity: "1", route: "ORAL", frequency: "DAILY", durationDays: "7", notes: "" }); const [lines, setLines] = useState<Rx[]>([]); const [instruction, setInstruction] = useState(""); const [notice, setNotice] = useState<Notice>(null); const [saving, setSaving] = useState(false);

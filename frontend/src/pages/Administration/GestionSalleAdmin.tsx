@@ -75,9 +75,9 @@ export default function GestionSalleAdmin() {
   const [bedForm, setBedForm] = useState({ roomId: "", code: "" });
   const [operatingForm, setOperatingForm] = useState({ name: "", location: "", capacity: "1" });
   const [editingRoom, setEditingRoom] = useState<RoomRecord | null>(null);
-  const [editingOperatingRoom, setEditingOperatingRoom] = useState<RoomPayload['operatingRooms'][number] | null>(null);
+  const [editingOperatingRoom, setEditingOperatingRoom] = useState<NonNullable<RoomPayload['operatingRooms']>[number] | null>(null);
   const [deleteRoomTarget, setDeleteRoomTarget] = useState<RoomRecord | null>(null);
-  const [deleteOperatingRoomTarget, setDeleteOperatingRoomTarget] = useState<RoomPayload['operatingRooms'][number] | null>(null);
+  const [deleteOperatingRoomTarget, setDeleteOperatingRoomTarget] = useState<NonNullable<RoomPayload['operatingRooms']>[number] | null>(null);
   const [roomEditForm, setRoomEditForm] = useState({ number: "", name: "", location: "", serviceUnitId: "", status: "AVAILABLE", staffUserIds: [] as string[] });
   const [operatingRoomEditForm, setOperatingRoomEditForm] = useState({ name: "", location: "", capacity: "1", active: true });
 
@@ -101,7 +101,7 @@ export default function GestionSalleAdmin() {
   }, []);
 
   const reload = async () => {
-    const [roomsData, unitsData, servicesData] = await Promise.all([
+    const [roomsData, unitsData, servicesData, staffData] = await Promise.all([
       apiFetch<RoomPayload>("/administration/rooms").catch(() => ({})),
       apiFetch<ServiceUnit[]>("/administration/service-units").catch(() => []),
       apiFetch<ServiceCatalog[]>("/services").catch(() => []),

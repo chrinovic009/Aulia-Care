@@ -1,21 +1,26 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { CLINICAL_AI_CLIENT, ClinicalAIClient, ClinicalAISuggestion } from '../platform/contracts/clinical-ai.contract';
+import {
+  DIAGNOSTIC_AGENT_CLIENT,
+  DiagnosticAgentClient,
+  DiagnosticAgentSuggestion,
+} from '../platform/contracts/diagnostic-agent.contract';
 import { CoreConsultationSnapshotService } from './core-consultation-snapshot.service';
 
 /**
  * Core adapter for the clinician-facing endpoint. It maps a Core consultation to
- * a minimised contract and calls IA as any external client would.
+ * a minimised contract and calls the Diagnostic Agent as any external client would.
  */
 @Injectable()
 export class ClinicalIntelligenceService {
   constructor(
     private readonly snapshots: CoreConsultationSnapshotService,
-    @Inject(CLINICAL_AI_CLIENT) private readonly clinicalAI: ClinicalAIClient,
+    @Inject(DIAGNOSTIC_AGENT_CLIENT)
+    private readonly diagnosticAgent: DiagnosticAgentClient,
   ) {}
 
   async suggestionsForConsultation(id: string, actor: { userId?: string; role?: string }) {
-    const request = await this.snapshots.forClinicalAI(id, actor);
-    const response = await this.clinicalAI.execute(request);
+    const request = await this.snapshots.forDiagnosticAgent(id, actor);
+    const response = await this.diagnosticAgent.execute(request);
     const hypotheses = response.suggestions
       .filter((item) => item.kind === 'RISK' || (item.kind === 'DECISION_SUPPORT' && !item.label.startsWith('EXAM:')))
       .map((item) => this.legacySuggestion(item));
@@ -34,7 +39,7 @@ export class ClinicalIntelligenceService {
     };
   }
 
-  private legacySuggestion(item: ClinicalAISuggestion) {
+  private legacySuggestion(item: DiagnosticAgentSuggestion) {
     return {
       label: item.label,
       rationale: item.rationale,

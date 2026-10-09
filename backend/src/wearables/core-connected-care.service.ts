@@ -21,15 +21,29 @@ const PURPOSES = new Set<ConnectedPurpose>(['WEARABLES', 'TELEHEALTH', 'MESSAGIN
 export class CoreConnectedCareService implements PatientDirectoryPort, ConsentPort, DeviceGatewayPort {
   constructor(private readonly prisma: PrismaService, private readonly wearables: WearablesService) {}
 
+  private async requirePortalOwner(patientId: string, actorId?: string) {
+    if (!actorId) throw new ForbiddenException('Utilisateur authentifié requis.');
+    const owner = await this.prisma.user.findFirst({
+      where: { id: actorId, primaryRole: 'PATIENT', status: 'ACTIVE', deletedAt: null },
+      select: { id: true },
+    });
+    if (!owner) throw new ForbiddenException('Compte patient actif requis.');
+    const patient = await this.prisma.patient.findFirst({
+      where: { id: patientId, portalUserId: owner.id, clinicId: { not: null }, deletedAt: null },
+      select: { id: true, clinicId: true },
+    });
+    if (!patient?.clinicId) throw new ForbiddenException('Le dossier patient ne peut pas être résolu pour cet établissement.');
+    return patient;
+  }
+
   async resolveSubject(subject: ConnectedSubject) {
-    const patient = await this.prisma.patient.findUnique({
-      where: { id: subject.externalPatientId },
+    const patient = await this.prisma.patient.findFirst({
+      where: { id: subject.externalPatientId, clinicId: subject.tenantId, deletedAt: null },
       select: { id: true, firstName: true, lastName: true, status: true, clinicId: true, deletedAt: true },
     });
-    const expectedTenant = patient?.clinicId || 'local-unassigned-clinic';
     return {
-      active: Boolean(patient && !patient.deletedAt && patient.status === 'ACTIVE' && subject.tenantId === expectedTenant),
-      displayName: patient ? `${patient.firstName} ${patient.lastName}` : undefined,
+      active: Boolean(patient && patient.status === 'ACTIVE'),
+      displayName: patient?.status === 'ACTIVE' ? `${patient.firstName} ${patient.lastName}` : undefined,
     };
   }
 
@@ -38,6 +52,7 @@ export class CoreConnectedCareService implements PatientDirectoryPort, ConsentPo
     const consent = await (this.prisma as any).connectedCareConsent.findFirst({
       where: {
         patientId: subject.externalPatientId,
+        patient: { clinicId: subject.tenantId, deletedAt: null },
         purpose,
         consentReference: subject.consentId,
         revokedAt: null,
@@ -58,7 +73,7 @@ export class CoreConnectedCareService implements PatientDirectoryPort, ConsentPo
       return { accepted: false, reason: 'Unsupported metric.' };
     }
     const device = await this.prisma.wearableDevice.findFirst({
-      where: { externalDeviceId: observation.deviceExternalId, patientId: observation.subject.externalPatientId },
+      where: { externalDeviceId: observation.deviceExternalId, patient: { id: observation.subject.externalPatientId, clinicId: observation.subject.tenantId, deletedAt: null } },
       select: { id: true },
     });
     if (!device) return { accepted: false, reason: 'Unknown device for subject.' };
@@ -104,12 +119,7 @@ export class CoreConnectedCareService implements PatientDirectoryPort, ConsentPo
     actor: { userId?: string; role?: string },
   ) {
     if (!PURPOSES.has(purpose)) throw new BadRequestException('Finalité Connected Care invalide.');
-    const patient = await this.prisma.patient.findUnique({ where: { id: patientId }, select: { id: true, portalUserId: true } });
-    if (!patient) throw new NotFoundException('Patient introuvable.');
-    const isPatient = actor.role === 'PATIENT' && patient.portalUserId === actor.userId;
-    if (!isPatient) {
-      throw new ForbiddenException('Seul le titulaire du dossier peut accorder ce consentement numérique.');
-    }
+    const patient = await this.requirePortalOwner(patientId, actor.userId);
     const consent = await (this.prisma as any).connectedCareConsent.create({
       data: { patientId, purpose, consentReference: randomUUID(), createdById: actor.userId || null },
     });
@@ -120,15 +130,13 @@ export class CoreConnectedCareService implements PatientDirectoryPort, ConsentPo
   }
 
   async revokeConsent(consentId: string, actor: { userId?: string; role?: string }, reason?: string) {
+    if (!actor.userId) throw new ForbiddenException('Utilisateur authentifié requis.');
     const existing = await (this.prisma as any).connectedCareConsent.findUnique({
       where: { id: consentId },
-      select: { id: true, revokedAt: true, patient: { select: { portalUserId: true } } },
+      select: { id: true, revokedAt: true, patientId: true },
     });
     if (!existing) throw new NotFoundException('Consentement introuvable.');
-    const isPatient = actor.role === 'PATIENT' && existing.patient?.portalUserId === actor.userId;
-    if (!isPatient) {
-      throw new ForbiddenException('Seul le titulaire du dossier peut retirer ce consentement numérique.');
-    }
+    await this.requirePortalOwner(existing.patientId, actor.userId);
     if (existing.revokedAt) return { id: existing.id, alreadyRevoked: true };
     const consent = await (this.prisma as any).connectedCareConsent.update({
       where: { id: consentId },

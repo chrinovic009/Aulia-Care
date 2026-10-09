@@ -12,9 +12,12 @@ import {
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { AuliaLayer, TelehealthSession } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PlatformLayersService } from '../platform/layers/platform-layers.service';
+import { isOperationalRole } from '../core/tenant-roles';
 
 @WebSocketGateway({
   cors: {
@@ -42,6 +45,7 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly layers: PlatformLayersService,
   ) {}
 
   afterInit() {
@@ -61,15 +65,31 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     if (!token) return client.disconnect(true);
 
     try {
-      const payload = await this.jwtService.verifyAsync<{ sub?: string; type?: string }>(token, {
+      const payload = await this.jwtService.verifyAsync<{ sub?: string; sid?: string; type?: string }>(token, {
         secret: this.configService.getOrThrow<string>('JWT_SECRET'),
       });
-      if (!payload.sub || payload.type === 'refresh') return client.disconnect(true);
+      if (!payload.sub || !payload.sid || payload.type === 'refresh') return client.disconnect(true);
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
         select: { id: true, email: true, status: true, deletedAt: true, clinicId: true, primaryRole: true },
       });
       if (!user || user.deletedAt || user.status !== 'ACTIVE') return client.disconnect(true);
+      if (isOperationalRole(user.primaryRole) && !user.clinicId) return client.disconnect(true);
+
+      // A WebSocket upgrade bypasses Passport's HTTP guard. Apply the same
+      // persisted-session and PIN-lock checks as JwtStrategy before the socket
+      // is placed in any user, patient or clinic room.
+      const session = await this.prisma.session.findFirst({
+        where: {
+          id: payload.sid,
+          userId: user.id,
+          status: 'ACTIVE',
+          expiresAt: { gt: new Date() },
+          pinLockedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!session) return client.disconnect(true);
       await this.registerClient(client, user);
     } catch {
       client.disconnect(true);
@@ -135,9 +155,11 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     }
 
     const delivered = await this.isUserOnline(payload.recipientId);
+
     const saved = await this.prisma.chatMessage.create({
       data: {
         ...(payload.id ? { id: payload.id } : {}),
+        clinicId: sender.clinicId!,
         senderId: payload.senderId,
         recipientId: payload.recipientId,
         recipientType: payload.recipientType || 'USER',
@@ -171,37 +193,72 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
 
   @SubscribeMessage('message.read')
   async handleMessageRead(
-    @MessageBody() payload: { readerId?: string; senderId?: string; messageIds?: string[] },
-    @ConnectedSocket() client: Socket,
+  @MessageBody()
+  payload: {
+    readerId?: string;
+    senderId?: string;
+    messageIds?: string[];
+  },
+  @ConnectedSocket() client: Socket,
+) {
+  // The reader identity always comes from the authenticated socket.
+  const readerId = client.data.userId as string | undefined;
+
+  if (!readerId || !payload?.senderId) return;
+
+  // Enforce role, care-path and same-clinic messaging rules.
+  const allowed = await this.usersService.isDirectMessagingAllowed(
+    readerId,
+    payload.senderId,
+  );
+
+  if (!allowed) {
+    throw new WsException('Expéditeur non autorisé');
+  }
+
+  // Resolve the tenant server-side. Never trust a clinicId from the payload.
+  const reader = await this.prisma.user.findUnique({
+    where: { id: readerId },
+    select: {
+      clinicId: true,
+      status: true,
+      deletedAt: true,
+    },
+  });
+
+  if (
+    !reader ||
+    reader.status !== 'ACTIVE' ||
+    reader.deletedAt !== null ||
+    !reader.clinicId
   ) {
-    const readerId = client.data.userId as string | undefined;
-    if (!readerId || !payload?.senderId) return;
-    if (!await this.usersService.isDirectMessagingAllowed(readerId, payload.senderId)) {
-      throw new WsException('Expéditeur non autorisé');
-    }
+    throw new WsException('Établissement utilisateur invalide');
+  }
 
-    if (payload.messageIds?.length) {
-      this.prisma.chatMessage
-        .updateMany({
-          where: {
-            id: { in: payload.messageIds },
-            senderId: payload.senderId,
-            recipientId: readerId,
-          },
-          data: {
-            status: 'READ',
-            readAt: new Date(),
-          },
-        })
-        .catch(() => undefined);
-    }
-
-    this.server.to(this.userRoom(payload.senderId)).emit('message.read', {
-      readerId,
-      messageIds: payload.messageIds || [],
-      readAt: new Date().toISOString(),
+  if (payload.messageIds?.length) {
+    await this.prisma.chatMessage.updateMany({
+      where: {
+        clinicId: reader.clinicId,
+        id: {
+          in: payload.messageIds,
+        },
+        senderId: payload.senderId,
+        recipientId: readerId,
+        deletedAt: null,
+      },
+      data: {
+        status: 'READ',
+        readAt: new Date(),
+      },
     });
   }
+
+  this.server.to(this.userRoom(payload.senderId)).emit('message.read', {
+    readerId,
+    messageIds: payload.messageIds || [],
+    readAt: new Date().toISOString(),
+  });
+}
 
   @SubscribeMessage('message.typing')
   async handleTyping(
@@ -227,10 +284,11 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   ) {
     const doctorId = client.data.userId as string | undefined;
     if (!doctorId || !payload?.consultationId) throw new WsException('Consultation requise.');
-    const consultation: any = await (this.prisma as any).consultation.findUnique({
+    const consultation = await this.prisma.consultation.findUnique({
       where: { id: payload.consultationId },
       select: {
         id: true,
+        clinicId: true,
         providerId: true,
         status: true,
         encounterType: true,
@@ -250,11 +308,12 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
       throw new WsException('Cette consultation n’est pas une télésanté active.');
     }
     if (!consultation.patient.portalUserId) throw new WsException('Le patient ne possède pas de compte de télésanté explicitement lié.');
+    await this.requireDiagnosticAgentForTelehealth(doctorId, consultation.clinicId);
     const patientUser = await this.prisma.user.findUnique({ where: { id: consultation.patient.portalUserId }, select: { id: true, primaryRole: true, status: true, deletedAt: true } });
     if (!patientUser || patientUser.primaryRole !== 'PATIENT' || patientUser.status !== 'ACTIVE' || patientUser.deletedAt) throw new WsException('Le compte patient lié n’est pas actif.');
 
     const now = new Date();
-    const call = await (this.prisma as any).telehealthSession.create({
+    const call = await this.prisma.telehealthSession.create({
       data: {
         id: randomUUID(), consultationId: consultation.id, doctorId, patientId: consultation.patient.id,
         patientUserId: patientUser.id, status: 'RINGING', expiresAt: new Date(now.getTime() + 90_000),
@@ -274,8 +333,9 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   @SubscribeMessage('telehealth.accept')
   async acceptTelehealthCall(@MessageBody() payload: { callId?: string; transcriptionConsent?: boolean }, @ConnectedSocket() client: Socket) {
     const call = await this.getTelehealthCall(payload?.callId, client.data.userId);
+    await this.requireDiagnosticAgentForTelehealth(client.data.userId, call.clinicId);
     if (call.patientUserId !== client.data.userId) throw new WsException('Acceptation non autorisée.');
-    const updated = await (this.prisma as any).telehealthSession.updateMany({
+    const updated = await this.prisma.telehealthSession.updateMany({
       where: { id: call.id, patientUserId: client.data.userId, status: 'RINGING', expiresAt: { gt: new Date() } },
       data: { status: 'ACTIVE', acceptedAt: new Date(), patientConsentAt: new Date(), transcriptionConsentAt: payload?.transcriptionConsent ? new Date() : null, expiresAt: new Date(Date.now() + 60 * 60_000) },
     });
@@ -288,6 +348,7 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   @SubscribeMessage('telehealth.decline')
   async declineTelehealthCall(@MessageBody() payload: { callId?: string; reason?: string }, @ConnectedSocket() client: Socket) {
     const call = await this.getTelehealthCall(payload?.callId, client.data.userId);
+    await this.requireDiagnosticAgentForTelehealth(client.data.userId, call.clinicId);
     if (call.patientUserId !== client.data.userId) throw new WsException('Refus non autorisé.');
     await this.closeTelehealthCall(call, 'DECLINED', payload.reason, client.data.userId);
   }
@@ -296,6 +357,7 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   async relayTelehealthSignal(@MessageBody() payload: { callId?: string; signal?: unknown }, @ConnectedSocket() client: Socket) {
     const senderId = client.data.userId as string | undefined;
     const call = await this.getTelehealthCall(payload?.callId, senderId);
+    await this.requireDiagnosticAgentForTelehealth(senderId, call.clinicId);
     if (!senderId || call.status !== 'ACTIVE' || !payload.signal || (senderId !== call.doctorId && senderId !== call.patientUserId)) {
       throw new WsException('Signal de télésanté non autorisé.');
     }
@@ -309,22 +371,64 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   async endTelehealthCall(@MessageBody() payload: { callId?: string }, @ConnectedSocket() client: Socket) {
     const call = await this.getTelehealthCall(payload?.callId, client.data.userId);
     const actorId = client.data.userId as string | undefined;
+    await this.requireDiagnosticAgentForTelehealth(actorId, call.clinicId);
     if (!actorId || (actorId !== call.doctorId && actorId !== call.patientUserId)) throw new WsException('Fin d’appel non autorisée.');
     await this.closeTelehealthCall(call, 'ENDED', undefined, actorId);
   }
 
   private async getTelehealthCall(callId?: string, userId?: string): Promise<TelehealthCall> {
-    const call = callId ? await (this.prisma as any).telehealthSession.findUnique({ where: { id: callId } }) : null;
+    const call = callId
+      ? await this.prisma.telehealthSession.findUnique({
+          where: { id: callId },
+          select: {
+            id: true,
+            consultationId: true,
+            doctorId: true,
+            patientId: true,
+            patientUserId: true,
+            status: true,
+            expiresAt: true,
+            consultation: { select: { clinicId: true } },
+          },
+        })
+      : null;
     if (!call || !userId || new Date(call.expiresAt).getTime() < Date.now()) {
       if (call) await this.closeTelehealthCall(call, 'EXPIRED', 'TIMEOUT');
       throw new WsException('Appel de télésanté expiré ou introuvable.');
     }
     if (call.status !== 'RINGING' && call.status !== 'ACTIVE') throw new WsException('Cet appel est déjà terminé.');
-    return call;
+    return { ...call, clinicId: call.consultation.clinicId };
   }
 
-  private async closeTelehealthCall(call: TelehealthCall, status: 'DECLINED' | 'ENDED' | 'EXPIRED' | 'FAILED', reason?: string, endedById?: string) {
-    const result = await (this.prisma as any).telehealthSession.updateMany({
+  /**
+   * Socket.IO handlers do not go through Nest's HTTP guard chain. The license
+   * is verified immediately before every telehealth action. Patient portal
+   * accounts may be clinic-less, but the persisted call fixes its clinic.
+   */
+  private async requireDiagnosticAgentForTelehealth(userId?: string, clinicId?: string) {
+    if (!userId || !clinicId) {
+      throw new WsException('Contexte d’établissement requis pour la télésanté.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, clinicId: true, primaryRole: true, status: true, deletedAt: true },
+    });
+    if (!user || user.deletedAt || user.status !== 'ACTIVE') {
+      throw new WsException('Utilisateur authentifié et actif requis.');
+    }
+    if (user.primaryRole !== 'PATIENT' && user.clinicId !== clinicId) {
+      throw new WsException('Accès télésanté hors établissement refusé.');
+    }
+
+    const snapshot = await this.layers.getSnapshotForClinic(clinicId);
+    if (!snapshot.configured || !snapshot.enabledLayers.includes(AuliaLayer.DIAGNOSTIC)) {
+      throw new WsException('Aulia Care Diagnostic Agent n’est pas activé pour cet établissement.');
+    }
+  }
+
+  private async closeTelehealthCall(call: TelehealthCallLifecycle, status: 'DECLINED' | 'ENDED' | 'EXPIRED' | 'FAILED', reason?: string, endedById?: string) {
+    const result = await this.prisma.telehealthSession.updateMany({
       where: { id: call.id, status: { in: ['RINGING', 'ACTIVE'] } },
       data: { status, endedAt: new Date(), endedById: endedById || null, endReason: reason || status },
     });
@@ -337,8 +441,8 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
   private scheduleTelehealthExpiry(callId: string, expiresAt: Date) {
     const delay = Math.max(0, Math.min(expiresAt.getTime() - Date.now(), 2_147_000_000));
     setTimeout(() => {
-      void (this.prisma as any).telehealthSession.findUnique({ where: { id: callId } })
-        .then((call: TelehealthCall | null) => call && this.closeTelehealthCall(call, 'EXPIRED', 'TIMEOUT'))
+      void this.prisma.telehealthSession.findUnique({ where: { id: callId } })
+        .then((call) => call && this.closeTelehealthCall(call, 'EXPIRED', 'TIMEOUT'))
         .catch(() => undefined);
     }, delay);
   }
@@ -455,7 +559,30 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     };
     if (audience.clinicId) this.server.to(this.clinicDomainRoom(audience.clinicId, domain)).emit('realtime.update', event);
     if (audience.patientId) this.server.to(this.patientRoom(audience.patientId)).emit('realtime.update', event);
-    audience.userIds.forEach((userId) => this.server.to(this.userRoom(userId)).emit('realtime.update', event));
+    const scopedUserIds = await this.filterAudienceUserIds(audience.userIds, audience.clinicId);
+    scopedUserIds.forEach((userId) => this.server.to(this.userRoom(userId)).emit('realtime.update', event));
+  }
+
+  /**
+   * Domain rooms are clinic-scoped. Direct user rooms need the same protection:
+   * an inconsistent foreign key must not turn a background change into a
+   * cross-clinic WebSocket disclosure. Portal delivery uses the explicit
+   * patient room instead and is intentionally not included here.
+   */
+  private async filterAudienceUserIds(userIds: string[], clinicId?: string): Promise<string[]> {
+    const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
+    if (uniqueUserIds.length === 0) return [];
+    if (!clinicId) return uniqueUserIds;
+    const users = await this.prisma.user.findMany({
+      where: {
+        id: { in: uniqueUserIds },
+        clinicId,
+        status: 'ACTIVE',
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    return users.map((user) => user.id);
   }
 
   private async resolveAudience(model: string, recordId: string): Promise<RealtimeAudience> {
@@ -587,14 +714,13 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
 
 type RealtimeDomain = 'reception' | 'clinical' | 'laboratory' | 'radiology' | 'pharmacy' | 'billing' | 'finance' | 'administration';
 type RealtimeAudience = { clinicId?: string; patientId?: string; userIds: string[] };
-type TelehealthCall = {
-  id: string;
-  consultationId: string;
-  doctorId: string;
-  patientId: string;
-  patientUserId: string;
-  status: 'RINGING' | 'ACTIVE' | 'DECLINED' | 'ENDED' | 'EXPIRED' | 'FAILED';
-  expiresAt: Date;
+type TelehealthCallLifecycle = Pick<
+  TelehealthSession,
+  'id' | 'consultationId' | 'doctorId' | 'patientId' | 'patientUserId' | 'status' | 'expiresAt'
+>;
+
+type TelehealthCall = TelehealthCallLifecycle & {
+  clinicId: string;
 };
 
 type SafeTelehealthSignal =

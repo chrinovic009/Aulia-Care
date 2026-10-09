@@ -19,6 +19,7 @@ type LabTestMetadata = {
   section?: { name: string } | null;
   category?: { name: string } | null;
   referenceRange?: string | null;
+  referenceRangeText?: string | null;
 };
 
 type Department = {
@@ -461,10 +462,10 @@ function PatientRecord({ patient, position, labTests, departments }: { patient: 
         <Section title="Consultations récentes">
           {consultations.length === 0 ? <Empty /> : (
             <div className="space-y-3">
-              {pageItems(consultations, consultationsPage, 3).map((consultation, index) => (
-                <ClinicalConsultation key={consultation.id} consultation={consultation} displayId={formatConsultationId((consultationsPage - 1) * 3 + index + 1, patient)} />
+              {pageItems(consultations, consultationsPage, 5).map((consultation, index) => (
+                <ClinicalConsultation key={consultation.id} consultation={consultation} displayId={formatConsultationId((consultationsPage - 1) * 5 + index + 1, patient)} />
               ))}
-              <InlinePagination page={consultationsPage} total={consultations.length} pageSize={3} onChange={setConsultationsPage} label="consultations" />
+              <InlinePagination page={consultationsPage} total={consultations.length} pageSize={5} onChange={setConsultationsPage} label="consultations" />
             </div>
           )}
         </Section>
@@ -888,7 +889,7 @@ function renderHistoryDetails(kind: string, parsed: any, patient: DoctorPatient,
         <Info label="Anamnese" value={joinValues(parsed.currentSymptoms, ["onset", "painLocation", "intensity", "aggravatingFactors", "associatedSymptoms"])} />
         <Info label="Examen clinique" value={joinValues(parsed.clinicalExam, ["generalState", "auscultation", "palpation", "focusedExam"])} />
         <Info label="Diagnostic" value={[parsed.diagnosis?.principal, ...(parsed.diagnosis?.hypotheses || [])].filter(Boolean).join(" | ") || "-"} />
-        <Info label="Consignes & Suivi" value={[parsed.treatmentPlan?.notes, parsed.followUp?.notes].filter(Boolean).join(" | ") || "-"} />
+        <Info label="Consignes & Suivi" value={formatFollowUpSummary(parsed) || "-"} />
       </div>
     );
   }
@@ -928,7 +929,7 @@ function renderHistoryDetails(kind: string, parsed: any, patient: DoctorPatient,
                   <div key={`nfs-param-${index}`} className="rounded-2xl border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
                     <p className="font-medium text-slate-800 dark:text-slate-100">{parameter.labTestParameter?.name || "Paramètre"}</p>
                     <p className="mt-1 text-slate-600 dark:text-slate-300">
-                      Valeur: {parameter.valueNumeric?.toString() || parameter.valueText || "-"}{parameter.labTestParameter?.unit ? ` ${parameter.labTestParameter.unit}` : ""}
+                      {formatLabResultParameter(parameter)}
                     </p>
                     {parameter.labTestParameter?.referenceRange ? <p className="mt-1 text-slate-600 dark:text-slate-300">Référence: {parameter.labTestParameter.referenceRange}</p> : null}
                     {parameter.interpretation ? <p className="mt-1 text-slate-600 dark:text-slate-300">Interprétation: {parameter.interpretation}</p> : null}
@@ -1294,7 +1295,7 @@ async function printPatientRecord(patient: DoctorPatient, position?: number, lab
       const interpretation = request.interpretation || firstResult?.interpretation || "-";
       const diagnostic = request.diagnostic || request.consultation?.diagnosis || "-";
       const isNfsRequest = isNfsExam(examName);
-      const parameterRows = Array.isArray(firstResult?.parameters) ? firstResult.parameters.map((parameter: any, index: number) => {
+      const parameterRows = Array.isArray(firstResult?.parameters) ? firstResult.parameters.map((parameter: any) => {
         const paramName = parameter.labTestParameter?.name || 'Paramètre';
         const paramValue = parameter.valueNumeric?.toString() || parameter.valueText || '-';
         const paramUnit = parameter.labTestParameter?.unit ? ` ${parameter.labTestParameter.unit}` : '';
@@ -1542,6 +1543,18 @@ async function printPatientRecord(patient: DoctorPatient, position?: number, lab
                 <tr><th>Date</th><th>Libellé</th><th>Détails</th></tr>
               </thead>
               <tbody>${operationsRows}</tbody>
+            </table>
+          </div>
+          ` : ''}
+
+          ${(patient.medicalHistories || []).length ? `
+          <div class="section">
+            <div class="section-title">Historique clinique</div>
+            <table>
+              <thead>
+                <tr><th>Date</th><th>Événement</th><th>Détails</th></tr>
+              </thead>
+              <tbody>${medicalHistoryRows}</tbody>
             </table>
           </div>
           ` : ''}

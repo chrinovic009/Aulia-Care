@@ -1,18 +1,19 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../auth/roles.guard';
-import { Roles } from '../../auth/roles.decorator';
 import { ConfigureClinicLayersDto } from './dto/configure-clinic-layers.dto';
 import { CreateProvisionedClinicDto } from './dto/create-provisioned-clinic.dto';
 import { CreateProvisionedSuperAdminDto } from './dto/create-provisioned-super-admin.dto';
 import { UpdateProvisionedClinicDto } from './dto/update-provisioned-clinic.dto';
+import { UpdateProvisionedSuperAdminDto } from './dto/update-provisioned-super-admin.dto';
 import { PlatformProvisioningService } from './platform-provisioning.service';
 
 /** Platform-only provisioning.  No client-provided clinic id is ever accepted
  * when a hospital user is created; the id comes from this controlled route. */
 @Controller('platform/provisioning')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('DEV')
+// PlatformProvisioningService resolves the actor from the database and
+// enforces the DEV-without-clinic invariant. Keeping that single check avoids
+// a stale JWT role producing Nest's generic “Forbidden resource” response.
+@UseGuards(JwtAuthGuard)
 export class PlatformProvisioningController {
   constructor(private readonly provisioning: PlatformProvisioningService) {}
 
@@ -46,8 +47,24 @@ export class PlatformProvisioningController {
     return this.provisioning.createSuperAdmin(req.user?.userId, clinicId, dto);
   }
 
+  @Patch('clinics/:clinicId/super-admin')
+  updateSuperAdmin(@Request() req: { user?: { userId?: string } }, @Param('clinicId') clinicId: string, @Body() dto: UpdateProvisionedSuperAdminDto) {
+    return this.provisioning.updateSuperAdmin(req.user?.userId, clinicId, dto);
+  }
+
   @Post('clinics/:clinicId/activate')
   activate(@Request() req: { user?: { userId?: string } }, @Param('clinicId') clinicId: string) {
     return this.provisioning.activateClinic(req.user?.userId, clinicId);
+  }
+
+  @Post('clinics/:clinicId/deactivate')
+  deactivate(@Request() req: { user?: { userId?: string } }, @Param('clinicId') clinicId: string) {
+    return this.provisioning.deactivateClinic(req.user?.userId, clinicId);
+  }
+
+  /** Archives only; the hospital's clinical and financial records stay intact. */
+  @Delete('clinics/:clinicId')
+  archive(@Request() req: { user?: { userId?: string } }, @Param('clinicId') clinicId: string) {
+    return this.provisioning.archiveClinic(req.user?.userId, clinicId);
   }
 }

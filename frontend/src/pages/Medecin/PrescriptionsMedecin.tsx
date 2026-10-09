@@ -8,6 +8,7 @@ import {
   fetchAvailableMedications,
   fetchDoctorVisiblePatients,
   formatDoctorPatientName,
+  requestPrescriptionReplacement,
   updatePrescription,
 } from "../../api/doctor";
 import {
@@ -31,6 +32,8 @@ export default function PrescriptionsMedecin() {
   const [editingPrescriptionId, setEditingPrescriptionId] = useState<
     string | null
   >(null);
+  const [replacingPrescriptionId, setReplacingPrescriptionId] = useState<string | null>(null);
+  const [replacementReason, setReplacementReason] = useState("");
   const [selectedMedicationIds, setSelectedMedicationIds] = useState<string[]>(
     [],
   );
@@ -319,6 +322,12 @@ export default function PrescriptionsMedecin() {
     return prescriptionAge <= 24 * 60 * 60 * 1000;
   };
 
+  const canRequestPrescriptionReplacement = (
+    prescription: NonNullable<DoctorPatient["prescriptions"]>[number],
+  ) => !["DISPENSED", "PARTIALLY_DISPENSED", "CANCELLED", "COMPLETED"].includes(
+    String(prescription.status || "").toUpperCase(),
+  );
+
   const openPrescriptionEdit = (
     prescription: NonNullable<DoctorPatient["prescriptions"]>[number],
   ) => {
@@ -327,6 +336,7 @@ export default function PrescriptionsMedecin() {
       medications.find((item) => item.name === firstLine?.medication?.name)
         ?.id || "";
     setEditingPrescriptionId(prescription.id);
+    setReplacingPrescriptionId(null);
     setEditForm({
       medicationId,
       quantity: String(firstLine?.quantity || 1),
@@ -339,12 +349,20 @@ export default function PrescriptionsMedecin() {
     });
   };
 
+  const openPrescriptionReplacement = (
+    prescription: NonNullable<DoctorPatient["prescriptions"]>[number],
+  ) => {
+    openPrescriptionEdit(prescription);
+    setReplacingPrescriptionId(prescription.id);
+    setReplacementReason("");
+  };
+
   const savePrescriptionEdit = async () => {
     if (!selectedConsultation || !editingPrescriptionId) {
       return;
     }
 
-    await updatePrescription(selectedConsultation.id, editingPrescriptionId, {
+    const payload = {
       instruction: editForm.instruction,
       lines: [
         {
@@ -359,10 +377,26 @@ export default function PrescriptionsMedecin() {
           notes: editForm.notes,
         },
       ],
-    });
+    };
 
-    setMessage("Prescription modifiee avec succes.");
+    if (replacingPrescriptionId) {
+      if (!replacementReason.trim()) {
+        setMessage("Le motif clinique du remplacement est obligatoire.");
+        return;
+      }
+      await requestPrescriptionReplacement(selectedConsultation.id, replacingPrescriptionId, {
+        ...payload,
+        reason: replacementReason.trim(),
+      });
+      setMessage("Demande de remplacement enregistrée. La validation finance est requise avant la nouvelle ordonnance.");
+    } else {
+      await updatePrescription(selectedConsultation.id, editingPrescriptionId, payload);
+      setMessage("Prescription modifiee avec succes.");
+    }
+
     setEditingPrescriptionId(null);
+    setReplacingPrescriptionId(null);
+    setReplacementReason("");
     await load();
   };
 
@@ -857,11 +891,25 @@ export default function PrescriptionsMedecin() {
                                 >
                                   Modifier
                                 </button>
+                              ) : canRequestPrescriptionReplacement(prescription) ? (
+                                <button
+                                  onClick={() => openPrescriptionReplacement(prescription)}
+                                  className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white"
+                                >
+                                  Demander un remplacement
+                                </button>
                               ) : null}
                             </div>
 
                             {editingPrescriptionId === prescription.id ? (
                               <div className="mt-3 rounded-lg border border-blue-200 bg-white p-3 dark:border-blue-800 dark:bg-slate-900">
+                                {replacingPrescriptionId === prescription.id ? (
+                                  <Textarea
+                                    label="Motif clinique du remplacement"
+                                    value={replacementReason}
+                                    onChange={setReplacementReason}
+                                  />
+                                ) : null}
                                 <div className="grid gap-3 md:grid-cols-2">
                                   <Select
                                     label="Médicament"
@@ -960,7 +1008,7 @@ export default function PrescriptionsMedecin() {
                                     onClick={() => void savePrescriptionEdit()}
                                     className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
                                   >
-                                    Enregistrer
+                                    {replacingPrescriptionId === prescription.id ? "Soumettre à la finance" : "Enregistrer"}
                                   </button>
                                   <button
                                     onClick={() =>

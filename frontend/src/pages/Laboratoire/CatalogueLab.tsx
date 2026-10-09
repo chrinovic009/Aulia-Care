@@ -8,6 +8,7 @@ import {
   createLabCategory,
   createLabConsumable,
   createLabConsumableStock,
+  updateLabConsumableStock,
   createLabTest,
   createLabTestConsumableRequirement,
   createLabTestParameter,
@@ -654,30 +655,46 @@ export default function CatalogueLab() {
     }
   };
 
-  const lowStockConsumables = useMemo(() => {
-    if (!catalogue) return [];
-    return catalogue.consumables.filter((consumable) =>
-      consumable.stock.some((stockLine) => {
-        const quantity = Number(stockLine.quantity ?? 0);
-        const minimum = Number(stockLine.minimumLevel ?? 0);
-        const critical = Number(stockLine.criticalLevel ?? 0);
-        return (minimum > 0 && quantity <= minimum) || (critical > 0 && quantity <= critical);
-      }),
-    );
-  }, [catalogue]);
+const lowStockConsumables = useMemo(() => {
+  if (!catalogue) return [];
 
-  const filterText = searchQuery.trim().toLowerCase();
-  const matchesSearch = useCallback((fields: Array<string | number | undefined | null>) => {
+  return catalogue.consumables.filter((consumable) =>
+    (consumable.stock ?? []).some((stockLine) => {
+      const quantity = Number(stockLine.quantity ?? 0);
+      const minimum = Number(stockLine.minimumLevel ?? 0);
+      const critical = Number(stockLine.criticalLevel ?? 0);
+
+      return (
+        (minimum > 0 && quantity <= minimum) ||
+        (critical > 0 && quantity <= critical)
+      );
+    }),
+  );
+}, [catalogue]);
+
+const filterText = searchQuery.trim().toLowerCase();
+
+const matchesSearch = useCallback(
+  (fields: Array<string | number | undefined | null>) => {
     if (!filterText) return true;
-    return fields.some((field) => String(field || '').toLowerCase().includes(filterText));
-  }, [filterText]);
 
-  const stockRows = useMemo(() => {
-    if (!catalogue) return [];
-    return catalogue.consumables.flatMap((consumable) =>
-      consumable.stock.map((stockLine) => ({ consumable, stockLine })),
+    return fields.some((field) =>
+      String(field || '').toLowerCase().includes(filterText),
     );
-  }, [catalogue]);
+  },
+  [filterText],
+);
+
+const stockRows = useMemo(() => {
+  if (!catalogue) return [];
+
+  return catalogue.consumables.flatMap((consumable) =>
+    (consumable.stock ?? []).map((stockLine) => ({
+      consumable,
+      stockLine,
+    })),
+  );
+}, [catalogue]);
 
   const filteredSections = useMemo(
     () => catalogue?.sections.filter((section) => matchesSearch([section.name, section.description])) ?? [],
@@ -797,8 +814,8 @@ export default function CatalogueLab() {
               <div class="brand">
                 <img src="${documentLogoUrl(clinic)}" alt="Logo établissement" class="logo" />
                 <div>
-                  <div class="title">ÉTAT DE STOCK DU LABORATOIRE</div>
-                  <div class="subtitle">Service de laboratoire - <span style="color:#0D9488;font-weight:800">${clinic.name}</span></div>
+                  <div class="title">${clinic.name}</div>
+                  <div class="subtitle"><span style="color:#0D9488;font-weight:800">ÉTAT DE STOCK DU LABORATOIRE</span></div>
                   ${clinicContact ? `<div class="subtitle">${clinicContact}</div>` : ""}
                   <div class="subtitle">Imprimé le ${new Date().toLocaleDateString('fr-FR')}</div>
                 </div>
@@ -1161,11 +1178,17 @@ export default function CatalogueLab() {
     if (!editingStock) return;
     setIsSaving(true);
     try {
-      await updateLabCatalogueItem('stock', editingStock.id, {
-        quantity: editingStock.quantity,
-        minimumLevel: editingStock.minimumLevel,
-        criticalLevel: editingStock.criticalLevel,
-        location: editingStock.location,
+      await updateLabConsumableStock(editingStock.id, {
+        quantity: Number(editingStock.quantity),
+        minimumLevel:
+          editingStock.minimumLevel === ''
+            ? null
+            : Number(editingStock.minimumLevel),
+        criticalLevel:
+          editingStock.criticalLevel === ''
+            ? null
+            : Number(editingStock.criticalLevel),
+        location: editingStock.location.trim() || null,
       });
       setEditingStock(null);
       await loadCatalogue();
@@ -2284,9 +2307,16 @@ export default function CatalogueLab() {
                       consumable.name,
                       consumable.code,
                       consumable.unit,
-                      consumable.stock.reduce((sum, stockLine) => sum + Number(stockLine.quantity || 0), 0).toLocaleString("fr-FR"),
+                      (consumable.stock ?? [])
+                        .reduce(
+                          (sum, stockLine) => sum + Number(stockLine.quantity || 0),
+                          0,
+                        )
+                        .toLocaleString("fr-FR"),
                       catalogue.tests.filter((test) =>
-                        test.consumableRequirements.some((requirement) => requirement.labConsumableId === consumable.id),
+                        (test.consumableRequirements ?? []).some(
+                          (requirement) => requirement.labConsumableId === consumable.id
+                        ),
                       ).length,
                       isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('consumables', consumable, consumable.name)} className="text-xs text-blue-700">{consumable.active ? "Désactiver" : "Activer"}</button><ActionButtons onEdit={() => handleEditConsumable(consumable)} onDelete={() => setDeleteTarget({ kind: 'consumables', id: consumable.id, label: consumable.name })} /></div> : "—",
                     ])}
@@ -2468,10 +2498,24 @@ export default function CatalogueLab() {
                         headers={["Consommable", "Stock total", "Minimum", "Critique", "Localisations"]}
                         rows={lowStockConsumables.map((consumable) => [
                           consumable.name,
-                          consumable.stock.reduce((sum, line) => sum + Number(line.quantity || 0), 0).toLocaleString("fr-FR"),
-                          consumable.stock.map((line) => line.minimumLevel ?? "-").join(", "),
-                          consumable.stock.map((line) => line.criticalLevel ?? "-").join(", "),
-                          consumable.stock.map((line) => line.location || "-").join(", "),
+                          (consumable.stock ?? [])
+                            .reduce(
+                              (sum, line) => sum + Number(line.quantity || 0),
+                              0,
+                            )
+                            .toLocaleString("fr-FR"),
+
+                          (consumable.stock ?? [])
+                            .map((line) => line.minimumLevel ?? "-")
+                            .join(", "),
+
+                          (consumable.stock ?? [])
+                            .map((line) => line.criticalLevel ?? "-")
+                            .join(", "),
+
+                          (consumable.stock ?? [])
+                            .map((line) => line.location || "-")
+                            .join(", "),
                         ])}
                       />
                     )}
@@ -2485,7 +2529,24 @@ export default function CatalogueLab() {
                       stockLine.minimumLevel ?? '-',
                       stockLine.criticalLevel ?? '-',
                       stockLine.location ?? '-',
-                      isLabManager ? <ActionButtons onEdit={() => handleEditStock({ id: stockLine.id, quantity: String(stockLine.quantity ?? ''), minimumLevel: stockLine.minimumLevel ?? '', criticalLevel: stockLine.criticalLevel ?? '', location: stockLine.location ?? '' })} onDelete={() => setDeleteTarget({ kind: 'stock', id: stockLine.id, label: `${consumable.name} (${stockLine.location || 'stock'})` })} /> : '—',
+                      isLabManager ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleEditStock({
+                              id: stockLine.id,
+                              quantity: String(stockLine.quantity ?? ''),
+                              minimumLevel: stockLine.minimumLevel ?? '',
+                              criticalLevel: stockLine.criticalLevel ?? '',
+                              location: stockLine.location ?? '',
+                            })
+                          }
+                          className="rounded-lg border border-slate-200 p-2 text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                          title="Modifier le stock"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                      ) : '—',
                     ])}
                   />
 
