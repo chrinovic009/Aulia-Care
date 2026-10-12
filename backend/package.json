@@ -26,6 +26,8 @@
     "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
     "prisma:db:push": "prisma db push --schema prisma/schema.prisma",
     "db:seed": "prisma db seed --schema prisma/schema.prisma",
+    "demo:provision-sentinel": "ts-node --transpile-only --project tsconfig.json src/scripts/provision-demo-sentinel.ts",
+    "demo:seed": "ts-node --transpile-only --project tsconfig.json prisma/seed-demo.ts",
     "bootstrap:dev": "ts-node --transpile-only --project tsconfig.json src/scripts/bootstrap-dev.ts",
     "generate:initial-dev-bootstrap-token": "node dist/scripts/generate-initial-dev-bootstrap-token.js",
     "bootstrap:initial-dev:production": "node dist/scripts/bootstrap-initial-platform-dev.js",
