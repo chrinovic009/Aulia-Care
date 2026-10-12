@@ -7,7 +7,7 @@
     "dev": "nodemon --legacy-watch --watch src --ext ts --exec \"ts-node --transpile-only --project tsconfig.json src/main.ts\"",
     "dev:diagnostic-agent": "ts-node-dev --transpile-only --project tsconfig.json --respawn src/main-diagnostic-agent.ts",
     "dev:connected-care": "nodemon --legacy-watch --watch src --ext ts --exec \"ts-node --transpile-only --project tsconfig.json src/main-connected-care.ts\"",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "npm run prisma:generate && tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",
     "start:diagnostic-agent": "node dist/main-diagnostic-agent.js",
