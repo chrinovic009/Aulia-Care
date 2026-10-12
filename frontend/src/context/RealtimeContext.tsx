@@ -18,10 +18,12 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
       return;
     }
 
-    // Always use the web application's origin. In development Vite proxies
-    // `/socket.io` to NestJS; on the LAN this keeps localhost and external
-    // users on the exact same signalling endpoint.
-    const socketUrl = window.location.origin;
+    // In local development Vite proxies Socket.IO through the web origin.
+    // Public DEMO serves the SPA from Vercel and NestJS from Render, so use
+    // the configured API origin (without its `/api` prefix) when present.
+    const configuredApiUrl = String(import.meta.env.VITE_API_BASE_URL || '')
+      .replace(/\/api\/?$/, '');
+    const socketUrl = configuredApiUrl || window.location.origin;
 
     let isActive = true;
     let activeSocket: Socket | null = null;
