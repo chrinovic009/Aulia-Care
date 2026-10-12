@@ -106,8 +106,8 @@ export default defineConfig(({ mode }) => {
     },
 
     build: {
-      // Docker publishes the monorepo-level directory, while Vercel imports
-      // the frontend as its own project and expects a directory inside it.
+      // Docker publishes the monorepo-level directory. Vercel imports the
+      // frontend as its own project, so its output must stay inside that root.
       outDir: process.env.VERCEL ? "dist" : "../dist-frontend",
       emptyOutDir: true,
     },
