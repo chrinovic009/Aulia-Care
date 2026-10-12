@@ -41,10 +41,17 @@ export class AuthController {
 
   private cookieOptions() {
     const production = process.env.NODE_ENV === 'production';
+    // The public demonstration serves its SPA and API from separate HTTPS
+    // origins (Vercel and Render).  Cross-site cookies are opt-in so the
+    // normal single-origin hospital deployment keeps its stricter Lax policy.
+    const crossSiteCookies =
+      production && process.env.AULIA_CROSS_SITE_COOKIES === 'true';
+    const sameSite: 'lax' | 'none' = crossSiteCookies ? 'none' : 'lax';
+
     return {
       httpOnly: true,
-      secure: production,
-      sameSite: 'lax' as const,
+      secure: production || crossSiteCookies,
+      sameSite,
       // The same cookie also authenticates the secured Socket.IO handshake.
       path: '/',
     };
