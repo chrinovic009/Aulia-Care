@@ -1,0 +1,3708 @@
+{
+  "generatedAt": "2026-10-12T08:56:21.857Z",
+  "scope": "Static inventory only. Every entry still requires service-level tenant and role review; this file is not a production authorization attestation.",
+  "controllers": 28,
+  "httpRoutes": 278,
+  "websocketGateways": 2,
+  "websocketHandlerCount": 9,
+  "exportRelatedRoutes": [
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "GET",
+      "path": "reports",
+      "file": "src/administration/administration.controller.ts",
+      "line": 330,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('SUPER_ADMIN')"
+      ],
+      "exportRelated": true
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "POST",
+      "path": ":id/report",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 73,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')",
+        "@Roles('RADIOLOGIST')"
+      ],
+      "exportRelated": true
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "POST",
+      "path": ":id/report/amendments",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 79,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')",
+        "@Roles('RADIOLOGIST')"
+      ],
+      "exportRelated": true
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "POST",
+      "path": ":id/death-report",
+      "file": "src/patients/patients.controller.ts",
+      "line": 160,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'NURSE')",
+        "@Roles('NURSE')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": true
+    }
+  ],
+  "routes": [
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "GET",
+      "path": "clinic-branding",
+      "file": "src/administration/administration.controller.ts",
+      "line": 28,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "PATCH",
+      "path": "clinic-branding",
+      "file": "src/administration/administration.controller.ts",
+      "line": 48,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN')",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "GET",
+      "path": "clinic-operational-policy",
+      "file": "src/administration/administration.controller.ts",
+      "line": 60,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN')",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "PATCH",
+      "path": "clinic-operational-policy",
+      "file": "src/administration/administration.controller.ts",
+      "line": 68,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "GET",
+      "path": "departments",
+      "file": "src/administration/administration.controller.ts",
+      "line": 80,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "GET",
+      "path": "service-units",
+      "file": "src/administration/administration.controller.ts",
+      "line": 86,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "POST",
+      "path": "departments/:id/responsables",
+      "file": "src/administration/administration.controller.ts",
+      "line": 92,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "POST",
+      "path": "departments",
+      "file": "src/administration/administration.controller.ts",
+      "line": 110,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "PATCH",
+      "path": "departments/:id",
+      "file": "src/administration/administration.controller.ts",
+      "line": 122,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "DELETE",
+      "path": "departments/:id",
+      "file": "src/administration/administration.controller.ts",
+      "line": 136,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "POST",
+      "path": "service-units",
+      "file": "src/administration/administration.controller.ts",
+      "line": 148,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "GET",
+      "path": "rooms",
+      "file": "src/administration/administration.controller.ts",
+      "line": 160,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "GET",
+      "path": "room-staff",
+      "file": "src/administration/administration.controller.ts",
+      "line": 166,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "POST",
+      "path": "rooms",
+      "file": "src/administration/administration.controller.ts",
+      "line": 172,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "PATCH",
+      "path": "rooms/:id",
+      "file": "src/administration/administration.controller.ts",
+      "line": 184,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "DELETE",
+      "path": "rooms/:id",
+      "file": "src/administration/administration.controller.ts",
+      "line": 198,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "POST",
+      "path": "beds",
+      "file": "src/administration/administration.controller.ts",
+      "line": 210,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "POST",
+      "path": "operating-rooms",
+      "file": "src/administration/administration.controller.ts",
+      "line": 227,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "PATCH",
+      "path": "operating-rooms/:id",
+      "file": "src/administration/administration.controller.ts",
+      "line": 245,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "DELETE",
+      "path": "operating-rooms/:id",
+      "file": "src/administration/administration.controller.ts",
+      "line": 265,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "GET",
+      "path": "stock",
+      "file": "src/administration/administration.controller.ts",
+      "line": 286,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "POST",
+      "path": "stock/medications",
+      "file": "src/administration/administration.controller.ts",
+      "line": 294,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "POST",
+      "path": "stock/suppliers",
+      "file": "src/administration/administration.controller.ts",
+      "line": 306,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "POST",
+      "path": "stock/lots",
+      "file": "src/administration/administration.controller.ts",
+      "line": 318,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "GET",
+      "path": "reports",
+      "file": "src/administration/administration.controller.ts",
+      "line": 330,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('SUPER_ADMIN')"
+      ],
+      "exportRelated": true
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "GET",
+      "path": "dashboard",
+      "file": "src/administration/administration.controller.ts",
+      "line": 336,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('SUPER_ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "administration/administration.controller.ts",
+      "method": "GET",
+      "path": "executive-dashboard",
+      "file": "src/administration/administration.controller.ts",
+      "line": 343,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('SUPER_ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "appointments/appointments.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/appointments/appointments.controller.ts",
+      "line": 20,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('PATIENT')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "appointments/appointments.controller.ts",
+      "method": "GET",
+      "path": "booking-options",
+      "file": "src/appointments/appointments.controller.ts",
+      "line": 26,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('PATIENT')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "appointments/appointments.controller.ts",
+      "method": "POST",
+      "path": "me",
+      "file": "src/appointments/appointments.controller.ts",
+      "line": 32,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('PATIENT')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "appointments/appointments.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/appointments/appointments.controller.ts",
+      "line": 38,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PATIENT')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "appointments/appointments.controller.ts",
+      "method": "POST",
+      "path": "/",
+      "file": "src/appointments/appointments.controller.ts",
+      "line": 44,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PATIENT')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "appointments/appointments.controller.ts",
+      "method": "PATCH",
+      "path": ":id",
+      "file": "src/appointments/appointments.controller.ts",
+      "line": 50,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "appointments/appointments.controller.ts",
+      "method": "DELETE",
+      "path": ":id",
+      "file": "src/appointments/appointments.controller.ts",
+      "line": 56,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "audit/audit.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/audit/audit.controller.ts",
+      "line": 12,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "audit/audit.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/audit/audit.controller.ts",
+      "line": 18,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "POST",
+      "path": "login",
+      "file": "src/auth/auth.controller.ts",
+      "line": 106,
+      "authorizationMarkers": [
+        "@Public()"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "POST",
+      "path": "refresh",
+      "file": "src/auth/auth.controller.ts",
+      "line": 133,
+      "authorizationMarkers": [
+        "@Public()"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "POST",
+      "path": "logout",
+      "file": "src/auth/auth.controller.ts",
+      "line": 149,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "POST",
+      "path": "logout-all",
+      "file": "src/auth/auth.controller.ts",
+      "line": 157,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)",
+        "@Public()"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "GET",
+      "path": "csrf",
+      "file": "src/auth/auth.controller.ts",
+      "line": 167,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)",
+        "@Public()"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "GET",
+      "path": "session-hint",
+      "file": "src/auth/auth.controller.ts",
+      "line": 177,
+      "authorizationMarkers": [
+        "@Public()"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "POST",
+      "path": "clear-expired-session",
+      "file": "src/auth/auth.controller.ts",
+      "line": 190,
+      "authorizationMarkers": [
+        "@Public()",
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "GET",
+      "path": "me",
+      "file": "src/auth/auth.controller.ts",
+      "line": 198,
+      "authorizationMarkers": [
+        "@Public()",
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "GET",
+      "path": "security-status",
+      "file": "src/auth/auth.controller.ts",
+      "line": 206,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "POST",
+      "path": "lock-session",
+      "file": "src/auth/auth.controller.ts",
+      "line": 213,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "PATCH",
+      "path": "profile",
+      "file": "src/auth/auth.controller.ts",
+      "line": 220,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "POST",
+      "path": "change-pin",
+      "file": "src/auth/auth.controller.ts",
+      "line": 227,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "auth/auth.controller.ts",
+      "method": "POST",
+      "path": "verify-pin",
+      "file": "src/auth/auth.controller.ts",
+      "line": 234,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "GET",
+      "path": "invoices",
+      "file": "src/billing/billing.controller.ts",
+      "line": 13,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "GET",
+      "path": "payments",
+      "file": "src/billing/billing.controller.ts",
+      "line": 19,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "GET",
+      "path": "payments/:id",
+      "file": "src/billing/billing.controller.ts",
+      "line": 25,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "GET",
+      "path": "forecast",
+      "file": "src/billing/billing.controller.ts",
+      "line": 31,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "GET",
+      "path": "finance/dashboard",
+      "file": "src/billing/billing.controller.ts",
+      "line": 35,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "GET",
+      "path": "finance/treasury",
+      "file": "src/billing/billing.controller.ts",
+      "line": 39,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "GET",
+      "path": "finance/banking",
+      "file": "src/billing/billing.controller.ts",
+      "line": 43,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "POST",
+      "path": "finance/bank-accounts",
+      "file": "src/billing/billing.controller.ts",
+      "line": 47,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "PATCH",
+      "path": "finance/bank-accounts/:bankAccountId/status",
+      "file": "src/billing/billing.controller.ts",
+      "line": 51,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "POST",
+      "path": "finance/bank-accounts/:bankAccountId/statement-entries",
+      "file": "src/billing/billing.controller.ts",
+      "line": 55,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "POST",
+      "path": "finance/bank-accounts/:bankAccountId/reconciliations",
+      "file": "src/billing/billing.controller.ts",
+      "line": 59,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "PATCH",
+      "path": "finance/reconciliations/:reconciliationId",
+      "file": "src/billing/billing.controller.ts",
+      "line": 63,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "GET",
+      "path": "finance/journal",
+      "file": "src/billing/billing.controller.ts",
+      "line": 67,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "POST",
+      "path": "finance/journal",
+      "file": "src/billing/billing.controller.ts",
+      "line": 71,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "POST",
+      "path": "finance/journal/:entryId/post",
+      "file": "src/billing/billing.controller.ts",
+      "line": 75,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "POST",
+      "path": "finance/refunds",
+      "file": "src/billing/billing.controller.ts",
+      "line": 79,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "PATCH",
+      "path": "finance/refunds/:refundId",
+      "file": "src/billing/billing.controller.ts",
+      "line": 83,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "GET",
+      "path": "finance/budgets",
+      "file": "src/billing/billing.controller.ts",
+      "line": 87,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "POST",
+      "path": "finance/budgets",
+      "file": "src/billing/billing.controller.ts",
+      "line": 91,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "PATCH",
+      "path": "finance/budgets/:budgetId/status",
+      "file": "src/billing/billing.controller.ts",
+      "line": 95,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "POST",
+      "path": "finance/budgets/:budgetId/allocations",
+      "file": "src/billing/billing.controller.ts",
+      "line": 99,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "POST",
+      "path": "finance/investments",
+      "file": "src/billing/billing.controller.ts",
+      "line": 103,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "PATCH",
+      "path": "finance/investments/:investmentId/status",
+      "file": "src/billing/billing.controller.ts",
+      "line": 107,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "GET",
+      "path": "patients/:patientId/summary",
+      "file": "src/billing/billing.controller.ts",
+      "line": 111,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "PATCH",
+      "path": "invoices/:invoiceId/discount",
+      "file": "src/billing/billing.controller.ts",
+      "line": 117,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "POST",
+      "path": "invoices/:invoiceId/discount-requests",
+      "file": "src/billing/billing.controller.ts",
+      "line": 127,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "POST",
+      "path": "discount-requests/:requestId/review",
+      "file": "src/billing/billing.controller.ts",
+      "line": 133,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/billing.controller.ts",
+      "method": "POST",
+      "path": "patients/:patientId/authorize-discharge",
+      "file": "src/billing/billing.controller.ts",
+      "line": 139,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'CASHIER')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/payments.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/billing/payments.controller.ts",
+      "line": 13,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "billing/payments.controller.ts",
+      "method": "POST",
+      "path": "/",
+      "file": "src/billing/payments.controller.ts",
+      "line": 19,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "clinical-intelligence/clinical-intelligence.controller.ts",
+      "method": "GET",
+      "path": "consultations/:id/suggestions",
+      "file": "src/clinical-intelligence/clinical-intelligence.controller.ts",
+      "line": 14,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 22,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'PHYSICIAN')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "GET",
+      "path": "drafts",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 32,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'PHYSICIAN')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "GET",
+      "path": ":id/draft-detail",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 38,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')",
+        "@Roles('ADMIN', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "DELETE",
+      "path": ":id/draft",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 44,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')",
+        "@Roles('ADMIN', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 50,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')",
+        "@Roles('ADMIN', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "POST",
+      "path": "/",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 56,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')",
+        "@Roles('ADMIN', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "POST",
+      "path": "open-for-patient",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 62,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'PHYSICIAN')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "PATCH",
+      "path": ":id",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 68,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "POST",
+      "path": ":id/clinical-sections",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 74,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "POST",
+      "path": ":id/telehealth-transcript",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 80,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "POST",
+      "path": ":id/lab-requests",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 89,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "POST",
+      "path": ":id/imaging-requests",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 95,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "POST",
+      "path": ":id/prescriptions",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 101,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "PATCH",
+      "path": ":id/prescriptions/:prescriptionId",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 107,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "POST",
+      "path": ":id/prescriptions/:prescriptionId/replacements",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 118,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')",
+        "@Roles('FINANCE', 'ADMIN', 'SUPER_ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "POST",
+      "path": ":id/prescriptions/:prescriptionId/replacements/:replacementId/review",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 129,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')",
+        "@Roles('FINANCE', 'ADMIN', 'SUPER_ADMIN')",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "consultations/consultations.controller.ts",
+      "method": "DELETE",
+      "path": ":id",
+      "file": "src/consultations/consultations.controller.ts",
+      "line": 141,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('FINANCE', 'ADMIN', 'SUPER_ADMIN')",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "health/health.controller.ts",
+      "method": "GET",
+      "path": "live",
+      "file": "src/health/health.controller.ts",
+      "line": 13,
+      "authorizationMarkers": [],
+      "exportRelated": false
+    },
+    {
+      "controller": "health/health.controller.ts",
+      "method": "GET",
+      "path": "ready",
+      "file": "src/health/health.controller.ts",
+      "line": 23,
+      "authorizationMarkers": [],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "GET",
+      "path": "search",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 18,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "GET",
+      "path": "stats",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 24,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('ADMIN', 'NURSE', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "GET",
+      "path": "rooms",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 30,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('ADMIN', 'NURSE', 'PHYSICIAN')",
+        "@Roles('ADMIN', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "GET",
+      "path": "nurse/followed",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 36,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('ADMIN', 'NURSE', 'PHYSICIAN')",
+        "@Roles('ADMIN', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "GET",
+      "path": "nurse/available",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 42,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('ADMIN', 'NURSE', 'PHYSICIAN')",
+        "@Roles('ADMIN', 'PHYSICIAN')",
+        "@Roles('NURSE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "GET",
+      "path": "nurse/rounds",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 48,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'NURSE', 'PHYSICIAN')",
+        "@Roles('ADMIN', 'PHYSICIAN')",
+        "@Roles('NURSE')",
+        "@Roles('ADMIN', 'NURSE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "PATCH",
+      "path": "nurse/care-tasks/:taskId",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 54,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'PHYSICIAN')",
+        "@Roles('ADMIN', 'NURSE', 'PHYSICIAN')",
+        "@Roles('NURSE')",
+        "@Roles('ADMIN', 'NURSE')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "POST",
+      "path": ":id/nurse-rounds",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 60,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'NURSE', 'PHYSICIAN')",
+        "@Roles('NURSE')",
+        "@Roles('ADMIN', 'NURSE')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "POST",
+      "path": ":id/care-tasks",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 66,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('NURSE')",
+        "@Roles('ADMIN', 'NURSE')",
+        "@Roles('PHYSICIAN')",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "POST",
+      "path": ":id/medication-administrations",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 72,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'NURSE')",
+        "@Roles('PHYSICIAN')",
+        "@Roles('NURSE')",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "GET",
+      "path": ":id/timeline",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 78,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')",
+        "@Roles('NURSE')",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 84,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('NURSE')",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 90,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "POST",
+      "path": "/",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 96,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('PHYSICIAN')",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "PATCH",
+      "path": ":id",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 102,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')",
+        "@Roles('PHYSICIAN')",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "hospitalizations/hospitalizations.controller.ts",
+      "method": "DELETE",
+      "path": ":id",
+      "file": "src/hospitalizations/hospitalizations.controller.ts",
+      "line": 108,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 19,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')",
+        "@Roles('RADIOLOGIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "GET",
+      "path": "catalogue",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 25,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')",
+        "@Roles('RADIOLOGIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "POST",
+      "path": "catalogue",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 31,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')",
+        "@Roles('RADIOLOGIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "DELETE",
+      "path": "catalogue/:id",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 37,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')",
+        "@Roles('RADIOLOGIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "GET",
+      "path": "dashboard/overview",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 43,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('RADIOLOGIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "GET",
+      "path": "machines",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 49,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('RADIOLOGIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "POST",
+      "path": "machines",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 55,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 61,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')",
+        "@Roles('RADIOLOGIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "PATCH",
+      "path": ":id/status",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 67,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')",
+        "@Roles('RADIOLOGIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "POST",
+      "path": ":id/report",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 73,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')",
+        "@Roles('RADIOLOGIST')"
+      ],
+      "exportRelated": true
+    },
+    {
+      "controller": "imaging/imaging.controller.ts",
+      "method": "POST",
+      "path": ":id/report/amendments",
+      "file": "src/imaging/imaging.controller.ts",
+      "line": 79,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RADIOLOGIST')",
+        "@Roles('RADIOLOGIST')"
+      ],
+      "exportRelated": true
+    },
+    {
+      "controller": "intelligence/intelligence.controller.ts",
+      "method": "POST",
+      "path": "consultations/:id/analyse",
+      "file": "src/intelligence/intelligence.controller.ts",
+      "line": 16,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "intelligence/intelligence.controller.ts",
+      "method": "POST",
+      "path": "patients/duplicate-candidates",
+      "file": "src/intelligence/intelligence.controller.ts",
+      "line": 20,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "intelligence/intelligence.controller.ts",
+      "method": "POST",
+      "path": "subscriptions/extract-pdf",
+      "file": "src/intelligence/intelligence.controller.ts",
+      "line": 24,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 46,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "GET",
+      "path": "catalogue",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 74,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "GET",
+      "path": "clinic-tests",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 99,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "PUT",
+      "path": "clinic-tests/:labTestId",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 107,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "GET",
+      "path": "activity",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 127,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "GET",
+      "path": "settings",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 155,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "settings",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 163,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "direct-result-authorization",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 175,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "GET",
+      "path": "dashboard/overview",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 193,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "GET",
+      "path": "dashboard/workflow",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 206,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "GET",
+      "path": "dashboard/alerts",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 219,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "GET",
+      "path": "technicians",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 238,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "items/:itemId/assign",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 248,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "items/:itemId/reassign",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 266,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "GET",
+      "path": "validations",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 290,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "validations/:id/decision",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 304,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "GET",
+      "path": "critical-alerts",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 328,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "critical-alerts/:id/acknowledge",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 341,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "catalogue/sections",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 381,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "catalogue/categories",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 387,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "catalogue/tests",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 393,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "catalogue/test-parameters",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 405,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "catalogue/sample-types",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 411,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "catalogue/sample-requirements",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 417,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "catalogue/consumables",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 423,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "catalogue/consumable-requirements",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 429,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "catalogue/stock",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 446,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "PATCH",
+      "path": "catalogue/stock/:id",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 465,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "PATCH",
+      "path": "catalogue/:kind/:id",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 485,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "DELETE",
+      "path": "catalogue/:kind/:id",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 520,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('LAB_MANAGER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "POST",
+      "path": "requests/:id/results",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 576,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "laboratory/laboratory.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/laboratory/laboratory.controller.ts",
+      "line": 605,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "messages/messages.controller.ts",
+      "method": "GET",
+      "path": "unread",
+      "file": "src/messages/messages.controller.ts",
+      "line": 12,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "messages/messages.controller.ts",
+      "method": "GET",
+      "path": "with/:contactId",
+      "file": "src/messages/messages.controller.ts",
+      "line": 31,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "messages/messages.controller.ts",
+      "method": "PATCH",
+      "path": "read",
+      "file": "src/messages/messages.controller.ts",
+      "line": 50,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "notifications/notifications.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/notifications/notifications.controller.ts",
+      "line": 12,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "notifications/notifications.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/notifications/notifications.controller.ts",
+      "line": 18,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/patients/patients.controller.ts",
+      "line": 38,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "GET",
+      "path": "search",
+      "file": "src/patients/patients.controller.ts",
+      "line": 52,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "GET",
+      "path": "cashier/awaiting-payment",
+      "file": "src/patients/patients.controller.ts",
+      "line": 66,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')",
+        "@Roles('ADMIN', 'CASHIER')",
+        "@Roles('ADMIN', 'NURSE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "GET",
+      "path": "nurse/awaiting-vitals",
+      "file": "src/patients/patients.controller.ts",
+      "line": 72,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'CASHIER')",
+        "@Roles('ADMIN', 'NURSE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "GET",
+      "path": "nurse/orientation-history",
+      "file": "src/patients/patients.controller.ts",
+      "line": 78,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'CASHIER')",
+        "@Roles('ADMIN', 'NURSE')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "GET",
+      "path": "doctor/assigned",
+      "file": "src/patients/patients.controller.ts",
+      "line": 90,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'NURSE')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "GET",
+      "path": "doctor/visible",
+      "file": "src/patients/patients.controller.ts",
+      "line": 98,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "GET",
+      "path": "reception-visits",
+      "file": "src/patients/patients.controller.ts",
+      "line": 112,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')",
+        "@Roles('ADMIN', 'RECEPTIONIST')",
+        "@Roles('PATIENT')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "GET",
+      "path": "me/profile",
+      "file": "src/patients/patients.controller.ts",
+      "line": 124,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST')",
+        "@Roles('PATIENT')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "POST",
+      "path": "me/daily-checkins",
+      "file": "src/patients/patients.controller.ts",
+      "line": 132,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PATIENT')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "POST",
+      "path": ":id/vital-signs",
+      "file": "src/patients/patients.controller.ts",
+      "line": 146,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PATIENT')",
+        "@Roles('ADMIN', 'NURSE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "POST",
+      "path": ":id/death-report",
+      "file": "src/patients/patients.controller.ts",
+      "line": 160,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'NURSE')",
+        "@Roles('NURSE')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": true
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "POST",
+      "path": ":id/death-certification",
+      "file": "src/patients/patients.controller.ts",
+      "line": 170,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('NURSE')",
+        "@Roles('PHYSICIAN')",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/patients/patients.controller.ts",
+      "line": 180,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PHYSICIAN')",
+        "@Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "POST",
+      "path": "admissions",
+      "file": "src/patients/patients.controller.ts",
+      "line": 202,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "PATCH",
+      "path": ":id",
+      "file": "src/patients/patients.controller.ts",
+      "line": 214,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "POST",
+      "path": ":id/family-contacts",
+      "file": "src/patients/patients.controller.ts",
+      "line": 228,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "PATCH",
+      "path": ":id/family-contacts/:contactId",
+      "file": "src/patients/patients.controller.ts",
+      "line": 238,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST')",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "patients/patients.controller.ts",
+      "method": "DELETE",
+      "path": ":id",
+      "file": "src/patients/patients.controller.ts",
+      "line": 249,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'RECEPTIONIST')",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 20,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN', 'PHARMACIST')",
+        "@Roles('DEV')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "GET",
+      "path": "catalogue",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 26,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN', 'PHARMACIST')",
+        "@Roles('DEV')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "POST",
+      "path": "catalogue/sections",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 32,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN', 'PHARMACIST')",
+        "@Roles('DEV')",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "POST",
+      "path": "catalogue/categories",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 38,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHYSICIAN', 'PHARMACIST')",
+        "@Roles('DEV')",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "GET",
+      "path": "available",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 44,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('DEV')",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST')",
+        "@Roles('ADMIN', 'PHARMACIST', 'PHYSICIAN', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "GET",
+      "path": "stock",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 50,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('DEV')",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST')",
+        "@Roles('ADMIN', 'PHARMACIST', 'PHYSICIAN', 'CASHIER')",
+        "@Roles('ADMIN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "GET",
+      "path": "medications/:id/sale-price",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 56,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST')",
+        "@Roles('ADMIN', 'PHARMACIST', 'PHYSICIAN', 'CASHIER')",
+        "@Roles('ADMIN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "PUT",
+      "path": "medications/:id/sale-price",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 62,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST')",
+        "@Roles('ADMIN', 'PHARMACIST', 'PHYSICIAN', 'CASHIER')",
+        "@Roles('ADMIN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "GET",
+      "path": "prescriptions",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 69,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'PHARMACIST', 'PHYSICIAN', 'CASHIER')",
+        "@Roles('ADMIN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "GET",
+      "path": "prescriptions/ready",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 76,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')",
+        "@Roles('DEV')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "GET",
+      "path": "history",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 83,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')",
+        "@Roles('DEV')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "POST",
+      "path": "medications",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 89,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')",
+        "@Roles('DEV')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "POST",
+      "path": "lots",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 95,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')",
+        "@Roles('DEV')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "POST",
+      "path": "sales",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 102,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('DEV')",
+        "@Roles('SUPER_ADMIN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "POST",
+      "path": "prescriptions/:id/dispense",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 117,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "POST",
+      "path": "prescriptions/:id/cancel-dispense",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 127,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "pharmacy/pharmacy.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/pharmacy/pharmacy.controller.ts",
+      "line": 134,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'PHARMACIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'PHARMACIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/connected-care/connected-care-standalone.controller.ts",
+      "method": "GET",
+      "path": "health/live",
+      "file": "src/platform/connected-care/connected-care-standalone.controller.ts",
+      "line": 13,
+      "authorizationMarkers": [
+        "@UseGuards(ConnectedCareServiceGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/connected-care/connected-care-standalone.controller.ts",
+      "method": "POST",
+      "path": "observations",
+      "file": "src/platform/connected-care/connected-care-standalone.controller.ts",
+      "line": 18,
+      "authorizationMarkers": [
+        "@UseGuards(ConnectedCareServiceGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/diagnostic-agent/diagnostic-agent-standalone.controller.ts",
+      "method": "GET",
+      "path": "health/live",
+      "file": "src/platform/diagnostic-agent/diagnostic-agent-standalone.controller.ts",
+      "line": 13,
+      "authorizationMarkers": [
+        "@UseGuards(DiagnosticAgentServiceGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/diagnostic-agent/diagnostic-agent-standalone.controller.ts",
+      "method": "POST",
+      "path": "execute",
+      "file": "src/platform/diagnostic-agent/diagnostic-agent-standalone.controller.ts",
+      "line": 18,
+      "authorizationMarkers": [
+        "@UseGuards(DiagnosticAgentServiceGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/layers/platform-layers.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/platform/layers/platform-layers.controller.ts",
+      "line": 14,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('DEV')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/layers/platform-layers.controller.ts",
+      "method": "PUT",
+      "path": "/",
+      "file": "src/platform/layers/platform-layers.controller.ts",
+      "line": 19,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('DEV')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/provisioning/platform-provisioning.controller.ts",
+      "method": "POST",
+      "path": "clinics",
+      "file": "src/platform/provisioning/platform-provisioning.controller.ts",
+      "line": 20,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/provisioning/platform-provisioning.controller.ts",
+      "method": "GET",
+      "path": "clinics",
+      "file": "src/platform/provisioning/platform-provisioning.controller.ts",
+      "line": 25,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/provisioning/platform-provisioning.controller.ts",
+      "method": "GET",
+      "path": "clinics/:clinicId",
+      "file": "src/platform/provisioning/platform-provisioning.controller.ts",
+      "line": 30,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/provisioning/platform-provisioning.controller.ts",
+      "method": "PATCH",
+      "path": "clinics/:clinicId",
+      "file": "src/platform/provisioning/platform-provisioning.controller.ts",
+      "line": 35,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/provisioning/platform-provisioning.controller.ts",
+      "method": "PUT",
+      "path": "clinics/:clinicId/layers",
+      "file": "src/platform/provisioning/platform-provisioning.controller.ts",
+      "line": 40,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/provisioning/platform-provisioning.controller.ts",
+      "method": "POST",
+      "path": "clinics/:clinicId/super-admin",
+      "file": "src/platform/provisioning/platform-provisioning.controller.ts",
+      "line": 45,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/provisioning/platform-provisioning.controller.ts",
+      "method": "PATCH",
+      "path": "clinics/:clinicId/super-admin",
+      "file": "src/platform/provisioning/platform-provisioning.controller.ts",
+      "line": 50,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/provisioning/platform-provisioning.controller.ts",
+      "method": "POST",
+      "path": "clinics/:clinicId/activate",
+      "file": "src/platform/provisioning/platform-provisioning.controller.ts",
+      "line": 55,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/provisioning/platform-provisioning.controller.ts",
+      "method": "POST",
+      "path": "clinics/:clinicId/deactivate",
+      "file": "src/platform/provisioning/platform-provisioning.controller.ts",
+      "line": 60,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "platform/provisioning/platform-provisioning.controller.ts",
+      "method": "DELETE",
+      "path": "clinics/:clinicId",
+      "file": "src/platform/provisioning/platform-provisioning.controller.ts",
+      "line": 66,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "roles/roles.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/roles/roles.controller.ts",
+      "line": 14,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('DEV')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "roles/roles.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/roles/roles.controller.ts",
+      "line": 20,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('DEV')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "roles/roles.controller.ts",
+      "method": "POST",
+      "path": "/",
+      "file": "src/roles/roles.controller.ts",
+      "line": 26,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('DEV')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "roles/roles.controller.ts",
+      "method": "PATCH",
+      "path": ":id",
+      "file": "src/roles/roles.controller.ts",
+      "line": 32,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('DEV')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "roles/roles.controller.ts",
+      "method": "DELETE",
+      "path": ":id",
+      "file": "src/roles/roles.controller.ts",
+      "line": 38,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('DEV')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "services/services.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/services/services.controller.ts",
+      "line": 20,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'FINANCE', 'LAB_MANAGER', 'LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST', 'PATIENT')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "services/services.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/services/services.controller.ts",
+      "line": 26,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'FINANCE', 'LAB_MANAGER', 'LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST', 'PATIENT')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "services/services.controller.ts",
+      "method": "POST",
+      "path": "/",
+      "file": "src/services/services.controller.ts",
+      "line": 32,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'FINANCE', 'LAB_MANAGER', 'LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST', 'PATIENT')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "services/services.controller.ts",
+      "method": "POST",
+      "path": "reception-administrative",
+      "file": "src/services/services.controller.ts",
+      "line": 38,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER', 'FINANCE', 'LAB_MANAGER', 'LAB_TECHNICIAN', 'RADIOLOGIST', 'PHARMACIST', 'PATIENT')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "services/services.controller.ts",
+      "method": "POST",
+      "path": "reception-admission-fees",
+      "file": "src/services/services.controller.ts",
+      "line": 44,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "services/services.controller.ts",
+      "method": "PATCH",
+      "path": ":id",
+      "file": "src/services/services.controller.ts",
+      "line": 50,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "services/services.controller.ts",
+      "method": "DELETE",
+      "path": ":id",
+      "file": "src/services/services.controller.ts",
+      "line": 56,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "services/services.controller.ts",
+      "method": "POST",
+      "path": ":id/prices",
+      "file": "src/services/services.controller.ts",
+      "line": 62,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "services/services.controller.ts",
+      "method": "POST",
+      "path": ":id/responsables",
+      "file": "src/services/services.controller.ts",
+      "line": 68,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "services/services.controller.ts",
+      "method": "POST",
+      "path": ":id/staff",
+      "file": "src/services/services.controller.ts",
+      "line": 74,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "subscriptions/subscriptions.controller.ts",
+      "method": "GET",
+      "path": "companies",
+      "file": "src/subscriptions/subscriptions.controller.ts",
+      "line": 25,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "subscriptions/subscriptions.controller.ts",
+      "method": "POST",
+      "path": "companies",
+      "file": "src/subscriptions/subscriptions.controller.ts",
+      "line": 31,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "subscriptions/subscriptions.controller.ts",
+      "method": "POST",
+      "path": "companies/import-extracted",
+      "file": "src/subscriptions/subscriptions.controller.ts",
+      "line": 37,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "subscriptions/subscriptions.controller.ts",
+      "method": "GET",
+      "path": "companies/:id",
+      "file": "src/subscriptions/subscriptions.controller.ts",
+      "line": 43,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "subscriptions/subscriptions.controller.ts",
+      "method": "PATCH",
+      "path": "companies/:id",
+      "file": "src/subscriptions/subscriptions.controller.ts",
+      "line": 49,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER', 'FINANCE')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "subscriptions/subscriptions.controller.ts",
+      "method": "POST",
+      "path": "companies/:id/employees",
+      "file": "src/subscriptions/subscriptions.controller.ts",
+      "line": 55,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER', 'FINANCE')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "subscriptions/subscriptions.controller.ts",
+      "method": "GET",
+      "path": "employees/admissible",
+      "file": "src/subscriptions/subscriptions.controller.ts",
+      "line": 61,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "subscriptions/subscriptions.controller.ts",
+      "method": "POST",
+      "path": "employees/:id/admit",
+      "file": "src/subscriptions/subscriptions.controller.ts",
+      "line": 67,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "subscriptions/subscriptions.controller.ts",
+      "method": "POST",
+      "path": "charges",
+      "file": "src/subscriptions/subscriptions.controller.ts",
+      "line": 73,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "subscriptions/subscriptions.controller.ts",
+      "method": "POST",
+      "path": "companies/:id/monthly-invoices",
+      "file": "src/subscriptions/subscriptions.controller.ts",
+      "line": 79,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'CASHIER')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "surgery/surgery.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/surgery/surgery.controller.ts",
+      "line": 14,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "surgery/surgery.controller.ts",
+      "method": "GET",
+      "path": "operating-rooms/all",
+      "file": "src/surgery/surgery.controller.ts",
+      "line": 20,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "surgery/surgery.controller.ts",
+      "method": "POST",
+      "path": "/",
+      "file": "src/surgery/surgery.controller.ts",
+      "line": 26,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN')",
+        "@Roles('PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "surgery/surgery.controller.ts",
+      "method": "POST",
+      "path": ":id/safety-checklist",
+      "file": "src/surgery/surgery.controller.ts",
+      "line": 32,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN')",
+        "@Roles('PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "surgery/surgery.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/surgery/surgery.controller.ts",
+      "line": 38,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'PHYSICIAN')",
+        "@Roles('PHYSICIAN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "GET",
+      "path": "/",
+      "file": "src/users/users.controller.ts",
+      "line": 15,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "GET",
+      "path": "contacts",
+      "file": "src/users/users.controller.ts",
+      "line": 21,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles("
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "GET",
+      "path": "physicians/available",
+      "file": "src/users/users.controller.ts",
+      "line": 41,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('NURSE', 'PHYSICIAN', 'RECEPTIONIST', 'ADMIN', 'SUPER_ADMIN')",
+        "@UseGuards(JwtAuthGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "GET",
+      "path": "me/work-location",
+      "file": "src/users/users.controller.ts",
+      "line": 47,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('NURSE', 'PHYSICIAN', 'RECEPTIONIST', 'ADMIN', 'SUPER_ADMIN')",
+        "@UseGuards(JwtAuthGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "GET",
+      "path": ":id",
+      "file": "src/users/users.controller.ts",
+      "line": 53,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('NURSE', 'PHYSICIAN', 'RECEPTIONIST', 'ADMIN', 'SUPER_ADMIN')",
+        "@UseGuards(JwtAuthGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('ADMIN')",
+        "@Roles('SUPER_ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "POST",
+      "path": "/",
+      "file": "src/users/users.controller.ts",
+      "line": 59,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@UseGuards(JwtAuthGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('ADMIN')",
+        "@Roles('SUPER_ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "POST",
+      "path": "super-admin/admins",
+      "file": "src/users/users.controller.ts",
+      "line": 65,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('ADMIN')",
+        "@Roles('SUPER_ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "PATCH",
+      "path": ":id",
+      "file": "src/users/users.controller.ts",
+      "line": 71,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('ADMIN')",
+        "@Roles('SUPER_ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "DELETE",
+      "path": ":id",
+      "file": "src/users/users.controller.ts",
+      "line": 77,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "POST",
+      "path": "me/clock-in",
+      "file": "src/users/users.controller.ts",
+      "line": 83,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "POST",
+      "path": "me/clock-out",
+      "file": "src/users/users.controller.ts",
+      "line": 89,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@UseGuards(JwtAuthGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "GET",
+      "path": "me/shift-handover",
+      "file": "src/users/users.controller.ts",
+      "line": 95,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@UseGuards(JwtAuthGuard)",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "POST",
+      "path": "me/shift-handover/decision",
+      "file": "src/users/users.controller.ts",
+      "line": 101,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@UseGuards(JwtAuthGuard)",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "users/users.controller.ts",
+      "method": "GET",
+      "path": "attendance/summary",
+      "file": "src/users/users.controller.ts",
+      "line": 107,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@UseGuards(JwtAuthGuard)",
+        "@Roles('ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/connected-care-integration.controller.ts",
+      "method": "POST",
+      "path": "observations",
+      "file": "src/wearables/connected-care-integration.controller.ts",
+      "line": 16,
+      "authorizationMarkers": [
+        "@UseGuards(ConnectedCareIntegrationGuard)"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "POST",
+      "path": "patients/:patientId/connected-care-consents",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 16,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PATIENT')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "PATCH",
+      "path": "connected-care-consents/:consentId/revoke",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 22,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PATIENT')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "POST",
+      "path": "devices",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 28,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PATIENT')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "GET",
+      "path": "reception/dashboard",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 34,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PATIENT')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "POST",
+      "path": "reception/pair",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 40,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "GET",
+      "path": "admin/inventory",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 46,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "PATCH",
+      "path": "admin/plans/:manufacturer",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 52,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('RECEPTIONIST')",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "POST",
+      "path": "admin/lots",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 58,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('PATIENT')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "POST",
+      "path": "parent-child-links",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 64,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('PATIENT')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "POST",
+      "path": "parent-child-links/confirm",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 70,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('PATIENT')",
+        "@Roles('SUPER_ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "GET",
+      "path": "parent-child-links/me",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 76,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')",
+        "@Roles('PATIENT')",
+        "@Roles('SUPER_ADMIN')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "POST",
+      "path": "devices/:deviceId/measurements",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 82,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PATIENT')",
+        "@Roles('SUPER_ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN', 'PATIENT')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "POST",
+      "path": "devices/:deviceId/locations",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 88,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('PATIENT')",
+        "@Roles('SUPER_ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN', 'PATIENT')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "POST",
+      "path": "patients/:patientId/location-requests",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 94,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN', 'PATIENT')"
+      ],
+      "exportRelated": false
+    },
+    {
+      "controller": "wearables/wearables.controller.ts",
+      "method": "GET",
+      "path": "patients/:patientId/dashboard",
+      "file": "src/wearables/wearables.controller.ts",
+      "line": 100,
+      "authorizationMarkers": [
+        "@UseGuards(JwtAuthGuard, RolesGuard)",
+        "@Roles('SUPER_ADMIN')",
+        "@Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN', 'PATIENT')"
+      ],
+      "exportRelated": false
+    }
+  ],
+  "websocketEvents": [
+    {
+      "gateway": "notifications/notifications.gateway.ts",
+      "event": "user.join",
+      "file": "src/notifications/notifications.gateway.ts",
+      "line": 115,
+      "authorizationMarkers": []
+    },
+    {
+      "gateway": "notifications/notifications.gateway.ts",
+      "event": "message.send",
+      "file": "src/notifications/notifications.gateway.ts",
+      "line": 120,
+      "authorizationMarkers": []
+    },
+    {
+      "gateway": "notifications/notifications.gateway.ts",
+      "event": "message.read",
+      "file": "src/notifications/notifications.gateway.ts",
+      "line": 194,
+      "authorizationMarkers": []
+    },
+    {
+      "gateway": "notifications/notifications.gateway.ts",
+      "event": "message.typing",
+      "file": "src/notifications/notifications.gateway.ts",
+      "line": 263,
+      "authorizationMarkers": []
+    },
+    {
+      "gateway": "notifications/notifications.gateway.ts",
+      "event": "telehealth.start",
+      "file": "src/notifications/notifications.gateway.ts",
+      "line": 280,
+      "authorizationMarkers": []
+    },
+    {
+      "gateway": "notifications/notifications.gateway.ts",
+      "event": "telehealth.accept",
+      "file": "src/notifications/notifications.gateway.ts",
+      "line": 333,
+      "authorizationMarkers": []
+    },
+    {
+      "gateway": "notifications/notifications.gateway.ts",
+      "event": "telehealth.decline",
+      "file": "src/notifications/notifications.gateway.ts",
+      "line": 348,
+      "authorizationMarkers": []
+    },
+    {
+      "gateway": "notifications/notifications.gateway.ts",
+      "event": "telehealth.signal",
+      "file": "src/notifications/notifications.gateway.ts",
+      "line": 356,
+      "authorizationMarkers": []
+    },
+    {
+      "gateway": "notifications/notifications.gateway.ts",
+      "event": "telehealth.end",
+      "file": "src/notifications/notifications.gateway.ts",
+      "line": 370,
+      "authorizationMarkers": []
+    }
+  ],
+  "jobs": [],
+  "verification": {
+    "permittedPublicRoutes": [
+      "health/health.controller.ts:GET:live",
+      "health/health.controller.ts:GET:ready"
+    ],
+    "unexpectedUnmarkedHttpRoutes": [],
+    "webSocketHandshakeIsExplicit": true
+  }
+}

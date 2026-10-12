@@ -1,0 +1,46 @@
+{
+  "suite": "e2e",
+  "database": "aulia_e2e_core",
+  "results": [
+    {
+      "script": "test/e2e/bed-concurrency.postgres.e2e.test.ts",
+      "status": 0
+    },
+    {
+      "script": "test/e2e/clinical-flow.persistence.test.ts",
+      "status": 0
+    },
+    {
+      "script": "test/e2e/core-concurrency.postgres.e2e.test.ts",
+      "status": 0
+    },
+    {
+      "script": "test/e2e/core-patient-journey.http.e2e.test.ts",
+      "status": 0
+    },
+    {
+      "script": "test/e2e/core-resource-boundaries.http.e2e.test.ts",
+      "status": 0
+    },
+    {
+      "script": "test/e2e/database-readiness.test.ts",
+      "status": 0
+    },
+    {
+      "script": "test/e2e/http-clinic-isolation.e2e.test.ts",
+      "status": 0
+    },
+    {
+      "script": "test/e2e/patients-tenant-isolation.http.e2e.test.ts",
+      "status": 0
+    },
+    {
+      "script": "test/e2e/pharmacy-stock-concurrency.postgres.e2e.test.ts",
+      "status": 0
+    },
+    {
+      "script": "test/e2e/tenant-provisioning.http.e2e.test.ts",
+      "status": 0
+    }
+  ]
+}

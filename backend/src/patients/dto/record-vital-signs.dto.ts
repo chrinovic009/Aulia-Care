@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 
 export class RecordVitalSignsDto {
   @IsString()
@@ -44,4 +44,14 @@ export class RecordVitalSignsDto {
   @IsString()
   @IsOptional()
   physicianId?: string;
+
+  /** Saves the measurements and explicitly hands the patient to a physician. */
+  @IsBoolean()
+  @IsOptional()
+  finalizeTriage?: boolean;
+
+  /** Required acknowledgement for physiologically suspicious, but possible, values. */
+  @IsBoolean()
+  @IsOptional()
+  confirmSuspectValues?: boolean;
 }

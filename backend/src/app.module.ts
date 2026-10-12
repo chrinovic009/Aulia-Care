@@ -1,6 +1,10 @@
 // Optional module membership is decided while this file is evaluated, before
 // ConfigModule.forRoot() runs. Load the same local environment first.
-import 'dotenv/config';
+import dotenv from 'dotenv';
+
+if (process.env.AULIA_APP_MODE !== 'demo') {
+  dotenv.config();
+}
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
@@ -32,17 +36,21 @@ import { PlatformLayerAccessGuard } from './platform/layers/platform-layer-acces
 import { PlatformProvisioningModule } from './platform/provisioning/platform-provisioning.module';
 import { HealthModule } from './health/health.module';
 import { CoreModule } from './core/core.module';
+import { isOptionalProductEnabled } from './core/app-mode';
 
-const diagnosticAgentModules = process.env.AULIA_ENABLE_DIAGNOSTIC_AGENT === 'false'
+const diagnosticAgentModules = !isOptionalProductEnabled('AULIA_ENABLE_DIAGNOSTIC_AGENT')
   ? []
   : [ClinicalIntelligenceModule, IntelligenceModule];
-const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
+const connectedCareModules = !isOptionalProductEnabled('AULIA_ENABLE_CONNECTED_CARE')
   ? []
   : [WearablesModule];
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      ignoreEnvFile: process.env.AULIA_APP_MODE === 'demo',
+    }),
     ThrottlerModule.forRoot({
       throttlers: [{ name: 'default', ttl: 60_000, limit: 120, blockDuration: 60_000 }],
     }),
@@ -78,3 +86,4 @@ const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
   ],
 })
 export class AppModule {}
+

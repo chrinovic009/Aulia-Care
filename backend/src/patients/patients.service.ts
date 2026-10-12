@@ -61,6 +61,25 @@ const VITALS_ACTOR_ROLES = new Set<RoleSlug>([
   RoleSlug.NURSE,
   RoleSlug.ADMIN,
 ]);
+const REQUIRED_TRIAGE_VITAL_TYPES = [
+  VitalType.TEMPERATURE,
+  VitalType.BLOOD_PRESSURE,
+  VitalType.OXYGEN_SATURATION,
+  VitalType.HEART_RATE,
+  VitalType.RESPIRATORY_RATE,
+  VitalType.WEIGHT,
+  VitalType.HEIGHT,
+] as const;
+
+const TRIAGE_VITAL_LABELS: Partial<Record<VitalType, string>> = {
+  [VitalType.TEMPERATURE]: 'température',
+  [VitalType.BLOOD_PRESSURE]: 'tension artérielle',
+  [VitalType.OXYGEN_SATURATION]: 'SpO2',
+  [VitalType.HEART_RATE]: 'fréquence cardiaque',
+  [VitalType.RESPIRATORY_RATE]: 'fréquence respiratoire',
+  [VitalType.WEIGHT]: 'poids',
+  [VitalType.HEIGHT]: 'taille',
+};
 
 const splitFullName = (value: string) => {
   const parts = value.trim().split(/\s+/).filter(Boolean);
@@ -1191,9 +1210,17 @@ export class PatientsService {
           certifiedBy: { select: { id: true, displayName: true, firstName: true, lastName: true, specialty: true } },
         },
       });
+      const workflowStatus = await this.patientWorkflow.completeForCertifiedDeath(
+        tx,
+        patientId,
+        physician.clinicId,
+      );
+      if (!workflowStatus) {
+        throw new NotFoundException('Patient introuvable dans cet établissement.');
+      }
       await tx.patient.update({
         where: { id: patientId },
-        data: { status: 'DECEASED', workflowStatus: PatientWorkflowStatus.TERMINE },
+        data: { status: 'DECEASED' },
       });
       await tx.medicalHistory.create({
         data: {
@@ -3058,6 +3085,51 @@ if (isParamedicalVoucher) {
     });
   }
 
+  private validateTriageVitalRows(
+    rows: Array<{ type: VitalType; value: string }>,
+    confirmSuspectValues?: boolean,
+  ) {
+    const suspicious: string[] = [];
+    const numeric = (type: VitalType, min: number, max: number, suspect: (value: number) => boolean) => {
+      const row = rows.find((item) => item.type === type);
+      if (!row) return;
+      const value = Number(row.value.replace(',', '.'));
+      if (!Number.isFinite(value) || value < min || value > max) {
+        throw new BadRequestException(`${TRIAGE_VITAL_LABELS[type] || type} est techniquement impossible.`);
+      }
+      if (suspect(value)) suspicious.push(TRIAGE_VITAL_LABELS[type] || type);
+    };
+
+    numeric(VitalType.TEMPERATURE, 25, 45, (value) => value < 35 || value > 40.5);
+    numeric(VitalType.OXYGEN_SATURATION, 0, 100, (value) => value < 90);
+    numeric(VitalType.HEART_RATE, 20, 300, (value) => value < 40 || value > 180);
+    numeric(VitalType.RESPIRATORY_RATE, 4, 80, (value) => value < 8 || value > 30);
+    numeric(VitalType.WEIGHT, 0.25, 500, (value) => value < 2 || value > 250);
+    numeric(VitalType.HEIGHT, 20, 300, (value) => value < 45 || value > 230);
+
+    const bloodPressure = rows.find((item) => item.type === VitalType.BLOOD_PRESSURE);
+    if (bloodPressure) {
+      const match = /^(\d{2,3})\s*\/\s*(\d{2,3})$/.exec(bloodPressure.value);
+      if (!match) {
+        throw new BadRequestException('La tension artérielle doit être structurée au format systolique/diastolique, par exemple 120/80.');
+      }
+      const systolic = Number(match[1]);
+      const diastolic = Number(match[2]);
+      if (systolic < 40 || systolic > 300 || diastolic < 20 || diastolic > 200 || systolic <= diastolic) {
+        throw new BadRequestException('La tension artérielle est techniquement impossible.');
+      }
+      if (systolic < 80 || systolic > 180 || diastolic < 50 || diastolic > 120) {
+        suspicious.push(TRIAGE_VITAL_LABELS[VitalType.BLOOD_PRESSURE]!);
+      }
+    }
+
+    if (suspicious.length && !confirmSuspectValues) {
+      throw new BadRequestException(
+        `Valeur(s) inhabituelle(s) à confirmer sans modification: ${[...new Set(suspicious)].join(', ')}.`,
+      );
+    }
+  }
+
   async recordVitalSigns(
   patientId: string,
   dto: RecordVitalSignsDto,
@@ -3109,6 +3181,30 @@ if (isParamedicalVoucher) {
     throw new NotFoundException(
       'Patient introuvable dans cet établissement.',
     );
+  }
+
+  // A destination is tenant-sensitive routing data even while a nurse merely
+  // saves a partial triage. Validate it now so a cross-clinic physician id is
+  // never silently accepted before the explicit final hand-off.
+  if (dto.physicianId?.trim()) {
+    const selectedPhysician = await this.prisma.user.findFirst({
+      where: {
+        id: dto.physicianId,
+        clinicId: recorder.clinicId,
+        status: 'ACTIVE',
+        deletedAt: null,
+        OR: [
+          { primaryRole: RoleSlug.PHYSICIAN },
+          { roles: { some: { role: { slug: RoleSlug.PHYSICIAN } } } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!selectedPhysician) {
+      throw new ForbiddenException(
+        'Le médecin sélectionné est introuvable ou appartient à un autre établissement.',
+      );
+    }
   }
 
   const rows: Array<{
@@ -3176,6 +3272,11 @@ if (isParamedicalVoucher) {
     );
   }
 
+  this.validateTriageVitalRows(
+    rows.map((row) => ({ type: row.type, value: row.value! })),
+    dto.confirmSuspectValues,
+  );
+
   const result = await this.prisma.$transaction(
     async (tx) => {
       const patientInTransaction =
@@ -3206,6 +3307,37 @@ if (isParamedicalVoucher) {
           note: dto.notes?.trim() || null,
         })),
       });
+
+      // Saving is deliberately non-progressing.  The seven required values
+      // can be entered over several submissions without routing the patient
+      // away from nursing until an explicit final validation is requested.
+      if (!dto.finalizeTriage) {
+        return { consultation: null, missing: [] as string[] };
+      }
+
+      const recordedRequiredVitals = await tx.vitalSign.findMany({
+        where: {
+          patientId: patientInTransaction.id,
+          deletedAt: null,
+          type: { in: [...REQUIRED_TRIAGE_VITAL_TYPES] },
+        },
+        select: { type: true },
+        orderBy: { recordedAt: 'desc' },
+        take: 100,
+      });
+      const recordedTypes = new Set(recordedRequiredVitals.map((vital) => vital.type));
+      const missing = REQUIRED_TRIAGE_VITAL_TYPES
+        .filter((type) => !recordedTypes.has(type))
+        .map((type) => TRIAGE_VITAL_LABELS[type] || type);
+      if (missing.length) {
+        // Persist the measurements already supplied.  An early validation
+        // click must never discard valid nursing observations.
+        return { consultation: null, missing };
+      }
+
+      if (!dto.physicianId?.trim()) {
+        return { consultation: null, missing: ['médecin destinataire'] };
+      }
 
       let consultation = null;
 
@@ -3320,7 +3452,7 @@ if (isParamedicalVoucher) {
         recorder.clinicId,
       );
 
-      return consultation;
+      return { consultation, missing: [] as string[] };
     },
   );
 
@@ -3328,23 +3460,34 @@ if (isParamedicalVoucher) {
     'patient.updated',
     {
       id: patient.id,
-      workflowStatus: result
+      workflowStatus: result.consultation
         ? PatientWorkflowStatus.EN_CONSULTATION
-        : PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
+        : PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE,
     },
   );
 
-  if (result) {
+  if (result.consultation) {
     this.notificationsGateway.notify(
       'consultation.created',
-      result,
+      result.consultation,
     );
   }
 
-  return this.findOneForActor(
+  const refreshedPatient = await this.findOneForActor(
     patient.id,
     recorder.id,
   );
+  return {
+    ...refreshedPatient,
+    triage: {
+      status: result.consultation
+        ? 'VALIDATED'
+        : result.missing.length
+          ? 'INCOMPLETE'
+          : 'SAVED',
+      missing: result.missing,
+    },
+  };
   }
 
   async getPatientsAssignedToDoctor(doctorId?: string) {

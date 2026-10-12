@@ -4,6 +4,8 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient, RedisClientType } from 'redis';
 import { ServerOptions } from 'socket.io';
 
+const STARTUP_CONNECTION_TIMEOUT_MS = 10_000;
+
 export class RedisIoAdapter extends IoAdapter {
   private readonly logger = new Logger(RedisIoAdapter.name);
 
@@ -14,6 +16,13 @@ export class RedisIoAdapter extends IoAdapter {
 
   constructor(app: INestApplicationContext) {
     super(app);
+  }
+
+  private destroyClient(client?: RedisClientType) {
+    // destroy() also cancels a pending reconnect. Calling quit() here would
+    // wait for a connection that is precisely the dependency unavailable at
+    // startup.
+    client?.destroy();
   }
 
   async connect(url: string) {
@@ -66,10 +75,29 @@ export class RedisIoAdapter extends IoAdapter {
       );
     });
 
-    await Promise.all([
-      this.pubClient.connect(),
-      this.subClient.connect(),
-    ]);
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        Promise.all([
+          this.pubClient.connect(),
+          this.subClient.connect(),
+        ]),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error(`Redis Socket.IO adapter did not connect within ${STARTUP_CONNECTION_TIMEOUT_MS}ms.`)),
+            STARTUP_CONNECTION_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } catch (error) {
+      this.destroyClient(this.pubClient);
+      this.destroyClient(this.subClient);
+      this.pubClient = undefined;
+      this.subClient = undefined;
+      throw error;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
 
     this.logger.log(
       'Socket.IO Redis adapter connected',

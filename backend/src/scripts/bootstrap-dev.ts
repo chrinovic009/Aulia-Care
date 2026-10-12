@@ -1,12 +1,23 @@
 import 'dotenv/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaClient, RoleSlug } from '@prisma/client';
+import { isDemoMode } from '../core/app-mode';
+
+export function assertDevBootstrapPermitted(
+  environment: NodeJS.ProcessEnv = process.env,
+): void {
+  if (isDemoMode(environment)) {
+    throw new Error('Bootstrap DEV refusé : le compte DEV de plateforme ne fait pas partie d’une démonstration publique.');
+  }
+}
 
 /**
  * One-time local provisioning. It deliberately has no public HTTP equivalent:
  * exposing creation of the DEV role would allow taking over an installation.
  */
 async function bootstrap() {
+  assertDevBootstrapPermitted();
+
   const nodeEnv = String(process.env.NODE_ENV || '').trim().toLowerCase();
   const confirmation = String(
     process.env.AULIA_DEV_BOOTSTRAP_CONFIRM || '',
@@ -23,6 +34,7 @@ async function bootstrap() {
       'Bootstrap DEV refusé : définissez temporairement AULIA_DEV_BOOTSTRAP_CONFIRM=LOCAL_DEV_ONLY pour confirmer explicitement une opération locale de développement.',
     );
   }
+
 
   const email = String(process.env.AULIA_DEV_BOOTSTRAP_EMAIL || '').trim().toLowerCase();
   const password = String(process.env.AULIA_DEV_BOOTSTRAP_PASSWORD || '');
@@ -84,7 +96,10 @@ async function bootstrap() {
   }
 }
 
-bootstrap().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  bootstrap().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}
+

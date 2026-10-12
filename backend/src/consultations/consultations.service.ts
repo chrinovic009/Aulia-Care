@@ -131,6 +131,37 @@ export class ConsultationsService {
     }
   }
 
+  private hasClinicalDocumentation(value: unknown): boolean {
+    if (typeof value === 'string') return value.trim().length > 0;
+    if (typeof value === 'number') return Number.isFinite(value);
+    if (typeof value === 'boolean') return true;
+    if (Array.isArray(value)) return value.some((item) => this.hasClinicalDocumentation(item));
+    if (value && typeof value === 'object') {
+      return Object.values(value as Record<string, unknown>)
+        .some((item) => this.hasClinicalDocumentation(item));
+    }
+    return false;
+  }
+
+  private missingFinalizationFields(
+    structured: Record<string, any>,
+    chiefComplaint: string | null | undefined,
+  ): string[] {
+    const orientation = structured.consultationModule?.structured?.orientation;
+    const fields: Array<[string, unknown]> = [
+      ['motif de consultation', chiefComplaint],
+      ['histoire de la maladie actuelle', structured.currentSymptoms],
+      ['antécédents recherchés', structured.medicalHistory],
+      ['examen clinique', structured.clinicalExam],
+      ['évaluation clinique', structured.diagnosis],
+      ['plan de prise en charge', structured.treatmentPlan],
+      ['orientation ou disposition', orientation?.disposition],
+    ];
+    return fields
+      .filter(([, value]) => !this.hasClinicalDocumentation(value))
+      .map(([label]) => label);
+  }
+
   async create(createConsultationDto: CreateConsultationDto, actorId?: string) {
     if (!actorId) throw new ForbiddenException('Médecin authentifié requis.');
     const actor = await this.prisma.user.findUnique({
@@ -692,6 +723,19 @@ export class ConsultationsService {
 
     if (!isAmendment && normalizedStatus === ConsultationStatus.FINALIZED && hasPendingOrderedExams) {
       throw new BadRequestException('La consultation ne peut être finalisée que lorsque tous les examens complémentaires commandés n’ont pas de résultat final valide.');
+    }
+
+    if (!isAmendment && normalizedStatus === ConsultationStatus.FINALIZED) {
+      const missingFields = this.missingFinalizationFields(
+        structured,
+        dto.chiefComplaint ?? consultation.chiefComplaint,
+      );
+      if (missingFields.length) {
+        throw new BadRequestException({
+          message: 'La consultation reste en brouillon : des données cliniques obligatoires sont manquantes.',
+          missingFields,
+        });
+      }
     }
 
     const transactionResult = await this.prisma.$transaction(async (tx) => {

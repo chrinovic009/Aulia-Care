@@ -7,6 +7,17 @@ import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, "");
+  const publicDemo = env.VITE_AULIA_PUBLIC_DEMO === "true";
+  const publicDemoApi = env.VITE_API_BASE_URL || "";
+
+  // Vercel serves the SPA only; it does not host this NestJS backend. A
+  // public demonstration must therefore name its separate HTTPS API rather
+  // than silently falling back to same-origin /api and returning index.html.
+  if (publicDemo && !/^https:\/\/[^/]+/i.test(publicDemoApi)) {
+    throw new Error(
+      "VITE_AULIA_PUBLIC_DEMO=true requires an explicit HTTPS VITE_API_BASE_URL for the isolated DEMO backend.",
+    );
+  }
 
   const developmentCertificate = path.resolve(
     __dirname,

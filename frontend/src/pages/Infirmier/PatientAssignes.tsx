@@ -273,10 +273,10 @@ export default function PatientAssignes() {
     setVitalsForm((current) => ({ ...current, [field]: value }));
   };
 
-  const saveVitals = async () => {
+  const saveVitals = async (finalizeTriage = false) => {
     if (!selectedPatient) return;
     if (isSavingRef.current) return;
-    if (!vitalsForm.physicianId) {
+    if (finalizeTriage && !vitalsForm.physicianId) {
       setError("Veuillez choisir le medecin a qui envoyer le patient.");
       return;
     }
@@ -285,9 +285,16 @@ export default function PatientAssignes() {
     setIsSaving(true);
     setError(null);
     try {
-      await recordPatientVitalSigns(selectedPatient.id, vitalsForm);
-      setSelectedPatient(null);
-      setVitalsForm(emptyVitalsForm);
+      const saved = await recordPatientVitalSigns(selectedPatient.id, {
+        ...vitalsForm,
+        finalizeTriage,
+      }) as { triage?: { status?: string; missing?: string[] } };
+      if (saved.triage?.status === "INCOMPLETE") {
+        setError(`Triage incomplet : ${saved.triage.missing?.join(", ") || "complétez les constantes obligatoires"}. Les mesures saisies ont été sauvegardées.`);
+      } else if (finalizeTriage) {
+        setSelectedPatient(null);
+        setVitalsForm(emptyVitalsForm);
+      }
       await Promise.all([loadPatients(), loadHistory(historyPeriod)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible d'enregistrer les signes vitaux.");
@@ -672,11 +679,18 @@ export default function PatientAssignes() {
 
             <div className="mt-6 flex gap-3">
               <button
-                onClick={saveVitals}
+                onClick={() => void saveVitals(false)}
                 disabled={isSaving}
                 className="flex-1 rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-700"
               >
-                {isSaving ? "Enregistrement" : "Enregistrer en base"}
+                {isSaving ? "Enregistrement" : "Sauvegarder les constantes"}
+              </button>
+              <button
+                onClick={() => void saveVitals(true)}
+                disabled={isSaving || !vitalsForm.physicianId}
+                className="flex-1 rounded-lg bg-emerald-700 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Valider le triage et orienter
               </button>
               <button
                 onClick={() => setSelectedPatient(null)}

@@ -4,9 +4,7 @@ import { PatientWorkflowStatus } from '@prisma/client';
 
 import { PatientWorkflowService } from './patient-workflow.service';
 
-test('workflow transitions cannot regress a hospitalized patient', async () => {
-  let updatedStatus: PatientWorkflowStatus | undefined;
-
+test('workflow transitions reject a regressive hospitalized patient', async () => {
   const service = new PatientWorkflowService();
 
   const tx = {
@@ -15,39 +13,22 @@ test('workflow transitions cannot regress a hospitalized patient', async () => {
       findFirst: async () => ({
         workflowStatus: PatientWorkflowStatus.HOSPITALISE,
       }),
-      updateMany: async (query: {
-        data: {
-          workflowStatus: PatientWorkflowStatus;
-        };
-      }) => {
-        updatedStatus = query.data.workflowStatus;
-
-        return {
-          count: 1,
-        };
-      },
+      updateMany: async () => ({ count: 1 }),
     },
   };
 
-  const result = await service.transition(
-    tx as any,
-    'patient-a',
-    PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
-    'clinic-a',
-  );
-
-  assert.equal(
-    result,
-    PatientWorkflowStatus.HOSPITALISE,
-  );
-
-  assert.equal(
-    updatedStatus,
-    undefined,
+  await assert.rejects(
+    () => service.transition(
+      tx as any,
+      'patient-a',
+      PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
+      'clinic-a',
+    ),
+    /Transition patient interdite/,
   );
 });
 
-test('workflow transitions preserve consultation against regressive states', async () => {
+test('workflow permits the explicit consultation to payment hand-off', async () => {
   const service = new PatientWorkflowService();
 
   let updated = false;
@@ -74,24 +55,18 @@ test('workflow transitions preserve consultation against regressive states', asy
     'clinic-a',
   );
 
-  assert.equal(
-    result,
-    PatientWorkflowStatus.EN_CONSULTATION,
-  );
+  assert.equal(result, PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT);
 
-  assert.equal(
-    updated,
-    false,
-  );
+  assert.equal(updated, true);
 });
 
-test('a completed patient can start a new workflow', async () => {
+test('a completed patient cannot be reopened through the workflow', async () => {
   const service = new PatientWorkflowService();
 
   let updatedStatus: PatientWorkflowStatus | undefined;
 
-  const result = await service.transition(
-    {
+  await assert.rejects(
+    () => service.transition({
       $executeRaw: async () => undefined,
       patient: {
         findFirst: async () => ({
@@ -111,21 +86,15 @@ test('a completed patient can start a new workflow', async () => {
           };
         },
       },
-    } as any,
-    'patient-a',
-    PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
-    'clinic-a',
+      } as any,
+      'patient-a',
+      PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
+      'clinic-a',
+    ),
+    /Transition patient interdite/,
   );
 
-  assert.equal(
-    result,
-    PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
-  );
-
-  assert.equal(
-    updatedStatus,
-    PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
-  );
+  assert.equal(updatedStatus, undefined);
 });
 
 test('workflow transitions require an explicit clinic id', async () => {
@@ -152,4 +121,27 @@ test('workflow transitions require an explicit clinic id', async () => {
       ),
     /explicit clinicId/,
   );
+});
+
+test('certified death closes a patient through its explicit exceptional transition', async () => {
+  const service = new PatientWorkflowService();
+  let requestedStatus: PatientWorkflowStatus | undefined;
+
+  const result = await service.completeForCertifiedDeath(
+    {
+      $executeRaw: async () => undefined,
+      patient: {
+        findFirst: async () => ({ workflowStatus: PatientWorkflowStatus.HOSPITALISE }),
+        updateMany: async (query: { data: { workflowStatus: PatientWorkflowStatus } }) => {
+          requestedStatus = query.data.workflowStatus;
+          return { count: 1 };
+        },
+      },
+    } as any,
+    'patient-a',
+    'clinic-a',
+  );
+
+  assert.equal(result, PatientWorkflowStatus.TERMINE);
+  assert.equal(requestedStatus, PatientWorkflowStatus.TERMINE);
 });

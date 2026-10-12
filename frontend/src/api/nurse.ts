@@ -42,6 +42,8 @@ export type RecordVitalSignsPayload = {
   armCircumference?: string;
   notes?: string;
   physicianId?: string;
+  finalizeTriage?: boolean;
+  confirmSuspectValues?: boolean;
 };
 
 export type NurseOrientationHistoryItem = {

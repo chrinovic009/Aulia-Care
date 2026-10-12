@@ -1,0 +1,28 @@
+services:
+  postgres-e2e:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: aulia_e2e_core
+      POSTGRES_USER: aulia_e2e_runner
+      # Disposable local test data only. Never reuse this outside E2E.
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:55436:5432"
+    volumes:
+      - aulia_e2e_postgres_data:/var/lib/postgresql/data
+      - ./docker/e2e/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aulia_e2e_runner -d aulia_e2e_core"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks:
+      - aulia_e2e
+
+volumes:
+  aulia_e2e_postgres_data:
+    name: aulia_e2e_postgres_data
+
+networks:
+  aulia_e2e:
+    name: aulia_e2e

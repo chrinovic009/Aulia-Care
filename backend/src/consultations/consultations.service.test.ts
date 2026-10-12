@@ -7,6 +7,36 @@ import { PatientWorkflowService } from '../core/patient-workflow.service';
 import { CreatePrescriptionDto, RequestPrescriptionReplacementDto } from './dto/create-prescription.dto';
 import { Prisma } from '@prisma/client';
 
+test('ordinary consultation finalization reports its missing clinical fields', () => {
+  const service = new ConsultationsService(
+    {} as PrismaService,
+    {} as NotificationsGateway,
+    {} as PatientWorkflowService,
+  );
+
+  const missing = (service as any).missingFinalizationFields(
+    {
+      medicalHistory: {},
+      currentSymptoms: {},
+      clinicalExam: {},
+      diagnosis: {},
+      treatmentPlan: {},
+      consultationModule: { structured: { orientation: { disposition: '' } } },
+    },
+    '',
+  );
+
+  assert.deepEqual(missing, [
+    'motif de consultation',
+    'histoire de la maladie actuelle',
+    'antécédents recherchés',
+    'examen clinique',
+    'évaluation clinique',
+    'plan de prise en charge',
+    'orientation ou disposition',
+  ]);
+});
+
 test('prescription rejects a missing clinic sale price without opening a transaction', async () => {
   let transactionStarted = false;
   const service = new ConsultationsService({

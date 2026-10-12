@@ -5,6 +5,129 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ClinicContextService } from '../core/clinic-context.service';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
+import { VitalType } from '@prisma/client';
+
+const triageValidationService = () => new PatientsService(
+  {} as PrismaService,
+  {} as NotificationsGateway,
+  {} as ClinicContextService,
+  {} as PatientWorkflowService,
+);
+
+test('triage accepts progressive measurements but requires acknowledgement of suspect values', () => {
+  const service = triageValidationService();
+  assert.doesNotThrow(() => (service as any).validateTriageVitalRows([
+    { type: VitalType.TEMPERATURE, value: '37.2' },
+  ], false));
+  assert.throws(
+    () => (service as any).validateTriageVitalRows([
+      { type: VitalType.OXYGEN_SATURATION, value: '82' },
+    ], false),
+    /inhabituelle.*confirmer/i,
+  );
+  assert.doesNotThrow(() => (service as any).validateTriageVitalRows([
+    { type: VitalType.OXYGEN_SATURATION, value: '82' },
+  ], true));
+});
+
+test('triage rejects technically impossible or unstructured vital signs', () => {
+  const service = triageValidationService();
+  assert.throws(
+    () => (service as any).validateTriageVitalRows([
+      { type: VitalType.BLOOD_PRESSURE, value: '120 mmHg' },
+    ], true),
+    /systolique\/diastolique/,
+  );
+  assert.throws(
+    () => (service as any).validateTriageVitalRows([
+      { type: VitalType.TEMPERATURE, value: '55' },
+    ], true),
+    /techniquement impossible/,
+  );
+});
+
+test('triage saves partial measurements without a workflow hand-off', async () => {
+  const persistedRows: unknown[] = [];
+  const notifications: Array<{ event: string; payload: unknown }> = [];
+  let transitionCalls = 0;
+  const transaction = {
+    patient: {
+      findFirst: async () => ({ id: 'patient-a' }),
+    },
+    vitalSign: {
+      createMany: async ({ data }: { data: unknown[] }) => {
+        persistedRows.push(...data);
+        return { count: data.length };
+      },
+      findMany: async () => {
+        throw new Error('A non-final triage must not query completion state.');
+      },
+    },
+  };
+  const service = new PatientsService(
+    {
+      user: { findUnique: async () => ({ clinicId: 'clinic-a', status: 'ACTIVE', deletedAt: null }) },
+      patient: { findFirst: async () => ({ id: 'patient-a', serviceId: null, firstName: 'Patient', lastName: 'A' }) },
+      $transaction: async (callback: (tx: typeof transaction) => Promise<unknown>) => callback(transaction),
+    } as unknown as PrismaService,
+    { notify: (event: string, payload: unknown) => notifications.push({ event, payload }) } as unknown as NotificationsGateway,
+    { requireOperationalActor: async () => ({ id: 'nurse-a', clinicId: 'clinic-a', primaryRole: 'NURSE' }) } as unknown as ClinicContextService,
+    { transition: async () => { transitionCalls += 1; return 'EN_ATTENTE_MEDECIN'; } } as unknown as PatientWorkflowService,
+  );
+  (service as any).findOneForActor = async () => ({ id: 'patient-a' });
+
+  const result = await service.recordVitalSigns('patient-a', { temperature: '37.2' }, 'nurse-a');
+
+  assert.equal(persistedRows.length, 1);
+  assert.equal(transitionCalls, 0);
+  assert.deepEqual((result as any).triage, { status: 'SAVED', missing: [] });
+  assert.deepEqual(notifications, [{
+    event: 'patient.updated',
+    payload: { id: 'patient-a', workflowStatus: 'EN_ATTENTE_INFIRMERIE' },
+  }]);
+});
+
+test('an early triage finalization preserves entered values and identifies missing required measurements', async () => {
+  let savedRows = 0;
+  let transitionCalls = 0;
+  const transaction = {
+    patient: { findFirst: async () => ({ id: 'patient-a' }) },
+    vitalSign: {
+      createMany: async ({ data }: { data: unknown[] }) => {
+        savedRows += data.length;
+        return { count: data.length };
+      },
+      findMany: async () => ([
+        { type: VitalType.TEMPERATURE },
+        { type: VitalType.BLOOD_PRESSURE },
+        { type: VitalType.OXYGEN_SATURATION },
+        { type: VitalType.HEART_RATE },
+        { type: VitalType.RESPIRATORY_RATE },
+        { type: VitalType.HEIGHT },
+      ]),
+    },
+  };
+  const service = new PatientsService(
+    {
+      user: { findUnique: async () => ({ clinicId: 'clinic-a', status: 'ACTIVE', deletedAt: null }) },
+      patient: { findFirst: async () => ({ id: 'patient-a', serviceId: null, firstName: 'Patient', lastName: 'A' }) },
+      $transaction: async (callback: (tx: typeof transaction) => Promise<unknown>) => callback(transaction),
+    } as unknown as PrismaService,
+    { notify: () => undefined } as unknown as NotificationsGateway,
+    { requireOperationalActor: async () => ({ id: 'nurse-a', clinicId: 'clinic-a', primaryRole: 'NURSE' }) } as unknown as ClinicContextService,
+    { transition: async () => { transitionCalls += 1; return 'EN_ATTENTE_MEDECIN'; } } as unknown as PatientWorkflowService,
+  );
+  (service as any).findOneForActor = async () => ({ id: 'patient-a' });
+
+  const result = await service.recordVitalSigns('patient-a', {
+    height: '170',
+    finalizeTriage: true,
+  }, 'nurse-a');
+
+  assert.equal(savedRows, 1);
+  assert.equal(transitionCalls, 0);
+  assert.deepEqual((result as any).triage, { status: 'INCOMPLETE', missing: ['poids'] });
+});
 
 test('cashier queue is invoice-driven, clinic-scoped and includes imaging during consultation', async () => {
   let patientQuery: Record<string, unknown> | undefined;

@@ -6,11 +6,30 @@ import { NestFactory } from '@nestjs/core';
 import type { Express } from 'express';
 
 import helmet from 'helmet';
+import { PrismaClient } from '@prisma/client';
 
 import { AppModule } from './app.module';
+import {
+  assertDemoDatabaseConnection,
+  assertDemoDatabaseTarget,
+  isDemoMode,
+  resolveDemoDatabaseTarget,
+} from './core/app-mode';
 import { RedisIoAdapter } from './notifications/redis-io.adapter';
 
 async function bootstrap() {
+  assertDemoDatabaseTarget();
+  if (isDemoMode()) {
+    const verifier = new PrismaClient();
+    try {
+      await assertDemoDatabaseConnection(
+        verifier,
+        resolveDemoDatabaseTarget(),
+      );
+    } finally {
+      await verifier.$disconnect();
+    }
+  }
   const app = await NestFactory.create(AppModule);
 
   // In production the backend is reachable only through the Docker reverse
@@ -57,7 +76,7 @@ async function bootstrap() {
 
   let redisAdapter: RedisIoAdapter | undefined;
 
-  if (redisUrl) {
+  if (!isDemoMode() && redisUrl) {
     redisAdapter = new RedisIoAdapter(app);
 
     await redisAdapter.connect(redisUrl);
@@ -127,7 +146,7 @@ async function bootstrap() {
       csrfHeader !== csrfCookie
     ) {
       return res.status(403).json({
-        message: 'Requête CSRF refusée',
+        message: 'RequÃªte CSRF refusÃ©e',
       });
     }
 
@@ -140,7 +159,9 @@ async function bootstrap() {
 
   const port = configService.get<number>('PORT') || 3000;
 
-  await app.listen(port, '0.0.0.0');
+  const host = isDemoMode() ? '127.0.0.1' : '0.0.0.0';
+
+  await app.listen(port, host);
 
   console.log(`Backend running on port ${port}`);
 

@@ -160,7 +160,10 @@ export class HealthService {
       this.checkRedis(),
     ]);
 
-    const ready = database && redis;
+    // Redis is optional only in the isolated Core demonstration.
+    // Production readiness must continue to require Redis.
+    const redisRequired = process.env.AULIA_APP_MODE !== 'demo';
+    const ready = database && (!redisRequired || redis);
 
     return {
       status: ready ? 'ready' : 'not_ready',

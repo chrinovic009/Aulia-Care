@@ -42,6 +42,8 @@
     "prisma:migrate:deploy": "npm run prisma:migrate:deploy -w @aulia-care/backend",
     "prisma:db:push": "npm run prisma:db:push -w @aulia-care/backend",
     "db:seed": "npm run db:seed -w @aulia-care/backend",
+    "db:seed:demo": "npm run db:seed:demo -w @aulia-care/backend",
+    "test:demo-seed": "npm run test:demo-seed -w @aulia-care/backend",
 
     "bootstrap:dev": "npm run bootstrap:dev -w @aulia-care/backend",
 

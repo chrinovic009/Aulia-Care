@@ -412,14 +412,18 @@ export class AppointmentsService {
       if (!transitionedWorkflowStatus) {
         throw new NotFoundException('Patient introuvable dans cet établissement.');
       }
-      const patientMutation = await tx.patient.updateMany({
-        where: { id: patient.id, clinicId: actor.clinicId, deletedAt: null },
-        data: {
-          ...(service?.id ? { serviceId: service.id } : {}),
-        },
-      });
-      if (patientMutation.count !== 1) {
-        throw new NotFoundException('Patient introuvable dans cet établissement.');
+      // A ServiceUnit can be selected directly. In that case there may be no
+      // matching Service catalog entry to persist on the patient; do not send
+      // an empty updateMany(), whose affected-row count is database-dependent.
+      // The appointment itself remains the source of the selected unit.
+      if (service?.id) {
+        const patientMutation = await tx.patient.updateMany({
+          where: { id: patient.id, clinicId: actor.clinicId, deletedAt: null },
+          data: { serviceId: service.id },
+        });
+        if (patientMutation.count !== 1) {
+          throw new NotFoundException('Patient introuvable dans cet établissement.');
+        }
       }
       const updatedPatient = await tx.patient.findFirstOrThrow({
         where: { id: patient.id, clinicId: actor.clinicId, deletedAt: null },

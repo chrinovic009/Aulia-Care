@@ -283,7 +283,17 @@ test(
       await request(server)
         .post(`/api/patients/${patientId}/vital-signs`)
         .set('Cookie', nurseCookies)
-        .send({ temperature: '37.2', heartRate: '78', bloodPressure: '120/80', physicianId: physician.id })
+        .send({
+          temperature: '37.2',
+          heartRate: '78',
+          bloodPressure: '120/80',
+          spo2: '98',
+          respiratoryRate: '16',
+          weight: '70',
+          height: '170',
+          physicianId: physician.id,
+          finalizeTriage: true,
+        })
         .expect(201);
       const triageConsultation = await prisma.consultation.findFirst({
         where: { patientId, clinicId: clinic.id, providerId: physician.id, deletedAt: null },
@@ -305,7 +315,7 @@ test(
         .post('/api/payments')
         .set('Cookie', cashierCookies)
         .send({ invoiceId: labInvoice.id, amount: Number(labInvoice.totalAmount), method: PaymentMethod.CASH })
-        .expect(201);
+        .expect((response) => assert.equal(response.status, 201, JSON.stringify(response.body)));
       await request(server)
         .post(`/api/laboratory/requests/${labRequest.body.id}/results`)
         .set('Cookie', labCookies)
@@ -314,7 +324,7 @@ test(
           resultValue: '5.4',
           parameters: [{ labTestParameterId: labParameter.id, valueNumeric: 5.4 }],
         })
-        .expect(201);
+        .expect((response) => assert.equal(response.status, 201, JSON.stringify(response.body)));
 
       const imagingRequest = await request(server)
         .post(`/api/consultations/${consultationId}/imaging-requests`)
@@ -369,6 +379,15 @@ test(
       await request(server)
         .post(`/api/consultations/${consultationId}/clinical-sections`)
         .set('Cookie', physicianCookies)
+        .send({
+          chiefComplaint: 'Fievre et toux',
+          medicalHistory: { description: 'Antecedents recherches : aucun connu.' },
+          currentSymptoms: { description: 'Fievre et toux depuis deux jours.' },
+          clinicalExam: { description: 'Examen clinique documente.' },
+          diagnosis: { description: 'Syndrome grippal simple' },
+          treatmentPlan: { description: 'Retour domicile et consignes.' },
+          consultationModule: { structured: { orientation: { disposition: 'RETOUR_DOMICILE' } } },
+        })
         .send({ diagnosisText: 'Syndrome grippal simple', clinicalSummary: { conclusion: 'Retour à domicile' }, status: 'FINALIZED', attestation: true })
         .expect(201);
 

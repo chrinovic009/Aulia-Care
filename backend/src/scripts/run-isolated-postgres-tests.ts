@@ -1,84 +1,87 @@
 import { spawnSync } from 'child_process';
 import { writeFileSync } from 'fs';
-
-const sourceUrl = String(process.env.DATABASE_URL || '').trim();
-if (!sourceUrl) {
-  throw new Error('DATABASE_URL est requis pour dériver la base de test isolée.');
-}
-
-const source = new URL(sourceUrl);
-if (source.protocol !== 'postgresql:' && source.protocol !== 'postgres:') {
-  throw new Error('DATABASE_URL doit désigner PostgreSQL.');
-}
-if (source.pathname !== '/aulia_care') {
-  throw new Error('Refus de test : la source doit être exactement la base de développement aulia_care.');
-}
+import { resolveIsolatedE2eDatabaseTarget } from '../core/e2e-database';
 
 /*
- * Docker Desktop on some Windows installations publishes PostgreSQL only on
- * the IPv4 loopback interface.  Node resolves `localhost` to ::1 first on
- * those machines, which makes an otherwise healthy isolated test database
- * look unavailable.  This applies only to the local test runner; production
- * connection settings are deliberately left untouched.
+ * Never derive E2E credentials from DATABASE_URL. A dedicated PostgreSQL
+ * database, role and server-side sentinel must be provisioned separately.
+ * The preflight verifies the identity observed by Prisma before migrations or
+ * tests can write a single row.
  */
-const testHostOverride = String(process.env.AULIA_E2E_DATABASE_HOST || '').trim();
-if (testHostOverride) {
-  source.hostname = testHostOverride;
-} else if (source.hostname === 'localhost') {
-  source.hostname = '127.0.0.1';
-}
-
-const testDatabaseName = String(process.env.AULIA_E2E_DATABASE_NAME || 'aulia_care_e2e').trim();
-if (!/^[a-z][a-z0-9_]{2,62}$/.test(testDatabaseName) || testDatabaseName === 'aulia_care') {
-  throw new Error('Nom de base E2E invalide ou non isolé.');
-}
-
-source.pathname = `/${testDatabaseName}`;
-const testDatabaseUrl = source.toString();
-if (testDatabaseUrl === sourceUrl) {
-  throw new Error('Refus de test : la base E2E ne peut pas être la base source.');
-}
-
+const target = resolveIsolatedE2eDatabaseTarget(process.env);
+const testDatabaseUrl = String(process.env.TEST_DATABASE_URL || '').trim();
 const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const environment = {
   ...process.env,
-  // Migrations and tests run against the same isolated database.  The source
-  // development database is never used for either operation.
   DATABASE_URL: testDatabaseUrl,
   TEST_DATABASE_URL: testDatabaseUrl,
 };
 
-const migration = spawnSync(
+const run = (program: string, args: string[]) => spawnSync(program, args, {
+  env: environment,
+  stdio: 'inherit',
+  // npm.cmd requires a shell on Windows, whereas process.execPath must run
+  // directly because its path can contain spaces (for example C:\\Program Files).
+  shell: process.platform === 'win32' && /\.cmd$/i.test(program),
+});
+
+const ensureSucceeded = (result: ReturnType<typeof spawnSync>, label: string) => {
+  if (result.error) {
+    throw new Error(`${label} could not start: ${result.error.message}`);
+  }
+  if (result.status !== 0) process.exit(result.status ?? 1);
+};
+
+const preflight = run(command, ['run', 'assert:isolated-e2e-db']);
+ensureSucceeded(preflight, 'E2E database preflight');
+
+const migration = run(
   npxCommand,
   ['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'],
-  { env: environment, stdio: 'inherit' },
 );
-if (migration.status !== 0) {
-  process.exit(migration.status ?? 1);
-}
-
-const generated = spawnSync(
-  npxCommand,
-  ['prisma', 'generate', '--schema', 'prisma/schema.prisma'],
-  { env: environment, stdio: 'inherit' },
-);
-if (generated.status !== 0) {
-  process.exit(generated.status ?? 1);
-}
+ensureSucceeded(migration, 'Prisma migration');
 
 const suite = String(process.env.AULIA_ISOLATED_TEST_SUITE || 'all').trim();
 const reportPath = String(process.env.AULIA_ISOLATED_TEST_REPORT_PATH || '').trim();
-const scriptsBySuite: Record<string, string[]> = {
-  all: ['test:integration', 'test:e2e'],
-  integration: ['test:integration'],
-  e2e: ['test:e2e'],
-  'e2e-http': ['test:e2e:http'],
+type TestCommand = {
+  label: string;
+  program: string;
+  args: string[];
 };
 
-const scripts = scriptsBySuite[suite];
-if (!scripts) {
-  throw new Error('AULIA_ISOLATED_TEST_SUITE doit être all, integration, e2e ou e2e-http.');
+const e2eFiles = [
+  'test/e2e/bed-concurrency.postgres.e2e.test.ts',
+  'test/e2e/clinical-flow.persistence.test.ts',
+  'test/e2e/core-concurrency.postgres.e2e.test.ts',
+  'test/e2e/core-patient-journey.http.e2e.test.ts',
+  'test/e2e/core-resource-boundaries.http.e2e.test.ts',
+  'test/e2e/database-readiness.test.ts',
+  'test/e2e/http-clinic-isolation.e2e.test.ts',
+  'test/e2e/patients-tenant-isolation.http.e2e.test.ts',
+  'test/e2e/pharmacy-stock-concurrency.postgres.e2e.test.ts',
+  'test/e2e/tenant-provisioning.http.e2e.test.ts',
+];
+const httpE2eFiles = e2eFiles.filter((file) => file.includes('.http.'));
+const nodeTest = (file: string): TestCommand => ({
+  label: file,
+  program: process.execPath,
+  args: ['--require', 'ts-node/register/transpile-only', '--test', '--test-concurrency=1', file],
+});
+
+const commandsBySuite: Record<string, TestCommand[]> = {
+  all: [
+    { label: 'test:integration', program: command, args: ['run', 'test:integration'] },
+    ...e2eFiles.map(nodeTest),
+  ],
+  integration: [{ label: 'test:integration', program: command, args: ['run', 'test:integration'] }],
+  e2e: e2eFiles.map(nodeTest),
+  'e2e-http': httpE2eFiles.map(nodeTest),
+};
+
+const commands = commandsBySuite[suite];
+if (!commands) {
+  throw new Error('AULIA_ISOLATED_TEST_SUITE must be all, integration, e2e or e2e-http.');
 }
 
 const report: {
@@ -87,7 +90,7 @@ const report: {
   results: Array<{ script: string; status: number | null }>;
 } = {
   suite,
-  database: testDatabaseName,
+  database: target.databaseName,
   results: [],
 };
 
@@ -97,14 +100,11 @@ const persistReport = () => {
   }
 };
 
-for (const script of scripts) {
-  const result = spawnSync(command, ['run', script], {
-    env: environment,
-    stdio: 'inherit',
-  });
-  report.results.push({ script, status: result.status });
+for (const testCommand of commands) {
+  const result = run(testCommand.program, testCommand.args);
+  report.results.push({ script: testCommand.label, status: result.status });
   persistReport();
-  console.info(`[isolated-postgres] ${script} completed with status ${String(result.status)}`);
+  console.info(`[isolated-postgres] ${testCommand.label} completed with status ${String(result.status)}`);
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
