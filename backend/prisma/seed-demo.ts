@@ -50,16 +50,16 @@ const demoRoles = [
 ] as const;
 
 const accounts = [
-  { id: '22222222-2222-4222-8222-000000000001', role: RoleSlug.SUPER_ADMIN, username: 'demo.superadmin', firstName: 'Amina', lastName: 'Kabasele', label: 'Super administratrice' },
-  { id: '22222222-2222-4222-8222-000000000002', role: RoleSlug.ADMIN, username: 'demo.admin', firstName: 'Benoît', lastName: 'Mulumba', label: 'Administrateur' },
-  { id: '22222222-2222-4222-8222-000000000003', role: RoleSlug.FINANCE, username: 'demo.finance', firstName: 'Chantal', lastName: 'Kanku', label: 'Finance' },
-  { id: '22222222-2222-4222-8222-000000000004', role: RoleSlug.CASHIER, username: 'demo.caisse', firstName: 'David', lastName: 'Mwamba', label: 'Caissier' },
-  { id: '22222222-2222-4222-8222-000000000005', role: RoleSlug.RECEPTIONIST, username: 'demo.reception', firstName: 'Esther', lastName: 'Kabeya', label: 'Réceptionniste' },
-  { id: '22222222-2222-4222-8222-000000000006', role: RoleSlug.NURSE, username: 'demo.infirmier', firstName: 'Fabrice', lastName: 'Ilunga', label: 'Infirmier' },
-  { id: '22222222-2222-4222-8222-000000000007', role: RoleSlug.PHYSICIAN, username: 'demo.medecin', firstName: 'Grace', lastName: 'Tshibanda', label: 'Médecin', specialty: 'Médecine générale' },
-  { id: '22222222-2222-4222-8222-000000000008', role: RoleSlug.LAB_MANAGER, username: 'demo.labo', firstName: 'Hervé', lastName: 'Mbuyi', label: 'Responsable laboratoire' },
-  { id: '22222222-2222-4222-8222-000000000009', role: RoleSlug.RADIOLOGIST, username: 'demo.radio', firstName: 'Inès', lastName: 'Kalala', label: 'Radiologue', specialty: 'Radiologie' },
-  { id: '22222222-2222-4222-8222-000000000010', role: RoleSlug.PHARMACIST, username: 'demo.pharmacie', firstName: 'Jean', lastName: 'Lukusa', label: 'Pharmacien' },
+  { id: '22222222-2222-4222-8222-000000000001', employeeId: '33333333-3333-4333-8333-000000000001', role: RoleSlug.SUPER_ADMIN, username: 'demo.superadmin', firstName: 'Amina', lastName: 'Kabasele', label: 'Super administratrice' },
+  { id: '22222222-2222-4222-8222-000000000002', employeeId: '33333333-3333-4333-8333-000000000002', role: RoleSlug.ADMIN, username: 'demo.admin', firstName: 'Benoît', lastName: 'Mulumba', label: 'Administrateur' },
+  { id: '22222222-2222-4222-8222-000000000003', employeeId: '33333333-3333-4333-8333-000000000003', role: RoleSlug.FINANCE, username: 'demo.finance', firstName: 'Chantal', lastName: 'Kanku', label: 'Finance' },
+  { id: '22222222-2222-4222-8222-000000000004', employeeId: '33333333-3333-4333-8333-000000000004', role: RoleSlug.CASHIER, username: 'demo.caisse', firstName: 'David', lastName: 'Mwamba', label: 'Caissier' },
+  { id: '22222222-2222-4222-8222-000000000005', employeeId: '33333333-3333-4333-8333-000000000005', role: RoleSlug.RECEPTIONIST, username: 'demo.reception', firstName: 'Esther', lastName: 'Kabeya', label: 'Réceptionniste' },
+  { id: '22222222-2222-4222-8222-000000000006', employeeId: '33333333-3333-4333-8333-000000000006', role: RoleSlug.NURSE, username: 'demo.infirmier', firstName: 'Fabrice', lastName: 'Ilunga', label: 'Infirmier' },
+  { id: '22222222-2222-4222-8222-000000000007', employeeId: '33333333-3333-4333-8333-000000000007', role: RoleSlug.PHYSICIAN, username: 'demo.medecin', firstName: 'Grace', lastName: 'Tshibanda', label: 'Médecin', specialty: 'Médecine générale' },
+  { id: '22222222-2222-4222-8222-000000000008', employeeId: '33333333-3333-4333-8333-000000000008', role: RoleSlug.LAB_MANAGER, username: 'demo.labo', firstName: 'Hervé', lastName: 'Mbuyi', label: 'Responsable laboratoire' },
+  { id: '22222222-2222-4222-8222-000000000009', employeeId: '33333333-3333-4333-8333-000000000009', role: RoleSlug.RADIOLOGIST, username: 'demo.radio', firstName: 'Inès', lastName: 'Kalala', label: 'Radiologue', specialty: 'Radiologie' },
+  { id: '22222222-2222-4222-8222-000000000010', employeeId: '33333333-3333-4333-8333-000000000010', role: RoleSlug.PHARMACIST, username: 'demo.pharmacie', firstName: 'Jean', lastName: 'Lukusa', label: 'Pharmacien' },
 ] as const;
 
 const departmentData = [
@@ -87,17 +87,38 @@ const patientData = [
   { id: '51111111-1111-4111-8111-111111111117', firstName: 'Patient', lastName: 'Fictif Gamma', gender: 'Femme', externalId: 'DEMO-P-007' },
 ] as const;
 
+const departmentIdByRole: Partial<Record<RoleSlug, string>> = {
+  [RoleSlug.RECEPTIONIST]: departmentData[0].id,
+  [RoleSlug.NURSE]: departmentData[1].id,
+  [RoleSlug.PHYSICIAN]: departmentData[1].id,
+  [RoleSlug.LAB_MANAGER]: departmentData[2].id,
+  [RoleSlug.RADIOLOGIST]: departmentData[3].id,
+  [RoleSlug.PHARMACIST]: departmentData[4].id,
+};
+
+const attendanceRoles = new Set<RoleSlug>([
+  RoleSlug.FINANCE,
+  RoleSlug.CASHIER,
+  RoleSlug.RECEPTIONIST,
+  RoleSlug.NURSE,
+  RoleSlug.PHYSICIAN,
+  RoleSlug.LAB_MANAGER,
+  RoleSlug.RADIOLOGIST,
+  RoleSlug.PHARMACIST,
+]);
+
 async function assertNoForeignData(tx: Prisma.TransactionClient) {
-  const [clinic, user, patient, department, service, role] = await Promise.all([
+  const [clinic, user, employee, patient, department, service, role] = await Promise.all([
     tx.clinic.findFirst({ where: { id: { not: CLINIC_ID } }, select: { id: true } }),
     tx.user.findFirst({ where: { id: { notIn: accounts.map((account) => account.id) } }, select: { id: true } }),
+    tx.employee.findFirst({ where: { id: { notIn: accounts.map((account) => account.employeeId) } }, select: { id: true } }),
     tx.patient.findFirst({ where: { id: { notIn: patientData.map((patient) => patient.id) } }, select: { id: true } }),
     tx.department.findFirst({ where: { id: { notIn: departmentData.map((department) => department.id) } }, select: { id: true } }),
     tx.service.findFirst({ where: { id: { notIn: serviceData.map((service) => service.id) } }, select: { id: true } }),
     tx.role.findFirst({ where: { id: { notIn: demoRoles.map((role) => roleIds[role]) } }, select: { id: true } }),
   ]);
 
-  if (clinic || user || patient || department || service || role) {
+  if (clinic || user || employee || patient || department || service || role) {
     throw new Error('Refus : des enregistrements étrangers à la démonstration sont présents dans cette base.');
   }
 }
@@ -183,6 +204,35 @@ async function main() {
         where: { id: service.id },
         update: { name: service.name, category: service.category, isParamedical: service.isParamedical, clinicId: CLINIC_ID, active: true },
         create: { ...service, clinicId: CLINIC_ID, active: true, sourceNode: DEMO_SOURCE_NODE },
+      });
+    }
+
+    for (const account of accounts) {
+      if (!attendanceRoles.has(account.role)) continue;
+
+      await tx.employee.upsert({
+        where: { id: account.employeeId },
+        update: {
+          userId: account.id,
+          clinicId: CLINIC_ID,
+          firstName: account.firstName,
+          lastName: account.lastName,
+          position: account.label,
+          departmentId: departmentIdByRole[account.role] ?? null,
+          status: 'ACTIVE',
+        },
+        create: {
+          id: account.employeeId,
+          userId: account.id,
+          clinicId: CLINIC_ID,
+          employeeNumber: `DEMO-EMP-${account.username.replace('demo.', '').toUpperCase()}`,
+          firstName: account.firstName,
+          lastName: account.lastName,
+          hireDate: new Date('2026-01-01T00:00:00.000Z'),
+          position: account.label,
+          departmentId: departmentIdByRole[account.role] ?? null,
+          status: 'ACTIVE',
+        },
       });
     }
 
