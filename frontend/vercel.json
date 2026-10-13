@@ -1,11 +1,11 @@
 {
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://aulia-care-demo-api.onrender.com/api/$1"
+      "source": "/api/:path*",
+      "destination": "https://aulia-care-demo-api.onrender.com/api/:path*"
     },
     {
-      "source": "/(.*)",
+      "source": "/:path*",
       "destination": "/index.html"
     }
   ]
