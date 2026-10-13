@@ -13,7 +13,13 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
   const [socket, setSocket] = useState<Socket | null>(null);
 
   useEffect(() => {
-    if (!currentUser?.id) {
+    // A static Vercel deployment cannot proxy the authenticated Socket.IO
+    // upgrade to a separate Render origin. The public DEMO therefore keeps
+    // persisted API lists as its source of truth and can opt out explicitly;
+    // normal hospital deployments leave this enabled.
+    const realtimeEnabled = import.meta.env.VITE_ENABLE_REALTIME !== 'false';
+
+    if (!realtimeEnabled || !currentUser?.id) {
       setSocket(null);
       return;
     }
