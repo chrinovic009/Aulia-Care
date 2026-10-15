@@ -27,6 +27,7 @@
     "prisma:db:push": "prisma db push --schema prisma/schema.prisma",
     "db:seed": "prisma db seed --schema prisma/schema.prisma",
     "demo:provision-sentinel": "ts-node --transpile-only --project tsconfig.json src/scripts/provision-demo-sentinel.ts",
+    "demo:reset-content": "ts-node --transpile-only --project tsconfig.json src/scripts/reset-demo-content.ts",
     "demo:seed": "ts-node --transpile-only --project tsconfig.json prisma/seed-demo.ts",
     "bootstrap:dev": "ts-node --transpile-only --project tsconfig.json src/scripts/bootstrap-dev.ts",
     "generate:initial-dev-bootstrap-token": "node dist/scripts/generate-initial-dev-bootstrap-token.js",

@@ -169,6 +169,19 @@ const attendanceRoles = new Set<RoleSlug>([
   RoleSlug.PHARMACIST,
 ]);
 
+/** The public baseline intentionally contains accounts and patients only.
+ * Rich clinical fixtures are opt-in so a routine DEMO recovery never creates
+ * invoices, prescriptions, results, or stock movements by surprise. */
+function resolveDemoSeedProfile(): 'BASE' | 'FULL' {
+  const profile = String(process.env.AULIA_DEMO_SEED_PROFILE || 'BASE')
+    .trim()
+    .toUpperCase();
+  if (profile !== 'BASE' && profile !== 'FULL') {
+    throw new Error('AULIA_DEMO_SEED_PROFILE doit être BASE ou FULL.');
+  }
+  return profile;
+}
+
 async function assertNoForeignData(tx: Prisma.TransactionClient) {
   const [
     clinic, user, employee, patient, department, service, role, serviceUnit,
@@ -225,6 +238,7 @@ async function assertNoForeignData(tx: Prisma.TransactionClient) {
 
 async function main() {
   requireDemoConfirmation('SEED_PUBLIC_CORE_DEMO');
+  const profile = resolveDemoSeedProfile();
   const password = String(process.env.AULIA_DEMO_PASSWORD || '');
   if (password.length < 16) {
     throw new Error('AULIA_DEMO_PASSWORD doit contenir au moins 16 caractères.');
@@ -307,12 +321,14 @@ async function main() {
       });
     }
 
-    for (const unit of serviceUnitData) {
-      await tx.serviceUnit.upsert({
-        where: { id: unit.id },
-        update: { name: unit.name, departmentId: unit.departmentId, clinicId: CLINIC_ID, category: unit.category, active: true },
-        create: { ...unit, clinicId: CLINIC_ID, active: true, sourceNode: DEMO_SOURCE_NODE },
-      });
+    if (profile === 'FULL') {
+      for (const unit of serviceUnitData) {
+        await tx.serviceUnit.upsert({
+          where: { id: unit.id },
+          update: { name: unit.name, departmentId: unit.departmentId, clinicId: CLINIC_ID, category: unit.category, active: true },
+          create: { ...unit, clinicId: CLINIC_ID, active: true, sourceNode: DEMO_SOURCE_NODE },
+        });
+      }
     }
 
     for (const account of accounts) {
@@ -359,6 +375,7 @@ async function main() {
       });
     }
 
+    if (profile === 'FULL') {
     // Local examination catalogues. They are owned by this demonstration
     // clinic; no catalogue from another installation is read or changed.
     await tx.labSection.upsert({
@@ -555,9 +572,10 @@ async function main() {
       update: { patientId: patientData[1].id, clinicId: CLINIC_ID, serviceUnitId: serviceUnitData[0].id, physicianId: accounts[6].id, nurseInChargeId: accounts[5].id, status: 'ADMITTED', admissionReason: 'Observation fictive de démonstration' },
       create: { id: '8a111111-1111-4111-8111-111111111111', patientId: patientData[1].id, clinicId: CLINIC_ID, serviceUnitId: serviceUnitData[0].id, physicianId: accounts[6].id, nurseInChargeId: accounts[5].id, status: 'ADMITTED', admissionReason: 'Observation fictive de démonstration', sourceNode: DEMO_SOURCE_NODE },
     });
+    }
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
-  console.log(`Seed DEMO Core terminé pour ${accounts.length} comptes et ${patientData.length} patients fictifs.`);
+  console.log(`Seed DEMO Core ${profile} terminé pour ${accounts.length} comptes et ${patientData.length} patients fictifs.`);
 }
 
 main()
