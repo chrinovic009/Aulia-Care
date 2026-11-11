@@ -39,6 +39,9 @@ if (testDatabaseUrl === sourceUrl) {
   throw new Error('Refus de test : la base E2E ne peut pas être la base source.');
 }
 
+// Node >= 18.20 / 20.12 refuses to spawn .cmd files without a shell on Windows
+// (CVE-2024-27980): without it spawnSync fails silently with status null.
+const useShell = process.platform === 'win32';
 const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const environment = {
@@ -52,8 +55,9 @@ const environment = {
 const migration = spawnSync(
   npxCommand,
   ['prisma', 'migrate', 'deploy', '--schema', 'prisma/schema.prisma'],
-  { env: environment, stdio: 'inherit' },
+  { env: environment, stdio: 'inherit', shell: useShell },
 );
+if (migration.error) console.error(`[isolated-postgres] prisma migrate n'a pas pu démarrer : ${migration.error.message}`);
 if (migration.status !== 0) {
   process.exit(migration.status ?? 1);
 }
@@ -61,7 +65,7 @@ if (migration.status !== 0) {
 const generated = spawnSync(
   npxCommand,
   ['prisma', 'generate', '--schema', 'prisma/schema.prisma'],
-  { env: environment, stdio: 'inherit' },
+  { env: environment, stdio: 'inherit', shell: useShell },
 );
 if (generated.status !== 0) {
   process.exit(generated.status ?? 1);
@@ -101,7 +105,9 @@ for (const script of scripts) {
   const result = spawnSync(command, ['run', script], {
     env: environment,
     stdio: 'inherit',
+    shell: useShell,
   });
+  if (result.error) console.error(`[isolated-postgres] ${script} n'a pas pu démarrer : ${result.error.message}`);
   report.results.push({ script, status: result.status });
   persistReport();
   console.info(`[isolated-postgres] ${script} completed with status ${String(result.status)}`);
