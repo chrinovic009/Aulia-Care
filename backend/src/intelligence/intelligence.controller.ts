@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Param, Post, Request, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -15,11 +15,15 @@ export class IntelligenceController {
 
   @Post('consultations/:id/analyse')
   @Roles('SUPER_ADMIN', 'PHYSICIAN')
-  analyseConsultation(@Param('id') id: string, @Body() body: { transcript: string }) { return this.intelligence.analyseConsultation(id, body.transcript); }
+  analyseConsultation(@Param('id') id: string, @Body() body: { transcript: string }, @Request() req: any) {
+    return this.intelligence.analyseConsultation(id, body?.transcript, req.user);
+  }
 
   @Post('patients/duplicate-candidates')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')
-  duplicateCandidates(@Body() body: any) { return this.intelligence.findDuplicateCandidates(body); }
+  duplicateCandidates(@Body() body: any, @Request() req: any) {
+    return this.intelligence.findDuplicateCandidates(body, req.user);
+  }
 
   @Post('subscriptions/extract-pdf')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST')

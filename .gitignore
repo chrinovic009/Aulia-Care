@@ -80,3 +80,6 @@ tmp_*.py
 
 # Local Aulia Care temporary/test artifacts
 /.tmp-*
+
+# Journaux de validation locale (scripts/dev/validate.ps1)
+/.validation/
