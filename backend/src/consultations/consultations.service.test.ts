@@ -6,6 +6,7 @@ import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
 import { CreatePrescriptionDto, RequestPrescriptionReplacementDto } from './dto/create-prescription.dto';
 import { Prisma } from '@prisma/client';
+import { ConflictException } from '@nestjs/common';
 
 test('prescription rejects a missing clinic sale price without opening a transaction', async () => {
   let transactionStarted = false;
@@ -382,5 +383,42 @@ test('finalizing a consultation refuses any ordered exam without a final result'
       'physician-a',
     ),
     /tous les examens complémentaires commandés n’ont pas de résultat final/,
+  );
+});
+
+function consultationServiceForUpdate(update: (args: { where: Record<string, unknown> }) => Promise<unknown>) {
+  const service = new ConsultationsService({
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      consultation: { update },
+      appointment: { update: async () => undefined },
+    }),
+  } as unknown as PrismaService, {} as NotificationsGateway, {} as PatientWorkflowService);
+  Object.defineProperty(service, 'findOne', {
+    value: async () => ({ id: 'consultation-a', providerId: 'doctor-a', status: 'IN_PROGRESS', version: 4, appointmentId: 'appointment-a' }),
+  });
+  Object.defineProperty(service, 'ensureWriteAccess', { value: async () => undefined });
+  return service;
+}
+
+test('a consultation update checks version and finalisation in the same write as the update', async () => {
+  let where: Record<string, unknown> | undefined;
+  const service = consultationServiceForUpdate(async (args) => {
+    where = args.where;
+    return { id: 'consultation-a', status: 'IN_PROGRESS', version: 6 };
+  });
+  await service.update('consultation-a', { chiefComplaint: 'Toux', expectedVersion: 5 }, 'doctor-a');
+  assert.deepEqual(where, { id: 'consultation-a', version: 5, status: { not: 'FINALIZED' } });
+
+  await service.update('consultation-a', { chiefComplaint: 'Toux' }, 'doctor-a');
+  assert.equal(where?.version, 4, 'without a client version, the version read in this request is enforced');
+});
+
+test('a concurrent consultation change is refused with 409 instead of being overwritten', async () => {
+  const service = consultationServiceForUpdate(async () => {
+    throw new Prisma.PrismaClientKnownRequestError('Record to update not found.', { code: 'P2025', clientVersion: 'test' });
+  });
+  await assert.rejects(
+    service.update('consultation-a', { chiefComplaint: 'Toux', expectedVersion: 3 }, 'doctor-a'),
+    (error: unknown) => error instanceof ConflictException && /modifiée entre-temps/.test(error.message),
   );
 });

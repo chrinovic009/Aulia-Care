@@ -69,7 +69,7 @@ export type AvailableMedication = {
 };
 
 export const saveClinicalSections = (consultationId: string, payload: Record<string, unknown>) =>
-  apiFetch(`/consultations/${consultationId}/clinical-sections`, {
+  apiFetch<{ id: string; version?: number }>(`/consultations/${consultationId}/clinical-sections`, {
     method: "POST",
     body: JSON.stringify(payload),
   });

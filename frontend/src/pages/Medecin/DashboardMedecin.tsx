@@ -322,6 +322,18 @@ export default function DashboardMedecin() {
   const restoredDraftRef = useRef<string | null>(null);
   const restoredServerDraftRef = useRef<string | null>(null);
   const acceptedServerDraftsRef = useRef(new Set<string>());
+  // Last saved version of each consultation: sent back on the next save so that a
+  // concurrent change (other tab, other device) is refused instead of overwritten.
+  const consultationVersionsRef = useRef<Record<string, number>>({});
+  const rememberConsultationVersion = (consultationId: string, saved: unknown) => {
+    const version = (saved as { version?: unknown } | null)?.version;
+    if (typeof version === "number") consultationVersionsRef.current[consultationId] = version;
+  };
+  const saveSectionsTracked = async (consultationId: string, payload: Record<string, unknown>) => {
+    const saved = await saveClinicalSections(consultationId, { ...payload, expectedVersion: consultationVersionsRef.current[consultationId] });
+    rememberConsultationVersion(consultationId, saved);
+    return saved;
+  };
   const declinedServerDraftsRef = useRef(new Set<string>());
   const [draftDecisionVersion, setDraftDecisionVersion] = useState(0);
   
@@ -620,7 +632,7 @@ export default function DashboardMedecin() {
     }
     setActionMessage("Vérification sécurisée de la consultation de télésanté…");
     try {
-      await updateConsultation(currentConsultationId, { encounterType: "TELEHEALTH", status: "IN_PROGRESS" });
+      rememberConsultationVersion(currentConsultationId, await updateConsultation(currentConsultationId, { encounterType: "TELEHEALTH", status: "IN_PROGRESS", expectedVersion: consultationVersionsRef.current[currentConsultationId] }));
       setConsultationModule((current) => ({ ...current, consultationMode: value }));
       setTelehealthReady(true);
       setActionMessage(null);
@@ -752,7 +764,7 @@ export default function DashboardMedecin() {
       consultationModule.followUp.specificDate ? `Date de suivi: ${consultationModule.followUp.specificDate}` : "",
     ].filter(Boolean).join("\n");
 
-    await saveClinicalSections(consultationId, {
+    await saveSectionsTracked(consultationId, {
       chiefComplaint: clinicalForm.chiefComplaint,
       medicalHistory: {
         knownDiseases: clinicalForm.knownDiseases,
@@ -851,7 +863,7 @@ export default function DashboardMedecin() {
     try {
     const consultationId = await ensureActiveConsultation();
     if (!consultationId) return;
-    await saveClinicalSections(consultationId, {
+    await saveSectionsTracked(consultationId, {
       chiefComplaint: clinicalForm.chiefComplaint,
       medicalHistory: {
         knownDiseases: clinicalForm.knownDiseases,

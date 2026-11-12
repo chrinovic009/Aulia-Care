@@ -470,15 +470,19 @@ export class ConsultationsService {
     }
     // A clinical note update must never silently reassign its patient, encounter,
     // hospitalization or author. Those links are established by admission/creation workflows.
-    const { patientId: _patientId, appointmentId: _appointmentId, hospitalizationId: _hospitalizationId, providerId: _providerId, ...clinicalUpdate } = updateConsultationDto;
-    const updated = await this.prisma.consultation.update({
-      where: { id },
-      data: { ...clinicalUpdate, version: { increment: 1 } } as any,
-    });
-    if (updated.status === ConsultationStatus.FINALIZED) {
-      await this.prisma.appointment.update({ where: { id: updated.appointmentId }, data: { status: 'COMPLETED' } });
-    }
-    return updated;
+    const { patientId: _patientId, appointmentId: _appointmentId, hospitalizationId: _hospitalizationId, providerId: _providerId, expectedVersion, ...clinicalUpdate } = updateConsultationDto;
+    // Version and status are checked in the same statement as the write: no
+    // concurrent save or finalisation can slip between the check and the update.
+    return this.guardConsultationWrite(() => this.prisma.$transaction(async (tx) => {
+      const updated = await tx.consultation.update({
+        where: { id, version: expectedVersion ?? consultation.version, status: { not: ConsultationStatus.FINALIZED } },
+        data: { ...clinicalUpdate, version: { increment: 1 } } as any,
+      });
+      if (updated.status === ConsultationStatus.FINALIZED) {
+        await tx.appointment.update({ where: { id: updated.appointmentId }, data: { status: 'COMPLETED' } });
+      }
+      return updated;
+    }));
   }
 
   async saveTelehealthTranscript(id: string, sessionId: string, entries: TelehealthTranscriptEntryDto[], actorId?: string) {
@@ -530,6 +534,20 @@ export class ConsultationsService {
       });
       return updated;
     });
+  }
+
+  /** A guarded consultation write that found no matching row means a concurrent change. */
+  private async guardConsultationWrite<T>(write: () => Promise<T>): Promise<T> {
+    try {
+      return await write();
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new ConflictException(
+          'Cette consultation a été modifiée entre-temps (autre onglet, autre poste ou finalisation). Rechargez-la avant d’enregistrer.',
+        );
+      }
+      throw error;
+    }
   }
 
   async saveClinicalSections(id: string, dto: ClinicalSectionsDto, actorId?: string) {
@@ -694,9 +712,10 @@ export class ConsultationsService {
       throw new BadRequestException('La consultation ne peut être finalisée que lorsque tous les examens complémentaires commandés n’ont pas de résultat final valide.');
     }
 
-    const transactionResult = await this.prisma.$transaction(async (tx) => {
+    const transactionResult = await this.guardConsultationWrite(() => this.prisma.$transaction(async (tx) => {
       const updated = await tx.consultation.update({
-        where: { id },
+        // Same version and status as read above, or as last seen by the client.
+        where: { id, version: dto.expectedVersion ?? consultation.version, status: consultation.status },
         data: {
           chiefComplaint: dto.chiefComplaint ?? consultation.chiefComplaint,
           clinicalSummary:
@@ -800,7 +819,7 @@ export class ConsultationsService {
       });
 
       return { updated, materialized };
-    });
+    }));
 
     // Les notifications sont des effets externes : on les émet uniquement
     // après le commit. Une transaction annulée ne doit jamais annoncer une

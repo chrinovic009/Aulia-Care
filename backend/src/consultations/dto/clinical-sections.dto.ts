@@ -1,8 +1,15 @@
+import { Type } from 'class-transformer';
 import { ConsultationStatus } from '@prisma/client';
-import { IsBoolean, IsEnum, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsObject, IsOptional, IsString, MaxLength, IsInt, Min } from 'class-validator';
 
 /** Bounded contract for the consultation editor; unknown top-level fields are rejected. */
 export class ClinicalSectionsDto {
+  /** Version the client last saw: the write is refused (409) if someone saved since. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  expectedVersion?: number;
   @IsOptional() @IsString() @MaxLength(2_000) chiefComplaint?: string;
   @IsOptional() @IsObject() medicalHistory?: Record<string, unknown>;
   @IsOptional() @IsObject() currentSymptoms?: Record<string, unknown>;
