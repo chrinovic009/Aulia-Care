@@ -1,7 +1,18 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { NotificationPriority, NotificationType, RoleSlug } from '@prisma/client';
+import { NotificationPriority, NotificationType, Prisma, RoleSlug } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from './notifications.gateway';
+
+type CareWorkflowPayload = {
+  careUnitId?: string | null;
+  recipientUserIds?: string[];
+  excludeUserId?: string;
+  patientId?: string | null;
+  title: string;
+  message: string;
+  relatedEntity: string;
+  relatedId: string;
+};
 
 type PrescriptionRoutingPayload = {
   patientId: string;
@@ -68,7 +79,15 @@ export class NotificationOutboxService implements OnModuleInit, OnModuleDestroy 
     try {
       const notifications = await this.prisma.$transaction(async (tx) => {
         const event = await tx.notificationOutbox.findUniqueOrThrow({ where: { id: eventId } });
-        if (event.eventType !== 'PRESCRIPTION_ROUTING') return [];
+        if (event.eventType === 'CARE_WORKFLOW') return this.deliverCareWorkflow(tx, event);
+        if (event.eventType !== 'PRESCRIPTION_ROUTING') {
+          // Never leave an unknown event cycling between PENDING and PROCESSING.
+          await tx.notificationOutbox.update({
+            where: { id: event.id },
+            data: { status: 'FAILED', processedAt: new Date(), lastError: `Type d'événement non pris en charge : ${event.eventType}` },
+          });
+          return [];
+        }
         const payload = event.payload as unknown as PrescriptionRoutingPayload;
         const targetRole = payload.covered ? RoleSlug.PHARMACIST : RoleSlug.CASHIER;
         const recipients = await tx.user.findMany({
@@ -135,5 +154,50 @@ export class NotificationOutboxService implements OnModuleInit, OnModuleDestroy 
       });
       this.logger.warn(`Notification outbox event ${eventId} will be retried.`);
     }
+  }
+
+  /**
+   * Care Workflow Engine notification: explicit recipients and/or every active
+   * member of the target unit, never the author of the action.
+   */
+  private async deliverCareWorkflow(
+    tx: Prisma.TransactionClient,
+    event: { id: string; clinicId: string; payload: Prisma.JsonValue },
+  ) {
+    const payload = event.payload as unknown as CareWorkflowPayload;
+    const now = new Date();
+    const unitMembers = payload.careUnitId
+      ? (await tx.careUnitAssignment.findMany({
+        where: {
+          careUnitId: payload.careUnitId, clinicId: event.clinicId, active: true,
+          unitRole: { in: ['MEMBER', 'LEAD'] }, startsAt: { lte: now },
+          OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+        },
+        select: { userId: true },
+      })).map((assignment) => assignment.userId)
+      : [];
+    const candidates = [...new Set([...(payload.recipientUserIds ?? []), ...unitMembers])]
+      .filter((userId) => userId && userId !== payload.excludeUserId);
+    const recipients = candidates.length
+      ? await tx.user.findMany({
+        where: { id: { in: candidates }, clinicId: event.clinicId, status: 'ACTIVE', deletedAt: null },
+        select: { id: true },
+      })
+      : [];
+    const persisted = [];
+    for (const { id: recipientId } of recipients) {
+      persisted.push(await tx.notification.upsert({
+        where: { outboxEventId_recipientId: { outboxEventId: event.id, recipientId } },
+        create: {
+          outboxEventId: event.id, recipientId, patientId: payload.patientId ?? undefined,
+          type: NotificationType.TASK, priority: NotificationPriority.MEDIUM,
+          title: payload.title.slice(0, 255), message: payload.message,
+          relatedEntity: payload.relatedEntity, relatedId: payload.relatedId,
+        },
+        update: {},
+      }));
+    }
+    await tx.notificationOutbox.update({ where: { id: event.id }, data: { status: 'DELIVERED', processedAt: new Date() } });
+    return persisted;
   }
 }

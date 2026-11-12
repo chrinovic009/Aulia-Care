@@ -13,4 +13,7 @@ cmd /c "git show ${baseRef}:backend/prisma/schema.prisma > `"$base`""
 npx prisma validate --schema backend/prisma/schema.prisma
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 npx prisma migrate diff --from-schema-datamodel $base --to-schema-datamodel backend/prisma/schema.prisma --script --output (Join-Path $out 'migration.sql')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# Regenerate the client so typecheck and tests see the current schema.
+npx prisma generate --schema backend/prisma/schema.prisma
 exit $LASTEXITCODE
