@@ -129,6 +129,13 @@ export class AssignTaskDto extends VersionedDto {
 
 // --------------------------------------------------------------------------- events
 
+/** Optional change of the stay applied in the same transaction as the event (e.g. triage → waiting room). */
+export class EpisodeProgressDto extends VersionedDto {
+  @IsOptional() @IsString() @MaxLength(64) stage?: string;
+  @IsOptional() @IsIn(CARE_PRIORITIES) priority?: (typeof CARE_PRIORITIES)[number];
+  @IsOptional() @IsString() @MaxLength(120) locationLabel?: string;
+}
+
 export class RecordCareEventDto {
   @IsUUID() careUnitId: string;
   @IsOptional() @IsUUID() patientId?: string;
@@ -140,6 +147,29 @@ export class RecordCareEventDto {
   @IsOptional() @IsObject() payload?: Record<string, unknown>;
   @IsOptional() @IsDateString() occurredAt?: string;
   @IsOptional() @IsBoolean() requiresValidation?: boolean;
+  @IsOptional() @ValidateNested() @Type(() => EpisodeProgressDto) episodeUpdate?: EpisodeProgressDto;
+}
+
+// --------------------------------------------------------------------------- arrivals & identity
+export class ProvisionalIdentityDto {
+  @IsIn(['MALE', 'FEMALE', 'OTHER', 'UNKNOWN']) gender: 'MALE' | 'FEMALE' | 'OTHER' | 'UNKNOWN';
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) estimatedAgeYears?: number;
+  /** Distinctive signs that help identify the person later (clothing, scars, place found...). */
+  @IsOptional() @IsString() @MaxLength(500) description?: string;
+}
+
+export class RegisterArrivalDto {
+  @IsOptional() @IsUUID() patientId?: string;
+  @IsOptional() @ValidateNested() @Type(() => ProvisionalIdentityDto) provisional?: ProvisionalIdentityDto;
+  @IsOptional() @IsString() @MaxLength(REASON_MAX) reason?: string;
+  @IsOptional() @IsString() @MaxLength(64) arrivalMode?: string;
+  @IsOptional() @IsString() @MaxLength(120) locationLabel?: string;
+  @IsOptional() @IsDateString() arrivedAt?: string;
+}
+
+export class MergeProvisionalPatientDto {
+  @IsUUID() targetPatientId: string;
+  @IsString() @MinLength(10) @MaxLength(REASON_MAX) reason: string;
 }
 
 export class CorrectCareEventDto {

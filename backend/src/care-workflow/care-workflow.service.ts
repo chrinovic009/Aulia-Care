@@ -27,8 +27,11 @@ import {
   ChangeTaskStatusDto,
   CorrectCareEventDto,
   CreateServiceRequestDto,
+  CARE_PRIORITIES as CARE_PRIORITY_VALUES,
   DecideTransferDto,
+  MergeProvisionalPatientDto,
   OpenEpisodeDto,
+  RegisterArrivalDto,
   RecordCareEventDto,
   SendTransferDto,
   UpdateEpisodeDto,
@@ -195,10 +198,15 @@ export class CareWorkflowService {
   worklist(careUnitId: string, actorInput?: AuthenticatedActor) {
     return this.run(actorInput, async (tx, actor) => {
       const { unit, unitRole } = await this.access.requireUnit(tx, actor, careUnitId, 'read');
-      const [episodes, tasks, incomingTransfers, incomingRequests] = await Promise.all([
+      const [episodes, tasks, incomingTransfers, incomingRequests, outgoingRequests] = await Promise.all([
         tx.careEpisode.findMany({
           where: { clinicId: actor.clinicId, careUnitId, status: { in: [...OPEN_EPISODE] } },
-          include: { patient: patientSummary, responsible: userSummary },
+          include: {
+            patient: patientSummary,
+            responsible: userSummary,
+            // Latest triage documented by a professional (the engine never computes one).
+            events: { where: { type: 'TRIAGE' }, select: { id: true, payload: true, occurredAt: true }, orderBy: { occurredAt: 'desc' }, take: 1 },
+          },
           orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
           take: 300,
         }),
@@ -220,8 +228,21 @@ export class CareWorkflowService {
           orderBy: [{ priority: 'desc' }, { authoredAt: 'asc' }],
           take: 300,
         }),
+        // What this unit asked of others and is still waiting for (or has to review).
+        tx.serviceRequest.findMany({
+          where: { clinicId: actor.clinicId, requesterUnitId: careUnitId, status: { in: ['DRAFT', 'ACTIVE', 'ON_HOLD'] } },
+          include: {
+            patient: patientSummary,
+            requester: userSummary,
+            performerUnit: { select: { id: true, name: true } },
+            tasks: { select: { id: true, status: true, version: true }, orderBy: { createdAt: 'desc' } },
+            events: { where: { type: 'RESULT_REVIEWED' }, select: { id: true } },
+          },
+          orderBy: [{ priority: 'desc' }, { authoredAt: 'asc' }],
+          take: 300,
+        }),
       ]);
-      return { unit, unitRole, episodes, tasks, incomingTransfers, incomingRequests, generatedAt: new Date().toISOString() };
+      return { unit, unitRole, episodes, tasks, incomingTransfers, incomingRequests, outgoingRequests, generatedAt: new Date().toISOString() };
     });
   }
 
@@ -235,7 +256,13 @@ export class CareWorkflowService {
           patient: patientSummary,
           careUnit: { select: { id: true, name: true, kind: true, settings: true } },
           responsible: userSummary,
-          requests: { include: { performerUnit: { select: { id: true, name: true } } }, orderBy: { authoredAt: 'desc' } },
+          requests: {
+            include: {
+              performerUnit: { select: { id: true, name: true } },
+              tasks: { select: { id: true, status: true, version: true }, orderBy: { createdAt: 'desc' } },
+            },
+            orderBy: { authoredAt: 'desc' },
+          },
           tasks: { include: { owner: userSummary }, orderBy: { createdAt: 'desc' } },
           events: { include: { author: userSummary }, orderBy: [{ occurredAt: 'asc' }, { recordedAt: 'asc' }] },
           transfersOut: { include: { toUnit: { select: { id: true, name: true } } } },
@@ -661,15 +688,59 @@ export class CareWorkflowService {
       if (dto.type === ENTERED_IN_ERROR_EVENT) {
         throw new BadRequestException('Utilisez la correction d’un événement pour le déclarer saisi en erreur.');
       }
+      let episodeChanges: Record<string, unknown> | null = null;
+      if (dto.episodeUpdate) {
+        if (!dto.episodeId) throw new BadRequestException('Une mise à jour de prise en charge exige la prise en charge concernée.');
+        episodeChanges = await this.progressEpisode(tx, actor, unit, dto.episodeId, dto.episodeUpdate);
+      }
+      const payload = episodeChanges
+        ? ({ ...(dto.payload ?? {}), episodeChanges } as Prisma.InputJsonValue)
+        : (dto.payload as Prisma.InputJsonValue | undefined);
       return this.recordEvent(tx, actor, {
         careUnitId: unit.id, patientId, episodeId: dto.episodeId, requestId: dto.requestId, taskId: dto.taskId,
         type: dto.type,
         summary: dto.summary.trim(),
-        payload: dto.payload as Prisma.InputJsonValue | undefined,
+        payload,
         occurredAt: this.occurredAt(dto.occurredAt),
         requiresValidation: dto.requiresValidation ?? false,
       });
     });
+  }
+
+  /** Stage / priority / location change carried by an event, under optimistic versioning. */
+  private async progressEpisode(
+    tx: Db,
+    actor: OperationalClinicActor,
+    unit: { id: string; settings: Prisma.JsonValue | null },
+    episodeId: string,
+    update: { version: number; stage?: string; priority?: (typeof CARE_PRIORITY_VALUES)[number]; locationLabel?: string },
+  ) {
+    const episode = await this.findEpisode(tx, actor, episodeId);
+    const data: Prisma.CareEpisodeUncheckedUpdateManyInput = {};
+    const changes: Record<string, unknown> = {};
+    if (update.stage !== undefined && update.stage !== episode.stage) {
+      const stages = (unit.settings as { stages?: unknown } | null)?.stages;
+      if (Array.isArray(stages) && stages.length && !stages.includes(update.stage)) {
+        throw new BadRequestException(`Étape « ${update.stage} » non prévue par la configuration de l’unité.`);
+      }
+      data.stage = update.stage;
+      changes.stage = { from: episode.stage, to: update.stage };
+    }
+    if (update.priority && update.priority !== episode.priority) {
+      data.priority = update.priority;
+      changes.priority = { from: episode.priority, to: update.priority };
+    }
+    if (update.locationLabel !== undefined && (update.locationLabel.trim() || null) !== episode.locationLabel) {
+      data.locationLabel = update.locationLabel.trim() || null;
+      changes.locationLabel = { from: episode.locationLabel, to: data.locationLabel };
+    }
+    if (!Object.keys(changes).length) return null;
+    const updated = await tx.careEpisode.updateMany({
+      where: { id: episodeId, clinicId: actor.clinicId, version: update.version, status: { in: [...OPEN_EPISODE] } },
+      data: { ...data, version: { increment: 1 } },
+    });
+    this.conflictIfStale(updated.count);
+    return changes;
   }
 
   correctCareEvent(id: string, dto: CorrectCareEventDto, actorInput?: AuthenticatedActor) {
@@ -874,6 +945,196 @@ export class CareWorkflowService {
         relatedEntity: 'CareTransfer', relatedId: id,
       });
       return tx.careTransfer.findFirstOrThrow({ where: { id } });
+    });
+  }
+
+  // ======================================================================= directory, arrivals, identity
+
+  /** Active units of the establishment, to address a request or a hand-off. */
+  clinicUnits(actorInput?: AuthenticatedActor) {
+    return this.access.actor(actorInput).then((actor) =>
+      this.prisma.careUnit.findMany({
+        where: { clinicId: actor.clinicId, active: true },
+        select: { id: true, kind: true, code: true, name: true },
+        orderBy: { name: 'asc' },
+      }));
+  }
+
+  /** Quick identity search, restricted to people who belong to at least one care unit. */
+  searchPatients(query: string, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const term = query?.trim() ?? '';
+      if (term.length < 2) return [];
+      const now = new Date();
+      const assigned = await tx.careUnitAssignment.count({
+        where: { userId: actor.id, active: true, startsAt: { lte: now }, OR: [{ endsAt: null }, { endsAt: { gt: now } }] },
+      });
+      if (!assigned) throw new ForbiddenException('Vous n’êtes affecté à aucune unité de soins.');
+      const words = term.split(/\s+/).slice(0, 3);
+      return tx.patient.findMany({
+        where: {
+          clinicId: actor.clinicId,
+          deletedAt: null,
+          identityStatus: { not: 'MERGED' },
+          AND: words.map((word) => ({
+            OR: [
+              { firstName: { contains: word, mode: 'insensitive' as const } },
+              { lastName: { contains: word, mode: 'insensitive' as const } },
+              { middleName: { contains: word, mode: 'insensitive' as const } },
+              { phone: { contains: word } },
+              { externalId: { contains: word, mode: 'insensitive' as const } },
+            ],
+          })),
+        },
+        select: { ...patientSummary.select, middleName: true, externalId: true, phone: true },
+        orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+        take: 20,
+      });
+    });
+  }
+
+  /** Stays of the unit closed during the last days. */
+  unitHistory(careUnitId: string, days: number, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      await this.access.requireUnit(tx, actor, careUnitId, 'read');
+      const span = Math.min(Math.max(Math.trunc(days) || 7, 1), 90);
+      return tx.careEpisode.findMany({
+        where: {
+          clinicId: actor.clinicId,
+          careUnitId,
+          status: { in: ['COMPLETED', 'CANCELLED', 'ENTERED_IN_ERROR'] },
+          endedAt: { gte: new Date(Date.now() - span * 86_400_000) },
+        },
+        include: { patient: patientSummary, responsible: userSummary },
+        orderBy: { endedAt: 'desc' },
+        take: 500,
+      });
+    });
+  }
+
+  /**
+   * Arrival in a unit: an existing record, or a provisional identity when the
+   * person cannot be identified. Never a second record for a known patient.
+   */
+  registerArrival(careUnitId: string, dto: RegisterArrivalDto, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const { unit } = await this.access.requireUnit(tx, actor, careUnitId, 'write');
+      if (!!dto.patientId === !!dto.provisional) {
+        throw new BadRequestException('Choisissez un dossier existant ou une identité provisoire (pas les deux).');
+      }
+      const arrivedAt = this.occurredAt(dto.arrivedAt);
+      let patientId = dto.patientId ?? null;
+      if (patientId) {
+        await this.access.requirePatient(tx, actor, patientId);
+      } else {
+        const provisional = dto.provisional!;
+        const year = new Date().getUTCFullYear() - (provisional.estimatedAgeYears ?? 0);
+        const stamp = arrivedAt.toISOString().slice(0, 16).replace(/[-:T]/g, '');
+        const created = await tx.patient.create({
+          data: {
+            clinicId: actor.clinicId,
+            firstName: 'Inconnu',
+            lastName: `${unit.code}-${stamp}-${randomUUID().slice(0, 4).toUpperCase()}`,
+            gender: provisional.gender,
+            dateOfBirth: new Date(Date.UTC(provisional.estimatedAgeYears === undefined ? 1900 : year, 0, 1)),
+            dateOfBirthEstimated: true,
+            identityStatus: 'PROVISIONAL',
+          },
+          select: { id: true },
+        });
+        patientId = created.id;
+      }
+      const existing = await tx.careEpisode.findFirst({
+        where: { clinicId: actor.clinicId, careUnitId: unit.id, patientId, status: { in: [...OPEN_EPISODE] } },
+        select: { id: true },
+      });
+      if (existing) throw new ConflictException('Ce patient est déjà présent dans cette unité.');
+      const stages = (unit.settings as { stages?: unknown } | null)?.stages;
+      const firstStage = Array.isArray(stages) && typeof stages[0] === 'string' ? (stages[0] as string) : 'ARRIVAL';
+      const episode = await tx.careEpisode.create({
+        data: {
+          clinicId: actor.clinicId,
+          patientId,
+          careUnitId: unit.id,
+          status: 'IN_PROGRESS',
+          stage: firstStage,
+          priority: 'ROUTINE',
+          reason: dto.reason?.trim() || null,
+          locationLabel: dto.locationLabel?.trim() || null,
+          startedAt: arrivedAt,
+          createdById: actor.id,
+        },
+      });
+      await this.recordEvent(tx, actor, {
+        careUnitId: unit.id, patientId, episodeId: episode.id,
+        type: 'ARRIVAL',
+        summary: dto.provisional ? `Arrivée sous identité provisoire dans l’unité ${unit.name}.` : `Arrivée dans l’unité ${unit.name}.`,
+        payload: {
+          arrivalMode: dto.arrivalMode ?? null,
+          reason: dto.reason ?? null,
+          provisional: dto.provisional ? { ...dto.provisional } : null,
+        } as Prisma.InputJsonValue,
+        occurredAt: arrivedAt,
+      });
+      return tx.careEpisode.findFirstOrThrow({ where: { id: episode.id }, include: { patient: patientSummary } });
+    });
+  }
+
+  /**
+   * Attaches a provisional record to the person's definitive record once
+   * identified. Events stay immutable on the provisional record and are shown
+   * in the definitive record's chronology; open work moves to it.
+   */
+  mergeProvisionalPatient(provisionalId: string, dto: MergeProvisionalPatientDto, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      if (provisionalId === dto.targetPatientId) throw new BadRequestException('Choisissez un autre dossier.');
+      const [provisional, target] = await Promise.all([
+        tx.patient.findFirst({ where: { id: provisionalId, clinicId: actor.clinicId, deletedAt: null }, select: { id: true, identityStatus: true } }),
+        tx.patient.findFirst({ where: { id: dto.targetPatientId, clinicId: actor.clinicId, deletedAt: null }, select: { id: true, identityStatus: true, firstName: true, lastName: true } }),
+      ]);
+      if (!provisional || !target) throw new NotFoundException('Dossier introuvable dans votre établissement.');
+      if (provisional.identityStatus !== 'PROVISIONAL') throw new ConflictException('Seul un dossier provisoire peut être rattaché.');
+      if (target.identityStatus === 'MERGED') throw new ConflictException('Le dossier cible est lui-même fusionné.');
+
+      const openEpisodes = await tx.careEpisode.findMany({
+        where: { clinicId: actor.clinicId, patientId: provisionalId, status: { in: [...OPEN_EPISODE] } },
+        select: { id: true, careUnitId: true },
+      });
+      if (!openEpisodes.length) throw new ForbiddenException('Le rattachement se fait depuis l’unité qui prend le patient en charge.');
+      let writable = false;
+      for (const episode of openEpisodes) {
+        const role = await this.access.activeUnitRole(tx, actor.id, episode.careUnitId);
+        if (role === 'MEMBER' || role === 'LEAD') writable = true;
+      }
+      if (!writable) throw new ForbiddenException('Vous devez agir dans une unité qui prend ce patient en charge.');
+      const clash = await tx.careEpisode.findFirst({
+        where: {
+          clinicId: actor.clinicId, patientId: target.id, status: { in: [...OPEN_EPISODE] },
+          careUnitId: { in: openEpisodes.map((episode) => episode.careUnitId) },
+        },
+        select: { id: true },
+      });
+      if (clash) throw new ConflictException('Le dossier définitif a déjà une prise en charge ouverte dans la même unité.');
+
+      const marked = await tx.patient.updateMany({
+        where: { id: provisionalId, identityStatus: 'PROVISIONAL' },
+        data: { identityStatus: 'MERGED', mergedIntoPatientId: target.id },
+      });
+      this.conflictIfStale(marked.count);
+      const moved = { clinicId: actor.clinicId, patientId: provisionalId };
+      await tx.careEpisode.updateMany({ where: { ...moved, status: { in: [...OPEN_EPISODE] } }, data: { patientId: target.id, version: { increment: 1 } } });
+      await tx.serviceRequest.updateMany({ where: { ...moved, status: { in: ['DRAFT', 'ACTIVE', 'ON_HOLD'] } }, data: { patientId: target.id } });
+      await tx.careTask.updateMany({ where: { ...moved, status: { in: OPEN_TASK } }, data: { patientId: target.id } });
+      await tx.careTransfer.updateMany({ where: { ...moved, status: { in: ['SENT', 'RECEIVED'] } }, data: { patientId: target.id } });
+      for (const episode of openEpisodes) {
+        await this.recordEvent(tx, actor, {
+          careUnitId: episode.careUnitId, patientId: target.id, episodeId: episode.id,
+          type: 'IDENTITY_MERGED',
+          summary: `Identité confirmée : dossier provisoire rattaché au dossier de ${target.firstName} ${target.lastName}.`,
+          payload: { provisionalPatientId: provisionalId, targetPatientId: target.id, reason: dto.reason.trim() },
+        });
+      }
+      return { mergedPatientId: provisionalId, targetPatientId: target.id, movedEpisodes: openEpisodes.length };
     });
   }
 }

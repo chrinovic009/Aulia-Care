@@ -23,6 +23,9 @@ const roleLabels: Record<RoleSlug, string> = {
   RADIOLOGIST: "Radiologue",
   SURGEON: "Chirurgien",
   ANESTHESIOLOGIST: "Anesthésiste",
+  MIDWIFE: "Sage-femme",
+  PARAMEDIC: "Ambulancier / secouriste",
+  DISPATCHER: "Régulation",
   PHARMACIST: "Pharmacie",
   PATIENT: "Patient",
   CASHIER: "Caissier",
@@ -136,7 +139,7 @@ const guideByRole: Record<RoleSlug, GuideDefinition> = {
   SURGEON: {
     title: "Chirurgien",
     description: "Pilotez les interventions, les blocs opératoires et les suivis postopératoires.",
-    route: "/surgery",
+    route: "/unites",
     tabs: ["Programme opératoire", "Patients", "Planning", "Résultats"],
     workflow: [
       "Confirmez les interventions prévues et les disponibilités de salle.",
@@ -147,13 +150,46 @@ const guideByRole: Record<RoleSlug, GuideDefinition> = {
   ANESTHESIOLOGIST: {
     title: "Anesthésiste",
     description: "Supervisez la préparation anesthésique et les consignes peropératoires.",
-    route: "/anesthesiologist",
+    route: "/unites",
     tabs: ["Planning", "Patients", "Suivi", "Messages"],
     workflow: [
       "Vérifiez les patients programmés et leurs risques anesthésiques.",
       "Validez les consignes et la préparation avant l’intervention.",
     ],
     tips: ["Mettez à jour les alertes de sécurité avant chaque procédure."],
+  },
+  MIDWIFE: {
+    title: "Sage-femme",
+    description: "Suivez les grossesses, le travail et les nouveau-nés de votre unité.",
+    route: "/unites",
+    tabs: ["Mes unités de soins", "File active", "Transmissions", "Historique"],
+    workflow: [
+      "Ouvrez votre unité depuis « Mes unités de soins » : vos droits viennent de votre affectation.",
+      "Documentez chaque acte dans le dossier du patient ; une erreur se déclare, elle ne s’efface pas.",
+    ],
+    tips: ["Sans réseau, les observations et constantes restent saisissables et partent au retour de la connexion."],
+  },
+  PARAMEDIC: {
+    title: "Ambulancier / secouriste",
+    description: "Prenez en charge les interventions et transmettez le bilan à l’unité qui accueille.",
+    route: "/unites",
+    tabs: ["Mes unités de soins", "File active", "Transmissions", "Historique"],
+    workflow: [
+      "Ouvrez votre unité depuis « Mes unités de soins » : vos droits viennent de votre affectation.",
+      "Documentez chaque acte dans le dossier du patient ; une erreur se déclare, elle ne s’efface pas.",
+    ],
+    tips: ["Sans réseau, les observations et constantes restent saisissables et partent au retour de la connexion."],
+  },
+  DISPATCHER: {
+    title: "Régulation",
+    description: "Recevez les appels, engagez les équipes et suivez les missions en cours.",
+    route: "/unites",
+    tabs: ["Mes unités de soins", "File active", "Transmissions", "Historique"],
+    workflow: [
+      "Ouvrez votre unité depuis « Mes unités de soins » : vos droits viennent de votre affectation.",
+      "Documentez chaque acte dans le dossier du patient ; une erreur se déclare, elle ne s’efface pas.",
+    ],
+    tips: ["Sans réseau, les observations et constantes restent saisissables et partent au retour de la connexion."],
   },
   PHARMACIST: {
     title: "Pharmacie",

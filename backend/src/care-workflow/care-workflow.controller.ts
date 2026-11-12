@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Request, UseFilters, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Request, UseFilters, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
@@ -12,7 +12,9 @@ import {
   CorrectCareEventDto,
   CreateServiceRequestDto,
   DecideTransferDto,
+  MergeProvisionalPatientDto,
   OpenEpisodeDto,
+  RegisterArrivalDto,
   RecordCareEventDto,
   SendTransferDto,
   UpdateEpisodeDto,
@@ -40,6 +42,31 @@ export class CareWorkflowController {
   @Get('my-units')
   myUnits(@Request() req: AuthedRequest) {
     return this.workflow.myUnits(req.user);
+  }
+
+  @Get('units')
+  units(@Request() req: AuthedRequest) {
+    return this.workflow.clinicUnits(req.user);
+  }
+
+  @Get('patients/search')
+  searchPatients(@Query('q') q: string, @Request() req: AuthedRequest) {
+    return this.workflow.searchPatients(q, req.user);
+  }
+
+  @Get('units/:unitId/history')
+  history(@Param('unitId', ParseUUIDPipe) unitId: string, @Query('days') days: string | undefined, @Request() req: AuthedRequest) {
+    return this.workflow.unitHistory(unitId, Number(days ?? 7), req.user);
+  }
+
+  @Post('units/:unitId/arrivals')
+  arrival(@Param('unitId', ParseUUIDPipe) unitId: string, @Body() dto: RegisterArrivalDto, @Request() req: AuthedRequest) {
+    return this.workflow.registerArrival(unitId, dto, req.user);
+  }
+
+  @Post('patients/:patientId/merge')
+  merge(@Param('patientId', ParseUUIDPipe) patientId: string, @Body() dto: MergeProvisionalPatientDto, @Request() req: AuthedRequest) {
+    return this.workflow.mergeProvisionalPatient(patientId, dto, req.user);
   }
 
   @Get('units/:unitId/worklist')

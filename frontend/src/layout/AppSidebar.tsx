@@ -170,6 +170,7 @@ const nurseNavItems: NavItem[] = [
     name: "Dashboard soins",
     path: "/nurse",
   },
+  { icon: <TaskIcon />, name: "Mes unités de soins", path: "/unites" },
   {
     icon: <UserCircleIcon />,
     name: "Patients assignés",
@@ -203,6 +204,7 @@ const doctorNavItems: NavItem[] = [
     name: "Dashboard médical",
     path: "/doctor",
   },
+  { icon: <TaskIcon />, name: "Mes unités de soins", path: "/unites" },
   {
     icon: <UserCircleIcon />,
     name: "Patients",
@@ -302,6 +304,7 @@ const radiologyNavItems: NavItem[] = [
 const administrationNavItems: NavItem[] = [
   { icon: <GridIcon />, name: "Dashboard admin", path: "/administration" },
   { icon: <UserCircleIcon />, name: "Personnel", path: "/administration/personnel" },
+  { icon: <TaskIcon />, name: "Unités de soins", path: "/administration/unites-soins" },
   { icon: <BoxCubeIcon />, name: "Services", path: "/administration/services" },
   { icon: <FolderIcon />, name: "Departements", path: "/administration/departements" },
   { icon: <CalenderIcon />, name: "Salles & lits", path: "/administration/salles" },
@@ -311,6 +314,10 @@ const administrationNavItems: NavItem[] = [
   { icon: <DocsIcon />, name: "Identité de l'hôpital", path: "/administration/identite" },
   { icon: <BoxCubeIcon />, name: "Montres Aulia", path: "/administration/montres", layers: ["CONNECTED"] },
   { icon: <LockIcon />, name: "Profil admin", path: "/administration/profile" },
+];
+
+const careUnitsNavItems: NavItem[] = [
+  { icon: <GridIcon />, name: "Mes unités de soins", path: "/unites" },
 ];
 
 const pharmacyNavItems: NavItem[] = [
@@ -403,6 +410,7 @@ const AppSidebar: React.FC = () => {
   const isLaboratorySection = location.pathname.startsWith("/laboratoire");
   const isSuperAdminSection = location.pathname.startsWith("/admin");
   const isDeveloperSection = location.pathname.startsWith("/dev");
+  const isCareUnitsSection = location.pathname.startsWith("/unites");
   const activeNavItems = isDoctorSection
     ? doctorNavItems
     : isNurseSection
@@ -425,6 +433,8 @@ const AppSidebar: React.FC = () => {
     ? superAdminNavItems
     : isDeveloperSection
     ? developerNavItems
+    : isCareUnitsSection
+    ? careUnitsNavItems
     : navItems;
   const visibleNavItems = activeNavItems;
   const [lockedItem, setLockedItem] = useState<NavItem | null>(null);

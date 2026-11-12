@@ -20,6 +20,9 @@ export type RoleSlug =
   | "RADIOLOGIST"
   | "SURGEON"
   | "ANESTHESIOLOGIST"
+  | "MIDWIFE"
+  | "PARAMEDIC"
+  | "DISPATCHER"
   | "PHARMACIST"
   | "FINANCE"
   | "PATIENT"
@@ -163,6 +166,9 @@ const knownRoles = new Set<RoleSlug>([
   "RADIOLOGIST",
   "SURGEON",
   "ANESTHESIOLOGIST",
+  "MIDWIFE",
+  "PARAMEDIC",
+  "DISPATCHER",
   "PHARMACIST",
   "FINANCE",
   "PATIENT",
@@ -198,8 +204,12 @@ export function getRedirectPath(role: RoleSlug) {
     LAB_TECHNICIAN: "/laboratoire",
     LAB_MANAGER: "/laboratoire",
     RADIOLOGIST: "/radiologie",
-    SURGEON: "/surgery",
-    ANESTHESIOLOGIST: "/anesthesiologist",
+    // Unit-based professions work from their care units.
+    SURGEON: "/unites",
+    ANESTHESIOLOGIST: "/unites",
+    MIDWIFE: "/unites",
+    PARAMEDIC: "/unites",
+    DISPATCHER: "/unites",
     PHARMACIST: "/pharmacie",
     PATIENT: "/patient",
     ADMIN: "/administration",
@@ -220,8 +230,11 @@ export function getGuidePath(role: RoleSlug) {
     LAB_TECHNICIAN: "/laboratoire/guide",
     LAB_MANAGER: "/laboratoire/guide",
     RADIOLOGIST: "/radiologie/guide",
-    SURGEON: "/surgery/guide",
-    ANESTHESIOLOGIST: "/anesthesiologist/guide",
+    SURGEON: "/unites",
+    ANESTHESIOLOGIST: "/unites",
+    MIDWIFE: "/unites",
+    PARAMEDIC: "/unites",
+    DISPATCHER: "/unites",
     PHARMACIST: "/pharmacie/guide",
     PATIENT: "/guide",
     ADMIN: "/administration/guide",

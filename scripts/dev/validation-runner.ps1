@@ -11,6 +11,8 @@ $results = Join-Path $root '.validation\results'
 New-Item -ItemType Directory -Force $requests, $results | Out-Null
 $validate = Join-Path $root 'scripts\dev\validate.ps1'
 $allowed = @('lint','typecheck','unit','integration','e2e','build','prisma')
+$demoScript = Join-Path $root 'scripts\dev\demo.ps1'
+# 'demo' / 'demo-stop' run alone: local servers for a manual browser test.
 
 Write-Host "Aulia validation runner : en attente de .validation\requests\*.txt (Ctrl+C pour arreter)"
 while ($true) {
@@ -20,6 +22,13 @@ while ($true) {
     $steps = ((Get-Content $file.FullName -Raw) -replace '\s', '').Trim(',')
     Remove-Item $file.FullName -Force
     $resultFile = Join-Path $results "$id.txt"
+    if ($steps -eq 'demo' -or $steps -eq 'demo-stop') {
+      Write-Host "=== $(Get-Date -Format T) [$id] : $steps"
+      $action = if ($steps -eq 'demo') { 'start' } else { 'stop' }
+      & powershell -NoProfile -ExecutionPolicy Bypass -File $demoScript -Action $action
+      [IO.File]::WriteAllText($resultFile, "DONE code=$LASTEXITCODE run=demo finished=$(Get-Date -Format o)")
+      continue
+    }
     $invalid = @($steps -split ',' | Where-Object { $_ -and ($allowed -notcontains $_) })
     if ($invalid.Count -gt 0) {
       [IO.File]::WriteAllText($resultFile, "REFUSED etapes inconnues: $($invalid -join ',')")

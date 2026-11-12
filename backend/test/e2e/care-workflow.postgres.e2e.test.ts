@@ -121,6 +121,36 @@ test('PostgreSQL : Care Workflow Engine, de la demande à l’exécution et au t
     const timeline = await engine.patientTimeline(patient.id, surg);
     assert.ok(timeline.some((event) => event.type === 'TRANSFER_ACCEPTED'));
     await assert.rejects(() => engine.patientTimeline(patient.id, { userId: outsiderNurse.id }), ForbiddenException);
+
+    // 10. Unidentified arrival: a provisional record, triaged in one atomic step, then attached to the real record.
+    const arrival = await engine.registerArrival(emergency.id, { provisional: { gender: 'MALE', estimatedAgeYears: 40, description: 'Veste bleue' }, arrivalMode: 'AMBULANCE' }, doc);
+    assert.equal(arrival.patient.identityStatus, 'PROVISIONAL');
+    assert.equal(arrival.patient.dateOfBirthEstimated, true);
+    await assert.rejects(() => engine.registerArrival(emergency.id, { patientId: arrival.patientId }, doc), ConflictException);
+    await engine.recordCareEvent({
+      careUnitId: emergency.id, episodeId: arrival.id, type: 'TRIAGE', summary: 'Tri : niveau 2',
+      payload: { level: '2' }, episodeUpdate: { version: arrival.version, stage: 'WAITING', priority: 'ASAP' },
+    }, doc);
+    const triaged = await prisma.careEpisode.findUniqueOrThrow({ where: { id: arrival.id } });
+    assert.equal(triaged.stage, 'WAITING');
+    assert.equal(triaged.priority, 'ASAP');
+    // A stale version is refused and the event is not kept.
+    await assert.rejects(() => engine.recordCareEvent({
+      careUnitId: emergency.id, episodeId: arrival.id, type: 'TRIAGE', summary: 'Tri concurrent', episodeUpdate: { version: arrival.version, priority: 'STAT' },
+    }, doc), ConflictException);
+    assert.equal(await prisma.careEvent.count({ where: { episodeId: arrival.id, type: 'TRIAGE' } }), 1);
+    const found = await engine.searchPatients(`Flux ${suffix}`, doc);
+    assert.deepEqual(found.map((item) => item.id), [patient.id]);
+    await assert.rejects(() => engine.searchPatients('Flux', { userId: outsiderNurse.id }), ForbiddenException);
+    await assert.rejects(() => engine.mergeProvisionalPatient(arrival.patientId, { targetPatientId: patient.id, reason: 'Identifié par sa famille' }, surg), ForbiddenException);
+    const merged = await engine.mergeProvisionalPatient(arrival.patientId, { targetPatientId: patient.id, reason: 'Identifié par sa famille' }, doc);
+    assert.equal(merged.movedEpisodes, 1);
+    assert.equal((await prisma.careEpisode.findUniqueOrThrow({ where: { id: arrival.id } })).patientId, patient.id);
+    assert.equal((await prisma.patient.findUniqueOrThrow({ where: { id: arrival.patientId } })).identityStatus, 'MERGED');
+    const mergedTimeline = await engine.patientTimeline(patient.id, doc);
+    assert.ok(mergedTimeline.some((event) => event.type === 'ARRIVAL'), 'events of the provisional record appear in the definitive chronology');
+    await assert.rejects(() => engine.registerArrival(emergency.id, { patientId: arrival.patientId }, doc), ForbiddenException);
+    assert.ok((await engine.unitHistory(emergency.id, 7, doc)).some((item) => item.id === episode.id));
   } finally {
     if (clinicIds.length) {
       // Test teardown only: the insert-only trigger is lifted for this isolated database.
@@ -137,6 +167,7 @@ test('PostgreSQL : Care Workflow Engine, de la demande à l’exécution et au t
         await prisma.careUnit.deleteMany({ where });
         await prisma.notification.deleteMany({ where: { outboxEvent: { clinicId: { in: clinicIds } } } });
         await prisma.notificationOutbox.deleteMany({ where });
+        await prisma.patient.updateMany({ where, data: { mergedIntoPatientId: null } });
         await prisma.patient.deleteMany({ where });
         await prisma.user.deleteMany({ where });
         await prisma.clinic.deleteMany({ where: { id: { in: clinicIds } } });
