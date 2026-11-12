@@ -318,6 +318,7 @@ const pharmacyNavItems: NavItem[] = [
   { icon: <TaskIcon />, name: "Delivrance", path: "/pharmacie/delivrance" },
   { icon: <FolderIcon />, name: "Historique", path: "/pharmacie/historique" },
   { icon: <BoxCubeIcon />, name: "Stock", path: "/pharmacie/stock" },
+  { icon: <LockIcon />, name: "Sécurité de prescription", path: "/pharmacie/securite" },
   { icon: <ChatIcon />, name: "Messages", path: "/pharmacie/messages" },
   { icon: <LockIcon />, name: "Profil pharmacie", path: "/pharmacie/profile" },
 ];

@@ -58,11 +58,18 @@ test('PostgreSQL RLS : un code qui oublie le filtre d’établissement ne voit e
     const updated = await asDoctorA(() => prisma.patient.update({ where: { id: patientA.id }, data: { city: 'Kolwezi' } }));
     assert.equal(updated.city, 'Kolwezi');
 
+    // The prescription safety rules of another establishment never apply here.
+    const ruleB = await prisma.drugInteractionRule.create({
+      data: { clinicId: clinicB.id, substanceA: `subst-a-${suffix}`, substanceB: `subst-b-${suffix}`, severity: 'MAJOR', effect: 'test', source: 'e2e', status: 'ACTIVE', proposedById: doctorA.id },
+    });
+    assert.deepEqual(await asDoctorA(() => prisma.drugInteractionRule.findMany({ where: { id: ruleB.id } })), []);
+
     // Outside an authenticated request (login, background jobs), no filter applies.
     assert.equal(await prisma.patient.count({ where: sameSuffix }), 2);
   } finally {
     if (clinicIds.length) {
       const where = { clinicId: { in: clinicIds } };
+      await prisma.drugInteractionRule.deleteMany({ where }).catch(() => undefined);
       await prisma.patient.deleteMany({ where }).catch(() => undefined);
       await prisma.user.deleteMany({ where }).catch(() => undefined);
       await prisma.clinic.deleteMany({ where: { id: { in: clinicIds } } }).catch(() => undefined);

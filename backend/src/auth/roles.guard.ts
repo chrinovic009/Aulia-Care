@@ -20,7 +20,7 @@ const isLabManager = (user: RequestActor) => {
 /** Institution Super Admin is not a care-team role. Administrative and
  * financial dashboards stay available, while direct patient-care endpoints
  * require the operational role explicitly assigned to the human actor. */
-const isDirectClinicalRoute = (path: string) => /^\/api\/(patients|consultations|hospitalizations|laboratory|imaging|pharmacy|surgery|care-workflow)(?:\/|$)/.test(path.split('?')[0]);
+const isDirectClinicalRoute = (path: string) => /^\/api\/(patients|consultations|hospitalizations|laboratory|imaging|pharmacy|surgery|care-workflow|clinical-safety)(?:\/|$)/.test(path.split('?')[0]);
 
 @Injectable()
 export class RolesGuard implements CanActivate {

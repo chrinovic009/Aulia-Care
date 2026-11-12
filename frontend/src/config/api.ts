@@ -381,12 +381,16 @@ export const apiFetch = async <T = any>(
           : response.statusText ||
             `Erreur HTTP ${response.status}`;
 
-      reportApiFailure(
-        endpoint,
-        method,
-        message,
-        response.status,
-      );
+      // Prescription safety alerts are shown by their own dialog, with the
+      // justification field, not by the generic failure notice.
+      if (errorData?.code !== "PRESCRIPTION_SAFETY_ALERTS") {
+        reportApiFailure(
+          endpoint,
+          method,
+          message,
+          response.status,
+        );
+      }
 
       throw new ApiError(
         `API Error: ${response.status} - ${message}`,

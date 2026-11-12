@@ -185,6 +185,9 @@ model User {
   careEventsAuthored           CareEvent[]          @relation("CareEventAuthor")
   careTransfersSent            CareTransfer[]       @relation("CareTransferSender")
   careTransfersReceived        CareTransfer[]       @relation("CareTransferReceiver")
+  drugInteractionRulesProposed  DrugInteractionRule[]        @relation("DrugInteractionRuleProposer")
+  drugInteractionRulesValidated DrugInteractionRule[]        @relation("DrugInteractionRuleValidator")
+  prescriptionSafetyOverrides   PrescriptionSafetyOverride[] @relation("PrescriptionSafetyOverridePrescriber")
   @@index([primaryRole])
   @@index([clinicId])
 }
@@ -1025,6 +1028,7 @@ model Prescription {
   prescriber        User?              @relation("PrescriptionPrescriber", fields: [prescriberId], references: [id])
   lineItems         PrescriptionLine[]
 
+  safetyOverrides   PrescriptionSafetyOverride[]
   @@index([patientId, status])
   @@index([clinicId])
 }
@@ -1109,6 +1113,10 @@ model Medication {
   StockTransaction      StockTransaction[]
   salePrices            MedicationSalePrice[]
 
+  /// DCI (international non-proprietary name), filled in by the pharmacy; used by safety checks.
+  activeSubstance       String?
+  /// WHO ATC code (e.g. J01CA04), filled in by the pharmacy.
+  atcCode               String?
   @@index([categoryId])
 }
 
@@ -2168,6 +2176,8 @@ model Clinic {
   careTasks                CareTask[]
   careEvents               CareEvent[]
   careTransfers            CareTransfer[]
+  drugInteractionRules     DrugInteractionRule[]
+  prescriptionSafetyOverrides PrescriptionSafetyOverride[]
 }
 
 model PlatformLayerConfiguration {
@@ -4523,4 +4533,71 @@ model AuditLedger {
   @@index([clinicId, id])
   @@index([entity, entityId])
   @@index([actorId, occurredAt])
+}
+
+enum DrugInteractionSeverity {
+  MINOR
+  MODERATE
+  MAJOR
+  CONTRAINDICATED
+}
+
+enum DrugInteractionRuleStatus {
+  PROPOSED
+  ACTIVE
+  RETIRED
+}
+
+/// Interaction rule of one establishment. Aulia Care ships no clinical rule:
+/// each rule is proposed with its source and becomes active only once a second
+/// authorised professional validates it.
+model DrugInteractionRule {
+  id             String                    @id @default(uuid())
+  clinicId       String
+  /// Normalised DCI or ATC prefix of the first substance.
+  substanceA     String
+  substanceB     String
+  severity       DrugInteractionSeverity
+  effect         String
+  recommendation String?
+  /// Bibliographic or institutional source of the rule.
+  source         String
+  status         DrugInteractionRuleStatus @default(PROPOSED)
+  statusReason   String?
+  proposedById   String
+  validatedById  String?
+  validatedAt    DateTime?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  clinic      Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  proposedBy  User   @relation("DrugInteractionRuleProposer", fields: [proposedById], references: [id])
+  validatedBy User?  @relation("DrugInteractionRuleValidator", fields: [validatedById], references: [id])
+
+  @@unique([clinicId, substanceA, substanceB])
+  @@index([clinicId, status])
+}
+
+/// A safety alert (allergy, interaction) shown at prescription, and the
+/// prescriber's written justification when the prescription went ahead.
+model PrescriptionSafetyOverride {
+  id             String   @id @default(uuid())
+  clinicId       String
+  prescriptionId String
+  prescriberId   String
+  /// ALLERGY or INTERACTION.
+  kind           String
+  blocking       Boolean
+  severity       String
+  message        String
+  detail         Json?
+  reason         String?
+  createdAt      DateTime @default(now())
+
+  clinic       Clinic       @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Restrict)
+  prescriber   User         @relation("PrescriptionSafetyOverridePrescriber", fields: [prescriberId], references: [id])
+
+  @@index([prescriptionId])
+  @@index([clinicId, createdAt])
 }

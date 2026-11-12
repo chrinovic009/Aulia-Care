@@ -1446,7 +1446,7 @@ export default function DashboardMedecin() {
                           }
                         />
                       }
-                      prescriptionSlot={<ConsultationPrescriptionOrder ensureConsultation={ensureActiveConsultation} />}
+                      prescriptionSlot={<ConsultationPrescriptionOrder ensureConsultation={ensureActiveConsultation} patientId={selectedPatient?.id} />}
                     />
                   ) : !telehealthReady ? (
                     <div className="mt-4 rounded-xl border border-aulia-teal/25 bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-aulia-teal/10 dark:text-aulia-mist">

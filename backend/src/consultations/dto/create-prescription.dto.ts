@@ -17,6 +17,8 @@ export class CreatePrescriptionDto {
   @IsOptional() @IsString() @MaxLength(4_000) instruction?: string;
   @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => PrescriptionLineDto)
   lines: PrescriptionLineDto[];
+  /** Written justification to prescribe despite blocking safety alerts (allergy, major interaction). */
+  @IsOptional() @IsString() @MaxLength(2_000) safetyOverrideReason?: string;
 }
 
 /** A correction of a billed prescription. The original prescription stays immutable. */

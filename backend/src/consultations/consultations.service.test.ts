@@ -25,6 +25,61 @@ test('prescription rejects a missing clinic sale price without opening a transac
   assert.equal(transactionStarted, false);
 });
 
+const noSafetyFindings = {
+  allergy: { findMany: async () => [] },
+  drugInteractionRule: { findMany: async () => [] },
+  prescription: { findMany: async () => [] },
+};
+
+function prescribingService(options: { allergies: unknown[]; overrides?: Array<Record<string, unknown>>; onTransaction?: () => void }) {
+  const service = new ConsultationsService({
+    medication: { findMany: async () => [{ id: 'med-a', name: 'Médicament A', activeSubstance: 'substance alpha', atcCode: null, StockLot: [{ quantity: 10 }] }] },
+    medicationSalePrice: { findMany: async () => [{ medicationId: 'med-a', amount: new Prisma.Decimal('5.00') }] },
+    allergy: { findMany: async () => options.allergies },
+    drugInteractionRule: { findMany: async () => [] },
+    prescription: { findMany: async () => [] },
+    user: { findMany: async () => [] },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) => {
+      options.onTransaction?.();
+      return callback({
+        prescription: { create: async () => ({ id: 'prescription-a', version: 1 }) },
+        prescriptionSafetyOverride: { createMany: async (input: { data: Array<Record<string, unknown>> }) => { options.overrides?.push(...input.data); } },
+        invoice: { create: async (input: { data: Record<string, unknown> }) => ({ id: 'invoice-a', ...input.data }) },
+        invoiceLine: { create: async () => undefined },
+        subscriptionEmployee: { findFirst: async () => null },
+        medicalHistory: { create: async () => undefined },
+        notificationOutbox: { create: async () => undefined },
+      });
+    },
+  } as unknown as PrismaService, {} as NotificationsGateway, { transition: async () => undefined } as unknown as PatientWorkflowService);
+  Object.defineProperty(service, 'findOne', { value: async () => ({ providerId: 'doctor-a', clinicId: 'clinic-a', patientId: 'patient-a' }) });
+  Object.defineProperty(service, 'ensureWriteAccess', { value: async () => undefined });
+  return service;
+}
+
+test('a documented allergy blocks the prescription until it is justified in writing', async () => {
+  let transactionStarted = false;
+  const allergy = { id: 'allergy-a', substance: 'Substance Alpha', severity: 'SEVERE', reaction: 'oedème' };
+  const blocked = prescribingService({ allergies: [allergy], onTransaction: () => { transactionStarted = true; } });
+  await assert.rejects(
+    blocked.createPrescription('consultation-a', { lines: [{ medicationId: 'med-a', quantity: 1 }], safetyOverrideReason: 'court' } as CreatePrescriptionDto, 'doctor-a'),
+    (error: any) => error instanceof ConflictException && (error.getResponse() as any).code === 'PRESCRIPTION_SAFETY_ALERTS' && (error.getResponse() as any).alerts.length === 1,
+  );
+  assert.equal(transactionStarted, false);
+
+  const overrides: Array<Record<string, unknown>> = [];
+  const justified = prescribingService({ allergies: [allergy], overrides });
+  await justified.createPrescription(
+    'consultation-a',
+    { lines: [{ medicationId: 'med-a', quantity: 1 }], safetyOverrideReason: 'Désensibilisation sous surveillance, avis allergologue.' } as CreatePrescriptionDto,
+    'doctor-a',
+  );
+  assert.equal(overrides.length, 1);
+  assert.equal(overrides[0].kind, 'ALLERGY');
+  assert.equal(overrides[0].prescriberId, 'doctor-a');
+  assert.match(String(overrides[0].reason), /allergologue/);
+});
+
 test('prescription snapshots clinic sale price rather than stock purchase cost', async () => {
   const invoiceRows: Array<Record<string, unknown>> = [];
   const lineRows: Array<Record<string, unknown>> = [];
@@ -32,6 +87,7 @@ test('prescription snapshots clinic sale price rather than stock purchase cost',
   const service = new ConsultationsService({
     medication: { findMany: async () => [{ id: 'med-a', name: 'Médicament A', StockLot: [{ quantity: 10, purchasePrice: new Prisma.Decimal('1.00') }] }] },
     medicationSalePrice: { findMany: async () => [{ medicationId: 'med-a', amount: new Prisma.Decimal('12.35') }] },
+    ...noSafetyFindings,
     user: { findMany: async () => [] },
     $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
       prescription: { create: async () => ({ id: 'prescription-a', version: 1 }) },

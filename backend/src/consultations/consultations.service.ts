@@ -1,6 +1,7 @@
 // backend/src/consultations/consultations.services.ts
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus, PrescriptionReplacementFinancialHandling, Prisma, RoleSlug } from '@prisma/client';
+import { assertPrescribable, evaluateForPatient, overrideRows } from '../clinical-safety/prescription-safety.check';
 import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
@@ -2118,6 +2119,16 @@ export class ConsultationsService {
       return { ...line, quantity, unitPrice, medication };
     });
 
+    // Safety check against documented allergies, the establishment's validated
+    // interaction rules and treatments in progress. Blocking alerts need a
+    // written justification; every alert shown is kept with the prescription.
+    const safety = await evaluateForPatient(this.prisma as any, {
+      clinicId,
+      patientId: consultation.patientId,
+      prescribed: medications.map((item) => ({ id: item.id, name: item.name, activeSubstance: item.activeSubstance, atcCode: item.atcCode })),
+    });
+    const safetyReason = assertPrescribable(safety, dto.safetyOverrideReason);
+
     const total = enrichedLines.reduce(
       (sum: Prisma.Decimal, line: { unitPrice: Prisma.Decimal; quantity: number }) => sum.plus(line.unitPrice.times(line.quantity)),
       new Prisma.Decimal(0),
@@ -2146,6 +2157,17 @@ export class ConsultationsService {
         },
         include: { lineItems: { include: { medication: true } }, patient: true, prescriber: { select: PUBLIC_USER_SELECT } },
       });
+
+      if (safety.alerts.length) {
+        await tx.prescriptionSafetyOverride.createMany({
+          data: overrideRows(safety.alerts, {
+            clinicId,
+            prescriptionId: prescription.id,
+            prescriberId: actorId || consultation.providerId,
+            reason: safetyReason,
+          }),
+        });
+      }
 
       const invoice = await tx.invoice.create({
         data: {
@@ -2500,6 +2522,7 @@ export class ConsultationsService {
           reason,
           requestedPayload: {
             instruction: dto.instruction || null,
+            safetyOverrideReason: dto.safetyOverrideReason || null,
             lines: dto.lines.map((line) => ({
               medicationId: line.medicationId,
               dosage: line.dosage || null,
@@ -2590,6 +2613,7 @@ export class ConsultationsService {
 
     const payload = reviewed.requestedPayload as unknown as {
       instruction?: string | null;
+      safetyOverrideReason?: string | null;
       lines?: CreatePrescriptionDto['lines'];
     };
     if (!payload.lines?.length) {
@@ -2601,7 +2625,7 @@ export class ConsultationsService {
     // therefore identical to a new clinical prescription.
     const created = await this.createPrescription(
       consultationId,
-      { instruction: payload.instruction || undefined, lines: payload.lines },
+      { instruction: payload.instruction || undefined, safetyOverrideReason: payload.safetyOverrideReason || undefined, lines: payload.lines },
       reviewed.requestedById,
     );
 
