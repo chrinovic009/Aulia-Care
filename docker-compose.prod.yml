@@ -14,7 +14,7 @@ services:
     pids_limit: 200
 
     env_file:
-      - .env.prod
+      - ${AULIA_SECRETS_DIR:?Définir AULIA_SECRETS_DIR, le dossier de secrets hors du dépôt (ex. C:/Users/<vous>/.aulia-care/secrets)}/.env.prod
 
     volumes:
       - postgres-prod-data:/var/lib/postgresql/data
@@ -46,7 +46,7 @@ services:
     pids_limit: 100
 
     env_file:
-      - .env.prod
+      - ${AULIA_SECRETS_DIR:?Définir AULIA_SECRETS_DIR, le dossier de secrets hors du dépôt (ex. C:/Users/<vous>/.aulia-care/secrets)}/.env.prod
 
     command:
       [
@@ -89,7 +89,7 @@ services:
     pids_limit: 100
 
     env_file:
-      - .env.prod
+      - ${AULIA_SECRETS_DIR:?Définir AULIA_SECRETS_DIR, le dossier de secrets hors du dépôt (ex. C:/Users/<vous>/.aulia-care/secrets)}/.env.prod
 
     depends_on:
       postgres:
@@ -115,7 +115,7 @@ services:
     pids_limit: 300
 
     env_file:
-      - .env.prod
+      - ${AULIA_SECRETS_DIR:?Définir AULIA_SECRETS_DIR, le dossier de secrets hors du dépôt (ex. C:/Users/<vous>/.aulia-care/secrets)}/.env.prod
 
     environment:
       NODE_ENV: production
@@ -168,7 +168,7 @@ services:
       ]
 
     env_file:
-      - .env.prod
+      - ${AULIA_SECRETS_DIR:?Définir AULIA_SECRETS_DIR, le dossier de secrets hors du dépôt (ex. C:/Users/<vous>/.aulia-care/secrets)}/.env.prod
 
     environment:
       NODE_ENV: production
@@ -219,7 +219,7 @@ services:
       ]
 
     env_file:
-      - .env.prod
+      - ${AULIA_SECRETS_DIR:?Définir AULIA_SECRETS_DIR, le dossier de secrets hors du dépôt (ex. C:/Users/<vous>/.aulia-care/secrets)}/.env.prod
 
     environment:
       NODE_ENV: production
@@ -299,8 +299,8 @@ services:
     volumes:
       - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
       # A production deployment must provide a certificate issued for its
-      # stable institutional DNS name. This directory is git-ignored.
-      - ./.secrets/tls:/etc/nginx/certs:ro
+      # stable institutional DNS name. It lives outside the repository.
+      - ${AULIA_SECRETS_DIR:?Définir AULIA_SECRETS_DIR, le dossier de secrets hors du dépôt (ex. C:/Users/<vous>/.aulia-care/secrets)}/tls:/etc/nginx/certs:ro
 
     ports:
       # HTTP exists only to redirect to HTTPS. The application itself is

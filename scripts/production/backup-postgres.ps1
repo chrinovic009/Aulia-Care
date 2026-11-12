@@ -1,5 +1,5 @@
 param(
-    [string]$EnvFile = ".env.prod",
+    [string]$EnvFile = $(if ($env:AULIA_SECRETS_DIR) { Join-Path $env:AULIA_SECRETS_DIR ".env.prod" } else { "$env:USERPROFILE\.aulia-care\secrets\.env.prod" }),
     [string]$ContainerName = "aulia-care-prod-postgres-1",
     [string]$BackupDirectory = ".\backups\postgres",
     [string]$RecipientFile = "$env:USERPROFILE\.aulia-care\keys\backup-recipient.txt",

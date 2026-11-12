@@ -15,11 +15,14 @@ en HTTP, sur une adresse IP instable, ni avec des secrets de développement.
 3. Obtenir un certificat dont le SAN contient exactement ce nom. Pour un DNS
    interne, utiliser l’autorité de certification interne et installer sa CA
    sur les postes, tablettes et téléphones autorisés.
-4. Placer les fichiers suivants, lisibles par Docker mais hors Git :
+4. Placer les fichiers suivants **hors du dépôt**, dans le dossier de secrets
+   désigné par la variable `AULIA_SECRETS_DIR` (par défaut sur l’hôte Windows :
+   `%USERPROFILE%\.aulia-care\secrets`) :
 
    ```text
-   .secrets/tls/fullchain.pem
-   .secrets/tls/privkey.pem
+   $AULIA_SECRETS_DIR/.env.prod
+   $AULIA_SECRETS_DIR/tls/fullchain.pem
+   $AULIA_SECRETS_DIR/tls/privkey.pem
    ```
 
 5. Copier `production.env.example` vers le gestionnaire de secrets choisi et
@@ -30,6 +33,16 @@ en HTTP, sur une adresse IP instable, ni avec des secrets de développement.
 permanente et `443` pour le service. Le précédent port HTTP local `8081` ne
 doit pas être utilisé en production. Les cookies Secure, CSRF, la caméra et
 la télésanté s’appuient sur cette URL HTTPS unique.
+
+## Où sont les secrets
+
+Aucun secret de production n’est conservé dans le dossier du projet. Avant toute commande `docker compose` de production :
+
+```powershell
+$env:AULIA_SECRETS_DIR = "$env:USERPROFILE\.aulia-care\secrets"
+```
+
+`docker-compose.prod.yml` refuse de démarrer si cette variable n’est pas définie. Les clés de l’autorité de certification interne (`ca.key`) sont dans `%USERPROFILE%\.aulia-care\keys\tls-ca` : elles ne doivent pas rester sur le serveur de production, mais sur un support hors ligne.
 
 ## Secrets neufs par établissement/installation
 
@@ -61,7 +74,7 @@ Le seul parcours initial autorisé est hors API et à usage unique :
    hash :
 
    ```powershell
-   docker compose --env-file .env.prod -f docker-compose.prod.yml exec backend `
+   docker compose --env-file "$env:AULIA_SECRETS_DIR\.env.prod" -f docker-compose.prod.yml exec backend `
      npm run generate:initial-dev-bootstrap-token
    ```
 
@@ -72,7 +85,7 @@ Le seul parcours initial autorisé est hors API et à usage unique :
    puis exécuter :
 
    ```powershell
-   docker compose --env-file .env.prod -f docker-compose.prod.yml exec backend `
+   docker compose --env-file "$env:AULIA_SECRETS_DIR\.env.prod" -f docker-compose.prod.yml exec backend `
      npm run bootstrap:initial-dev:production
    ```
 
@@ -92,7 +105,7 @@ plateforme dans une procédure approuvée, l’opérateur peut effectuer une seu
 réparation explicite :
 
 ```powershell
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec backend `
+docker compose --env-file "$env:AULIA_SECRETS_DIR\.env.prod" -f docker-compose.prod.yml exec backend `
   npm run repair:subscription-company-clinic -- `
   --company-id <contrat> --clinic-id <établissement> --actor-id <dev> `
   --confirm ASSIGN_SUBSCRIPTION_COMPANY_TO_CLINIC
@@ -102,7 +115,7 @@ La commande refuse un écrasement, exige un DEV plateforme actif hors clinique
 et produit un `AuditTrail`. Vérifier ensuite :
 
 ```powershell
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec backend `
+docker compose --env-file "$env:AULIA_SECRETS_DIR\.env.prod" -f docker-compose.prod.yml exec backend `
   npm run audit:tenant-integrity
 ```
 
@@ -135,9 +148,9 @@ Le script ne touche qu’à un conteneur et un volume portant le préfixe
 ## Vérification avant ouverture aux utilisateurs
 
 ```powershell
-docker compose --env-file .env.prod -f docker-compose.prod.yml config
-docker compose --env-file .env.prod -f docker-compose.prod.yml build
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+docker compose --env-file "$env:AULIA_SECRETS_DIR\.env.prod" -f docker-compose.prod.yml config
+docker compose --env-file "$env:AULIA_SECRETS_DIR\.env.prod" -f docker-compose.prod.yml build
+docker compose --env-file "$env:AULIA_SECRETS_DIR\.env.prod" -f docker-compose.prod.yml up -d
 ```
 
 Ensuite, vérifier le certificat depuis un poste utilisateur sur le DNS réel,
