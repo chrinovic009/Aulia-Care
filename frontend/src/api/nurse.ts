@@ -1,4 +1,5 @@
 import { API_CONFIG, apiFetch } from "../config/api";
+import { sendOrQueue } from "../offline/offlineQueue";
 
 export type NursePatient = {
   id: string;
@@ -69,10 +70,12 @@ export const fetchNurseOrientationHistory = async (
 export const recordPatientVitalSigns = async (
   patientId: string,
   payload: RecordVitalSignsPayload,
+  label?: string,
 ) => {
-  return apiFetch(API_CONFIG.NURSE.RECORD_VITAL_SIGNS(patientId), {
+  // Critical entry: kept on the device if the network is down, with the time it was measured.
+  return sendOrQueue(label ?? "Signes vitaux", API_CONFIG.NURSE.RECORD_VITAL_SIGNS(patientId), {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, measuredAt: (payload as { measuredAt?: string }).measuredAt ?? new Date().toISOString() }),
   });
 };
 

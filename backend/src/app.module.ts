@@ -5,6 +5,8 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { RequestContextInterceptor } from './core/request-context.interceptor';
 import { AuditReadInterceptor } from './audit/audit-read.interceptor';
+import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor';
+import { IdempotencyRetentionService } from './idempotency/idempotency-retention.service';
 import { ConfigModule } from '@nestjs/config';
 import { validateEnvironment } from './config/environment.validation';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -85,6 +87,9 @@ const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
     // Order matters: the request context must wrap the read audit.
     { provide: APP_INTERCEPTOR, useClass: RequestContextInterceptor },
     { provide: APP_INTERCEPTOR, useClass: AuditReadInterceptor },
+    // Inside the request context, so replays and stored results are attributed and isolated.
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    IdempotencyRetentionService,
   ],
 })
 export class AppModule {}

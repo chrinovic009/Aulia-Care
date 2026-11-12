@@ -3176,6 +3176,8 @@ if (isParamedicalVoucher) {
     );
   }
 
+  const measuredAt = resolveMeasuredAt(dto.measuredAt);
+
   const result = await this.prisma.$transaction(
     async (tx) => {
       const patientInTransaction =
@@ -3204,6 +3206,7 @@ if (isParamedicalVoucher) {
           value: row.value,
           unit: row.unit,
           note: dto.notes?.trim() || null,
+          ...(measuredAt ? { recordedAt: measuredAt, syncedAt: new Date() } : {}),
         })),
       });
 
@@ -3902,4 +3905,16 @@ if (isParamedicalVoucher) {
 
     return !assignedActiveShift && Boolean(replacementActiveShift);
   }
+}
+
+/** An offline measurement keeps its real time, within 72 hours and never in the future. */
+export function resolveMeasuredAt(value?: string | null, now = new Date()): Date | null {
+  if (!value) return null;
+  const measuredAt = new Date(value);
+  if (Number.isNaN(measuredAt.getTime())) throw new BadRequestException('Heure de mesure invalide.');
+  if (measuredAt.getTime() > now.getTime() + 5 * 60_000) throw new BadRequestException('L’heure de mesure ne peut pas être dans le futur.');
+  if (now.getTime() - measuredAt.getTime() > 72 * 3_600_000) {
+    throw new BadRequestException('Mesure de plus de 72 heures : saisissez-la comme une observation tardive dans le dossier.');
+  }
+  return measuredAt;
 }

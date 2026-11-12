@@ -283,6 +283,8 @@ export const apiFetch = async <T = any>(
   endpoint: string,
   options?: RequestInit,
   timeout: number = 10000,
+  /** Network failures are handled by the caller (offline queue): no failure notice. */
+  silentNetworkErrors: boolean = false,
 ): Promise<T> => {
   const url = buildUrl(endpoint);
 
@@ -426,11 +428,13 @@ export const apiFetch = async <T = any>(
       const message =
         "Le serveur n’a pas répondu à temps. Vérifiez la connexion puis réessayez.";
 
-      reportApiFailure(
-        endpoint,
-        method,
-        message,
-      );
+      if (!silentNetworkErrors) {
+        reportApiFailure(
+          endpoint,
+          method,
+          message,
+        );
+      }
 
       throw new Error(message);
     }
@@ -439,7 +443,7 @@ export const apiFetch = async <T = any>(
      * ApiError has already been reported above.
      * Avoid displaying the same error twice.
      */
-    if (!(error instanceof ApiError)) {
+    if (!(error instanceof ApiError) && !silentNetworkErrors) {
       reportApiFailure(
         endpoint,
         method,

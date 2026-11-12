@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isQueued } from "../../offline/offlineQueue";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
@@ -285,9 +286,13 @@ export default function PatientAssignes() {
     setIsSaving(true);
     setError(null);
     try {
-      await recordPatientVitalSigns(selectedPatient.id, vitalsForm);
+      const saved = await recordPatientVitalSigns(selectedPatient.id, vitalsForm, `Signes vitaux · ${selectedPatient.firstName ?? ""} ${selectedPatient.lastName ?? ""}`.trim());
       setSelectedPatient(null);
       setVitalsForm(emptyVitalsForm);
+      if (isQueued(saved)) {
+        setError("Hors ligne : les signes vitaux sont gardés sur cet appareil avec leur heure de mesure et seront envoyés dès le retour du réseau.");
+        return;
+      }
       await Promise.all([loadPatients(), loadHistory(historyPeriod)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible d'enregistrer les signes vitaux.");

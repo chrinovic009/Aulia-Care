@@ -4601,3 +4601,22 @@ model PrescriptionSafetyOverride {
   @@index([prescriptionId])
   @@index([clinicId, createdAt])
 }
+
+/// Result of a write sent with an Idempotency-Key header, so that an entry
+/// replayed by an offline device (or retried after a timeout) is applied once.
+model IdempotencyRecord {
+  id          String   @id @default(uuid())
+  userId      String
+  key         String
+  method      String
+  route       String
+  requestHash String
+  /// 0 while the first request is still being processed.
+  statusCode  Int      @default(0)
+  response    Json?
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+
+  @@unique([userId, key])
+  @@index([createdAt])
+}

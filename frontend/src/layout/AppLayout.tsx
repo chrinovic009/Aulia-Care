@@ -9,6 +9,9 @@ import { useSpeechNotifications } from '../hooks/useSpeechNotifications';
 import RealtimePageBoundary from "../components/common/RealtimePageBoundary";
 import { PatientTelehealthOverlay } from "../components/telehealth/TelehealthCall";
 import { ShiftHandoverPrompt } from "../components/staff/ShiftHandoverPrompt";
+import { useEffect } from "react";
+import { OfflineStatusBanner } from "../offline/OfflineStatusBanner";
+import { bindOfflineQueue } from "../offline/offlineQueue";
 
 const PatientTelehealthOverlayForDiagnosticAgent: React.FC = () => {
   const { isLoading, isEnabled } = usePlatformLayers();
@@ -20,6 +23,7 @@ const LayoutContent: React.FC = () => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
   const { currentUser } = useAuth();
   useSpeechNotifications(currentUser?.id);
+  useEffect(() => { bindOfflineQueue(currentUser?.id ?? null); }, [currentUser?.id]);
 
   return (
     <div className="min-h-screen xl:flex">
@@ -33,6 +37,7 @@ const LayoutContent: React.FC = () => {
         } ${isMobileOpen ? "ml-0" : ""}`}
       >
         <AppHeader />
+        <OfflineStatusBanner />
         <ShiftHandoverPrompt />
         {currentUser?.primaryRole === "PATIENT" && <PatientTelehealthOverlayForDiagnosticAgent />}
         <div className="aulia-content-frame mx-auto w-full min-w-0 max-w-[1680px] pb-[max(0.5rem,env(safe-area-inset-bottom))]">

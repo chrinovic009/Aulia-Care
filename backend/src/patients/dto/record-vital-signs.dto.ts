@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsOptional, IsString } from 'class-validator';
 
 export class RecordVitalSignsDto {
   @IsString()
@@ -44,4 +44,9 @@ export class RecordVitalSignsDto {
   @IsString()
   @IsOptional()
   physicianId?: string;
+
+  /** When the measurement was taken, for entries made offline and sent later. */
+  @IsDateString()
+  @IsOptional()
+  measuredAt?: string;
 }
