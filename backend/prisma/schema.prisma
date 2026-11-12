@@ -175,6 +175,16 @@ model User {
   Vaccination                      Vaccination[]
   vitalSignsRecorded               VitalSign[]                      @relation("VitalSignRecordedBy")
 
+  careUnitAssignments          CareUnitAssignment[] @relation("CareUnitAssignmentUser")
+  careUnitAssignmentsCreated   CareUnitAssignment[] @relation("CareUnitAssignmentCreatedBy")
+  careEpisodesResponsible      CareEpisode[]        @relation("CareEpisodeResponsible")
+  careEpisodesCreated          CareEpisode[]        @relation("CareEpisodeCreatedBy")
+  serviceRequestsAuthored      ServiceRequest[]     @relation("ServiceRequestRequester")
+  careTasksOwned               CareTask[]           @relation("CareTaskOwner")
+  careTasksCreated             CareTask[]           @relation("CareTaskCreatedBy")
+  careEventsAuthored           CareEvent[]          @relation("CareEventAuthor")
+  careTransfersSent            CareTransfer[]       @relation("CareTransferSender")
+  careTransfersReceived        CareTransfer[]       @relation("CareTransferReceiver")
   @@index([primaryRole])
   @@index([clinicId])
 }
@@ -427,6 +437,16 @@ model Patient {
   telehealthSessions     TelehealthSession[]
   connectedCareConsents  ConnectedCareConsent[]
 
+  identityStatus           PatientIdentityStatus      @default(CONFIRMED)
+  dateOfBirthEstimated     Boolean                    @default(false)
+  mergedIntoPatientId      String?
+  mergedInto               Patient?                   @relation("PatientMerge", fields: [mergedIntoPatientId], references: [id])
+  mergedFrom               Patient[]                  @relation("PatientMerge")
+  careEpisodes             CareEpisode[]
+  serviceRequests          ServiceRequest[]
+  careTasks                CareTask[]
+  careEvents               CareEvent[]
+  careTransfers            CareTransfer[]
   @@index([lastName, firstName])
   @@index([dateOfBirth])
   @@index([clinicId])
@@ -2141,6 +2161,13 @@ model Clinic {
   labConsumableTransactions     LabConsumableTransaction[]
   labConfigurations             LabConfiguration[]
   labDailyStatistics            LabDailyStatistics[]
+  careUnits                CareUnit[]
+  careUnitAssignments      CareUnitAssignment[]
+  careEpisodes             CareEpisode[]
+  serviceRequests          ServiceRequest[]
+  careTasks                CareTask[]
+  careEvents               CareEvent[]
+  careTransfers            CareTransfer[]
 }
 
 model PlatformLayerConfiguration {
@@ -3412,6 +3439,9 @@ enum RoleSlug {
   CASHIER
   PATIENT
   FINANCE
+  PARAMEDIC
+  DISPATCHER
+  MIDWIFE
 }
 
 enum AuliaLayer {
@@ -4128,4 +4158,346 @@ enum SessionStatus {
   ACTIVE
   EXPIRED
   REVOKED
+}
+
+// ============================================================================
+// CARE WORKFLOW ENGINE
+// Requests (FHIR ServiceRequest), work items (Task), unit episodes (Encounter),
+// immutable clinical/operational events (Procedure/Observation provenance) and
+// structured hand-offs between units. Every specialised unit (emergency,
+// ambulance, surgery, maternity, dialysis...) builds on these records and never
+// creates a second patient record.
+// ============================================================================
+
+enum CareUnitKind {
+  EMERGENCY
+  AMBULANCE
+  SURGERY
+  MATERNITY
+  NEONATAL
+  DIALYSIS
+  HOSPITALIZATION
+  CONSULTATION
+  LABORATORY
+  IMAGING
+  PHARMACY
+  OTHER
+}
+
+enum CareUnitRole {
+  MEMBER
+  LEAD
+  READ_ONLY
+}
+
+enum CarePriority {
+  ROUTINE
+  URGENT
+  ASAP
+  STAT
+}
+
+enum CareEpisodeStatus {
+  PLANNED
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+  ENTERED_IN_ERROR
+}
+
+enum ServiceRequestStatus {
+  DRAFT
+  ACTIVE
+  ON_HOLD
+  REVOKED
+  COMPLETED
+  ENTERED_IN_ERROR
+}
+
+enum ServiceRequestIntent {
+  PROPOSAL
+  PLAN
+  ORDER
+}
+
+enum CareTaskStatus {
+  REQUESTED
+  RECEIVED
+  ACCEPTED
+  REJECTED
+  READY
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum CareTransferStatus {
+  SENT
+  RECEIVED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+enum PatientIdentityStatus {
+  CONFIRMED
+  PROVISIONAL
+  MERGED
+}
+
+/// A care unit of one establishment (emergency department, maternity...).
+model CareUnit {
+  id        String       @id @default(uuid())
+  clinicId  String
+  kind      CareUnitKind
+  code      String
+  name      String
+  active    Boolean      @default(true)
+  /// Unit configuration validated by its leads: protocols, mandatory steps, stages.
+  settings  Json?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  clinic             Clinic               @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  assignments        CareUnitAssignment[]
+  episodes           CareEpisode[]
+  requestedServices  ServiceRequest[]     @relation("ServiceRequestRequesterUnit")
+  performedServices  ServiceRequest[]     @relation("ServiceRequestPerformerUnit")
+  tasks              CareTask[]
+  events             CareEvent[]
+  transfersOut       CareTransfer[]       @relation("CareTransferFromUnit")
+  transfersIn        CareTransfer[]       @relation("CareTransferToUnit")
+
+  @@unique([clinicId, code])
+  @@index([clinicId, kind])
+}
+
+/// Staff member assigned to a care unit: assignment opens the unit, role decides the actions.
+model CareUnitAssignment {
+  id          String       @id @default(uuid())
+  clinicId    String
+  careUnitId  String
+  userId      String
+  unitRole    CareUnitRole @default(MEMBER)
+  active      Boolean      @default(true)
+  startsAt    DateTime     @default(now())
+  endsAt      DateTime?
+  createdById String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  careUnit  CareUnit @relation(fields: [careUnitId], references: [id], onDelete: Restrict)
+  user      User     @relation("CareUnitAssignmentUser", fields: [userId], references: [id], onDelete: Restrict)
+  createdBy User?    @relation("CareUnitAssignmentCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([careUnitId, userId])
+  @@index([userId, active])
+  @@index([clinicId])
+}
+
+/// Specialised stay of a patient in one unit (FHIR Encounter), linked to the single patient record.
+model CareEpisode {
+  id                String            @id @default(uuid())
+  clinicId          String
+  patientId         String
+  careUnitId        String
+  status            CareEpisodeStatus @default(PLANNED)
+  /// Unit-specific stage (e.g. TRIAGED, IN_LABOUR, SESSION_RUNNING), defined by the unit configuration.
+  stage             String?
+  priority          CarePriority      @default(ROUTINE)
+  reason            String?
+  locationLabel     String?
+  plannedAt         DateTime?
+  startedAt         DateTime?
+  endedAt           DateTime?
+  outcome           String?
+  outcomeDetail     Json?
+  responsibleUserId String?
+  sourceRequestId   String?
+  parentEpisodeId   String?
+  version           Int               @default(1)
+  createdById       String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  clinic         Clinic          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  patient        Patient         @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  careUnit       CareUnit        @relation(fields: [careUnitId], references: [id], onDelete: Restrict)
+  responsible    User?           @relation("CareEpisodeResponsible", fields: [responsibleUserId], references: [id])
+  createdBy      User            @relation("CareEpisodeCreatedBy", fields: [createdById], references: [id])
+  sourceRequest  ServiceRequest? @relation("ServiceRequestFulfilment", fields: [sourceRequestId], references: [id])
+  parentEpisode  CareEpisode?    @relation("CareEpisodeParent", fields: [parentEpisodeId], references: [id])
+  childEpisodes  CareEpisode[]   @relation("CareEpisodeParent")
+  requests       ServiceRequest[] @relation("ServiceRequestEpisode")
+  tasks          CareTask[]
+  events         CareEvent[]
+  transfersOut   CareTransfer[]  @relation("CareTransferFromEpisode")
+  transfersIn    CareTransfer[]  @relation("CareTransferToEpisode")
+
+  @@index([clinicId, careUnitId, status])
+  @@index([patientId, createdAt])
+  @@index([sourceRequestId])
+}
+
+/// A request for a service (FHIR ServiceRequest). Its execution is recorded separately as events.
+model ServiceRequest {
+  id              String               @id @default(uuid())
+  clinicId        String
+  patientId       String
+  episodeId       String?
+  requesterId     String
+  requesterUnitId String?
+  performerUnitId String
+  category        String
+  code            String
+  label           String
+  reason          String?
+  priority        CarePriority         @default(ROUTINE)
+  intent          ServiceRequestIntent @default(ORDER)
+  status          ServiceRequestStatus @default(ACTIVE)
+  statusReason    String?
+  desiredAt       DateTime?
+  details         Json?
+  authoredAt      DateTime             @default(now())
+  version         Int                  @default(1)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  clinic         Clinic         @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  patient        Patient        @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  episode        CareEpisode?   @relation("ServiceRequestEpisode", fields: [episodeId], references: [id])
+  requester      User           @relation("ServiceRequestRequester", fields: [requesterId], references: [id])
+  requesterUnit  CareUnit?      @relation("ServiceRequestRequesterUnit", fields: [requesterUnitId], references: [id])
+  performerUnit  CareUnit       @relation("ServiceRequestPerformerUnit", fields: [performerUnitId], references: [id])
+  fulfilments    CareEpisode[]  @relation("ServiceRequestFulfilment")
+  tasks          CareTask[]
+  events         CareEvent[]
+  transfers      CareTransfer[]
+
+  @@index([clinicId, performerUnitId, status])
+  @@index([patientId, authoredAt])
+  @@index([episodeId])
+}
+
+/// A unit of work owned by a unit and possibly a person (FHIR Task).
+model CareTask {
+  id           String         @id @default(uuid())
+  clinicId     String
+  patientId    String?
+  careUnitId   String
+  requestId    String?
+  episodeId    String?
+  title        String
+  description  String?
+  status       CareTaskStatus @default(REQUESTED)
+  statusReason String?
+  priority     CarePriority   @default(ROUTINE)
+  ownerUserId  String?
+  dueAt        DateTime?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  version      Int            @default(1)
+  createdById  String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  clinic    Clinic          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  patient   Patient?        @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  careUnit  CareUnit        @relation(fields: [careUnitId], references: [id], onDelete: Restrict)
+  request   ServiceRequest? @relation(fields: [requestId], references: [id])
+  episode   CareEpisode?    @relation(fields: [episodeId], references: [id])
+  owner     User?           @relation("CareTaskOwner", fields: [ownerUserId], references: [id])
+  createdBy User            @relation("CareTaskCreatedBy", fields: [createdById], references: [id])
+  events    CareEvent[]
+
+  @@index([clinicId, careUnitId, status])
+  @@index([ownerUserId, status])
+  @@index([requestId])
+  @@index([episodeId])
+}
+
+/// Immutable record of something that happened (insert-only, enforced by a database trigger).
+/// A correction is a new event pointing to the corrected one; the original stays readable.
+model CareEvent {
+  id                String   @id @default(uuid())
+  clinicId          String
+  patientId         String?
+  careUnitId        String?
+  episodeId         String?
+  requestId         String?
+  taskId            String?
+  transferId        String?
+  type              String
+  summary           String
+  payload           Json?
+  occurredAt        DateTime
+  recordedAt        DateTime @default(now())
+  authorId          String
+  authorRole        String
+  requiresValidation Boolean @default(false)
+  validatesEventId  String?
+  correctsEventId   String?
+  correctionReason  String?
+
+  clinic        Clinic          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  patient       Patient?        @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  careUnit      CareUnit?       @relation(fields: [careUnitId], references: [id])
+  episode       CareEpisode?    @relation(fields: [episodeId], references: [id])
+  request       ServiceRequest? @relation(fields: [requestId], references: [id])
+  task          CareTask?       @relation(fields: [taskId], references: [id])
+  transfer      CareTransfer?   @relation(fields: [transferId], references: [id])
+  author        User            @relation("CareEventAuthor", fields: [authorId], references: [id])
+  validates     CareEvent?      @relation("CareEventValidation", fields: [validatesEventId], references: [id])
+  validations   CareEvent[]     @relation("CareEventValidation")
+  corrects      CareEvent?      @relation("CareEventCorrection", fields: [correctsEventId], references: [id])
+  corrections   CareEvent[]     @relation("CareEventCorrection")
+
+  @@index([clinicId, occurredAt])
+  @@index([patientId, occurredAt])
+  @@index([episodeId, occurredAt])
+  @@index([requestId])
+  @@index([taskId])
+  @@index([transferId])
+}
+
+/// Structured hand-off between units, with sender, receiver and explicit acknowledgement.
+model CareTransfer {
+  id             String             @id @default(uuid())
+  clinicId       String
+  patientId      String
+  fromUnitId     String?
+  toUnitId       String
+  fromEpisodeId  String?
+  toEpisodeId    String?
+  requestId      String?
+  senderId       String
+  receiverId     String?
+  status         CareTransferStatus @default(SENT)
+  reason         String
+  summary        Json
+  sentAt         DateTime           @default(now())
+  receivedAt     DateTime?
+  decidedAt      DateTime?
+  decisionReason String?
+  version        Int                @default(1)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  clinic      Clinic          @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  patient     Patient         @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  fromUnit    CareUnit?       @relation("CareTransferFromUnit", fields: [fromUnitId], references: [id])
+  toUnit      CareUnit        @relation("CareTransferToUnit", fields: [toUnitId], references: [id])
+  fromEpisode CareEpisode?    @relation("CareTransferFromEpisode", fields: [fromEpisodeId], references: [id])
+  toEpisode   CareEpisode?    @relation("CareTransferToEpisode", fields: [toEpisodeId], references: [id])
+  request     ServiceRequest? @relation(fields: [requestId], references: [id])
+  sender      User            @relation("CareTransferSender", fields: [senderId], references: [id])
+  receiver    User?           @relation("CareTransferReceiver", fields: [receiverId], references: [id])
+  events      CareEvent[]
+
+  @@index([clinicId, toUnitId, status])
+  @@index([patientId, sentAt])
 }
