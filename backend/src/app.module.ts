@@ -2,7 +2,9 @@
 // ConfigModule.forRoot() runs. Load the same local environment first.
 import 'dotenv/config';
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { RequestContextInterceptor } from './core/request-context.interceptor';
+import { AuditReadInterceptor } from './audit/audit-read.interceptor';
 import { ConfigModule } from '@nestjs/config';
 import { validateEnvironment } from './config/environment.validation';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -78,6 +80,9 @@ const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: PlatformLayerAccessGuard },
+    // Order matters: the request context must wrap the read audit.
+    { provide: APP_INTERCEPTOR, useClass: RequestContextInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: AuditReadInterceptor },
   ],
 })
 export class AppModule {}

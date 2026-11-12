@@ -13,6 +13,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { AuliaLayer } from '@prisma/client';
 import { RequireLayer } from '../platform/layers/require-layer.decorator';
+import { AuditRead } from '../audit/audit-read.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('consultations')
@@ -35,6 +36,7 @@ export class ConsultationsController {
     return this.consultationsService.findDraftsForPhysician(req.user?.userId);
   }
 
+  @AuditRead('Consultation')
   @Get(':id/draft-detail')
   @Roles('PHYSICIAN')
   findDraftDetail(@Param('id') id: string, @Request() req: any) {
@@ -47,6 +49,7 @@ export class ConsultationsController {
     return this.consultationsService.archiveOwnDraft(id, req.user?.userId);
   }
 
+  @AuditRead('Consultation')
   @Get(':id')
   @Roles('ADMIN', 'PHYSICIAN')
   findOne(@Param('id') id: string, @Request() req: any) {

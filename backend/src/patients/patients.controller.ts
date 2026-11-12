@@ -25,6 +25,7 @@ import { CertifyPatientDeathDto } from './dto/certify-patient-death.dto';
 import { AuthenticatedActor } from '../core/clinic-context.service';
 import { AuliaLayer } from '@prisma/client';
 import { RequireLayer } from '../platform/layers/require-layer.decorator';
+import { AuditRead } from '../audit/audit-read.decorator';
 
 type PatientRequest = {
   user?: AuthenticatedActor;
@@ -177,6 +178,7 @@ export class PatientsController {
     return this.patientsService.certifyPatientDeath(id, dto, req.user);
   }
 
+  @AuditRead('Patient')
   @Get(':id')
   @Roles('ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'CASHIER')
   findOne(

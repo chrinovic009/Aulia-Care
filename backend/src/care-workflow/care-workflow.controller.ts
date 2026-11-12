@@ -20,6 +20,7 @@ import {
   VersionOnlyDto,
 } from './dto/care-workflow.dto';
 import { WorkflowRuleExceptionFilter } from './workflow-rule.filter';
+import { AuditRead } from '../audit/audit-read.decorator';
 
 type AuthedRequest = { user?: { userId?: string; id?: string; role?: string | null } };
 
@@ -46,6 +47,7 @@ export class CareWorkflowController {
     return this.workflow.worklist(unitId, req.user);
   }
 
+  @AuditRead('Patient', 'patientId')
   @Get('patients/:patientId/timeline')
   timeline(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: AuthedRequest) {
     return this.workflow.patientTimeline(patientId, req.user);
@@ -57,6 +59,7 @@ export class CareWorkflowController {
     return this.workflow.openEpisode(dto, req.user);
   }
 
+  @AuditRead('CareEpisode')
   @Get('episodes/:id')
   episode(@Param('id', ParseUUIDPipe) id: string, @Request() req: AuthedRequest) {
     return this.workflow.episodeDetail(id, req.user);

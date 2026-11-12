@@ -79,6 +79,14 @@ test('HTTP E2E: une réception ne lit jamais le dossier d’un autre établissem
       .set('Cookie', cookies)
       .expect(404);
 
+    // Every record read is written to the audit ledger with its author; a refused read is not.
+    const reads = await prisma.auditLedger.findMany({ where: { action: 'READ', entity: 'Patient', entityId: { in: [patientA.id, patientB.id] } } });
+    assert.equal(reads.length, 1);
+    assert.equal(reads[0].entityId, patientA.id);
+    assert.equal(reads[0].actorId, receptionA.id);
+    assert.equal(reads[0].clinicId, clinicA.id);
+    assert.equal(reads[0].actorRole, 'RECEPTIONIST');
+
     const visiblePatients = await request(app.getHttpServer())
       .get('/api/patients?page=1&limit=10')
       .set('Cookie', cookies)

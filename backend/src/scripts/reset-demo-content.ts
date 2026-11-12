@@ -25,7 +25,7 @@ async function main() {
     SELECT tablename
     FROM pg_tables
     WHERE schemaname = 'public'
-      AND tablename NOT IN ('_prisma_migrations', 'aulia_demo_seed_sentinel')
+      AND tablename NOT IN ('_prisma_migrations', 'aulia_demo_seed_sentinel', 'AuditLedger')
     ORDER BY tablename
   `);
 
@@ -33,6 +33,7 @@ async function main() {
     throw new Error('Aucune table applicative DEMO à réinitialiser.');
   }
 
+  // The audit ledger is insert-only and is never emptied, not even for the demo.
   // Table names come from PostgreSQL's own system catalog and are still
   // quoted defensively.  Migration history and the database-bound sentinel
   // remain intact, so the following baseline seed has to pass its safeguards.

@@ -4501,3 +4501,26 @@ model CareTransfer {
   @@index([clinicId, toUnitId, status])
   @@index([patientId, sentAt])
 }
+
+/// Tamper-evident audit ledger, written by database triggers on clinical and
+/// sensitive tables (and by the API for record reads). Insert-only, chained by
+/// SHA-256 per establishment; no foreign key so that no deletion can cascade here.
+model AuditLedger {
+  id         BigInt   @id @default(autoincrement())
+  clinicId   String?
+  occurredAt DateTime @default(now())
+  actorId    String?
+  actorRole  String?
+  /// INSERT, UPDATE, DELETE or READ.
+  action     String
+  entity     String
+  entityId   String?
+  data       Json?
+  context    Json?
+  prevHash   String?
+  hash       String?
+
+  @@index([clinicId, id])
+  @@index([entity, entityId])
+  @@index([actorId, occurredAt])
+}
