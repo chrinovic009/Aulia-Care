@@ -2,7 +2,8 @@ name: Core quality
 
 on:
   push:
-    branches: [main, master, codex/core-stabilisation-20261002]
+    # Every branch is verified: a branch outside CI is a branch nobody checks.
+    branches: ['**']
   pull_request:
 
 permissions:
