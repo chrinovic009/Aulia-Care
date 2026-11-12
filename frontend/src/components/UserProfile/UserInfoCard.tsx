@@ -57,7 +57,8 @@ export default function UserInfoCard() {
     }
 
     try {
-      localStorage.setItem("patientName", `${firstName} ${lastName}`);
+      // Patient identity is never kept in browser storage (shared workstations).
+      localStorage.removeItem("patientName");
     } catch {
       // ignore
     }
