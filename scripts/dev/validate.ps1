@@ -6,9 +6,12 @@ param([string]$Steps = 'lint,typecheck,unit')
 $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $root
-$out = Join-Path $root '.validation'
+# One fresh folder per run: a log still opened by an editor or a previous run
+# can never block or mix with the new results.
+$out = Join-Path $root ('.validation\run-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force $out | Out-Null
 $summary = Join-Path $out 'summary.txt'
+Set-Content -Path (Join-Path $root '.validation\latest.txt') -Value $out -Encoding utf8
 
 $branch = (git branch --show-current)
 $commit = (git rev-parse --short HEAD)
@@ -36,7 +39,11 @@ foreach ($step in ($Steps -split ',' | ForEach-Object { $_.Trim() } | Where-Obje
     default       { $null }
   }
   if (-not $command) { "$step : ETAPE INCONNUE" | Out-File -Append $summary -Encoding utf8; $failed++; continue }
-  if ($step -eq 'e2e' -or $step -eq 'integration') { Import-DotEnv (Join-Path $root 'backend/.env') }
+  if ($step -eq 'e2e' -or $step -eq 'integration') {
+    Import-DotEnv (Join-Path $root 'backend/.env')
+    # Optional local override (not versioned), e.g. the Docker development database.
+    Import-DotEnv (Join-Path $root '.validation/e2e.env')
+  }
 
   $log = Join-Path $out "$step.log"
   $watch = [Diagnostics.Stopwatch]::StartNew()
