@@ -14,8 +14,9 @@ export default defineConfig(({ mode }) => {
     "aulia-care-dev.pfx"
   );
 
+  // AULIA_DEV_HTTP=1 (local demo script) serves plain HTTP on localhost.
   const https =
-    fs.existsSync(developmentCertificate) && env.AULIA_TLS_PASSWORD
+    env.AULIA_DEV_HTTP !== "1" && fs.existsSync(developmentCertificate) && env.AULIA_TLS_PASSWORD
       ? {
           pfx: fs.readFileSync(developmentCertificate),
           passphrase: env.AULIA_TLS_PASSWORD,

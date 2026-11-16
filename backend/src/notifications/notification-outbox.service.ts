@@ -64,6 +64,10 @@ export class NotificationOutboxService implements OnModuleInit, OnModuleDestroy 
         take: 20,
       });
       for (const event of events) await this.deliver(event.id);
+    } catch (error) {
+      // The poller must never bring the API down (database restart, network blip):
+      // pending events stay in the outbox and are retried on the next tick.
+      this.logger.warn(`Outbox indisponible, nouvel essai dans 5 s : ${error instanceof Error ? error.message.split('\n').pop() : error}`);
     } finally {
       this.running = false;
     }

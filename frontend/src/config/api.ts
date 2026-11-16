@@ -171,7 +171,9 @@ const reportApiSuccess = (
 ) => {
   if (
     typeof window === "undefined" ||
-    method === "GET"
+    method === "GET" ||
+    // Read-only POSTs (safety checks) save nothing: no "action enregistrée" notice.
+    /\/check(?:\?|$)/.test(endpoint)
   ) {
     return;
   }

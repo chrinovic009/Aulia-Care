@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  acknowledgeTransfer, ageLabel, changeEpisodeStatus, changeRequestStatus, changeTaskStatus, correctCareEvent, createServiceRequest,
+  acknowledgeTransfer, ageLabel, genderLabel, changeEpisodeStatus, changeRequestStatus, changeTaskStatus, correctCareEvent, createServiceRequest,
   decideTransfer, fetchClinicUnits, fetchEpisode, fetchUnitHistory, KIND_LABELS, mergeProvisionalPatient, patientName, personName,
   PRIORITY_LABELS, recordCareEvent, REQUEST_STATUS_LABELS, searchCarePatients, sendTransfer, TASK_STATUS_LABELS, timeLabel,
   type CareEpisode, type CarePriority, type CareTask, type CareTransfer, type CareUnit, type CareUnitRole, type EpisodeDetail,
@@ -45,7 +45,7 @@ export function PatientSearch({ onPick, placeholder = "Nom, prénom, téléphone
             <li key={patient.id}>
               <button type="button" onClick={() => onPick(patient)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-aulia-mist dark:hover:bg-aulia-teal/10">
                 <span className="font-semibold text-slate-800 dark:text-white">{patientName(patient)}</span>
-                <span className="text-xs text-slate-500">{[patient.gender, ageLabel(patient), patient.externalId, patient.phone].filter(Boolean).join(" · ")}</span>
+                <span className="text-xs text-slate-500">{[genderLabel(patient.gender), ageLabel(patient), patient.externalId, patient.phone].filter(Boolean).join(" · ")}</span>
               </button>
             </li>
           ))}
@@ -276,11 +276,15 @@ const EVENT_LABELS: Record<string, string> = {
   ORIENTATION: "Orientation", RESULT_REVIEWED: "Résultat consulté", EPISODE_OPENED: "Ouverture", EPISODE_STATUS_CHANGED: "Statut", EPISODE_UPDATED: "Mise à jour",
   EPISODE_RESPONSIBLE_CHANGED: "Responsable", IDENTITY_MERGED: "Identité confirmée", ENTERED_IN_ERROR: "Saisi en erreur", REQUEST_CREATED: "Demande",
   TRANSFER_SENT: "Transmission envoyée", TRANSFER_ACCEPTED: "Transmission acceptée", TRANSFER_REJECTED: "Transmission refusée",
+  TRANSFER_RECEIVED: "Transmission lue", TRANSFER_CANCELLED: "Transmission annulée", REQUEST_SENT: "Demande envoyée", REQUEST_DRAFTED: "Demande à valider",
+  REQUEST_STATUS_CHANGED: "Demande mise à jour", TASK_STATUS_CHANGED: "Tâche mise à jour", TASK_ASSIGNED: "Tâche attribuée", VALIDATION: "Validation",
 };
+/** Only professional documentation can be declared erroneous; system traces cannot. */
+const CORRECTABLE_EVENTS = new Set(["OBSERVATION", "VITALS", "CARE_GIVEN", "MEDICATION_GIVEN", "TRIAGE", "ORIENTATION", "RESULT_REVIEWED"]);
 export const eventLabel = (type: string) => EVENT_LABELS[type] ?? type.replace(/_/g, " ").toLowerCase();
 
-export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extraActions }: {
-  episodeId: string; unit: CareUnit; role: CareUnitRole; onClose: () => void; onChanged: () => void;
+export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extraActions, stageLabels }: {
+  episodeId: string; unit: CareUnit; role: CareUnitRole; onClose: () => void; onChanged: () => void; stageLabels?: Record<string, string>;
   extraActions?: (detail: EpisodeDetail, reload: () => void) => React.ReactNode;
 }) {
   const [detail, setDetail] = useState<EpisodeDetail | null>(null);
@@ -327,9 +331,9 @@ export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extr
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <PriorityBadge priority={detail.priority} />
             <Badge>{detail.status === "IN_PROGRESS" ? "En cours" : detail.status}</Badge>
-            {detail.stage && <Badge tone="teal">{detail.stage}</Badge>}
+            {detail.stage && <Badge tone="teal">{stageLabels?.[detail.stage] ?? detail.stage}</Badge>}
             {detail.locationLabel && <Badge tone="teal">{detail.locationLabel}</Badge>}
-            <span className="text-slate-500">{[detail.patient.gender, ageLabel(detail.patient)].filter(Boolean).join(" · ")} · arrivé {timeLabel(detail.startedAt ?? detail.createdAt)} · responsable {personName(detail.responsible)}</span>
+            <span className="text-slate-500">{[genderLabel(detail.patient.gender), ageLabel(detail.patient)].filter(Boolean).join(" · ")} · arrivé {timeLabel(detail.startedAt ?? detail.createdAt)} · responsable {personName(detail.responsible)}</span>
           </div>
           {detail.patient.identityStatus === "PROVISIONAL" && (
             <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
@@ -367,7 +371,7 @@ export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extr
                     <li key={event.id} className={`rounded-lg border p-2 text-sm ${struck ? "border-slate-200 opacity-60" : "border-slate-100 dark:border-slate-800"}`}>
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span><Badge tone={event.type === "TRIAGE" ? "red" : "slate"}>{eventLabel(event.type)}</Badge> <span className="text-xs text-slate-500">{timeLabel(event.occurredAt)} · {personName(event.author)}{event.occurredAt.slice(0, 16) !== event.recordedAt.slice(0, 16) ? ` · saisi ${timeLabel(event.recordedAt)}` : ""}</span></span>
-                        {writable && !struck && !event.correctsEventId && !["EPISODE_OPENED", "EPISODE_STATUS_CHANGED", "ARRIVAL", "IDENTITY_MERGED"].includes(event.type) && (
+                        {writable && !struck && !event.correctsEventId && CORRECTABLE_EVENTS.has(event.type) && (
                           <button type="button" className="text-xs text-slate-500 underline" onClick={() => void retract(event.id)}>Déclarer erronée</button>
                         )}
                       </div>
@@ -439,7 +443,7 @@ function MergeDialog({ patient, onClose, onDone }: { patient: PatientSummary; on
         </>
       ) : (
         <div className="space-y-3 text-sm">
-          <p>Rattacher <strong>{patientName(patient)}</strong> au dossier de <strong>{patientName(target)}</strong> ({[target.gender, ageLabel(target), target.externalId].filter(Boolean).join(" · ")}).</p>
+          <p>Rattacher <strong>{patientName(patient)}</strong> au dossier de <strong>{patientName(target)}</strong> ({[genderLabel(target.gender), ageLabel(target), target.externalId].filter(Boolean).join(" · ")}).</p>
           <Field label="Comment l’identité a-t-elle été établie ? (obligatoire)"><textarea className={inputClass} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ex. pièce d’identité présentée par la famille" /></Field>
           <p className="text-xs text-slate-500">La prise en charge en cours et les demandes ouvertes passent au dossier définitif ; l’historique provisoire reste consultable dans sa chronologie.</p>
           <div className="flex justify-end gap-2"><Button tone="ghost" onClick={() => setTarget(null)}>Changer de dossier</Button><Button disabled={reason.trim().length < 10} onClick={() => void submit()}>Confirmer l’identité</Button></div>

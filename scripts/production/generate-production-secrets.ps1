@@ -14,7 +14,9 @@ function New-UrlSafeSecret {
     param([int]$Bytes = 48)
 
     $buffer = New-Object byte[] $Bytes
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($buffer)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $rng.GetBytes($buffer)
+    $rng.Dispose()
     return [Convert]::ToBase64String($buffer).
         TrimEnd('=').
         Replace('+', '-').

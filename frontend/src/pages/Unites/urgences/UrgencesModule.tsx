@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  ageLabel, durationLabel, minutesSince, patientName, personName, PRIORITY_RANK, recordCareEvent, registerArrival, timeLabel,
+  ageLabel, durationLabel, genderLabel, minutesSince, patientName, personName, PRIORITY_RANK, recordCareEvent, registerArrival, timeLabel,
   updateEpisode, type CareEpisode, type PatientSummary, type TriageLevel, type Worklist,
 } from "../../../api/careWorkflow";
 import { isQueued } from "../../../offline/offlineQueue";
@@ -61,7 +61,7 @@ export function UrgencesModule({ worklist, tab, reload, openDossier, setTab }: P
         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openDossier(episode.id)}>
           <p className="font-semibold text-slate-900 dark:text-white">
             {level ? <span className="mr-2 inline-block rounded px-1.5 text-xs font-bold text-white" style={{ background: level.color ?? "#475569" }}>{level.code}</span> : <Badge tone="amber">non trié</Badge>}{" "}
-            {patientName(episode.patient)} <span className="text-xs font-normal text-slate-500">{[episode.patient.gender, ageLabel(episode.patient)].filter(Boolean).join(" · ")}</span>
+            {patientName(episode.patient)} <span className="text-xs font-normal text-slate-500">{[genderLabel(episode.patient.gender), ageLabel(episode.patient)].filter(Boolean).join(" · ")}</span>
           </p>
           <p className="text-xs text-slate-500">
             {episode.reason || "Motif non renseigné"} · arrivé {timeLabel(episode.startedAt ?? episode.createdAt)} · attente {durationLabel(wait.waited)}
@@ -227,7 +227,7 @@ function ArrivalForm({ unitId, disabled, onDone }: { unitId: string; disabled: b
       {mode === "known" ? (
         patient ? (
           <div className="mb-3 flex items-center justify-between rounded-xl bg-aulia-mist p-3 text-sm dark:bg-aulia-teal/10">
-            <span><strong>{patientName(patient)}</strong> · {[patient.gender, ageLabel(patient), patient.externalId].filter(Boolean).join(" · ")}</span>
+            <span><strong>{patientName(patient)}</strong> · {[genderLabel(patient.gender), ageLabel(patient), patient.externalId].filter(Boolean).join(" · ")}</span>
             <Button small tone="ghost" onClick={() => setPatient(null)}>Changer</Button>
           </div>
         ) : (

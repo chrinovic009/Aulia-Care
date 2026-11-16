@@ -1029,12 +1029,12 @@ export class CareWorkflowService {
       } else {
         const provisional = dto.provisional!;
         const year = new Date().getUTCFullYear() - (provisional.estimatedAgeYears ?? 0);
-        const stamp = arrivedAt.toISOString().slice(0, 16).replace(/[-:T]/g, '');
+        const stamp = arrivedAt.toISOString().slice(0, 10).replace(/-/g, '');
         const created = await tx.patient.create({
           data: {
             clinicId: actor.clinicId,
             firstName: 'Inconnu',
-            lastName: `${unit.code}-${stamp}-${randomUUID().slice(0, 4).toUpperCase()}`,
+            lastName: `${unit.code}-${stamp}-${randomUUID().slice(0, 6).toUpperCase()}`,
             gender: provisional.gender,
             dateOfBirth: new Date(Date.UTC(provisional.estimatedAgeYears === undefined ? 1900 : year, 0, 1)),
             dateOfBirthEstimated: true,

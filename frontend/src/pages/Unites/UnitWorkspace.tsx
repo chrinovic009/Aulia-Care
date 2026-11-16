@@ -5,6 +5,7 @@ import { fetchWorklist, KIND_LABELS, patientName, timeLabel, type Worklist } fro
 import { EpisodeDossier, HistoryList, IncomingTransfers, PatientSearch, TaskList } from "./shared";
 import { Badge, Button, Card, Empty, PriorityBadge, Stat } from "./ui";
 import { EMERGENCY_TABS, UrgencesModule, type EmergencyTab } from "./urgences/UrgencesModule";
+import { STAGE_LABELS } from "./urgences/emergencySettings";
 
 const REFRESH_MS = 20_000;
 const COMMON_TABS = [
@@ -82,7 +83,7 @@ export default function UnitWorkspace() {
           ? <UrgencesModule worklist={worklist} tab={tab as EmergencyTab} reload={() => void load()} openDossier={setDossier} setTab={(value) => setTab(value)} />
           : <CommonModule worklist={worklist} tab={tab} reload={() => void load()} openDossier={setDossier} />}
       </div>
-      {dossier && <EpisodeDossier episodeId={dossier} unit={unit} role={unitRole} onClose={() => setDossier(null)} onChanged={() => void load()} />}
+      {dossier && <EpisodeDossier episodeId={dossier} unit={unit} role={unitRole} stageLabels={unit.kind === "EMERGENCY" ? STAGE_LABELS : undefined} onClose={() => setDossier(null)} onChanged={() => void load()} />}
     </>
   );
 }
