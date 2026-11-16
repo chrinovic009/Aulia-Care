@@ -249,6 +249,13 @@ export class ResultObservationDto {
   @IsOptional() @IsIn(['NORMAL', 'LOW', 'HIGH', 'CRITICAL', 'ABNORMAL']) flag?: 'NORMAL' | 'LOW' | 'HIGH' | 'CRITICAL' | 'ABNORMAL';
 }
 
+export class ValidateProtocolDto {
+  @IsIn(['TRIAGE_SCALE', 'PARTOGRAM', 'SURGICAL_CHECKLIST']) protocol: 'TRIAGE_SCALE' | 'PARTOGRAM' | 'SURGICAL_CHECKLIST';
+  @IsOptional() @IsString() @MaxLength(1000) comment?: string;
+  /** Fingerprint of the content the clinician reviewed: refused if it changed meanwhile. */
+  @IsString() @MaxLength(64) fingerprint: string;
+}
+
 export class ReportTaskResultDto extends VersionedDto {
   @IsString() @MinLength(2) @MaxLength(4_000) summary: string;
   @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({ each: true }) @Type(() => ResultObservationDto) observations?: ResultObservationDto[];

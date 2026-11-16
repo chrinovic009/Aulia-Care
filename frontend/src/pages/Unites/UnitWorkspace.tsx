@@ -9,6 +9,7 @@ import { STAGE_LABELS } from "./urgences/emergencySettings";
 import { AMBULANCE_TABS, AmbulanceModule, MISSION_STEPS, type AmbulanceTab } from "./ambulance/AmbulanceModule";
 import { MATERNITY_STAGES, MATERNITY_TABS, MaterniteModule, type MaternityTab } from "./maternite/MaterniteModule";
 import { ChirurgieModule, SURGERY_STAGE_LABELS, SURGERY_TABS, type SurgeryTab } from "./chirurgie/ChirurgieModule";
+import { ProtocolValidationBanner } from "./ProtocolValidation";
 import { DIALYSIS_STAGE_LABELS, DIALYSIS_TABS, DialyseModule, type DialysisTab } from "./dialyse/DialyseModule";
 
 const REFRESH_MS = 20_000;
@@ -75,6 +76,7 @@ export default function UnitWorkspace() {
             <p className="mt-2 text-xs text-slate-500">Seuls les patients présents dans l’unité ouvrent leur dossier ici ; l’accès aux autres dossiers suit vos droits.</p>
           </Card>
         )}
+        <ProtocolValidationBanner unit={unit} unitRole={unitRole} onValidated={() => void load()} />
         <nav className="flex gap-1 overflow-x-auto border-b border-slate-200 dark:border-slate-800" aria-label="Onglets de l’unité">
           {tabs.map((item) => (
             <button key={item.id} type="button" onClick={() => setTab(item.id)}

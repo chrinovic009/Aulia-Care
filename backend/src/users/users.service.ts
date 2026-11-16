@@ -9,6 +9,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { isStaffRole } from '../core/tenant-roles';
 import { SPECIALTY_ROLES, findSpecialty } from '../reference/medical-specialties';
 import * as bcrypt from 'bcrypt';
+import { generateTemporaryPassword } from '../auth/password-policy';
 
 @Injectable()
 export class UsersService {
@@ -196,17 +197,32 @@ export class UsersService {
     return dto.isResponsible || dto.isDepartmentResponsible ? RoleSlug.LAB_MANAGER : RoleSlug.LAB_TECHNICIAN;
   }
 
-  private makeInitialStaffPassword(clinicName: string, role: RoleSlug, firstName: string, lastName: string, position: number) {
-    const establishmentPrefix = String(clinicName)
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-zA-Z0-9]/g, '')
-      .slice(0, 2)
-      .toUpperCase()
-      .padEnd(2, 'A');
-    const roleLetter = String(role || 'USER').charAt(0).toUpperCase() || 'U';
-    const initials = `${String(firstName || 'X').charAt(0)}${String(lastName || 'X').charAt(0)}`.toUpperCase();
-    return `${establishmentPrefix}${roleLetter}-${initials}${position}${new Date().getFullYear()}`;
+  /**
+   * The administrator issues a new random temporary password (forgotten
+   * password, suspected compromise). It is returned once; the holder must
+   * choose their own at the next sign-in and their open sessions end now.
+   */
+  async resetPassword(id: string, actorId?: string) {
+    const { actor, target } = await this.requireSameClinicUser(id, actorId);
+    if (target.id === actor.id) throw new BadRequestException('Utilisez « Changer mon mot de passe » pour votre propre compte.');
+    if (!isStaffRole(target.primaryRole) && target.primaryRole !== RoleSlug.ADMIN) throw new ForbiddenException('Ce compte ne relève pas de l’administration de l’établissement.');
+    const generatedPassword = generateTemporaryPassword();
+    await this.prisma.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(generatedPassword, 12), mustChangePassword: true } });
+    await this.revokeSessionsAfterReset(id, actor.id);
+    return { id, username: target.username, generatedPassword };
+  }
+
+  private async revokeSessionsAfterReset(userId: string, actorId: string) {
+    const now = new Date();
+    await this.prisma.session.updateMany({ where: { userId, status: 'ACTIVE' }, data: { status: 'REVOKED', revokedAt: now, revocationReason: 'PASSWORD_RESET_BY_ADMIN', lastSeenAt: now } });
+    await this.prisma.auditTrail.create({ data: { actorId, entity: 'USER', entityId: userId, action: 'UPDATE', after: { event: 'PASSWORD_RESET_BY_ADMIN', targetUserId: userId } } });
+  }
+
+  /** A password typed by an administrator is only temporary: a minimum strength is enough. */
+  private assertAdministratorPassword(password: string) {
+    if (password.length < 10 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      throw new BadRequestException('Le mot de passe temporaire doit contenir au moins 10 caractères, dont une lettre et un chiffre.');
+    }
   }
 
   private validateEmployeeSchedule(input: { shiftPattern?: string; rotationAnchorAt?: string; rotationDays?: number; permanentShiftEndTime?: string }) {
@@ -359,11 +375,11 @@ export class UsersService {
       select: { name: true, brandDisplayName: true },
     });
     if (!clinic) throw new ForbiddenException('Établissement inactif ou introuvable. La création de personnel est bloquée.');
-    const position = await this.prisma.user.count({
-      where: { deletedAt: null, primaryRole, clinicId: creator.clinicId },
-    }) + 1;
-    const generatedPassword = dto.password ? undefined : this.makeInitialStaffPassword(clinic.brandDisplayName || clinic.name, primaryRole || RoleSlug.NURSE, dto.firstName, dto.lastName, position);
-    const passwordHash = await bcrypt.hash(dto.password || generatedPassword!, 10);
+    // The initial password is random and shown once to the administrator. It
+    // only opens the forced change screen at the first sign-in.
+    if (dto.password) this.assertAdministratorPassword(dto.password);
+    const generatedPassword = dto.password ? undefined : generateTemporaryPassword();
+    const passwordHash = await bcrypt.hash(dto.password || generatedPassword!, 12);
     const employeeDetails = {
       gender: dto.gender ?? null,
       dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null,
@@ -387,6 +403,7 @@ export class UsersService {
           firstName: dto.firstName,
           lastName: dto.lastName,
           passwordHash,
+          mustChangePassword: true,
           primaryRole,
           clinicId: creator.clinicId,
 
@@ -495,12 +512,11 @@ export class UsersService {
     const email = dto.email.trim().toLowerCase();
     const username = dto.username.trim().toLowerCase();
     const displayName = dto.displayName.trim() || `${dto.firstName.trim()} ${dto.lastName.trim()}`.trim();
-    const [clinic, position] = await Promise.all([
-      this.prisma.clinic.findFirst({ where: { id: creator.clinicId, deletedAt: null, status: 'ACTIVE' }, select: { name: true, brandDisplayName: true } }),
-      this.prisma.user.count({ where: { clinicId: creator.clinicId, primaryRole: RoleSlug.ADMIN, deletedAt: null } }),
-    ]);
+    const clinic = await this.prisma.clinic.findFirst({ where: { id: creator.clinicId, deletedAt: null, status: 'ACTIVE' }, select: { name: true, brandDisplayName: true } });
     if (!clinic) throw new ForbiddenException('Établissement inactif ou introuvable. La création d’administrateur est bloquée.');
-    const passwordHash = await bcrypt.hash(dto.password || this.makeInitialStaffPassword(clinic.brandDisplayName || clinic.name, RoleSlug.ADMIN, dto.firstName, dto.lastName, position + 1), 12);
+    if (dto.password) this.assertAdministratorPassword(dto.password);
+    const generatedPassword = dto.password ? undefined : generateTemporaryPassword();
+    const passwordHash = await bcrypt.hash(dto.password || generatedPassword!, 12);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -517,6 +533,7 @@ export class UsersService {
             firstName: dto.firstName.trim(),
             lastName: dto.lastName.trim(),
             passwordHash,
+            mustChangePassword: true,
             primaryRole: RoleSlug.ADMIN,
             clinicId: creator.clinicId,
             phone: dto.phone ?? null,
@@ -534,7 +551,7 @@ export class UsersService {
             after: { event: 'ADMIN_CREATED', clinicId: creator.clinicId, targetUserId: user.id, role: RoleSlug.ADMIN },
           },
         });
-        return user;
+        return generatedPassword ? { ...user, generatedPassword } : user;
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -1435,8 +1452,14 @@ export class UsersService {
       data.specialty = this.resolveSpecialty(role, value, current?.specialty, SPECIALTY_ROLES.has(String(role)));
     }
 
+    let passwordReset = false;
     if (dto.password) {
-      data.passwordHash = await bcrypt.hash(dto.password, 10);
+      // An administrator-set password is temporary: the holder must replace it
+      // at the next sign-in, and their open sessions end now.
+      this.assertAdministratorPassword(dto.password);
+      data.passwordHash = await bcrypt.hash(dto.password, 12);
+      data.mustChangePassword = true;
+      passwordReset = true;
       delete data.password;
     }
 
@@ -1543,6 +1566,7 @@ export class UsersService {
       }
     }
 
+    if (passwordReset) await this.revokeSessionsAfterReset(id, actor.id);
     return this.findOne(id, actor.id);
   }
 

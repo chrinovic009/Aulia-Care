@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
@@ -36,6 +36,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         status: true,
         deletedAt: true,
         primaryRole: true,
+        mustChangePassword: true,
         clinicId: true,
         clinic: { select: { status: true, deletedAt: true } },
         serviceResponsabilites: {
@@ -76,6 +77,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const pinGatePath = ['/api/auth/security-status', '/api/auth/lock-session', '/api/auth/verify-pin', '/api/auth/logout', '/api/auth/logout-all'];
     if (session.pinLockedAt && !pinGatePath.some((allowed) => path.startsWith(allowed))) {
       throw new UnauthorizedException('Session verrouillée : saisissez votre code PIN pour continuer.');
+    }
+    // An account opened or reset by an administrator only reaches the
+    // password-change screen until its holder has chosen their own password.
+    const passwordGatePath = ['/api/auth/me', '/api/auth/change-password', '/api/auth/security-status', '/api/auth/logout', '/api/auth/logout-all'];
+    if (user.mustChangePassword && !passwordGatePath.some((allowed) => path.startsWith(allowed))) {
+      throw new ForbiddenException({ statusCode: 403, code: 'PASSWORD_CHANGE_REQUIRED', message: 'Vous devez changer votre mot de passe avant de continuer.' });
     }
 
     return {

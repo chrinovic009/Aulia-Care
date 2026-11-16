@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { passwordPolicyError } from './password-policy';
 import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -97,7 +98,7 @@ export class AuthService {
     return timingSafeEqual(Buffer.from(left), Buffer.from(right));
   }
 
-  async login(user: { id: string; email: string; username: string; displayName: string; primaryRole: string | null; status?: string }) {
+  async login(user: { id: string; email: string; username: string; displayName: string; primaryRole: string | null; status?: string; mustChangePassword?: boolean }) {
     const sessionId = randomUUID();
     const accessToken = this.signAccessToken(user, sessionId);
     const refreshToken = this.signRefreshToken(user, sessionId);
@@ -128,8 +129,44 @@ export class AuthService {
         displayName: user.displayName,
         primaryRole: user.primaryRole,
         status: user.status,
+        mustChangePassword: Boolean(user.mustChangePassword),
       },
     };
+  }
+
+  /**
+   * The account holder replaces their password. Required after an account was
+   * opened or reset by an administrator: until then every other API call is
+   * refused (see JwtStrategy). Other sessions are revoked.
+   */
+  async changePassword(userId: string, sessionId: string | undefined, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, passwordHash: true, username: true, firstName: true, lastName: true, mustChangePassword: true, PasswordHistory: { orderBy: { changedAt: 'desc' }, take: 5, select: { passwordHash: true } } },
+    });
+    if (!user) throw new UnauthorizedException('Session utilisateur introuvable.');
+    if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
+      await this.prisma.loginAttempt.create({ data: { userId, username: user.username, result: 'FAILURE' } });
+      throw new BadRequestException('Le mot de passe actuel est incorrect.');
+    }
+    const refused = passwordPolicyError(newPassword, user);
+    if (refused) throw new BadRequestException(refused);
+    if (newPassword === currentPassword) throw new BadRequestException('Choisissez un mot de passe différent du mot de passe actuel.');
+    for (const previous of user.PasswordHistory) {
+      if (await bcrypt.compare(newPassword, previous.passwordHash)) throw new BadRequestException('Ce mot de passe a déjà été utilisé récemment. Choisissez-en un autre.');
+    }
+    const now = new Date();
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.prisma.$transaction([
+      this.prisma.passwordHistory.create({ data: { userId, passwordHash: user.passwordHash } }),
+      this.prisma.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false, passwordChangedAt: now } }),
+      this.prisma.session.updateMany({
+        where: { userId, status: 'ACTIVE', ...(sessionId ? { id: { not: sessionId } } : {}) },
+        data: { status: 'REVOKED', revokedAt: now, revocationReason: 'PASSWORD_CHANGED', lastSeenAt: now },
+      }),
+    ]);
+    await this.audit(userId, 'USER', userId, { event: 'PASSWORD_CHANGED', required: user.mustChangePassword });
+    return { ok: true, mustChangePassword: false };
   }
 
   async logoutCurrentSession(userId?: string, sessionId?: string) {
@@ -343,6 +380,7 @@ export class AuthService {
         bio: true,
         profilePhotoUrl: true,
         status: true,
+        mustChangePassword: true,
         createdAt: true,
         updatedAt: true,
         Employee: {
@@ -395,7 +433,6 @@ export class AuthService {
       'email',
       'username',
       'phone',
-      'specialty',
       'nationality',
       'addressCountry',
       'addressProvince',
@@ -415,8 +452,11 @@ export class AuthService {
       }
     }
 
+    // The password goes through POST /auth/change-password (current password,
+    // policy, history). The specialty is set by the administrator only and is
+    // therefore not in the self-service list above.
     if (dto.password) {
-      allowed.passwordHash = await bcrypt.hash(dto.password, 10);
+      throw new BadRequestException('Utilisez « Changer mon mot de passe » : le mot de passe actuel est demandé.');
     }
 
     if (allowed.email) allowed.email = String(allowed.email).toLowerCase();

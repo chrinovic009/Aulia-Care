@@ -19,6 +19,7 @@ import {
   closureRequirementsFromSettings,
   isTerminal,
 } from './domain/workflow-rules';
+import { PROTOCOLS, ProtocolValidation, fingerprint, hasContent, protocolsOf, withProtocolValidation } from './domain/protocol-validation';
 import {
   AssignTaskDto,
   CancelTransferDto,
@@ -36,6 +37,7 @@ import {
   RegisterArrivalDto,
   RegisterNewbornDto,
   ReportTaskResultDto,
+  ValidateProtocolDto,
   RecordCareEventDto,
   SendTransferDto,
   UpdateCareResourceDto,
@@ -482,6 +484,8 @@ export class CareWorkflowService {
         }
       }
       const draft = dto.draft ?? false;
+      // An exam for the laboratory must be a catalogue exam: it carries the billed price.
+      const labTest = performer.kind === 'LABORATORY' ? await this.findLabTest(tx, actor, dto.code) : null;
       const request = await tx.serviceRequest.create({
         data: {
           clinicId: actor.clinicId,
@@ -491,8 +495,8 @@ export class CareWorkflowService {
           requesterUnitId: dto.requesterUnitId ?? null,
           performerUnitId: performer.id,
           category: dto.category.trim(),
-          code: dto.code.trim(),
-          label: dto.label.trim(),
+          code: labTest?.code ?? dto.code.trim(),
+          label: dto.label.trim() || labTest?.name || dto.code.trim(),
           reason: dto.reason?.trim() || null,
           priority: dto.priority ?? 'ROUTINE',
           intent: dto.intent ?? 'ORDER',
@@ -507,7 +511,10 @@ export class CareWorkflowService {
         summary: `Demande « ${request.label} » ${draft ? 'enregistrée en brouillon' : `adressée à ${performer.name}`}.`,
         payload: { category: request.category, code: request.code, priority: request.priority },
       });
-      if (!draft) await this.dispatchRequest(tx, actor, request, performer.name);
+      if (!draft) {
+        await this.dispatchRequest(tx, actor, request, performer.name);
+        if (labTest) await this.openLabExam(tx, actor, request, await this.requesterUnitName(tx, request.requesterUnitId));
+      }
       return request;
     });
   }
@@ -565,7 +572,9 @@ export class CareWorkflowService {
       });
       this.conflictIfStale(updated.count);
 
+      let labCancellation: { labRequestId: string; invoiceCancelled: boolean } | null = null;
       if (dto.status === 'REVOKED' || dto.status === 'ENTERED_IN_ERROR') {
+        labCancellation = await this.cancelLabExam(tx, id, reason ?? null);
         for (const task of openTasks) {
           await tx.careTask.update({
             where: { id: task.id },
@@ -576,13 +585,14 @@ export class CareWorkflowService {
       const performer = await this.access.findUnit(tx, actor, request.performerUnitId);
       if (request.status === 'DRAFT' && dto.status === 'ACTIVE') {
         await this.dispatchRequest(tx, actor, request, performer.name);
+        if (performer.kind === 'LABORATORY') await this.openLabExam(tx, actor, request, await this.requesterUnitName(tx, request.requesterUnitId));
       }
       await this.recordEvent(tx, actor, {
         careUnitId: dto.status === 'COMPLETED' ? request.performerUnitId : request.requesterUnitId,
         patientId: request.patientId, episodeId: request.episodeId, requestId: id,
         type: 'REQUEST_STATUS_CHANGED',
         summary: `Demande « ${request.label} » : ${request.status} → ${dto.status}.`,
-        payload: { from: request.status, to: dto.status, reason, cancelledTasks: openTasks.map((task) => task.id) } as Prisma.InputJsonValue,
+        payload: { from: request.status, to: dto.status, reason, cancelledTasks: openTasks.map((task) => task.id), laboratory: labCancellation } as Prisma.InputJsonValue,
       });
       if (dto.status !== 'ACTIVE') {
         const toPerformer = dto.status !== 'COMPLETED';
@@ -1300,6 +1310,7 @@ export class CareWorkflowService {
         data: { status: 'COMPLETED', completedAt: new Date(), startedAt: task.startedAt ?? new Date(), version: { increment: 1 } },
       });
       this.conflictIfStale(updated.count);
+      const laboratory = unit.kind === 'LABORATORY' ? await this.recordLabResult(tx, actor, request.id, dto) : null;
       const event = await this.recordEvent(tx, actor, {
         careUnitId: unit.id, patientId: task.patientId, episodeId: request.episodeId, requestId: request.id, taskId,
         type: 'RESULT_REPORTED',
@@ -1308,6 +1319,7 @@ export class CareWorkflowService {
           label: request.label, code: request.code, performerUnit: unit.name,
           observations: (dto.observations ?? []).map((item) => ({ ...item })),
           conclusion: dto.conclusion?.trim() || null,
+          laboratory: laboratory ? { ...laboratory, biologicalValidation: 'PENDING' } : null,
         } as Prisma.InputJsonValue,
       });
       await this.notify(tx, actor, {
@@ -1318,6 +1330,160 @@ export class CareWorkflowService {
       });
       return event;
     });
+  }
+
+  // ======================================================================= clinical protocols
+  /** The unit's protocols (triage scale, partogram, checklist) with their validation state. */
+  unitProtocols(careUnitId: string, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const { unit } = await this.access.requireUnit(tx, actor, careUnitId, 'read');
+      const settings = (unit.settings ?? {}) as Record<string, unknown>;
+      const recorded = (settings.protocolValidations ?? {}) as Record<string, ProtocolValidation>;
+      return protocolsOf(unit.kind).map((code) => {
+        const content = PROTOCOLS[code].content(settings);
+        const current = fingerprint(content);
+        const validation = recorded[code] && recorded[code].fingerprint === current ? recorded[code] : null;
+        return { code, label: PROTOCOLS[code].label, clinicianRoles: PROTOCOLS[code].clinicianRoles, content: content ?? null, defined: hasContent(content), fingerprint: current, validation };
+      });
+    });
+  }
+
+  /**
+   * A clinician leading the unit adopts the protocol as written, for the
+   * establishment. The approval is tied to that exact content and recorded in
+   * the unit's journal; a later change by the administration lifts it.
+   */
+  validateProtocol(careUnitId: string, dto: ValidateProtocolDto, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const { unit, unitRole } = await this.access.requireUnit(tx, actor, careUnitId, 'write');
+      const protocol = PROTOCOLS[dto.protocol];
+      if (!protocol || protocol.unitKind !== unit.kind) throw new BadRequestException('Ce protocole ne concerne pas cette unité.');
+      if (unitRole !== 'LEAD' || !protocol.clinicianRoles.includes(String(actor.primaryRole))) {
+        throw new ForbiddenException(`La validation revient à un responsable clinique de l’unité (${protocol.clinicianRoles.join(', ')}, rôle « responsable » dans l’unité).`);
+      }
+      const settings = (unit.settings ?? {}) as Record<string, unknown>;
+      const content = protocol.content(settings);
+      if (!hasContent(content)) throw new BadRequestException(`${protocol.label} : rien à valider, le protocole n’est pas défini.`);
+      if (fingerprint(content) !== dto.fingerprint) throw new ConflictException('Le protocole a été modifié depuis votre lecture : relisez-le avant de le valider.');
+      const person = await tx.user.findUniqueOrThrow({ where: { id: actor.id }, select: { firstName: true, lastName: true } });
+      const validatedByName = `${person.firstName} ${person.lastName}`.trim();
+      const next = withProtocolValidation(settings, dto.protocol, {
+        validatedById: actor.id, validatedByName, validatedByRole: String(actor.primaryRole), validatedAt: new Date().toISOString(), comment: dto.comment?.trim() || null,
+      });
+      await tx.careUnit.update({ where: { id: unit.id }, data: { settings: next as Prisma.InputJsonValue } });
+      await this.recordEvent(tx, actor, {
+        careUnitId: unit.id, type: 'PROTOCOL_VALIDATED',
+        summary: `${protocol.label} validé(e) pour l’établissement par ${validatedByName}.`,
+        payload: { protocol: dto.protocol, fingerprint: dto.fingerprint, content, comment: dto.comment?.trim() || null } as Prisma.InputJsonValue,
+      });
+      return { code: dto.protocol, validated: true, validatedByName };
+    });
+  }
+
+  // ================================================================ laboratory bridge
+  /*
+   * An exam a care unit asks of a LABORATORY unit goes through the laboratory
+   * module like an exam ordered in consultation: a LabRequest (linked to the
+   * request, without consultation) and a LABORATORY invoice at the catalogue
+   * price, settled at the cashier. Care does not wait for the payment.
+   */
+
+  /** Laboratory catalogue the requesting units choose from (code, name, price). */
+  laboratoryCatalogue(actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) =>
+      tx.labTest.findMany({
+        where: { clinicId: actor.clinicId, active: true },
+        select: { id: true, code: true, name: true, price: true },
+        orderBy: { name: 'asc' },
+        take: 2_000,
+      }));
+  }
+
+  private async requesterUnitName(tx: Db, unitId: string | null) {
+    if (!unitId) return 'hors unité';
+    return (await tx.careUnit.findUnique({ where: { id: unitId }, select: { name: true } }))?.name ?? 'hors unité';
+  }
+
+  private async findLabTest(tx: Db, actor: OperationalClinicActor, code: string) {
+    const value = code.trim();
+    const labTest = await tx.labTest.findFirst({
+      where: { clinicId: actor.clinicId, active: true, OR: [{ id: value }, { code: { equals: value, mode: 'insensitive' } }] },
+    });
+    if (!labTest) throw new BadRequestException(`L’examen « ${value} » n’est pas dans le catalogue du laboratoire : choisissez un examen du catalogue (il porte le tarif facturé).`);
+    if (labTest.price === null || Number(labTest.price) <= 0) throw new BadRequestException(`Le tarif de l’examen « ${labTest.name} » n’est pas renseigné dans le catalogue du laboratoire.`);
+    return labTest;
+  }
+
+  private async openLabExam(
+    tx: Db, actor: OperationalClinicActor,
+    request: { id: string; patientId: string; code: string; label: string; reason: string | null; priority: string; requesterId: string },
+    unitName: string,
+  ) {
+    const existing = await tx.labRequest.findFirst({ where: { serviceRequestId: request.id }, select: { id: true } });
+    if (existing) return existing;
+    const labTest = await this.findLabTest(tx, actor, request.code);
+    const price = Number(labTest.price);
+    const labRequest = await tx.labRequest.create({
+      data: {
+        clinicId: actor.clinicId, patientId: request.patientId, serviceRequestId: request.id, consultationId: null,
+        requestedById: request.requesterId, status: 'REQUESTED', specimenType: labTest.name,
+        priority: request.priority === 'ROUTINE' ? 'NORMAL' : 'URGENT',
+        notes: [`Demande de l’unité ${unitName}`, request.reason].filter(Boolean).join(' — '),
+      },
+    });
+    await tx.labRequestItem.create({
+      data: { labRequestId: labRequest.id, labTestId: labTest.id, status: 'REQUESTED', requestedAt: labRequest.requestedAt, specimenLabel: labTest.name, notes: request.reason },
+    });
+    const invoice = await tx.invoice.create({
+      data: {
+        clinicId: actor.clinicId, patientId: request.patientId, issuedById: actor.id, type: 'LABORATORY', status: 'PENDING',
+        totalAmount: price, balanceDue: price,
+        remarks: `LabRequest:${labRequest.id} - Demande laboratoire ${labRequest.id} - ${labTest.name} (unité ${unitName})`,
+      },
+    });
+    await tx.invoiceLine.create({ data: { invoiceId: invoice.id, label: `Examen laboratoire - ${labTest.name}`, quantity: 1, unitPrice: price, totalAmount: price } });
+    await tx.labRequest.update({ where: { id: labRequest.id }, data: { externalReference: invoice.id } });
+    return labRequest;
+  }
+
+  /** A revoked request cancels its exam and, when nothing was paid yet, its invoice. */
+  private async cancelLabExam(tx: Db, serviceRequestId: string, reason: string | null) {
+    const labRequest = await tx.labRequest.findFirst({ where: { serviceRequestId }, select: { id: true, status: true, externalReference: true } });
+    if (!labRequest || ['AVAILABLE', 'SENT', 'COMPLETED', 'VERIFIED', 'CANCELLED'].includes(labRequest.status)) return null;
+    await tx.labRequest.update({ where: { id: labRequest.id }, data: { status: 'CANCELLED', notes: reason ? `Annulée : ${reason}` : 'Annulée par l’unité demandeuse' } });
+    await tx.labRequestItem.updateMany({ where: { labRequestId: labRequest.id, deletedAt: null }, data: { status: 'CANCELLED' } });
+    if (!labRequest.externalReference) return { labRequestId: labRequest.id, invoiceCancelled: false };
+    const cancelled = await tx.invoice.updateMany({
+      where: { id: labRequest.externalReference, status: 'PENDING', payments: { none: {} } },
+      data: { status: 'CANCELLED', balanceDue: 0 },
+    });
+    return { labRequestId: labRequest.id, invoiceCancelled: cancelled.count > 0 };
+  }
+
+  /** The unit's result becomes a technically validated laboratory result; biological validation stays with the laboratory. */
+  private async recordLabResult(tx: Db, actor: OperationalClinicActor, serviceRequestId: string, dto: ReportTaskResultDto) {
+    const labRequest = await tx.labRequest.findFirst({ where: { serviceRequestId }, include: { items: { where: { deletedAt: null }, include: { labTest: true } } } });
+    if (!labRequest) return null;
+    const item = labRequest.items[0];
+    const now = new Date();
+    const numeric = (value: string) => { const n = Number(value.replace(',', '.')); return /^-?\d+([.,]\d+)?$/.test(value.trim()) && Number.isFinite(n) ? n : null; };
+    const result = await tx.labResult.create({
+      data: {
+        labRequestId: labRequest.id, labRequestItemId: item?.id ?? null,
+        resultCode: item?.labTest.code ?? 'UNIT', resultName: item?.labTest.name ?? 'Résultat',
+        resultStatus: 'TECHNICAL_VALIDATED', resultValue: dto.summary.trim(), interpretation: dto.conclusion?.trim() || null,
+        reportedById: actor.id, reportedAt: now, technicalValidatedById: actor.id, technicalValidationAt: now,
+        parameters: {
+          create: (dto.observations ?? []).map((obs) => ({
+            parameterName: obs.name, valueText: obs.value, valueNumeric: numeric(obs.value), unit: obs.unit || null,
+            referenceRange: obs.referenceRange || null, interpretation: obs.flag || null, reportedById: actor.id, reportedAt: now,
+          })),
+        },
+      },
+    });
+    await tx.labRequest.update({ where: { id: labRequest.id }, data: { status: 'BIOLOGICAL_VALIDATION', performedAt: labRequest.performedAt ?? now } });
+    await tx.labRequestItem.updateMany({ where: { labRequestId: labRequest.id, deletedAt: null, status: { not: 'CANCELLED' } }, data: { status: 'BIOLOGICAL_VALIDATION', completedAt: now } });
+    return { labRequestId: labRequest.id, labResultId: result.id };
   }
 
   // ======================================================================= maternity

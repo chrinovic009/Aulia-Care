@@ -24,6 +24,7 @@ import { CurrentUser } from './current-user.decorator';
 import { CurrentUserResponseDto } from './dto/current-user-response.dto';
 import { UpdateUserDto } from '../users/dto/update-user.dto';
 import { ChangePinDto } from './dto/change-pin.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { VerifyPinDto } from './dto/verify-pin.dto';
 
 @Controller('auth')
@@ -128,6 +129,7 @@ export class AuthController {
       displayName: user.displayName,
       primaryRole: user.primaryRole || 'PATIENT',
       status: user.status,
+      mustChangePassword: user.mustChangePassword,
     });
     this.setSessionCookies(response, session);
     return { user: session.user };
@@ -227,6 +229,14 @@ export class AuthController {
   @Patch('profile')
   async updateProfile(@CurrentUser() user: any, @Body() payload: UpdateUserDto): Promise<CurrentUserResponseDto> {
     return this.authService.updateProfile(user.userId, payload) as Promise<CurrentUserResponseDto>;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000, blockDuration: 15 * 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('change-password')
+  async changePassword(@CurrentUser() user: any, @Body() body: ChangePasswordDto) {
+    return this.authService.changePassword(user.userId, user.sessionId, body.currentPassword, body.newPassword);
   }
 
   @UseGuards(JwtAuthGuard)

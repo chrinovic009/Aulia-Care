@@ -68,6 +68,12 @@ export class UsersController {
     return this.usersService.createAdmin(createUserDto, req.user?.userId);
   }
 
+  @Post(':id/reset-password')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  resetPassword(@Param('id') id: string, @Request() req: any) {
+    return this.usersService.resetPassword(id, req.user?.userId);
+  }
+
   @Patch(':id')
   @Roles('SUPER_ADMIN', 'ADMIN')
   update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto, @Request() req: any) {

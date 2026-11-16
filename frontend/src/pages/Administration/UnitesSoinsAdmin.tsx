@@ -90,18 +90,18 @@ function UnitEditor({ unit, onSaved }: { unit: CareUnit; onSaved: () => void }) 
   const [name, setName] = useState(unit.name);
   const [locations, setLocations] = useState((settings.locations ?? []).join("\n"));
   const [scale, setScale] = useState<TriageLevel[]>(settings.triageScale ?? []);
-  const [validated, setValidated] = useState(Boolean(settings.triageScaleValidated));
+  const validated = Boolean(settings.triageScaleValidated);
   const save = async (patch: Partial<UnitSettings> & { active?: boolean }) => {
     const { active, ...rest } = patch;
     try {
       await adminUpdateUnit(unit.id, {
         name: name.trim(), ...(active !== undefined ? { active } : {}),
-        settings: { ...settings, locations: locations.split("\n").map((line) => line.trim()).filter(Boolean), ...(unit.kind === "EMERGENCY" ? { triageScale: scale, triageScaleValidated: validated } : {}), ...rest },
+        settings: { ...settings, locations: locations.split("\n").map((line) => line.trim()).filter(Boolean), ...(unit.kind === "EMERGENCY" ? { triageScale: scale } : {}), ...rest },
       });
       onSaved();
     } catch { /* reported globally */ }
   };
-  const editLevel = (index: number, patch: Partial<TriageLevel>) => { setScale((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row))); setValidated(false); };
+  const editLevel = (index: number, patch: Partial<TriageLevel>) => { setScale((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row))); };
   return (
     <div className="space-y-4">
       <Card title={`${unit.name} · ${KIND_LABELS[unit.kind]}`} actions={<Button small tone={unit.active === false ? "secondary" : "danger"} onClick={() => void save({ active: unit.active === false })}>{unit.active === false ? "Réactiver" : "Désactiver"}</Button>}>
@@ -128,7 +128,7 @@ function UnitEditor({ unit, onSaved }: { unit: CareUnit; onSaved: () => void }) 
                         </select>
                       </td>
                       <td className="p-1"><input className={inputClass} type="number" min={0} value={level.maxWaitMinutes ?? ""} onChange={(e) => editLevel(index, { maxWaitMinutes: e.target.value === "" ? undefined : Number(e.target.value) })} /></td>
-                      <td className="p-1"><Button small tone="ghost" onClick={() => { setScale((rows) => rows.filter((_, i) => i !== index)); setValidated(false); }}>Retirer</Button></td>
+                      <td className="p-1"><Button small tone="ghost" onClick={() => setScale((rows) => rows.filter((_, i) => i !== index))}>Retirer</Button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -136,7 +136,7 @@ function UnitEditor({ unit, onSaved }: { unit: CareUnit; onSaved: () => void }) 
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <Button small tone="secondary" onClick={() => setScale((rows) => [...rows, { code: String(rows.length + 1), label: "", priority: "ROUTINE" }])}>Ajouter un niveau</Button>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={validated} onChange={(e) => setValidated(e.target.checked)} /> Échelle conforme au protocole validé par la direction médicale</label>
+              <span className={`text-sm ${validated ? "text-emerald-700" : "text-amber-700"}`}>{validated ? "Échelle validée par un responsable médical de l’unité." : "Non validée : un médecin responsable de l’unité la valide depuis l’unité (bandeau « Relire et valider »). Toute modification ici retire la validation."}</span>
             </div>
           </div>
         )}

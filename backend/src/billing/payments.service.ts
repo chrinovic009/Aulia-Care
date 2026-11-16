@@ -244,7 +244,11 @@ export class PaymentsService {
           }
         }
 
-        if (matchingLabRequest) {
+        // Only a request still waiting for its payment is released: an exam a
+        // care unit already performed must never go back to REQUESTED.
+        if (matchingLabRequest && matchingLabRequest.status !== 'AWAITING_PAYMENT') {
+          labRequest = matchingLabRequest;
+        } else if (matchingLabRequest) {
           labRequest = await prisma.labRequest.update({
             where: { id: matchingLabRequest.id },
             data: { status: 'REQUESTED', receivedAt: null },

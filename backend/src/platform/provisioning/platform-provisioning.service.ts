@@ -238,6 +238,8 @@ export class PlatformProvisioningService {
           phone: trimOrNull(dto.phone),
           bio: trimOrNull(dto.bio),
           passwordHash,
+          // Chosen by the platform operator: the holder replaces it at first sign-in.
+          mustChangePassword: true,
           primaryRole: RoleSlug.SUPER_ADMIN,
           clinicId: clinic.id,
           roles: {
@@ -349,7 +351,7 @@ export class PlatformProvisioningService {
       ...(dto.firstName !== undefined ? { firstName } : {}),
       ...(dto.lastName !== undefined ? { lastName } : {}),
       ...(dto.firstName !== undefined || dto.lastName !== undefined ? { displayName: `${firstName} ${lastName}`.trim() } : {}),
-      ...(dto.password ? { passwordHash: await bcrypt.hash(dto.password, 12) } : {}),
+      ...(dto.password ? { passwordHash: await bcrypt.hash(dto.password, 12), mustChangePassword: true } : {}),
     };
     if (!Object.keys(data).length) throw new BadRequestException('Aucune donnée du Super Admin à modifier.');
 

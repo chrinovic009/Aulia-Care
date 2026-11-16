@@ -19,6 +19,7 @@ import {
   RegisterArrivalDto,
   RegisterNewbornDto,
   ReportTaskResultDto,
+  ValidateProtocolDto,
   RecordCareEventDto,
   SendTransferDto,
   UpdateCareResourceDto,
@@ -53,6 +54,21 @@ export class CareWorkflowController {
   @Get('units')
   units(@Request() req: AuthedRequest) {
     return this.workflow.clinicUnits(req.user);
+  }
+
+  @Get('units/:unitId/protocols')
+  unitProtocols(@Param('unitId', ParseUUIDPipe) unitId: string, @Request() req: AuthedRequest) {
+    return this.workflow.unitProtocols(unitId, req.user);
+  }
+
+  @Post('units/:unitId/protocols/validate')
+  validateProtocol(@Param('unitId', ParseUUIDPipe) unitId: string, @Body() dto: ValidateProtocolDto, @Request() req: AuthedRequest) {
+    return this.workflow.validateProtocol(unitId, dto, req.user);
+  }
+
+  @Get('catalogue/laboratory')
+  laboratoryCatalogue(@Request() req: AuthedRequest) {
+    return this.workflow.laboratoryCatalogue(req.user);
   }
 
   @Get('patients/search')

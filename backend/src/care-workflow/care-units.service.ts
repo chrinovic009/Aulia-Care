@@ -4,6 +4,7 @@ import { AuthenticatedActor, ClinicContextService } from '../core/clinic-context
 import { isStaffRole } from '../core/tenant-roles';
 import { PrismaService } from '../prisma/prisma.service';
 import { closureRequirementsFromSettings } from './domain/workflow-rules';
+import { sealProtocolValidations } from './domain/protocol-validation';
 import { CreateCareUnitDto, UpdateCareUnitDto, UpsertCareUnitAssignmentDto } from './dto/care-workflow.dto';
 
 const UNIT_ADMIN_ROLES: readonly RoleSlug[] = [RoleSlug.SUPER_ADMIN, RoleSlug.ADMIN];
@@ -58,7 +59,8 @@ export class CareUnitsService {
           kind: dto.kind,
           code: dto.code,
           name: dto.name.trim(),
-          settings: dto.settings ? (dto.settings as Prisma.InputJsonValue) : undefined,
+          // Default protocols start unvalidated: only the unit's clinicians validate them.
+          settings: dto.settings ? (sealProtocolValidations(dto.kind, null, dto.settings) as Prisma.InputJsonValue) : undefined,
         },
       });
     } catch (error) {
@@ -72,14 +74,17 @@ export class CareUnitsService {
   async update(id: string, dto: UpdateCareUnitDto, actorInput?: AuthenticatedActor) {
     const actor = await this.admin(actorInput);
     this.checkSettings(dto.settings);
-    const unit = await this.prisma.careUnit.findFirst({ where: { id, clinicId: actor.clinicId }, select: { id: true } });
+    const unit = await this.prisma.careUnit.findFirst({ where: { id, clinicId: actor.clinicId }, select: { id: true, kind: true, settings: true } });
     if (!unit) throw new NotFoundException('Unité de soins introuvable.');
     return this.prisma.careUnit.update({
       where: { id },
       data: {
         name: dto.name?.trim(),
         active: dto.active,
-        settings: dto.settings ? (dto.settings as Prisma.InputJsonValue) : undefined,
+        // Validation flags are recomputed: a changed protocol loses its clinical validation.
+        settings: dto.settings
+          ? (sealProtocolValidations(unit.kind, unit.settings as Record<string, unknown> | null, dto.settings) as Prisma.InputJsonValue)
+          : undefined,
       },
     });
   }

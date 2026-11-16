@@ -5,10 +5,13 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../config/api";
 import { setSessionLockMinutes } from "../auth/SessionLock";
+import { ChangePasswordForm } from "../auth/PasswordChangeGate";
 
 export default function UserDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const [securityOpen, setSecurityOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
   const [currentPin, setCurrentPin] = useState("");
   const [nextPin, setNextPin] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -100,6 +103,12 @@ export default function UserDropdown() {
           Sécurité et code PIN
         </button>
         <button
+          onClick={() => { closeDropdown(); setPasswordNotice(null); setPasswordOpen(true); }}
+          className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5"
+        >
+          Changer mon mot de passe
+        </button>
+        <button
           onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2 mt-3 w-full text-left font-medium text-gray-700 rounded-lg group text-theme-sm hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-gray-300"
         >
@@ -121,6 +130,16 @@ export default function UserDropdown() {
           Se déconnecter
         </button>
       </Dropdown>
+      {passwordOpen && (
+        <div className="fixed inset-0 z-[100000] grid place-items-center overflow-y-auto bg-slate-950/60 p-4">
+          <section role="dialog" aria-modal="true" className="my-auto w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-950">
+            <p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Sécurité personnelle</p>
+            <h2 className="mt-2 text-xl font-bold text-aulia-navy dark:text-white">Changer mon mot de passe</h2>
+            {passwordNotice ? <p className="mt-4 text-sm text-emerald-700">{passwordNotice}</p> : <div className="mt-5"><ChangePasswordForm onCancel={() => setPasswordOpen(false)} onDone={() => setPasswordNotice("Mot de passe changé. Vos autres sessions ont été fermées.")} /></div>}
+            {passwordNotice && <button type="button" onClick={() => setPasswordOpen(false)} className="mt-4 w-full rounded-xl bg-aulia-navy px-4 py-2.5 text-sm font-semibold text-white">Fermer</button>}
+          </section>
+        </div>
+      )}
       {securityOpen && (
         <div className="fixed inset-0 z-[100000] grid place-items-center overflow-y-auto bg-slate-950/60 p-4">
           <section role="dialog" aria-modal="true" className="my-auto w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-950">

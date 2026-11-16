@@ -13,6 +13,7 @@ import { installCsrfFetchInterceptor } from "./config/csrfFetch.ts";
 import { ActionFeedbackProvider } from "./components/common/ActionFeedbackProvider.tsx";
 import { PlatformLayersProvider } from "./context/PlatformLayersContext.tsx";
 import SessionLock from "./components/auth/SessionLock.tsx";
+import PasswordChangeGate from "./components/auth/PasswordChangeGate.tsx";
 
 installCsrfFetchInterceptor();
 
@@ -28,7 +29,9 @@ createRoot(document.getElementById("root")!).render(
           <RealtimeProvider>
             <ActionFeedbackProvider>
               <AppWrapper>
-                <App />
+                <PasswordChangeGate>
+                  <App />
+                </PasswordChangeGate>
                 <SessionLock />
               </AppWrapper>
             </ActionFeedbackProvider>

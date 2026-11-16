@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   acknowledgeTransfer, ageLabel, genderLabel, changeEpisodeStatus, changeRequestStatus, changeTaskStatus, correctCareEvent, createServiceRequest,
-  decideTransfer, fetchClinicUnits, fetchEpisode, fetchUnitHistory, KIND_LABELS, mergeProvisionalPatient, patientName, personName,
+  decideTransfer, fetchClinicUnits, fetchLaboratoryCatalogue, fetchEpisode, fetchUnitHistory, KIND_LABELS, mergeProvisionalPatient, patientName, personName,
   PRIORITY_LABELS, recordCareEvent, reportTaskResult, REQUEST_STATUS_LABELS, searchCarePatients, sendTransfer, TASK_STATUS_LABELS, timeLabel,
   type CareEpisode, type CarePriority, type CareTask, type CareTransfer, type CareUnit, type CareUnitRole, type EpisodeDetail,
-  type PatientSummary, type ResultObservation, type ServiceRequest,
+  type LabCatalogueItem, type PatientSummary, type ResultObservation, type ServiceRequest,
 } from "../../api/careWorkflow";
 import { isQueued } from "../../offline/offlineQueue";
 import { Badge, Button, Card, Dialog, Empty, Field, inputClass, PriorityBadge } from "./ui";
@@ -76,7 +76,11 @@ export function requestStage(request: ServiceRequest, reviewedRequestIds: Set<st
 export function RequestDialog({ episode, unit, onClose, onDone }: { episode: { id: string; patientId: string }; unit: CareUnit; onClose: () => void; onDone: () => void }) {
   const [units, setUnits] = useState<CareUnit[]>([]);
   const [form, setForm] = useState({ performerUnitId: "", category: "EXAMEN", code: "", label: "", reason: "", priority: "URGENT" as CarePriority, draft: false });
+  const [labCatalogue, setLabCatalogue] = useState<LabCatalogueItem[] | null>(null);
   useEffect(() => { void fetchClinicUnits().then((rows) => setUnits(rows.filter((item) => item.id !== unit.id))).catch(() => setUnits([])); }, [unit.id]);
+  const performer = units.find((item) => item.id === form.performerUnitId);
+  const isLab = performer?.kind === "LABORATORY";
+  useEffect(() => { if (isLab && !labCatalogue) void fetchLaboratoryCatalogue().then(setLabCatalogue).catch(() => setLabCatalogue([])); }, [isLab, labCatalogue]);
   const ready = form.performerUnitId && form.label.trim().length >= 2 && form.code.trim();
   const submit = async () => {
     try {
@@ -102,8 +106,21 @@ export function RequestDialog({ episode, unit, onClose, onDone }: { episode: { i
             <option value="ADMISSION">Admission / lit</option><option value="TRANSPORT">Transport</option><option value="AUTRE">Autre</option>
           </select>
         </Field>
-        <Field label="Code (catalogue de l’établissement)"><input className={inputClass} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="Ex. NFS, RX-THORAX" /></Field>
-        <Field label="Intitulé"><input className={inputClass} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} /></Field>
+        {isLab ? (
+          <div className="md:col-span-2">
+            <Field label="Examen (catalogue du laboratoire)" hint="Facturé au tarif du catalogue : la facture part à la caisse, l’examen n’attend pas le paiement.">
+              <select className={inputClass} value={form.code} onChange={(e) => { const item = labCatalogue?.find((row) => row.code === e.target.value); setForm({ ...form, code: e.target.value, label: item?.name ?? "", category: "EXAMEN" }); }}>
+                <option value="">{labCatalogue === null ? "Chargement du catalogue…" : labCatalogue.length ? "Choisir un examen…" : "Catalogue vide : à compléter dans le module Laboratoire"}</option>
+                {(labCatalogue ?? []).map((item) => <option key={item.id} value={item.code}>{item.name} · {item.code}{item.price ? ` · ${Number(item.price).toLocaleString("fr-FR")}` : ""}</option>)}
+              </select>
+            </Field>
+          </div>
+        ) : (
+          <>
+            <Field label="Code (catalogue de l’établissement)"><input className={inputClass} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="Ex. AVIS-CHIR, RX-THORAX" /></Field>
+            <Field label="Intitulé"><input className={inputClass} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} /></Field>
+          </>
+        )}
         <Field label="Priorité">
           <select className={inputClass} value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value as CarePriority })}>
             {(Object.keys(PRIORITY_LABELS) as CarePriority[]).map((value) => <option key={value} value={value}>{PRIORITY_LABELS[value]}</option>)}
@@ -468,6 +485,7 @@ export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extr
                                   </table>
                                 )}
                                 {typeof event.payload?.conclusion === "string" && event.payload.conclusion && <p className="mt-1">Conclusion : {event.payload.conclusion}</p>}
+                                {Boolean(event.payload?.laboratory) && <p className="mt-1 text-amber-700 dark:text-amber-300">Validé techniquement par le laboratoire · validation biologique à faire dans le module Laboratoire.</p>}
                                 <p className="mt-1 text-slate-500">{personName(event.author)} · {timeLabel(event.occurredAt)}</p>
                               </div>
                             );

@@ -42,6 +42,9 @@ export interface AuthUser {
   /** Immutable tenant chosen by secure provisioning; never client-editable. */
   clinicId?: string | null;
 
+  /** Account opened or reset by an administrator: the holder must choose their own password first. */
+  mustChangePassword?: boolean;
+
   /** Alias conservé pour compatibilité avec le code existant. */
   role?: RoleSlug;
 
@@ -112,6 +115,9 @@ interface AuthContextType {
   updateProfile: (
     updates: Partial<AuthUser>,
   ) => Promise<AuthUser | null>;
+
+  /** The holder has just replaced the temporary password (POST /auth/change-password). */
+  markPasswordChanged: () => void;
 
   error: string | null;
   restrictedAccount: AuthUser | null;
@@ -768,6 +774,7 @@ export function AuthProvider({
     login,
     logout,
     updateProfile,
+    markPasswordChanged: () => setCurrentUser((user) => (user ? { ...user, mustChangePassword: false } : user)),
 
     error,
     restrictedAccount,

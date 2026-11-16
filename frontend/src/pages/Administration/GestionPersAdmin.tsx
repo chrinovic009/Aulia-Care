@@ -203,18 +203,6 @@ const emptyForm = {
   permanentShiftEndTime: "17:30",
 };
 
-function initialPasswordPreview(clinicName: string, role: RoleSlug, firstName: string, lastName: string, position: number) {
-  const establishment = (clinicName || "Aulia Care")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .slice(0, 2)
-    .toUpperCase()
-    .padEnd(2, "A");
-  const initials = `${firstName.charAt(0) || "X"}${lastName.charAt(0) || "X"}`.toUpperCase();
-  return `${establishment}${role.charAt(0)}-${initials}${position}${new Date().getFullYear()}`;
-}
-
 export default function GestionPersAdmin() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [services, setServices] = useState<ServiceRecord[]>([]);
@@ -234,7 +222,7 @@ export default function GestionPersAdmin() {
   const [createdCredential, setCreatedCredential] = useState<{ name: string; username: string; password: string } | null>(null);
   const [pendingAction, setPendingAction] = useState<null | {
     user: AdminUser;
-    type: "SUSPEND" | "INACTIVE" | "ACTIVE" | "DELETE";
+    type: "SUSPEND" | "INACTIVE" | "ACTIVE" | "DELETE" | "RESET_PASSWORD";
   }>(null);
   const [responsibilityReplacement, setResponsibilityReplacement] = useState<null | { departmentId: string; userId: string; name: string }>(null);
 
@@ -406,7 +394,6 @@ export default function GestionPersAdmin() {
         displayName,
         username,
         email: resolvedEmail,
-        password: editingUser ? form.password || undefined : undefined,
         primaryRole: form.primaryRole,
         isResponsible: form.isResponsible,
         isDepartmentResponsible: form.isResponsible,
@@ -506,6 +493,13 @@ export default function GestionPersAdmin() {
     setPendingAction(null);
     if (type === "DELETE") {
       await deleteUser(user);
+      return;
+    }
+    if (type === "RESET_PASSWORD") {
+      // A new random temporary password, shown once; the holder chooses their own at the next sign-in.
+      const reset = await apiFetch<{ generatedPassword: string }>(`/users/${user.id}/reset-password`, { method: "POST", body: "{}" });
+      setCreatedCredential({ name: user.displayName || `${user.firstName} ${user.lastName}`.trim(), username: user.username, password: reset.generatedPassword });
+      await load();
       return;
     }
     await changeStatus(user, type === "ACTIVE" ? "ACTIVE" : type === "SUSPEND" ? "SUSPENDED" : "INACTIVE");
@@ -616,6 +610,7 @@ export default function GestionPersAdmin() {
               ) : (
                 <button onClick={() => setPendingAction({ user, type: "SUSPEND" })} className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">Suspendre</button>
               )}
+              <button onClick={() => setPendingAction({ user, type: "RESET_PASSWORD" })} className="rounded-lg bg-aulia-mist px-3 py-2 text-xs font-semibold text-aulia-navy dark:bg-slate-800 dark:text-slate-200" title="Mot de passe oublié ou compromis">Réinitialiser le mot de passe</button>
               <button onClick={() => setPendingAction({ user, type: "INACTIVE" })} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">Desactiver</button>
               <button onClick={() => setPendingAction({ user, type: "DELETE" })} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">Supprimer</button>
             </div>,
@@ -688,7 +683,6 @@ export default function GestionPersAdmin() {
           onClose={() => setShowForm(false)}
           onSave={saveEmployee}
           error={formError}
-          passwordPreview={initialPasswordPreview(clinicName, form.primaryRole, form.firstName, form.lastName, users.filter((user) => user.primaryRole === form.primaryRole).length + 1)}
         />
       ) : null}
 
@@ -783,7 +777,7 @@ function ConfirmActionModal({
   onCancel,
   onConfirm,
 }: {
-  action: { user: AdminUser; type: "SUSPEND" | "INACTIVE" | "ACTIVE" | "DELETE" };
+  action: { user: AdminUser; type: "SUSPEND" | "INACTIVE" | "ACTIVE" | "DELETE" | "RESET_PASSWORD" };
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -806,6 +800,12 @@ function ConfirmActionModal({
       text: `${name} pourra de nouveau se connecter à son interface.`,
       button: "Réactiver",
       tone: "bg-emerald-600 hover:bg-emerald-700",
+    },
+    RESET_PASSWORD: {
+      title: "Réinitialiser le mot de passe ?",
+      text: `Un nouveau mot de passe temporaire sera généré et affiché une seule fois. Les sessions ouvertes de ${name} seront fermées, et ${name} devra choisir son propre mot de passe à sa prochaine connexion.`,
+      button: "Générer un mot de passe temporaire",
+      tone: "bg-aulia-navy hover:bg-aulia-navy/90",
     },
     DELETE: {
       title: "Supprimer cet employé ?",
@@ -849,7 +849,6 @@ function EmployeeForm({
   onClose,
   onSave,
   error,
-  passwordPreview,
 }: {
   form: typeof emptyForm;
   departments: DepartmentRecord[];
@@ -859,7 +858,6 @@ function EmployeeForm({
   onClose: () => void;
   onSave: () => void;
   error?: string | null;
-  passwordPreview: string;
 }) {
   // Admin assigns employees to departments only; services are managed later by responsables.
 
@@ -889,7 +887,7 @@ function EmployeeForm({
 
           <FormSection title="Informations professionnelles">
             <FormInput label="Nom utilisateur" value={form.username} onChange={(username) => onChange({ username })} />
-            {editing ? <FormInput label="Nouveau mot de passe (laisser vide pour ne pas le changer)" value={form.password} onChange={(password) => onChange({ password })} /> : <div className="rounded-xl border border-aulia-teal/30 bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><p className="font-semibold">Mot de passe initial généré par le système</p><p className="mt-1 text-xs">L’aperçu se met à jour avec le nom, le prénom et le rôle. Le serveur reste la source de vérité au moment de créer le compte.</p><output className="mt-3 block break-all rounded-lg bg-white/80 px-3 py-2 font-mono text-base font-bold text-aulia-navy dark:bg-slate-950">{passwordPreview}</output></div>}
+            <div className="rounded-xl border border-aulia-teal/30 bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><p className="font-semibold">Mot de passe</p><p className="mt-1 text-xs leading-5">{editing ? "L’administrateur ne choisit pas le mot de passe. En cas d’oubli, utilisez « Réinitialiser le mot de passe » dans la liste du personnel." : "Un mot de passe temporaire aléatoire est généré à l’enregistrement et affiché une seule fois. Le collaborateur devra le remplacer par le sien dès sa première connexion."}</p></div>
             <FormSelect label="Role" value={form.primaryRole} onChange={(primaryRole) => onChange({ primaryRole: primaryRole as RoleSlug })} options={roleOptions.map((role) => [role, roleLabel({ primaryRole: role } as AdminUser)])} />
             {SPECIALTY_ROLES.has(form.primaryRole) ? (
               <label className="text-sm">

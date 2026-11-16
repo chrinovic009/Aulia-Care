@@ -67,6 +67,9 @@ model User {
   pinUpdatedAt                     DateTime?
   pinFailedAttempts                Int                              @default(0)
   pinLockedUntil                   DateTime?
+  /// Set when an administrator opens or resets the account: the temporary password only opens the change screen.
+  mustChangePassword               Boolean                          @default(false)
+  passwordChangedAt                DateTime?
   status                           UserStatus                       @default(ACTIVE)
   primaryRole                      RoleSlug?
   specialty                        String?
@@ -1276,7 +1279,10 @@ model PharmacyDispenseLine {
 /// Laboratory workflow.
 model LabRequest {
   id                String            @id @default(uuid())
-  consultationId    String
+  /// Null for an exam requested by a care unit: see serviceRequestId.
+  consultationId    String?
+  /// Care-workflow request (emergency, maternity, dialysis...) this exam fulfils.
+  serviceRequestId  String?           @unique
   patientId         String
   requestedById     String?
   clinicId          String
@@ -1298,7 +1304,8 @@ model LabRequest {
   sourceNode        String?
   version           Int               @default(1)
   reports           LabReport[]
-  consultation      Consultation      @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  consultation      Consultation?     @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  serviceRequest    ServiceRequest?   @relation(fields: [serviceRequestId], references: [id], onDelete: SetNull)
   patient           Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
   clinic            Clinic            @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   requestedBy       User?             @relation("LabRequestRequester", fields: [requestedById], references: [id])
@@ -4396,6 +4403,7 @@ model ServiceRequest {
   tasks          CareTask[]
   events         CareEvent[]
   transfers      CareTransfer[]
+  labRequest     LabRequest?
 
   @@index([clinicId, performerUnitId, status])
   @@index([patientId, authoredAt])
