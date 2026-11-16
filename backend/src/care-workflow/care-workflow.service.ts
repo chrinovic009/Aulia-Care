@@ -26,6 +26,7 @@ import {
   ChangeServiceRequestStatusDto,
   ChangeTaskStatusDto,
   CorrectCareEventDto,
+  CreateCareResourceDto,
   CreateServiceRequestDto,
   CARE_PRIORITIES as CARE_PRIORITY_VALUES,
   DecideTransferDto,
@@ -34,6 +35,7 @@ import {
   RegisterArrivalDto,
   RecordCareEventDto,
   SendTransferDto,
+  UpdateCareResourceDto,
   UpdateEpisodeDto,
   ValidateCareEventDto,
   VersionOnlyDto,
@@ -205,7 +207,8 @@ export class CareWorkflowService {
             patient: patientSummary,
             responsible: userSummary,
             // Latest triage documented by a professional (the engine never computes one).
-            events: { where: { type: 'TRIAGE' }, select: { id: true, payload: true, occurredAt: true }, orderBy: { occurredAt: 'desc' }, take: 1 },
+            events: { where: { type: { in: ['TRIAGE', 'MISSION_STEP'] }, correctsEventId: null }, select: { id: true, type: true, payload: true, occurredAt: true }, orderBy: { occurredAt: 'desc' }, take: 5 },
+            resources: { select: { id: true, kind: true, code: true, label: true } },
           },
           orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
           take: 300,
@@ -379,6 +382,13 @@ export class CareWorkflowService {
         },
       });
       this.conflictIfStale(updated.count);
+      if (ending) {
+        // A closed stay never keeps a vehicle, a room or a machine engaged.
+        await tx.careResource.updateMany({
+          where: { clinicId: actor.clinicId, assignedEpisodeId: id },
+          data: { assignedEpisodeId: null, status: 'AVAILABLE', statusReason: null, version: { increment: 1 } },
+        });
+      }
       await this.recordEvent(tx, actor, {
         careUnitId: unit.id, patientId: episode.patientId, episodeId: id,
         type: 'EPISODE_STATUS_CHANGED',
@@ -696,14 +706,51 @@ export class CareWorkflowService {
       const payload = episodeChanges
         ? ({ ...(dto.payload ?? {}), episodeChanges } as Prisma.InputJsonValue)
         : (dto.payload as Prisma.InputJsonValue | undefined);
-      return this.recordEvent(tx, actor, {
+      const occurredAt = this.occurredAt(dto.occurredAt);
+      const event = await this.recordEvent(tx, actor, {
         careUnitId: unit.id, patientId, episodeId: dto.episodeId, requestId: dto.requestId, taskId: dto.taskId,
         type: dto.type,
         summary: dto.summary.trim(),
         payload,
-        occurredAt: this.occurredAt(dto.occurredAt),
+        occurredAt,
         requiresValidation: dto.requiresValidation ?? false,
       });
+      if (dto.episodeId) await this.applyStageEvent(tx, actor, unit, dto.episodeId, dto.type, dto.payload, occurredAt, event.id);
+      return event;
+    });
+  }
+
+  /**
+   * Units whose progress is documented step by step (ambulance missions...)
+   * declare settings.stageEventType: such an event moves the stay to
+   * payload.stage unless a later step was already documented. No version is
+   * needed, so these steps can be entered offline and replayed in any order.
+   */
+  private async applyStageEvent(
+    tx: Db,
+    actor: OperationalClinicActor,
+    unit: { id: string; settings: Prisma.JsonValue | null },
+    episodeId: string,
+    type: string,
+    payload: Record<string, unknown> | undefined,
+    occurredAt: Date,
+    eventId: string,
+  ) {
+    const settings = (unit.settings ?? {}) as { stageEventType?: unknown; stages?: unknown };
+    if (!settings.stageEventType || settings.stageEventType !== type) return;
+    const stage = payload?.stage;
+    if (typeof stage !== 'string' || !stage) throw new BadRequestException('Étape manquante (payload.stage).');
+    if (Array.isArray(settings.stages) && settings.stages.length && !settings.stages.includes(stage)) {
+      throw new BadRequestException(`Étape « ${stage} » non prévue par la configuration de l’unité.`);
+    }
+    const later = await tx.careEvent.findFirst({
+      where: { episodeId, type, id: { not: eventId }, correctsEventId: null, occurredAt: { gt: occurredAt } },
+      select: { id: true },
+    });
+    if (later) return;
+    await tx.careEpisode.updateMany({
+      where: { id: episodeId, clinicId: actor.clinicId, status: { in: [...OPEN_EPISODE] } },
+      data: { stage, version: { increment: 1 } },
     });
   }
 
@@ -1068,7 +1115,9 @@ export class CareWorkflowService {
       await this.recordEvent(tx, actor, {
         careUnitId: unit.id, patientId, episodeId: episode.id,
         type: 'ARRIVAL',
-        summary: dto.provisional ? `Arrivée sous identité provisoire dans l’unité ${unit.name}.` : `Arrivée dans l’unité ${unit.name}.`,
+        summary: dto.arrivalMode === 'CALL'
+          ? `Appel enregistré par l’unité ${unit.name}${dto.provisional ? ' (identité provisoire)' : ''}.`
+          : dto.provisional ? `Arrivée sous identité provisoire dans l’unité ${unit.name}.` : `Arrivée dans l’unité ${unit.name}.`,
         payload: {
           arrivalMode: dto.arrivalMode ?? null,
           reason: dto.reason ?? null,
@@ -1135,6 +1184,90 @@ export class CareWorkflowService {
         });
       }
       return { mergedPatientId: provisionalId, targetPatientId: target.id, movedEpisodes: openEpisodes.length };
+    });
+  }
+
+  // ======================================================================= resources
+
+  listResources(careUnitId: string, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      await this.access.requireUnit(tx, actor, careUnitId, 'read');
+      return tx.careResource.findMany({
+        where: { clinicId: actor.clinicId, careUnitId, status: { not: 'RETIRED' } },
+        include: { assignedEpisode: { select: { id: true, stage: true, priority: true, patient: patientSummary } } },
+        orderBy: [{ kind: 'asc' }, { code: 'asc' }],
+      });
+    });
+  }
+
+  createResource(careUnitId: string, dto: CreateCareResourceDto, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const { unit } = await this.access.requireUnit(tx, actor, careUnitId, 'configure');
+      const code = dto.code.trim().toUpperCase();
+      const existing = await tx.careResource.findFirst({ where: { careUnitId: unit.id, code }, select: { id: true } });
+      if (existing) throw new ConflictException(`Le code ${code} existe déjà dans cette unité.`);
+      const resource = await tx.careResource.create({
+        data: {
+          clinicId: actor.clinicId, careUnitId: unit.id, kind: dto.kind, code, label: dto.label.trim(),
+          details: dto.details ? (dto.details as Prisma.InputJsonValue) : undefined,
+        },
+      });
+      await this.recordEvent(tx, actor, {
+        careUnitId: unit.id, type: 'RESOURCE_CREATED', summary: `Ressource ${code} (${resource.label}) ajoutée.`,
+        payload: { resourceId: resource.id, kind: dto.kind },
+      });
+      return resource;
+    });
+  }
+
+  updateResource(id: string, dto: UpdateCareResourceDto, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const resource = await tx.careResource.findFirst({ where: { id, clinicId: actor.clinicId } });
+      if (!resource) throw new NotFoundException('Ressource introuvable.');
+      const configuring = dto.label !== undefined || dto.details !== undefined || dto.status === 'RETIRED';
+      const { unit } = await this.access.requireUnit(tx, actor, resource.careUnitId, configuring ? 'configure' : 'write');
+
+      const data: Prisma.CareResourceUncheckedUpdateManyInput = {};
+      let eventType = 'RESOURCE_UPDATED';
+      let summary = `Ressource ${resource.code} mise à jour.`;
+      let episodeId: string | null = null;
+      let patientId: string | null = null;
+
+      if (dto.assignedEpisodeId) {
+        if (dto.release) throw new BadRequestException('Engager ou libérer, pas les deux.');
+        if (resource.status !== 'AVAILABLE') throw new ConflictException(`${resource.code} n’est pas disponible (${resource.status}).`);
+        const episode = await this.findEpisode(tx, actor, dto.assignedEpisodeId);
+        if (episode.careUnitId !== unit.id || isTerminal('episode', episode.status)) {
+          throw new BadRequestException('La prise en charge doit être ouverte dans la même unité.');
+        }
+        Object.assign(data, { assignedEpisodeId: episode.id, status: 'ENGAGED', statusReason: null });
+        eventType = 'RESOURCE_ENGAGED'; summary = `${resource.label} (${resource.code}) engagé.`;
+        episodeId = episode.id; patientId = episode.patientId;
+      } else if (dto.release) {
+        if (!resource.assignedEpisodeId) throw new ConflictException(`${resource.code} n’est engagé sur aucune prise en charge.`);
+        const episode = await this.findEpisode(tx, actor, resource.assignedEpisodeId);
+        Object.assign(data, { assignedEpisodeId: null, status: 'AVAILABLE', statusReason: null });
+        eventType = 'RESOURCE_RELEASED'; summary = `${resource.label} (${resource.code}) libéré.`;
+        episodeId = isTerminal('episode', episode.status) ? null : episode.id; patientId = episode.patientId;
+      } else if (dto.status && dto.status !== resource.status) {
+        if (dto.status === 'ENGAGED') throw new BadRequestException('Une ressource est engagée en la rattachant à une prise en charge.');
+        if (resource.assignedEpisodeId) throw new ConflictException(`${resource.code} est engagé : libérez-le d’abord.`);
+        const reason = dto.statusReason?.trim();
+        if (dto.status !== 'AVAILABLE' && (!reason || reason.length < 2)) throw new BadRequestException('Indiquez le motif de l’indisponibilité.');
+        Object.assign(data, { status: dto.status, statusReason: dto.status === 'AVAILABLE' ? null : reason });
+        eventType = 'RESOURCE_STATUS_CHANGED'; summary = `${resource.code} : ${resource.status} → ${dto.status}${reason ? ` (${reason})` : ''}.`;
+      }
+      if (dto.label !== undefined) data.label = dto.label.trim();
+      if (dto.details !== undefined) data.details = dto.details as Prisma.InputJsonValue;
+      if (!Object.keys(data).length) throw new BadRequestException('Aucune modification demandée.');
+
+      const updated = await tx.careResource.updateMany({ where: { id, version: dto.version }, data: { ...data, version: { increment: 1 } } });
+      this.conflictIfStale(updated.count);
+      await this.recordEvent(tx, actor, {
+        careUnitId: unit.id, episodeId, patientId, type: eventType, summary,
+        payload: { resourceId: id, code: resource.code, from: resource.status, to: data.status ?? resource.status },
+      });
+      return tx.careResource.findFirstOrThrow({ where: { id }, include: { assignedEpisode: { select: { id: true, stage: true, priority: true, patient: patientSummary } } } });
     });
   }
 }

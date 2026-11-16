@@ -7,6 +7,7 @@ import {
   type CarePriority, type CareUnit, type CareUnitKind, type CareUnitRole, type TriageLevel, type UnitAssignment, type UnitSettings,
 } from "../../api/careWorkflow";
 import { DEFAULT_TRIAGE_SCALE } from "../Unites/urgences/emergencySettings";
+import { AMBULANCE_DEFAULT_SETTINGS } from "../Unites/ambulance/AmbulanceModule";
 import { Badge, Button, Card, Empty, Field, inputClass } from "../Unites/ui";
 
 type StaffUser = { id: string; firstName: string; lastName: string; primaryRole?: string; status?: string };
@@ -21,6 +22,7 @@ const defaultSettings = (kind: CareUnitKind): UnitSettings => kind === "EMERGENC
     locations: ["Box 1", "Box 2", "Box 3", "Déchocage", "Fauteuil 1"],
     closureRequirements: [{ eventType: "ORIENTATION", label: "Décision d’orientation" }],
   }
+  : kind === "AMBULANCE" ? { ...AMBULANCE_DEFAULT_SETTINGS, locations: [] }
   : {};
 
 export default function UnitesSoinsAdmin() {

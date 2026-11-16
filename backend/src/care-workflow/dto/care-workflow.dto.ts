@@ -215,3 +215,24 @@ export class VersionOnlyDto extends VersionedDto {}
 export class CancelTransferDto extends VersionedDto {
   @IsString() @MinLength(2) @MaxLength(REASON_MAX) reason: string;
 }
+
+// --------------------------------------------------------------------------- resources
+export const RESOURCE_KINDS = ['VEHICLE', 'TEAM', 'EQUIPMENT', 'ROOM', 'MACHINE'] as const;
+export const RESOURCE_STATUSES = ['AVAILABLE', 'ENGAGED', 'UNAVAILABLE', 'MAINTENANCE', 'RETIRED'] as const;
+
+export class CreateCareResourceDto {
+  @IsIn(RESOURCE_KINDS) kind: (typeof RESOURCE_KINDS)[number];
+  @IsString() @Matches(/^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$/, { message: 'Code de 1 à 32 caractères (lettres, chiffres, espace, - ou _).' }) code: string;
+  @IsString() @MinLength(2) @MaxLength(120) label: string;
+  @IsOptional() @IsObject() details?: Record<string, unknown>;
+}
+
+export class UpdateCareResourceDto extends VersionedDto {
+  @IsOptional() @IsIn(RESOURCE_STATUSES) status?: (typeof RESOURCE_STATUSES)[number];
+  @IsOptional() @IsString() @MaxLength(REASON_MAX) statusReason?: string;
+  /** Engage the resource on an open stay of the same unit. */
+  @IsOptional() @IsUUID() assignedEpisodeId?: string;
+  @IsOptional() @IsBoolean() release?: boolean;
+  @IsOptional() @IsString() @MinLength(2) @MaxLength(120) label?: string;
+  @IsOptional() @IsObject() details?: Record<string, unknown>;
+}

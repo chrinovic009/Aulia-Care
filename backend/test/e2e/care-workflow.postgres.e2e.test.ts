@@ -151,6 +151,35 @@ test('PostgreSQL : Care Workflow Engine, de la demande à l’exécution et au t
     assert.ok(mergedTimeline.some((event) => event.type === 'ARRIVAL'), 'events of the provisional record appear in the definitive chronology');
     await assert.rejects(() => engine.registerArrival(emergency.id, { patientId: arrival.patientId }, doc), ForbiddenException);
     assert.ok((await engine.unitHistory(emergency.id, 7, doc)).some((item) => item.id === episode.id));
+
+    // 11. Ambulance mission: resources, offline-replayable steps, release on closure.
+    const ambulance = await prisma.careUnit.create({
+      data: {
+        clinicId: clinic.id, kind: 'AMBULANCE', code: `AMB-${suffix}`.toUpperCase().slice(0, 32), name: 'SMUR',
+        settings: { stageEventType: 'MISSION_STEP', stages: ['CALL', 'DISPATCHED', 'EN_ROUTE', 'ON_SCENE', 'TRANSPORT', 'HANDOVER'] },
+      },
+    });
+    await prisma.careUnitAssignment.create({ data: { clinicId: clinic.id, careUnitId: ambulance.id, userId: emergencyDoctor.id, unitRole: 'LEAD' } });
+    await prisma.careUnitAssignment.create({ data: { clinicId: clinic.id, careUnitId: ambulance.id, userId: surgeon.id, unitRole: 'MEMBER' } });
+    await assert.rejects(() => engine.createResource(ambulance.id, { kind: 'VEHICLE', code: 'AMB1', label: 'Ambulance 1' }, surg), ForbiddenException);
+    const vehicle = await engine.createResource(ambulance.id, { kind: 'VEHICLE', code: 'amb1', label: 'Ambulance 1', details: { plate: 'TEST-001' } }, doc);
+    assert.equal(vehicle.code, 'AMB1');
+    const mission = await engine.registerArrival(ambulance.id, { provisional: { gender: 'UNKNOWN' }, reason: 'Accident de la route' }, doc);
+    assert.equal(mission.stage, 'CALL');
+    const engaged = await engine.updateResource(vehicle.id, { version: vehicle.version, assignedEpisodeId: mission.id }, surg);
+    assert.equal(engaged.status, 'ENGAGED');
+    await assert.rejects(() => engine.updateResource(vehicle.id, { version: engaged.version, status: 'MAINTENANCE', statusReason: 'Pneu' }, surg), ConflictException);
+    const t0 = Date.now();
+    // Steps documented offline arrive out of order: the latest step wins.
+    await engine.recordCareEvent({ careUnitId: ambulance.id, episodeId: mission.id, type: 'MISSION_STEP', summary: 'Sur place', payload: { stage: 'ON_SCENE' }, occurredAt: new Date(t0 - 60_000).toISOString() }, surg);
+    await engine.recordCareEvent({ careUnitId: ambulance.id, episodeId: mission.id, type: 'MISSION_STEP', summary: 'En route', payload: { stage: 'EN_ROUTE' }, occurredAt: new Date(t0 - 120_000).toISOString() }, surg);
+    assert.equal((await prisma.careEpisode.findUniqueOrThrow({ where: { id: mission.id } })).stage, 'ON_SCENE');
+    await assert.rejects(() => engine.recordCareEvent({ careUnitId: ambulance.id, episodeId: mission.id, type: 'MISSION_STEP', summary: 'x', payload: { stage: 'NOWHERE' } }, surg), /non prévue/);
+    const current = await prisma.careEpisode.findUniqueOrThrow({ where: { id: mission.id } });
+    await engine.changeEpisodeStatus(mission.id, { status: 'COMPLETED', version: current.version, outcome: 'HANDOVER' }, doc);
+    const released = await prisma.careResource.findUniqueOrThrow({ where: { id: vehicle.id } });
+    assert.equal(released.status, 'AVAILABLE');
+    assert.equal(released.assignedEpisodeId, null);
   } finally {
     if (clinicIds.length) {
       // Test teardown only: the insert-only trigger is lifted for this isolated database.
@@ -158,6 +187,7 @@ test('PostgreSQL : Care Workflow Engine, de la demande à l’exécution et au t
       try {
         const where = { clinicId: { in: clinicIds } };
         await prisma.careEvent.deleteMany({ where });
+        await prisma.careResource.deleteMany({ where });
         await prisma.careTransfer.deleteMany({ where });
         await prisma.careTask.deleteMany({ where });
         await prisma.careEpisode.updateMany({ where, data: { parentEpisodeId: null, sourceRequestId: null } });

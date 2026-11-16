@@ -277,10 +277,11 @@ const EVENT_LABELS: Record<string, string> = {
   EPISODE_RESPONSIBLE_CHANGED: "Responsable", IDENTITY_MERGED: "Identité confirmée", ENTERED_IN_ERROR: "Saisi en erreur", REQUEST_CREATED: "Demande",
   TRANSFER_SENT: "Transmission envoyée", TRANSFER_ACCEPTED: "Transmission acceptée", TRANSFER_REJECTED: "Transmission refusée",
   TRANSFER_RECEIVED: "Transmission lue", TRANSFER_CANCELLED: "Transmission annulée", REQUEST_SENT: "Demande envoyée", REQUEST_DRAFTED: "Demande à valider",
+  MISSION_STEP: "Étape de mission", PREHOSPITAL_ASSESSMENT: "Bilan préhospitalier", RESOURCE_ENGAGED: "Moyen engagé", RESOURCE_RELEASED: "Moyen libéré",
   REQUEST_STATUS_CHANGED: "Demande mise à jour", TASK_STATUS_CHANGED: "Tâche mise à jour", TASK_ASSIGNED: "Tâche attribuée", VALIDATION: "Validation",
 };
 /** Only professional documentation can be declared erroneous; system traces cannot. */
-const CORRECTABLE_EVENTS = new Set(["OBSERVATION", "VITALS", "CARE_GIVEN", "MEDICATION_GIVEN", "TRIAGE", "ORIENTATION", "RESULT_REVIEWED"]);
+const CORRECTABLE_EVENTS = new Set(["PREHOSPITAL_ASSESSMENT", "OBSERVATION", "VITALS", "CARE_GIVEN", "MEDICATION_GIVEN", "TRIAGE", "ORIENTATION", "RESULT_REVIEWED"]);
 export const eventLabel = (type: string) => EVENT_LABELS[type] ?? type.replace(/_/g, " ").toLowerCase();
 
 export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extraActions, stageLabels }: {

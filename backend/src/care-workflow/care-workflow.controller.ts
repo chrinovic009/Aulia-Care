@@ -10,6 +10,7 @@ import {
   ChangeServiceRequestStatusDto,
   ChangeTaskStatusDto,
   CorrectCareEventDto,
+  CreateCareResourceDto,
   CreateServiceRequestDto,
   DecideTransferDto,
   MergeProvisionalPatientDto,
@@ -17,6 +18,7 @@ import {
   RegisterArrivalDto,
   RecordCareEventDto,
   SendTransferDto,
+  UpdateCareResourceDto,
   UpdateEpisodeDto,
   ValidateCareEventDto,
   VersionOnlyDto,
@@ -57,6 +59,21 @@ export class CareWorkflowController {
   @Get('units/:unitId/history')
   history(@Param('unitId', ParseUUIDPipe) unitId: string, @Query('days') days: string | undefined, @Request() req: AuthedRequest) {
     return this.workflow.unitHistory(unitId, Number(days ?? 7), req.user);
+  }
+
+  @Get('units/:unitId/resources')
+  resources(@Param('unitId', ParseUUIDPipe) unitId: string, @Request() req: AuthedRequest) {
+    return this.workflow.listResources(unitId, req.user);
+  }
+
+  @Post('units/:unitId/resources')
+  createResource(@Param('unitId', ParseUUIDPipe) unitId: string, @Body() dto: CreateCareResourceDto, @Request() req: AuthedRequest) {
+    return this.workflow.createResource(unitId, dto, req.user);
+  }
+
+  @Patch('resources/:id')
+  updateResource(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCareResourceDto, @Request() req: AuthedRequest) {
+    return this.workflow.updateResource(id, dto, req.user);
   }
 
   @Post('units/:unitId/arrivals')

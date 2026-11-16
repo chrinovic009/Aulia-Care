@@ -31,8 +31,9 @@ export type CareEpisode = {
   reason?: string | null; locationLabel?: string | null; startedAt?: string | null; endedAt?: string | null; createdAt: string;
   outcome?: string | null; version: number; responsibleUserId?: string | null;
   patient: PatientSummary; responsible?: UserSummary | null;
-  /** Latest TRIAGE event, in worklists. */
-  events?: Array<{ id: string; payload?: Record<string, unknown> | null; occurredAt: string }>;
+  /** Latest TRIAGE / MISSION_STEP events and engaged resources, in worklists. */
+  events?: Array<{ id: string; type?: string; payload?: Record<string, unknown> | null; occurredAt: string }>;
+  resources?: Array<{ id: string; kind: CareResourceKind; code: string; label: string }>;
 };
 export type CareTask = {
   id: string; status: TaskStatus; priority: CarePriority; title: string; description?: string | null; dueAt?: string | null; createdAt: string;
@@ -121,6 +122,23 @@ export const acknowledgeTransfer = (transferId: string, version: number) => post
 export const decideTransfer = (transferId: string, body: { version: number; decision: "ACCEPT" | "REJECT"; reason?: string; episode?: { priority?: CarePriority; reason?: string; locationLabel?: string } }) =>
   post<CareTransfer>(`${base}/transfers/${transferId}/decision`, body);
 export const cancelTransfer = (transferId: string, version: number, reason: string) => post<CareTransfer>(`${base}/transfers/${transferId}/cancel`, { version, reason });
+
+// ----------------------------------------------------------------- resources
+export type CareResourceKind = "VEHICLE" | "TEAM" | "EQUIPMENT" | "ROOM" | "MACHINE";
+export type CareResourceStatus = "AVAILABLE" | "ENGAGED" | "UNAVAILABLE" | "MAINTENANCE" | "RETIRED";
+export type CareResource = {
+  id: string; careUnitId: string; kind: CareResourceKind; code: string; label: string; status: CareResourceStatus;
+  statusReason?: string | null; assignedEpisodeId?: string | null; details?: Record<string, unknown> | null; version: number;
+  assignedEpisode?: { id: string; stage?: string | null; priority: CarePriority; patient: PatientSummary } | null;
+};
+export const RESOURCE_STATUS_LABELS: Record<CareResourceStatus, string> = {
+  AVAILABLE: "Disponible", ENGAGED: "Engagé", UNAVAILABLE: "Indisponible", MAINTENANCE: "En maintenance", RETIRED: "Retiré",
+};
+export const fetchResources = (unitId: string) => apiFetch<CareResource[]>(`${base}/units/${unitId}/resources`);
+export const createResource = (unitId: string, body: { kind: CareResourceKind; code: string; label: string; details?: Record<string, unknown> }) =>
+  post<CareResource>(`${base}/units/${unitId}/resources`, body);
+export const updateResource = (resourceId: string, body: { version: number; status?: CareResourceStatus; statusReason?: string; assignedEpisodeId?: string; release?: boolean; label?: string; details?: Record<string, unknown> }) =>
+  apiFetch<CareResource>(`${base}/resources/${resourceId}`, { method: "PATCH", body: JSON.stringify(body) });
 
 // ----------------------------------------------------------------- administration
 export const adminListUnits = () => apiFetch<Array<CareUnit & { _count?: { assignments: number } }>>("/care-units");

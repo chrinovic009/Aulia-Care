@@ -2170,6 +2170,7 @@ model Clinic {
   labConfigurations             LabConfiguration[]
   labDailyStatistics            LabDailyStatistics[]
   careUnits                CareUnit[]
+  careResources            CareResource[]
   careUnitAssignments      CareUnitAssignment[]
   careEpisodes             CareEpisode[]
   serviceRequests          ServiceRequest[]
@@ -4280,6 +4281,7 @@ model CareUnit {
   events             CareEvent[]
   transfersOut       CareTransfer[]       @relation("CareTransferFromUnit")
   transfersIn        CareTransfer[]       @relation("CareTransferToUnit")
+  resources          CareResource[]
 
   @@unique([clinicId, code])
   @@index([clinicId, kind])
@@ -4347,6 +4349,7 @@ model CareEpisode {
   events         CareEvent[]
   transfersOut   CareTransfer[]  @relation("CareTransferFromEpisode")
   transfersIn    CareTransfer[]  @relation("CareTransferToEpisode")
+  resources      CareResource[]
 
   @@index([clinicId, careUnitId, status])
   @@index([patientId, createdAt])
@@ -4619,4 +4622,47 @@ model IdempotencyRecord {
 
   @@unique([userId, key])
   @@index([createdAt])
+}
+
+enum CareResourceKind {
+  VEHICLE
+  TEAM
+  EQUIPMENT
+  ROOM
+  MACHINE
+}
+
+enum CareResourceStatus {
+  AVAILABLE
+  ENGAGED
+  UNAVAILABLE
+  MAINTENANCE
+  RETIRED
+}
+
+/// Operational resource of a unit (ambulance, crew, monitor, operating room,
+/// dialysis machine...) and the stay it is currently engaged on.
+model CareResource {
+  id                String             @id @default(uuid())
+  clinicId          String
+  careUnitId        String
+  kind              CareResourceKind
+  code              String
+  label             String
+  status            CareResourceStatus @default(AVAILABLE)
+  statusReason      String?
+  assignedEpisodeId String?
+  /// Kind-specific details (plate, crew members, serial number, next check...).
+  details           Json?
+  version           Int                @default(1)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  clinic          Clinic       @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  careUnit        CareUnit     @relation(fields: [careUnitId], references: [id], onDelete: Restrict)
+  assignedEpisode CareEpisode? @relation(fields: [assignedEpisodeId], references: [id], onDelete: SetNull)
+
+  @@unique([careUnitId, code])
+  @@index([clinicId, careUnitId, kind, status])
+  @@index([assignedEpisodeId])
 }
