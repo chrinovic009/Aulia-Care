@@ -15,6 +15,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { apiFetch } from "../../config/api";
+import { SpecialtySelect } from "../../components/form/SpecialtySelect";
 import { AdminPageShell, DataTable, Panel, StatCard, StatusBadge, formatDate, formatMoney } from "./adminUi";
 
 type RoleSlug =
@@ -29,6 +30,9 @@ type RoleSlug =
   | "RADIOLOGIST"
   | "SURGEON"
   | "ANESTHESIOLOGIST"
+  | "MIDWIFE"
+  | "PARAMEDIC"
+  | "DISPATCHER"
   | "FINANCE"
   | "SUPER_ADMIN"
   | "PATIENT";
@@ -151,11 +155,17 @@ const roleFilters: Array<{ key: string; label: string }> = [
   { key: "RADIOLOGIST", label: "Radiologues" },
   { key: "SURGEON", label: "Chirurgiens" },
   { key: "ANESTHESIOLOGIST", label: "Anesthesistes" },
+  { key: "MIDWIFE", label: "Sages-femmes" },
+  { key: "PARAMEDIC", label: "Ambulanciers" },
+  { key: "DISPATCHER", label: "Régulateurs" },
   { key: "FINANCE", label: "Finance" },
   { key: "ACTIVE", label: "Actifs" },
   { key: "INACTIVE", label: "Inactifs" },
   { key: "SUSPENDED", label: "Suspendus" },
 ];
+
+/** Roles whose "Spécialité" is chosen in the establishment's list of medical specialties. */
+const SPECIALTY_ROLES: ReadonlySet<string> = new Set(["PHYSICIAN", "SURGEON", "ANESTHESIOLOGIST"]);
 
 const roleOptions = roleFilters
   .filter((item) => !["ALL", "ACTIVE", "INACTIVE", "SUSPENDED"].includes(item.key))
@@ -328,7 +338,7 @@ export default function GestionPersAdmin() {
       username: user.username || "",
       password: "",
       primaryRole: (user.primaryRole || "NURSE") as RoleSlug,
-      specialty: user.specialty || employee?.position || "",
+      specialty: SPECIALTY_ROLES.has(String(user.primaryRole)) ? user.specialty || "" : "",
       serviceId: user.staff?.[0]?.service?.id || "",
       departmentId: departments.find((department) => department.name === employee?.department?.name)?.id || "",
       isResponsible: Boolean((user.serviceResponsabilites && user.serviceResponsabilites.length) || (user as any).departmentResponsabilites?.length),
@@ -402,7 +412,8 @@ export default function GestionPersAdmin() {
         isDepartmentResponsible: form.isResponsible,
         phone: validatedPhone.e164 || undefined,
         status: form.status,
-        specialty: form.specialty || undefined,
+        // Only doctors have a medical specialty; other roles carry their role as position.
+        specialty: SPECIALTY_ROLES.has(form.primaryRole) ? form.specialty || undefined : "",
         nationality: form.nationality || undefined,
         addressCountry: form.addressCountry || undefined,
         addressProvince: form.addressProvince || undefined,
@@ -411,7 +422,7 @@ export default function GestionPersAdmin() {
         gender: form.gender || undefined,
         dateOfBirth: form.dateOfBirth || undefined,
         departmentId: form.departmentId || undefined,
-        position: form.specialty || roleLabel({ primaryRole: form.primaryRole } as AdminUser),
+        position: (SPECIALTY_ROLES.has(form.primaryRole) && form.specialty) || roleLabel({ primaryRole: form.primaryRole } as AdminUser),
         salary: form.salary ? Number(form.salary) : undefined,
         salaryFrequency: form.salaryFrequency || undefined,
         shiftPattern: form.shiftMode === "PERMANENT" ? "PERMANENT_DAY" : "THREE_DAY_THREE_NIGHT_THREE_REST",
@@ -880,7 +891,14 @@ function EmployeeForm({
             <FormInput label="Nom utilisateur" value={form.username} onChange={(username) => onChange({ username })} />
             {editing ? <FormInput label="Nouveau mot de passe (laisser vide pour ne pas le changer)" value={form.password} onChange={(password) => onChange({ password })} /> : <div className="rounded-xl border border-aulia-teal/30 bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><p className="font-semibold">Mot de passe initial généré par le système</p><p className="mt-1 text-xs">L’aperçu se met à jour avec le nom, le prénom et le rôle. Le serveur reste la source de vérité au moment de créer le compte.</p><output className="mt-3 block break-all rounded-lg bg-white/80 px-3 py-2 font-mono text-base font-bold text-aulia-navy dark:bg-slate-950">{passwordPreview}</output></div>}
             <FormSelect label="Role" value={form.primaryRole} onChange={(primaryRole) => onChange({ primaryRole: primaryRole as RoleSlug })} options={roleOptions.map((role) => [role, roleLabel({ primaryRole: role } as AdminUser)])} />
-            <FormInput label="Fonction / Specialite" value={form.specialty} onChange={(specialty) => onChange({ specialty })} />
+            {SPECIALTY_ROLES.has(form.primaryRole) ? (
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Spécialité</span>
+                <SpecialtySelect required value={form.specialty} onChange={(specialty) => onChange({ specialty })}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-aulia-teal focus:ring-2 focus:ring-aulia-teal/15 dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
+                <span className="mt-1 block text-xs text-slate-500">Elle adapte la consultation du médecin. Généraliste : « Médecine générale ». Urgence, anesthésie, réanimation : affectez aussi le médecin à son unité (Administration › Unités de soins).</span>
+              </label>
+            ) : null}
             <FormSelect label="Departement RH" value={form.departmentId} onChange={(departmentId) => onChange({ departmentId })} options={[["", "Aucun"], ...departments.map((department) => [department.id, department.name] as [string, string])]} />
             <FormSelect label="Responsable du departement" value={form.isResponsible ? "YES" : "NO"} onChange={(value) => onChange({ isResponsible: value === "YES" })} options={[["NO", "Non"], ["YES", "Oui"]]} />
             <FormSelect label="Statut" value={form.status} onChange={(status) => onChange({ status: status as UserStatus })} options={[["ACTIVE", "Actif"], ["INACTIVE", "Inactif"], ["SUSPENDED", "Suspendu"]]} />
@@ -894,7 +912,7 @@ function EmployeeForm({
         <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-end sm:p-5">
           {error ? <div className="mr-auto text-sm text-red-600">{error}</div> : null}
           <button onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:text-slate-200">Annuler</button>
-          <button disabled={isSaving || !form.firstName || !form.lastName || !form.primaryRole || (calculateAge(form.dateOfBirth) !== null && calculateAge(form.dateOfBirth)! < 18) || (form.shiftMode === "ROTATION" && (!form.rotationAnchorAt || Number(form.rotationDays) < 1))} onClick={onSave} className="rounded-lg bg-aulia-teal px-4 py-2.5 text-sm font-semibold text-white hover:bg-aulia-teal/90 disabled:cursor-not-allowed disabled:opacity-60">
+          <button disabled={isSaving || !form.firstName || !form.lastName || !form.primaryRole || (SPECIALTY_ROLES.has(form.primaryRole) && !form.specialty) || (calculateAge(form.dateOfBirth) !== null && calculateAge(form.dateOfBirth)! < 18) || (form.shiftMode === "ROTATION" && (!form.rotationAnchorAt || Number(form.rotationDays) < 1))} onClick={onSave} className="rounded-lg bg-aulia-teal px-4 py-2.5 text-sm font-semibold text-white hover:bg-aulia-teal/90 disabled:cursor-not-allowed disabled:opacity-60">
             {isSaving ? "Enregistrement..." : "Enregistrer"}
           </button>
         </div>
@@ -1053,6 +1071,12 @@ function roleLabel(user: AdminUser) {
       return gender === "F" ? "Chirurgienne" : "Chirurgien";
     case "ANESTHESIOLOGIST":
       return "Anesthesiste";
+    case "MIDWIFE":
+      return "Sage-femme";
+    case "PARAMEDIC":
+      return gender === "F" ? "Ambulancière" : "Ambulancier";
+    case "DISPATCHER":
+      return gender === "F" ? "Régulatrice" : "Régulateur";
     default:
       return user.primaryRole || "-";
   }

@@ -20,7 +20,7 @@ export type EmergencyTab = (typeof EMERGENCY_TABS)[number]["id"];
 type Props = { worklist: Worklist; tab: EmergencyTab; reload: () => void; openDossier: (episodeId: string) => void; setTab: (tab: EmergencyTab) => void };
 
 const levelOf = (episode: CareEpisode, scale: TriageLevel[]) => {
-  const code = episode.events?.[0]?.payload?.level;
+  const code = episode.events?.find((event) => event.type === "TRIAGE")?.payload?.level;
   return scale.find((level) => level.code === String(code ?? ""));
 };
 const byUrgency = (scale: TriageLevel[]) => (a: CareEpisode, b: CareEpisode) => {

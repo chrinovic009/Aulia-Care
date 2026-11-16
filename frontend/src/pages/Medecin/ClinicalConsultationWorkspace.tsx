@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { fetchMedicalSpecialties, specialtyInfo, type SpecialtyGroup } from "../../api/reference";
+import { recordAllergy } from "../../api/clinicalSafety";
+import { PatientAllergiesCard } from "../../components/clinical/PatientAllergiesCard";
+import { SPECIALTY_TEMPLATES, SpecialtyExam, type SpecialtyExamValue } from "./SpecialtyExam";
 import type { DoctorPatient } from "../../api/doctor";
 
 type Item = Record<string, string>;
@@ -36,6 +40,8 @@ export type StructuredConsultation = {
     redFlags: string;
   };
   physical: Record<string, string>;
+  /** Sections specific to the doctor's group of specialties. */
+  specialtyExam?: SpecialtyExamValue;
   orientation: Record<string, string>;
   care: {
     nonPharma: string;
@@ -207,6 +213,8 @@ type Props = {
   hasAvailableResults: boolean;
   examinationsSlot?: React.ReactNode;
   prescriptionSlot?: React.ReactNode;
+  /** Specialty of the signed-in doctor, as registered by the administration. */
+  doctorSpecialty?: string | null;
 };
 
 export function ClinicalConsultationWorkspace({
@@ -219,7 +227,15 @@ export function ClinicalConsultationWorkspace({
   hasAvailableResults,
   examinationsSlot,
   prescriptionSlot,
+  doctorSpecialty,
 }: Props) {
+  const [specialtyGroups, setSpecialtyGroups] = useState<SpecialtyGroup[]>([]);
+  useEffect(() => { void fetchMedicalSpecialties().then(setSpecialtyGroups).catch(() => setSpecialtyGroups([])); }, []);
+  const specialty = specialtyInfo(specialtyGroups, doctorSpecialty);
+  const specialtyTemplate = specialty ? SPECIALTY_TEMPLATES[specialty.template] : undefined;
+  const examPages = specialtyTemplate ? [...physicalPages, specialtyTemplate.title] : physicalPages;
+  const [allergyNotice, setAllergyNotice] = useState<string | null>(null);
+  const [allergyRefresh, setAllergyRefresh] = useState(0);
   const [step, setStep] = useState(0),
     [historyPage, setHistoryPage] = useState(0),
     [examPage, setExamPage] = useState(0);
@@ -268,6 +284,25 @@ export function ClinicalConsultationWorkspace({
     patch("antecedents", {
       [key]: value.antecedents[key].filter((_, i) => i !== index),
     });
+  /**
+   * An allergy noted in the history is also documented on the patient record,
+   * where the prescription check reads it; otherwise it would never block.
+   */
+  const addAllergy = async () => {
+    const substance = draft.substance?.trim();
+    if (!substance) return;
+    const severity = /sév|anaphyl|quincke/i.test(`${draft.severity ?? ""} ${draft.reaction ?? ""}`) ? "SEVERE" : /légère/i.test(draft.severity ?? "") ? "MILD" : "MODERATE";
+    add("allergies", "substance");
+    if (substance.length < 3) { setAllergyNotice("Notée dans l’anamnèse (nom trop court pour la vérification des prescriptions)."); return; }
+    try {
+      await recordAllergy(patient.id, { substance, severity, reaction: draft.reaction?.trim() || undefined, notes: [draft.kind, draft.notes].filter(Boolean).join(" · ") || undefined });
+      setAllergyNotice("Allergie documentée dans le dossier : elle sera vérifiée à chaque prescription.");
+      setAllergyRefresh((value) => value + 1);
+    } catch {
+      setAllergyNotice("Notée dans l’anamnèse. Si elle était déjà documentée, elle reste dans la liste ci-dessus.");
+      setAllergyRefresh((value) => value + 1);
+    }
+  };
   const addTreatment = () => {
     if (!treatment.medication.trim()) return;
     patch("illness", {
@@ -322,6 +357,12 @@ export function ClinicalConsultationWorkspace({
                 : "Aucune"}
             </p>
           </div>
+          <div className="flex flex-wrap gap-2">
+          {(specialty?.label || doctorSpecialty) && (
+            <span className="w-fit rounded-full bg-aulia-navy/10 px-3 py-1 text-xs font-bold text-aulia-navy dark:bg-white/10 dark:text-white" title={specialty?.domain}>
+              {specialty?.label || doctorSpecialty}
+            </span>
+          )}
           <span className="w-fit rounded-full bg-aulia-teal/15 px-3 py-1 text-xs font-bold text-aulia-teal">
             {mode === "EMERGENCY"
               ? "Parcours urgence"
@@ -329,6 +370,7 @@ export function ClinicalConsultationWorkspace({
                 ? "Visite à domicile"
                 : "Consultation présentielle"}
           </span>
+          </div>
         </div>
       </header>
       <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">
@@ -622,6 +664,8 @@ export function ClinicalConsultationWorkspace({
               </>
             )}
             {historyPage === 2 && (
+              <>
+              <div className="mt-4"><PatientAllergiesCard key={allergyRefresh} patientId={patient.id} /></div>
               <Entry title="Allergies, intolérances et atopie">
                 <Grid>
                   {field("Substance / allergène", "substance", [
@@ -651,9 +695,10 @@ export function ClinicalConsultationWorkspace({
                   ])}
                   {field("Précisions", "notes")}
                 </Grid>
-                <Add onClick={() => add("allergies", "substance")}>
+                <Add onClick={() => void addAllergy()}>
                   Ajouter l’allergie / intolérance
                 </Add>
+                {allergyNotice && <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">{allergyNotice}</p>}
                 <Rows
                   items={value.antecedents.allergies}
                   label={(x) =>
@@ -662,6 +707,7 @@ export function ClinicalConsultationWorkspace({
                   onRemove={(i) => remove("allergies", i)}
                 />
               </Entry>
+              </>
             )}
             {historyPage === 3 && (
               <Entry title="Traitements habituels et vaccinations">
@@ -967,7 +1013,7 @@ export function ClinicalConsultationWorkspace({
             hint="Chaque famille clinique est paginée. Les constantes sont en lecture seule et l’IMC se calcule automatiquement."
           >
             <Pager
-              labels={physicalPages}
+              labels={examPages}
               page={examPage}
               setPage={setExamPage}
             />
@@ -1064,19 +1110,12 @@ export function ClinicalConsultationWorkspace({
                   suggestions={examSuggestions[10]}
                 />
                 <Grid extra="mt-4">
-                  <Suggest
-                    label="Spécialité du médecin"
-                    value={physical("specialist")}
-                    onChange={(v) => setPhysical("specialist", v)}
-                    suggestions={[
-                      "Médecine générale",
-                      "Cardiologie",
-                      "Pédiatrie",
-                      "Gynécologie-obstétrique",
-                      "Chirurgie",
-                      "Médecine interne",
-                    ]}
-                  />
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium text-slate-700 dark:text-slate-200">Spécialité du médecin</span>
+                    <span className="block rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                      {specialty?.label || doctorSpecialty || "Non renseignée — à compléter par l’administration"}
+                    </span>
+                  </label>
                   <Text
                     label="Note du spécialiste"
                     value={physical("specialistNote")}
@@ -1091,6 +1130,17 @@ export function ClinicalConsultationWorkspace({
                   multiline
                 />
               </>
+            )}
+            {examPage === 11 && specialty && specialtyTemplate && (
+              <SpecialtyExam
+                template={specialty.template}
+                specialty={specialty.label}
+                value={value.specialtyExam ?? { values: {} }}
+                onChange={(specialtyExam) => onChange({ ...value, specialtyExam })}
+                renderField={(label, input) => (
+                  <label className="block text-sm"><span className="mb-1 block font-medium text-slate-700 dark:text-slate-200">{label}</span>{input}</label>
+                )}
+              />
             )}
           </Step>
         )}

@@ -7,6 +7,9 @@ import { Badge, Button, Card, Empty, PriorityBadge, Stat } from "./ui";
 import { EMERGENCY_TABS, UrgencesModule, type EmergencyTab } from "./urgences/UrgencesModule";
 import { STAGE_LABELS } from "./urgences/emergencySettings";
 import { AMBULANCE_TABS, AmbulanceModule, MISSION_STEPS, type AmbulanceTab } from "./ambulance/AmbulanceModule";
+import { MATERNITY_STAGES, MATERNITY_TABS, MaterniteModule, type MaternityTab } from "./maternite/MaterniteModule";
+import { ChirurgieModule, SURGERY_STAGE_LABELS, SURGERY_TABS, type SurgeryTab } from "./chirurgie/ChirurgieModule";
+import { DIALYSIS_STAGE_LABELS, DIALYSIS_TABS, DialyseModule, type DialysisTab } from "./dialyse/DialyseModule";
 
 const REFRESH_MS = 20_000;
 const COMMON_TABS = [
@@ -35,7 +38,7 @@ export default function UnitWorkspace() {
   }, [load]);
 
   const kind = worklist?.unit.kind;
-  const tabs = useMemo(() => (kind === "EMERGENCY" ? EMERGENCY_TABS : kind === "AMBULANCE" ? AMBULANCE_TABS : COMMON_TABS), [kind]);
+  const tabs = useMemo(() => (kind === "EMERGENCY" ? EMERGENCY_TABS : kind === "AMBULANCE" ? AMBULANCE_TABS : kind === "MATERNITY" ? MATERNITY_TABS : kind === "SURGERY" ? SURGERY_TABS : kind === "DIALYSIS" ? DIALYSIS_TABS : COMMON_TABS), [kind]);
   const tab = (params.get("onglet") ?? tabs[0].id) as string;
   const setTab = (value: string) => setParams((current) => { const next = new URLSearchParams(current); next.set("onglet", value); return next; }, { replace: true });
 
@@ -82,11 +85,17 @@ export default function UnitWorkspace() {
         </nav>
         {unit.kind === "EMERGENCY"
           ? <UrgencesModule worklist={worklist} tab={tab as EmergencyTab} reload={() => void load()} openDossier={setDossier} setTab={(value) => setTab(value)} />
+          : unit.kind === "SURGERY"
+          ? <ChirurgieModule worklist={worklist} tab={tab as SurgeryTab} reload={() => void load()} openDossier={setDossier} />
+          : unit.kind === "DIALYSIS"
+          ? <DialyseModule worklist={worklist} tab={tab as DialysisTab} reload={() => void load()} openDossier={setDossier} />
+          : unit.kind === "MATERNITY"
+          ? <MaterniteModule worklist={worklist} tab={tab as MaternityTab} reload={() => void load()} openDossier={setDossier} />
           : unit.kind === "AMBULANCE"
           ? <AmbulanceModule worklist={worklist} tab={tab as AmbulanceTab} reload={() => void load()} openDossier={setDossier} setTab={(value) => setTab(value)} />
           : <CommonModule worklist={worklist} tab={tab} reload={() => void load()} openDossier={setDossier} />}
       </div>
-      {dossier && <EpisodeDossier episodeId={dossier} unit={unit} role={unitRole} stageLabels={unit.kind === "EMERGENCY" ? STAGE_LABELS : unit.kind === "AMBULANCE" ? Object.fromEntries(MISSION_STEPS.map((step) => [step.code, step.label])) : undefined} onClose={() => setDossier(null)} onChanged={() => void load()} />}
+      {dossier && <EpisodeDossier episodeId={dossier} unit={unit} role={unitRole} stageLabels={unit.kind === "EMERGENCY" ? STAGE_LABELS : unit.kind === "AMBULANCE" ? Object.fromEntries(MISSION_STEPS.map((step) => [step.code, step.label])) : unit.kind === "MATERNITY" ? MATERNITY_STAGES : unit.kind === "SURGERY" ? SURGERY_STAGE_LABELS : unit.kind === "DIALYSIS" ? DIALYSIS_STAGE_LABELS : undefined} onClose={() => setDossier(null)} onChanged={() => void load()} />}
     </>
   );
 }

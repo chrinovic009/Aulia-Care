@@ -8,6 +8,9 @@ import {
 } from "../../api/careWorkflow";
 import { DEFAULT_TRIAGE_SCALE } from "../Unites/urgences/emergencySettings";
 import { AMBULANCE_DEFAULT_SETTINGS } from "../Unites/ambulance/AmbulanceModule";
+import { MATERNITY_DEFAULT_SETTINGS } from "../Unites/maternite/MaterniteModule";
+import { SURGERY_DEFAULT_SETTINGS } from "../Unites/chirurgie/ChirurgieModule";
+import { DIALYSIS_DEFAULT_SETTINGS } from "../Unites/dialyse/DialyseModule";
 import { Badge, Button, Card, Empty, Field, inputClass } from "../Unites/ui";
 
 type StaffUser = { id: string; firstName: string; lastName: string; primaryRole?: string; status?: string };
@@ -23,6 +26,9 @@ const defaultSettings = (kind: CareUnitKind): UnitSettings => kind === "EMERGENC
     closureRequirements: [{ eventType: "ORIENTATION", label: "Décision d’orientation" }],
   }
   : kind === "AMBULANCE" ? { ...AMBULANCE_DEFAULT_SETTINGS, locations: [] }
+  : kind === "SURGERY" ? { ...SURGERY_DEFAULT_SETTINGS, locations: [] }
+  : kind === "DIALYSIS" ? { ...DIALYSIS_DEFAULT_SETTINGS, locations: ["Poste 1", "Poste 2", "Poste 3", "Poste 4"] }
+  : kind === "MATERNITY" ? { ...MATERNITY_DEFAULT_SETTINGS, locations: ["Salle de pré-travail", "Salle d’accouchement 1", "Chambre 1"] }
   : {};
 
 export default function UnitesSoinsAdmin() {

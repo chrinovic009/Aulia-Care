@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ChevronLeftIcon, EyeCloseIcon, EyeIcon } from "../../icons";
-import { useAuth, getRedirectPath } from "../../context/AuthContext";
+import { useAuth, getHomePath, canReturnTo } from "../../context/AuthContext";
 import Label from "../form/Label";
 import Input from "../form/input/InputField";
 import Checkbox from "../form/input/Checkbox";
@@ -25,7 +25,7 @@ export default function SignInForm() {
   // Redirection si déjà authentifié
   useEffect(() => {
     if (currentUser) {
-      navigate(returnPath || getRedirectPath(currentUser.primaryRole), { replace: true });
+      navigate(returnPath && canReturnTo(returnPath, currentUser.primaryRole) ? returnPath : getHomePath(currentUser), { replace: true });
     }
   }, [currentUser, navigate, returnPath]);
 
@@ -55,7 +55,8 @@ export default function SignInForm() {
       }
 
       console.log("✓ Connecté avec le rôle:", user.primaryRole);
-      navigate(returnPath || getRedirectPath(user.primaryRole), { replace: true });
+      // The page left by the previous session is reopened only if it belongs to this role.
+      navigate(returnPath && canReturnTo(returnPath, user.primaryRole) ? returnPath : getHomePath(user), { replace: true });
     } catch (err) {
       console.error(err);
       setError("Une erreur est survenue lors de la connexion.");

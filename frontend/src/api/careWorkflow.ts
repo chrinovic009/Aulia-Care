@@ -113,6 +113,9 @@ export const changeRequestStatus = (requestId: string, body: { version: number; 
   post<ServiceRequest>(`${base}/requests/${requestId}/status`, body);
 export const changeTaskStatus = (taskId: string, body: { version: number; status: TaskStatus; reason?: string }) =>
   post<CareTask>(`${base}/tasks/${taskId}/status`, body);
+export type ResultObservation = { name: string; value: string; unit?: string; referenceRange?: string; flag?: "NORMAL" | "LOW" | "HIGH" | "CRITICAL" | "ABNORMAL" };
+export const reportTaskResult = (taskId: string, body: { version: number; summary: string; observations?: ResultObservation[]; conclusion?: string }) =>
+  post<CareEvent>(`${base}/tasks/${taskId}/result`, body);
 export const assignTask = (taskId: string, body: { version: number; ownerUserId?: string | null; reason?: string }) =>
   post<CareTask>(`${base}/tasks/${taskId}/assign`, body);
 

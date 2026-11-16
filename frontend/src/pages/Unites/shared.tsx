@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   acknowledgeTransfer, ageLabel, genderLabel, changeEpisodeStatus, changeRequestStatus, changeTaskStatus, correctCareEvent, createServiceRequest,
   decideTransfer, fetchClinicUnits, fetchEpisode, fetchUnitHistory, KIND_LABELS, mergeProvisionalPatient, patientName, personName,
-  PRIORITY_LABELS, recordCareEvent, REQUEST_STATUS_LABELS, searchCarePatients, sendTransfer, TASK_STATUS_LABELS, timeLabel,
+  PRIORITY_LABELS, recordCareEvent, reportTaskResult, REQUEST_STATUS_LABELS, searchCarePatients, sendTransfer, TASK_STATUS_LABELS, timeLabel,
   type CareEpisode, type CarePriority, type CareTask, type CareTransfer, type CareUnit, type CareUnitRole, type EpisodeDetail,
-  type PatientSummary, type ServiceRequest,
+  type PatientSummary, type ResultObservation, type ServiceRequest,
 } from "../../api/careWorkflow";
 import { isQueued } from "../../offline/offlineQueue";
 import { Badge, Button, Card, Dialog, Empty, Field, inputClass, PriorityBadge } from "./ui";
@@ -209,6 +209,7 @@ export function IncomingTransfers({ transfers, role, onChanged, onOpenEpisode }:
 
 // ------------------------------------------------------------------ tasks
 export function TaskList({ tasks, role, onChanged }: { tasks: CareTask[]; role: CareUnitRole; onChanged: () => void }) {
+  const [resultTask, setResultTask] = useState<CareTask | null>(null);
   const move = async (task: CareTask, status: CareTask["status"], askReason?: boolean) => {
     const reason = askReason ? window.prompt("Motif (obligatoire) :") : undefined;
     if (askReason && (!reason || reason.trim().length < 2)) return;
@@ -228,12 +229,61 @@ export function TaskList({ tasks, role, onChanged }: { tasks: CareTask[]; role: 
               {["REQUESTED", "RECEIVED"].includes(task.status) && <Button small tone="secondary" onClick={() => void move(task, "ACCEPTED")}>Accepter</Button>}
               {["REQUESTED", "RECEIVED"].includes(task.status) && <Button small tone="ghost" onClick={() => void move(task, "REJECTED", true)}>Refuser</Button>}
               {["ACCEPTED", "READY"].includes(task.status) && <Button small tone="secondary" onClick={() => void move(task, "IN_PROGRESS")}>Démarrer</Button>}
-              {task.status === "IN_PROGRESS" && <Button small onClick={() => void move(task, "COMPLETED")}>Terminer</Button>}
+              {task.request && ["ACCEPTED", "READY", "IN_PROGRESS"].includes(task.status) && <Button small onClick={() => setResultTask(task)}>Saisir le résultat</Button>}
+              {task.status === "IN_PROGRESS" && !task.request && <Button small onClick={() => void move(task, "COMPLETED")}>Terminer</Button>}
             </div>
           )}
         </li>
       ))}
+      {resultTask && <ResultDialog task={resultTask} onClose={() => setResultTask(null)} onDone={() => { setResultTask(null); onChanged(); }} />}
     </ul>
+  );
+}
+
+const FLAG_LABELS: Record<string, string> = { NORMAL: "Normal", LOW: "Bas", HIGH: "Élevé", CRITICAL: "Critique", ABNORMAL: "Anormal" };
+
+/** Result of a requested act, entered by the performing unit (values as measured; nothing is interpreted here). */
+function ResultDialog({ task, onClose, onDone }: { task: CareTask; onClose: () => void; onDone: () => void }) {
+  const [rows, setRows] = useState<ResultObservation[]>([{ name: "", value: "" }]);
+  const [summary, setSummary] = useState("");
+  const [conclusion, setConclusion] = useState("");
+  const update = (index: number, patch: Partial<ResultObservation>) => setRows((items) => items.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  const observations = rows.filter((row) => row.name.trim() && row.value.trim()).map((row) => ({ ...row, name: row.name.trim(), value: row.value.trim(), unit: row.unit?.trim() || undefined, referenceRange: row.referenceRange?.trim() || undefined }));
+  const submit = async () => {
+    try { await reportTaskResult(task.id, { version: task.version, summary: summary.trim(), observations, conclusion: conclusion.trim() || undefined }); onDone(); } catch { /* reported globally */ }
+  };
+  return (
+    <Dialog title={`Résultat — ${task.request?.label ?? task.title}`} onClose={onClose} wide>
+      <p className="mb-3 text-sm text-slate-600">{patientName(task.patient)}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
+          <thead className="text-xs uppercase text-slate-500"><tr><th className="p-1 text-left">Paramètre</th><th className="p-1 text-left">Valeur</th><th className="p-1 text-left">Unité</th><th className="p-1 text-left">Valeurs de référence</th><th className="p-1 text-left">Indication</th><th /></tr></thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index}>
+                <td className="p-1"><input className={inputClass} value={row.name} onChange={(e) => update(index, { name: e.target.value })} /></td>
+                <td className="p-1"><input className={inputClass} value={row.value} onChange={(e) => update(index, { value: e.target.value })} /></td>
+                <td className="p-1"><input className={inputClass} value={row.unit ?? ""} onChange={(e) => update(index, { unit: e.target.value })} /></td>
+                <td className="p-1"><input className={inputClass} value={row.referenceRange ?? ""} onChange={(e) => update(index, { referenceRange: e.target.value })} placeholder="Ex. 3,5 – 5,0" /></td>
+                <td className="p-1">
+                  <select className={inputClass} value={row.flag ?? ""} onChange={(e) => update(index, { flag: (e.target.value || undefined) as ResultObservation["flag"] })}>
+                    <option value="">—</option>{Object.entries(FLAG_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </td>
+                <td className="p-1"><Button small tone="ghost" onClick={() => setRows((items) => items.filter((_, i) => i !== index))}>Retirer</Button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Button small tone="secondary" onClick={() => setRows((items) => [...items, { name: "", value: "" }])}>Ajouter un paramètre</Button>
+      <div className="mt-3 grid gap-3">
+        <Field label="Résultat / compte rendu (obligatoire)"><textarea className={inputClass} rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} /></Field>
+        <Field label="Conclusion"><textarea className={inputClass} rows={2} value={conclusion} onChange={(e) => setConclusion(e.target.value)} /></Field>
+      </div>
+      <p className="mt-2 text-xs text-slate-500">L’indication (bas, élevé, critique) est celle que vous constatez ; le résultat est daté, signé et notifié au demandeur. Une erreur se corrige depuis le dossier, sans effacer.</p>
+      <div className="mt-4 flex justify-end gap-2"><Button tone="ghost" onClick={onClose}>Annuler</Button><Button disabled={summary.trim().length < 2} onClick={() => void submit()}>Transmettre le résultat</Button></div>
+    </Dialog>
   );
 }
 
@@ -272,16 +322,23 @@ export function HistoryList({ unitId, onOpen }: { unitId: string; onOpen: (episo
 
 // ------------------------------------------------------------------ dossier of a stay
 const EVENT_LABELS: Record<string, string> = {
+  DIALYSIS_STEP: "Étape de séance", DIALYSIS_PRESCRIPTION: "Prescription de dialyse", DIALYSIS_PRE_ASSESSMENT: "Évaluation avant séance", DIALYSIS_SESSION_PARAMETERS: "Paramètres de séance",
+  DIALYSIS_MONITORING: "Surveillance per-dialytique", DIALYSIS_POST_ASSESSMENT: "Évaluation après séance", DIALYSIS_INCIDENT: "Incident de dialyse", CONSUMABLE_USED: "Consommables", MACHINE_MAINTENANCE: "Maintenance générateur",
   ARRIVAL: "Arrivée", TRIAGE: "Tri", OBSERVATION: "Observation", VITALS: "Constantes", CARE_GIVEN: "Soin réalisé", MEDICATION_GIVEN: "Traitement administré",
   ORIENTATION: "Orientation", RESULT_REVIEWED: "Résultat consulté", EPISODE_OPENED: "Ouverture", EPISODE_STATUS_CHANGED: "Statut", EPISODE_UPDATED: "Mise à jour",
   EPISODE_RESPONSIBLE_CHANGED: "Responsable", IDENTITY_MERGED: "Identité confirmée", ENTERED_IN_ERROR: "Saisi en erreur", REQUEST_CREATED: "Demande",
   TRANSFER_SENT: "Transmission envoyée", TRANSFER_ACCEPTED: "Transmission acceptée", TRANSFER_REJECTED: "Transmission refusée",
   TRANSFER_RECEIVED: "Transmission lue", TRANSFER_CANCELLED: "Transmission annulée", REQUEST_SENT: "Demande envoyée", REQUEST_DRAFTED: "Demande à valider",
   MISSION_STEP: "Étape de mission", PREHOSPITAL_ASSESSMENT: "Bilan préhospitalier", RESOURCE_ENGAGED: "Moyen engagé", RESOURCE_RELEASED: "Moyen libéré",
+  RESULT_REPORTED: "Résultat transmis", PREGNANCY_OPENED: "Suivi de grossesse", PREGNANCY_UPDATED: "Grossesse mise à jour", PRENATAL_VISIT: "Consultation prénatale",
+  PARTOGRAM_ENTRY: "Partogramme", DELIVERY: "Accouchement", BIRTH: "Naissance", NEWBORN_REGISTERED: "Naissance", NEWBORN_ASSESSMENT: "Examen du nouveau-né",
+  NEWBORN_CARE: "Soins néonatals", POSTPARTUM_CHECK: "Surveillance post-partum",
+  SURGERY_SCHEDULED: "Programmation", SURGERY_STEP: "Étape opératoire", PREOP_CHECK: "Préopératoire", ANESTHESIA_RECORD: "Anesthésie", OPERATIVE_REPORT: "Compte rendu opératoire",
+  CHECKLIST_ITEM: "Check-list", RECOVERY_OBSERVATION: "Réveil", POSTOP_FOLLOWUP: "Suites opératoires", IMPLANT_USED: "Implant",
   REQUEST_STATUS_CHANGED: "Demande mise à jour", TASK_STATUS_CHANGED: "Tâche mise à jour", TASK_ASSIGNED: "Tâche attribuée", VALIDATION: "Validation",
 };
 /** Only professional documentation can be declared erroneous; system traces cannot. */
-const CORRECTABLE_EVENTS = new Set(["PREHOSPITAL_ASSESSMENT", "OBSERVATION", "VITALS", "CARE_GIVEN", "MEDICATION_GIVEN", "TRIAGE", "ORIENTATION", "RESULT_REVIEWED"]);
+const CORRECTABLE_EVENTS = new Set(["DIALYSIS_PRESCRIPTION", "DIALYSIS_PRE_ASSESSMENT", "DIALYSIS_SESSION_PARAMETERS", "DIALYSIS_MONITORING", "DIALYSIS_POST_ASSESSMENT", "DIALYSIS_INCIDENT", "CONSUMABLE_USED", "PREOP_CHECK", "ANESTHESIA_RECORD", "OPERATIVE_REPORT", "CHECKLIST_ITEM", "RECOVERY_OBSERVATION", "POSTOP_FOLLOWUP", "IMPLANT_USED", "PRENATAL_VISIT", "PARTOGRAM_ENTRY", "NEWBORN_ASSESSMENT", "NEWBORN_CARE", "POSTPARTUM_CHECK", "PREHOSPITAL_ASSESSMENT", "OBSERVATION", "VITALS", "CARE_GIVEN", "MEDICATION_GIVEN", "TRIAGE", "ORIENTATION", "RESULT_REVIEWED"]);
 export const eventLabel = (type: string) => EVENT_LABELS[type] ?? type.replace(/_/g, " ").toLowerCase();
 
 export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extraActions, stageLabels }: {
@@ -395,6 +452,26 @@ export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extr
                             <span className="font-semibold">{request.label}</span><Badge tone={stage.tone}>{stage.label}</Badge>
                           </div>
                           <p className="text-xs text-slate-500">{request.performerUnit?.name} · {PRIORITY_LABELS[request.priority]} · {timeLabel(request.authoredAt)}</p>
+                          {detail.events.filter((event) => event.type === "RESULT_REPORTED" && event.requestId === request.id && !corrected.has(event.id)).map((event) => {
+                            const observations = (event.payload?.observations as ResultObservation[] | undefined) ?? [];
+                            return (
+                              <div key={event.id} className="mt-2 rounded-lg bg-aulia-mist/50 p-2 text-xs dark:bg-aulia-teal/10">
+                                <p className="font-semibold">{event.summary}</p>
+                                {observations.length > 0 && (
+                                  <table className="mt-1 w-full">
+                                    <tbody>{observations.map((item, index) => (
+                                      <tr key={index} className={item.flag && item.flag !== "NORMAL" ? "font-bold text-red-700 dark:text-red-300" : ""}>
+                                        <td className="pr-2">{item.name}</td><td className="pr-2">{item.value} {item.unit ?? ""}</td>
+                                        <td className="pr-2 text-slate-500">{item.referenceRange ?? ""}</td><td>{item.flag ? FLAG_LABELS[item.flag] : ""}</td>
+                                      </tr>
+                                    ))}</tbody>
+                                  </table>
+                                )}
+                                {typeof event.payload?.conclusion === "string" && event.payload.conclusion && <p className="mt-1">Conclusion : {event.payload.conclusion}</p>}
+                                <p className="mt-1 text-slate-500">{personName(event.author)} · {timeLabel(event.occurredAt)}</p>
+                              </div>
+                            );
+                          })}
                           {writable && (
                             <div className="mt-1 flex gap-1">
                               {request.status === "DRAFT" && <Button small tone="secondary" onClick={() => void validateDraft(request)}>Valider et envoyer</Button>}

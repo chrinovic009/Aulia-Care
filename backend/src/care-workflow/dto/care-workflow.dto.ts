@@ -1,5 +1,7 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsIn,
@@ -235,4 +237,53 @@ export class UpdateCareResourceDto extends VersionedDto {
   @IsOptional() @IsBoolean() release?: boolean;
   @IsOptional() @IsString() @MinLength(2) @MaxLength(120) label?: string;
   @IsOptional() @IsObject() details?: Record<string, unknown>;
+}
+
+// --------------------------------------------------------------------------- results
+export class ResultObservationDto {
+  @IsString() @MinLength(1) @MaxLength(120) name: string;
+  @IsString() @MinLength(1) @MaxLength(120) value: string;
+  @IsOptional() @IsString() @MaxLength(40) unit?: string;
+  /** Reference range as printed by the laboratory or the device, entered by the professional. */
+  @IsOptional() @IsString() @MaxLength(80) referenceRange?: string;
+  @IsOptional() @IsIn(['NORMAL', 'LOW', 'HIGH', 'CRITICAL', 'ABNORMAL']) flag?: 'NORMAL' | 'LOW' | 'HIGH' | 'CRITICAL' | 'ABNORMAL';
+}
+
+export class ReportTaskResultDto extends VersionedDto {
+  @IsString() @MinLength(2) @MaxLength(4_000) summary: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({ each: true }) @Type(() => ResultObservationDto) observations?: ResultObservationDto[];
+  @IsOptional() @IsString() @MaxLength(4_000) conclusion?: string;
+}
+
+// --------------------------------------------------------------------------- maternity
+class PregnancyFieldsDto {
+  @IsOptional() @IsDateString() lastMenstrualPeriod?: string;
+  @IsOptional() @IsDateString() expectedDeliveryDate?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) gravida?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) parity?: number;
+  @IsOptional() @IsString() @MaxLength(40) riskLevel?: string;
+  @IsOptional() @IsString() @MaxLength(2_000) riskFactors?: string;
+  @IsOptional() @IsString() @MaxLength(10) bloodGroup?: string;
+  @IsOptional() @IsString() @MaxLength(4_000) notes?: string;
+}
+
+export class CreatePregnancyDto extends PregnancyFieldsDto {
+  @IsUUID() patientId: string;
+}
+
+export class UpdatePregnancyDto extends PregnancyFieldsDto {
+  @Type(() => Number) @IsInt() @Min(1) version: number;
+  @IsOptional() @IsIn(['ONGOING', 'DELIVERED', 'ENDED']) status?: 'ONGOING' | 'DELIVERED' | 'ENDED';
+  @IsOptional() @IsString() @MaxLength(200) outcome?: string;
+}
+
+export class RegisterNewbornDto {
+  @IsUUID() motherEpisodeId: string;
+  @IsIn(['MALE', 'FEMALE', 'UNKNOWN']) sex: 'MALE' | 'FEMALE' | 'UNKNOWN';
+  @IsDateString() birthAt: string;
+  @IsOptional() @IsString() @MaxLength(80) firstName?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) birthOrder?: number;
+  @IsOptional() @IsObject() measurements?: Record<string, unknown>;
+  /** Mark the mother's ongoing pregnancy as delivered. */
+  @IsOptional() @IsBoolean() closePregnancy?: boolean;
 }

@@ -7,6 +7,7 @@ import { parseClockTime } from '../core/operational-policy';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { isStaffRole } from '../core/tenant-roles';
+import { SPECIALTY_ROLES, findSpecialty } from '../reference/medical-specialties';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -323,6 +324,24 @@ export class UsersService {
     }
   }
 
+  /**
+   * Doctors' "Spécialité" comes from the establishment's list (stored as its
+   * label, so every document keeps printing it). A legacy free-text value is
+   * kept untouched until someone changes it.
+   */
+  private resolveSpecialty(role: RoleSlug | null | undefined, value: string | null | undefined, current?: string | null, required = false) {
+    const text = value?.trim() || null;
+    if (!role || !SPECIALTY_ROLES.has(role)) return text;
+    if (!text) {
+      if (required) throw new BadRequestException('Choisissez la spécialité du médecin dans la liste.');
+      return null;
+    }
+    if (current && text === current) return text;
+    const found = findSpecialty(text);
+    if (!found) throw new BadRequestException(`Spécialité inconnue : « ${text} ». Choisissez-la dans la liste.`);
+    return found.label;
+  }
+
   async create(dto: CreateUserDto, creatorId?: string) {
     if (dto.primaryRole === RoleSlug.DEV) {
       throw new BadRequestException('Le rôle DEV ne peut être créé que par le provisionnement local sécurisé.');
@@ -371,7 +390,7 @@ export class UsersService {
           primaryRole,
           clinicId: creator.clinicId,
 
-          specialty: dto.specialty ?? null,
+          specialty: this.resolveSpecialty(primaryRole, dto.specialty, null, true),
           phone: dto.phone ?? null,
           whatsappUrl: dto.whatsappUrl ?? null,
           facebookUrl: dto.facebookUrl ?? null,
@@ -1407,6 +1426,13 @@ export class UsersService {
       if (!isStaffRole(data.primaryRole)) {
         throw new ForbiddenException('Le rôle cible doit rester un rôle opérationnel de votre établissement.');
       }
+    }
+
+    if (dto.specialty !== undefined || dto.primaryRole !== undefined) {
+      const current = await this.prisma.user.findUnique({ where: { id }, select: { primaryRole: true, specialty: true } });
+      const role = (data.primaryRole ?? current?.primaryRole) as RoleSlug | undefined;
+      const value = dto.specialty !== undefined ? dto.specialty : current?.specialty;
+      data.specialty = this.resolveSpecialty(role, value, current?.specialty, SPECIALTY_ROLES.has(String(role)));
     }
 
     if (dto.password) {

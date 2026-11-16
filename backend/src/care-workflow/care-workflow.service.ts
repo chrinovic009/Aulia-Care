@@ -27,16 +27,20 @@ import {
   ChangeTaskStatusDto,
   CorrectCareEventDto,
   CreateCareResourceDto,
+  CreatePregnancyDto,
   CreateServiceRequestDto,
   CARE_PRIORITIES as CARE_PRIORITY_VALUES,
   DecideTransferDto,
   MergeProvisionalPatientDto,
   OpenEpisodeDto,
   RegisterArrivalDto,
+  RegisterNewbornDto,
+  ReportTaskResultDto,
   RecordCareEventDto,
   SendTransferDto,
   UpdateCareResourceDto,
   UpdateEpisodeDto,
+  UpdatePregnancyDto,
   ValidateCareEventDto,
   VersionOnlyDto,
 } from './dto/care-workflow.dto';
@@ -207,7 +211,10 @@ export class CareWorkflowService {
             patient: patientSummary,
             responsible: userSummary,
             // Latest triage documented by a professional (the engine never computes one).
-            events: { where: { type: { in: ['TRIAGE', 'MISSION_STEP'] }, correctsEventId: null }, select: { id: true, type: true, payload: true, occurredAt: true }, orderBy: { occurredAt: 'desc' }, take: 5 },
+            events: {
+              where: { type: { in: ['TRIAGE', 'MISSION_STEP', 'SURGERY_STEP', 'SURGERY_SCHEDULED', 'DIALYSIS_STEP'] }, correctsEventId: null, corrections: { none: {} } },
+              select: { id: true, type: true, payload: true, occurredAt: true }, orderBy: { occurredAt: 'desc' }, take: 12,
+            },
             resources: { select: { id: true, kind: true, code: true, label: true } },
           },
           orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
@@ -1268,6 +1275,200 @@ export class CareWorkflowService {
         payload: { resourceId: id, code: resource.code, from: resource.status, to: data.status ?? resource.status },
       });
       return tx.careResource.findFirstOrThrow({ where: { id }, include: { assignedEpisode: { select: { id: true, stage: true, priority: true, patient: patientSummary } } } });
+    });
+  }
+
+  // ======================================================================= results
+
+  /**
+   * The performing unit reports the result of a requested act (examination,
+   * opinion...). It is recorded as an immutable event on the requester's stay,
+   * the task is completed and the requester is notified. Corrections go
+   * through the usual event correction, never by overwriting.
+   */
+  reportTaskResult(taskId: string, dto: ReportTaskResultDto, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const task = await this.findTask(tx, actor, taskId);
+      const { unit } = await this.access.requireUnit(tx, actor, task.careUnitId, 'write');
+      if (!task.requestId) throw new BadRequestException('Seule une tâche issue d’une demande reçoit un résultat.');
+      if (!['ACCEPTED', 'READY', 'IN_PROGRESS'].includes(task.status)) {
+        throw new ConflictException('Le résultat se saisit sur une demande acceptée ou en cours.');
+      }
+      const request = await tx.serviceRequest.findUniqueOrThrow({ where: { id: task.requestId } });
+      const updated = await tx.careTask.updateMany({
+        where: { id: taskId, clinicId: actor.clinicId, version: dto.version, status: task.status },
+        data: { status: 'COMPLETED', completedAt: new Date(), startedAt: task.startedAt ?? new Date(), version: { increment: 1 } },
+      });
+      this.conflictIfStale(updated.count);
+      const event = await this.recordEvent(tx, actor, {
+        careUnitId: unit.id, patientId: task.patientId, episodeId: request.episodeId, requestId: request.id, taskId,
+        type: 'RESULT_REPORTED',
+        summary: `Résultat — ${request.label} : ${dto.summary.trim()}`,
+        payload: {
+          label: request.label, code: request.code, performerUnit: unit.name,
+          observations: (dto.observations ?? []).map((item) => ({ ...item })),
+          conclusion: dto.conclusion?.trim() || null,
+        } as Prisma.InputJsonValue,
+      });
+      await this.notify(tx, actor, {
+        recipientUserIds: [request.requesterId], patientId: task.patientId,
+        title: 'Résultat disponible',
+        message: `${request.label} — ${unit.name}.`,
+        relatedEntity: 'ServiceRequest', relatedId: request.id,
+      });
+      return event;
+    });
+  }
+
+  // ======================================================================= maternity
+
+  private pregnancyData(dto: Partial<CreatePregnancyDto>) {
+    const date = (value?: string) => (value === undefined ? undefined : value ? new Date(value) : null);
+    const text = (value?: string) => (value === undefined ? undefined : value.trim() || null);
+    return {
+      lastMenstrualPeriod: date(dto.lastMenstrualPeriod), expectedDeliveryDate: date(dto.expectedDeliveryDate),
+      gravida: dto.gravida, parity: dto.parity, riskLevel: text(dto.riskLevel), riskFactors: text(dto.riskFactors),
+      bloodGroup: text(dto.bloodGroup), notes: text(dto.notes),
+    };
+  }
+
+  listPregnancies(careUnitId: string, status: string | undefined, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      await this.access.requireUnit(tx, actor, careUnitId, 'read');
+      const where: Prisma.PregnancyWhereInput = { clinicId: actor.clinicId };
+      if (status === 'ONGOING' || status === 'DELIVERED' || status === 'ENDED') where.status = status;
+      return tx.pregnancy.findMany({
+        where, include: { patient: patientSummary }, orderBy: [{ status: 'asc' }, { expectedDeliveryDate: 'asc' }], take: 500,
+      });
+    });
+  }
+
+  createPregnancy(careUnitId: string, dto: CreatePregnancyDto, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const { unit } = await this.access.requireUnit(tx, actor, careUnitId, 'write');
+      await this.access.requirePatient(tx, actor, dto.patientId);
+      const ongoing = await tx.pregnancy.findFirst({ where: { clinicId: actor.clinicId, patientId: dto.patientId, status: 'ONGOING' }, select: { id: true } });
+      if (ongoing) throw new ConflictException('Cette patiente a déjà une grossesse en cours de suivi.');
+      const pregnancy = await tx.pregnancy.create({
+        data: { ...this.pregnancyData(dto), clinicId: actor.clinicId, patientId: dto.patientId, createdById: actor.id },
+        include: { patient: patientSummary },
+      });
+      await this.recordEvent(tx, actor, {
+        careUnitId: unit.id, patientId: dto.patientId, type: 'PREGNANCY_OPENED', summary: 'Suivi de grossesse ouvert.',
+        payload: { pregnancyId: pregnancy.id, expectedDeliveryDate: dto.expectedDeliveryDate ?? null },
+      });
+      return pregnancy;
+    });
+  }
+
+  updatePregnancy(careUnitId: string, id: string, dto: UpdatePregnancyDto, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const { unit } = await this.access.requireUnit(tx, actor, careUnitId, 'write');
+      const pregnancy = await tx.pregnancy.findFirst({ where: { id, clinicId: actor.clinicId } });
+      if (!pregnancy) throw new NotFoundException('Grossesse introuvable.');
+      const ending = Boolean(dto.status && dto.status !== 'ONGOING');
+      if (ending && !dto.outcome?.trim()) throw new BadRequestException('Indiquez l’issue de la grossesse.');
+      const { version: _version, status, outcome, ...fields } = dto;
+      void _version;
+      const updated = await tx.pregnancy.updateMany({
+        where: { id, version: dto.version },
+        data: {
+          ...this.pregnancyData(fields),
+          ...(status ? { status, endedAt: ending ? new Date() : null } : {}),
+          ...(outcome !== undefined ? { outcome: outcome.trim() || null } : {}),
+          version: { increment: 1 },
+        },
+      });
+      this.conflictIfStale(updated.count);
+      await this.recordEvent(tx, actor, {
+        careUnitId: unit.id, patientId: pregnancy.patientId, type: 'PREGNANCY_UPDATED',
+        summary: ending ? `Grossesse clôturée : ${outcome!.trim()}.` : 'Suivi de grossesse mis à jour.',
+        payload: { pregnancyId: id, status: status ?? pregnancy.status },
+      });
+      return tx.pregnancy.findFirstOrThrow({ where: { id }, include: { patient: patientSummary } });
+    });
+  }
+
+  /**
+   * A newborn always gets its own record, linked to the mother's, and its own
+   * stay in the unit. The birth is documented on both stays.
+   */
+  registerNewborn(careUnitId: string, dto: RegisterNewbornDto, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const { unit } = await this.access.requireUnit(tx, actor, careUnitId, 'write');
+      const motherEpisode = await this.findEpisode(tx, actor, dto.motherEpisodeId);
+      if (motherEpisode.careUnitId !== unit.id || isTerminal('episode', motherEpisode.status)) {
+        throw new BadRequestException('La mère doit être prise en charge dans cette unité.');
+      }
+      const mother = await tx.patient.findFirstOrThrow({ where: { id: motherEpisode.patientId }, select: { id: true, lastName: true, firstName: true } });
+      const birthAt = this.occurredAt(dto.birthAt);
+      const order = dto.birthOrder && dto.birthOrder > 1 ? ` ${dto.birthOrder}` : '';
+      const sexLabel = dto.sex === 'MALE' ? 'garçon' : dto.sex === 'FEMALE' ? 'fille' : 'sexe à préciser';
+      const newborn = await tx.patient.create({
+        data: {
+          clinicId: actor.clinicId,
+          firstName: dto.firstName?.trim() || `Nouveau-né${order}`,
+          lastName: mother.lastName,
+          gender: dto.sex,
+          dateOfBirth: birthAt,
+          motherPatientId: mother.id,
+        },
+        select: { id: true },
+      });
+      const episode = await tx.careEpisode.create({
+        data: {
+          clinicId: actor.clinicId, patientId: newborn.id, careUnitId: unit.id, status: 'IN_PROGRESS', stage: 'NEWBORN',
+          priority: motherEpisode.priority, startedAt: birthAt, parentEpisodeId: motherEpisode.id, createdById: actor.id,
+          reason: `Né(e) de ${mother.firstName} ${mother.lastName}`,
+        },
+      });
+      const measurements = (dto.measurements ?? {}) as Prisma.InputJsonValue;
+      await this.recordEvent(tx, actor, {
+        careUnitId: unit.id, patientId: newborn.id, episodeId: episode.id, type: 'NEWBORN_REGISTERED',
+        summary: `Naissance enregistrée (${sexLabel}).`,
+        payload: { motherPatientId: mother.id, motherEpisodeId: motherEpisode.id, birthOrder: dto.birthOrder ?? 1, measurements }, occurredAt: birthAt,
+      });
+      await this.recordEvent(tx, actor, {
+        careUnitId: unit.id, patientId: mother.id, episodeId: motherEpisode.id, type: 'BIRTH',
+        summary: `Naissance${order} : ${sexLabel}.`,
+        payload: { newbornPatientId: newborn.id, newbornEpisodeId: episode.id, sex: dto.sex, birthOrder: dto.birthOrder ?? 1, measurements }, occurredAt: birthAt,
+      });
+      if (dto.closePregnancy) {
+        await tx.pregnancy.updateMany({
+          where: { clinicId: actor.clinicId, patientId: mother.id, status: 'ONGOING' },
+          data: { status: 'DELIVERED', outcome: 'Accouchement', endedAt: birthAt, version: { increment: 1 } },
+        });
+      }
+      return tx.careEpisode.findFirstOrThrow({ where: { id: episode.id }, include: { patient: patientSummary } });
+    });
+  }
+
+  /** Birth and delivery register of the unit over a period (what was documented, nothing derived). */
+  maternityRegister(careUnitId: string, from: string | undefined, to: string | undefined, actorInput?: AuthenticatedActor, types?: string, patientId?: string) {
+    return this.run(actorInput, async (tx, actor) => {
+      await this.access.requireUnit(tx, actor, careUnitId, 'read');
+      // Documented clinical events a unit can list over a period (registers, follow-up history, reports).
+      const allowed = [
+        'DELIVERY', 'BIRTH', 'PRENATAL_VISIT', 'PARTOGRAM_ENTRY', 'POSTPARTUM_CHECK', 'NEWBORN_ASSESSMENT', 'NEWBORN_CARE', 'RESULT_REPORTED',
+        'DIALYSIS_PRESCRIPTION', 'DIALYSIS_MONITORING', 'DIALYSIS_INCIDENT', 'MACHINE_MAINTENANCE', 'CONSUMABLE_USED',
+        'OPERATIVE_REPORT', 'CHECKLIST_ITEM', 'IMPLANT_USED',
+      ];
+      const requested = (types ?? 'DELIVERY,BIRTH').split(',').map((item) => item.trim()).filter((item) => allowed.includes(item));
+      if (!requested.length) throw new BadRequestException('Types d’événements non pris en charge.');
+      const end = to ? new Date(to) : new Date();
+      const start = from ? new Date(from) : new Date(end.getTime() - 30 * 86_400_000);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw new BadRequestException('Période invalide.');
+      return tx.careEvent.findMany({
+        where: {
+          clinicId: actor.clinicId, careUnitId, type: { in: requested }, correctsEventId: null,
+          occurredAt: { gte: start, lte: end }, ...(patientId ? { patientId } : {}),
+          // An event later declared erroneous is left out of the register.
+          corrections: { none: {} },
+        },
+        include: { patient: patientSummary, author: userSummary },
+        orderBy: { occurredAt: 'asc' },
+        take: 2_000,
+      });
     });
   }
 }

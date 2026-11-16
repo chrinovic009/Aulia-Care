@@ -219,6 +219,41 @@ export function getRedirectPath(role: RoleSlug) {
   return rolePathMap[role] || "/";
 }
 
+/** Emergency, anaesthesia and intensive-care specialties (group 9): these doctors work from their care units. */
+const UNIT_BASED_SPECIALTIES = [
+  "medecine d'urgence", "anesthesiologie", "reanimation medicale", "medecine intensive", "reanimation chirurgicale",
+  "reanimation pediatrique", "reanimation neonatale", "medecine prehospitaliere", "medecine de catastrophe",
+  "medecine hyperbare", "medecine de plongee", "medecine toxicologique",
+];
+const normalizeSpecialty = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[’']/g, "'").trim();
+
+/** Home page of a signed-in user: the care units for doctors whose specialty is unit-based. */
+export function getHomePath(user: Pick<AuthUser, "primaryRole" | "specialty">) {
+  const role = user.primaryRole as RoleSlug;
+  if ((role === "PHYSICIAN" || role === "SURGEON") && user.specialty && UNIT_BASED_SPECIALTIES.includes(normalizeSpecialty(user.specialty))) {
+    return "/unites";
+  }
+  return getRedirectPath(role);
+}
+
+const UNIT_ROLES: ReadonlySet<RoleSlug> = new Set<RoleSlug>([
+  "NURSE", "PHYSICIAN", "SURGEON", "ANESTHESIOLOGIST", "MIDWIFE", "PARAMEDIC", "DISPATCHER",
+  "RECEPTIONIST", "LAB_TECHNICIAN", "LAB_MANAGER", "RADIOLOGIST", "PHARMACIST",
+]);
+
+/**
+ * After a sign-in, the page someone else was on is reopened only when it is
+ * part of the new user's own space (their home section, or the care units for
+ * care staff). Otherwise they land on their own home page.
+ */
+export function canReturnTo(path: string, role: RoleSlug) {
+  const pathname = path.split(/[?#]/)[0];
+  const home = getRedirectPath(role);
+  if (home !== "/" && (pathname === home || pathname.startsWith(`${home}/`))) return true;
+  if (UNIT_ROLES.has(role) && (pathname === "/unites" || pathname.startsWith("/unites/"))) return true;
+  return false;
+}
+
 export function getGuidePath(role: RoleSlug) {
   const guidePathMap: Record<RoleSlug, string> = {
     DEV: "/dev/couches",

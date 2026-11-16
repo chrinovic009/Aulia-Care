@@ -445,6 +445,11 @@ model Patient {
   mergedIntoPatientId      String?
   mergedInto               Patient?                   @relation("PatientMerge", fields: [mergedIntoPatientId], references: [id])
   mergedFrom               Patient[]                  @relation("PatientMerge")
+  /// A newborn's own record is linked to the mother's record (never merged into it).
+  motherPatientId          String?
+  mother                   Patient?                   @relation("PatientMother", fields: [motherPatientId], references: [id])
+  children                 Patient[]                  @relation("PatientMother")
+  pregnancies              Pregnancy[]
   careEpisodes             CareEpisode[]
   serviceRequests          ServiceRequest[]
   careTasks                CareTask[]
@@ -2171,6 +2176,7 @@ model Clinic {
   labDailyStatistics            LabDailyStatistics[]
   careUnits                CareUnit[]
   careResources            CareResource[]
+  pregnancies              Pregnancy[]
   careUnitAssignments      CareUnitAssignment[]
   careEpisodes             CareEpisode[]
   serviceRequests          ServiceRequest[]
@@ -4665,4 +4671,40 @@ model CareResource {
   @@unique([careUnitId, code])
   @@index([clinicId, careUnitId, kind, status])
   @@index([assignedEpisodeId])
+}
+
+enum PregnancyStatus {
+  ONGOING
+  DELIVERED
+  ENDED
+}
+
+/// Pregnancy follow-up of a patient. Dates and risk are what the professionals
+/// documented; nothing is computed or classified by Aulia Care.
+model Pregnancy {
+  id              String          @id @default(uuid())
+  clinicId        String
+  patientId       String
+  status          PregnancyStatus @default(ONGOING)
+  lastMenstrualPeriod DateTime?
+  /// Expected delivery date as established by the professional (dating scan, LMP...).
+  expectedDeliveryDate DateTime?
+  gravida         Int?
+  parity          Int?
+  riskLevel       String?
+  riskFactors     String?
+  bloodGroup      String?
+  notes           String?
+  outcome         String?
+  endedAt         DateTime?
+  createdById     String
+  version         Int             @default(1)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  clinic  Clinic  @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@index([clinicId, status])
+  @@index([patientId])
 }

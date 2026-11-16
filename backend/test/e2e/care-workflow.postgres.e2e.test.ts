@@ -152,6 +152,22 @@ test('PostgreSQL : Care Workflow Engine, de la demande à l’exécution et au t
     await assert.rejects(() => engine.registerArrival(emergency.id, { patientId: arrival.patientId }, doc), ForbiddenException);
     assert.ok((await engine.unitHistory(emergency.id, 7, doc)).some((item) => item.id === episode.id));
 
+    // 10b. The performing unit reports a result: task completed, result on the requester's stay.
+    const opinion = await engine.createRequest({
+      patientId: patient.id, episodeId: arrival.id, requesterUnitId: emergency.id, performerUnitId: surgery.id,
+      category: 'AVIS', code: 'AVIS-CHIR', label: 'Avis chirurgical', priority: 'URGENT',
+    }, doc);
+    const opinionTask = await prisma.careTask.findFirstOrThrow({ where: { requestId: opinion.id } });
+    await assert.rejects(() => engine.reportTaskResult(opinionTask.id, { version: opinionTask.version, summary: 'Trop tôt' }, surg), ConflictException);
+    const acceptedTask = await engine.changeTaskStatus(opinionTask.id, { version: opinionTask.version, status: 'ACCEPTED' }, surg);
+    await assert.rejects(() => engine.reportTaskResult(opinionTask.id, { version: acceptedTask.version, summary: 'x' }, doc), ForbiddenException);
+    const reported = await engine.reportTaskResult(opinionTask.id, {
+      version: acceptedTask.version, summary: 'Pas d’indication opératoire',
+      observations: [{ name: 'Défense abdominale', value: 'Absente', flag: 'NORMAL' }], conclusion: 'Surveillance',
+    }, surg);
+    assert.equal(reported.episodeId, arrival.id);
+    assert.equal((await prisma.careTask.findUniqueOrThrow({ where: { id: opinionTask.id } })).status, 'COMPLETED');
+
     // 11. Ambulance mission: resources, offline-replayable steps, release on closure.
     const ambulance = await prisma.careUnit.create({
       data: {
@@ -180,6 +196,24 @@ test('PostgreSQL : Care Workflow Engine, de la demande à l’exécution et au t
     const released = await prisma.careResource.findUniqueOrThrow({ where: { id: vehicle.id } });
     assert.equal(released.status, 'AVAILABLE');
     assert.equal(released.assignedEpisodeId, null);
+
+    // 12. Maternity: one ongoing pregnancy per patient, the newborn gets its own record linked to the mother.
+    const maternity = await prisma.careUnit.create({ data: { clinicId: clinic.id, kind: 'MATERNITY', code: `MAT-${suffix}`.toUpperCase().slice(0, 32), name: 'Maternité' } });
+    await prisma.careUnitAssignment.create({ data: { clinicId: clinic.id, careUnitId: maternity.id, userId: surgeon.id, unitRole: 'MEMBER' } });
+    const mother = await prisma.patient.create({ data: { clinicId: clinic.id, firstName: 'Maman', lastName: `Mat ${suffix}`, gender: 'FEMALE', dateOfBirth: new Date('1995-02-02T00:00:00.000Z') } });
+    const pregnancy = await engine.createPregnancy(maternity.id, { patientId: mother.id, gravida: 2, parity: 1, expectedDeliveryDate: new Date(Date.now() + 86_400_000).toISOString() }, surg);
+    await assert.rejects(() => engine.createPregnancy(maternity.id, { patientId: mother.id }, surg), ConflictException);
+    await assert.rejects(() => engine.updatePregnancy(maternity.id, pregnancy.id, { version: pregnancy.version, status: 'ENDED' }, surg), /issue/);
+    const labour = await engine.openEpisode({ careUnitId: maternity.id, patientId: mother.id, start: true, stage: 'LABOUR', reason: 'Travail' }, surg);
+    const baby = await engine.registerNewborn(maternity.id, { motherEpisodeId: labour.id, sex: 'FEMALE', birthAt: new Date().toISOString(), measurements: { weightGrams: 3200 }, closePregnancy: true }, surg);
+    const babyRecord = await prisma.patient.findUniqueOrThrow({ where: { id: baby.patientId } });
+    assert.notEqual(babyRecord.id, mother.id);
+    assert.equal(babyRecord.motherPatientId, mother.id);
+    assert.equal(baby.parentEpisodeId, labour.id);
+    assert.equal((await prisma.pregnancy.findUniqueOrThrow({ where: { id: pregnancy.id } })).status, 'DELIVERED');
+    const register = await engine.maternityRegister(maternity.id, undefined, undefined, surg);
+    assert.ok(register.some((event) => event.type === 'BIRTH' && event.patientId === mother.id));
+    await assert.rejects(() => engine.listPregnancies(maternity.id, undefined, doc), ForbiddenException);
   } finally {
     if (clinicIds.length) {
       // Test teardown only: the insert-only trigger is lifted for this isolated database.
@@ -197,7 +231,8 @@ test('PostgreSQL : Care Workflow Engine, de la demande à l’exécution et au t
         await prisma.careUnit.deleteMany({ where });
         await prisma.notification.deleteMany({ where: { outboxEvent: { clinicId: { in: clinicIds } } } });
         await prisma.notificationOutbox.deleteMany({ where });
-        await prisma.patient.updateMany({ where, data: { mergedIntoPatientId: null } });
+        await prisma.pregnancy.deleteMany({ where });
+        await prisma.patient.updateMany({ where, data: { mergedIntoPatientId: null, motherPatientId: null } });
         await prisma.patient.deleteMany({ where });
         await prisma.user.deleteMany({ where });
         await prisma.clinic.deleteMany({ where: { id: { in: clinicIds } } });

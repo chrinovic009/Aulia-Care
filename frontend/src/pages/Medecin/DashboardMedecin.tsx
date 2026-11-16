@@ -1425,6 +1425,7 @@ export default function DashboardMedecin() {
 
                   {consultationModule.consultationMode !== "TELECONSULTATION" ? (
                     <ClinicalConsultationWorkspace
+                      doctorSpecialty={currentUser?.specialty}
                       patient={selectedPatient}
                       mode={consultationModule.consultationMode}
                       complaint={consultationModule.chiefComplaint}

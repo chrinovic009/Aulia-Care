@@ -11,15 +11,19 @@ import {
   ChangeTaskStatusDto,
   CorrectCareEventDto,
   CreateCareResourceDto,
+  CreatePregnancyDto,
   CreateServiceRequestDto,
   DecideTransferDto,
   MergeProvisionalPatientDto,
   OpenEpisodeDto,
   RegisterArrivalDto,
+  RegisterNewbornDto,
+  ReportTaskResultDto,
   RecordCareEventDto,
   SendTransferDto,
   UpdateCareResourceDto,
   UpdateEpisodeDto,
+  UpdatePregnancyDto,
   ValidateCareEventDto,
   VersionOnlyDto,
 } from './dto/care-workflow.dto';
@@ -74,6 +78,34 @@ export class CareWorkflowController {
   @Patch('resources/:id')
   updateResource(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCareResourceDto, @Request() req: AuthedRequest) {
     return this.workflow.updateResource(id, dto, req.user);
+  }
+
+  @Get('units/:unitId/pregnancies')
+  pregnancies(@Param('unitId', ParseUUIDPipe) unitId: string, @Query('status') status: string | undefined, @Request() req: AuthedRequest) {
+    return this.workflow.listPregnancies(unitId, status, req.user);
+  }
+
+  @Post('units/:unitId/pregnancies')
+  createPregnancy(@Param('unitId', ParseUUIDPipe) unitId: string, @Body() dto: CreatePregnancyDto, @Request() req: AuthedRequest) {
+    return this.workflow.createPregnancy(unitId, dto, req.user);
+  }
+
+  @Patch('units/:unitId/pregnancies/:id')
+  updatePregnancy(@Param('unitId', ParseUUIDPipe) unitId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePregnancyDto, @Request() req: AuthedRequest) {
+    return this.workflow.updatePregnancy(unitId, id, dto, req.user);
+  }
+
+  @Post('units/:unitId/newborns')
+  newborn(@Param('unitId', ParseUUIDPipe) unitId: string, @Body() dto: RegisterNewbornDto, @Request() req: AuthedRequest) {
+    return this.workflow.registerNewborn(unitId, dto, req.user);
+  }
+
+  @Get('units/:unitId/register')
+  register(
+    @Param('unitId', ParseUUIDPipe) unitId: string, @Query('from') from: string | undefined, @Query('to') to: string | undefined,
+    @Query('types') types: string | undefined, @Query('patientId') patientId: string | undefined, @Request() req: AuthedRequest,
+  ) {
+    return this.workflow.maternityRegister(unitId, from, to, req.user, types, patientId);
   }
 
   @Post('units/:unitId/arrivals')
@@ -134,6 +166,11 @@ export class CareWorkflowController {
   @Post('tasks/:id/status')
   taskStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ChangeTaskStatusDto, @Request() req: AuthedRequest) {
     return this.workflow.changeTaskStatus(id, dto, req.user);
+  }
+
+  @Post('tasks/:id/result')
+  reportResult(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReportTaskResultDto, @Request() req: AuthedRequest) {
+    return this.workflow.reportTaskResult(id, dto, req.user);
   }
 
   @Post('tasks/:id/assign')
