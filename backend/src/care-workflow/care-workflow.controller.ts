@@ -66,6 +66,11 @@ export class CareWorkflowController {
     return this.workflow.validateProtocol(unitId, dto, req.user);
   }
 
+  @Get('catalogue/imaging')
+  imagingCatalogue(@Request() req: AuthedRequest) {
+    return this.workflow.imagingCatalogue(req.user);
+  }
+
   @Get('catalogue/laboratory')
   laboratoryCatalogue(@Request() req: AuthedRequest) {
     return this.workflow.laboratoryCatalogue(req.user);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   acknowledgeTransfer, ageLabel, genderLabel, changeEpisodeStatus, changeRequestStatus, changeTaskStatus, correctCareEvent, createServiceRequest,
-  decideTransfer, fetchClinicUnits, fetchLaboratoryCatalogue, fetchEpisode, fetchUnitHistory, KIND_LABELS, mergeProvisionalPatient, patientName, personName,
+  decideTransfer, fetchClinicUnits, fetchImagingCatalogue, fetchLaboratoryCatalogue, fetchEpisode, fetchUnitHistory, KIND_LABELS, mergeProvisionalPatient, patientName, personName,
   PRIORITY_LABELS, recordCareEvent, reportTaskResult, REQUEST_STATUS_LABELS, searchCarePatients, sendTransfer, TASK_STATUS_LABELS, timeLabel,
   type CareEpisode, type CarePriority, type CareTask, type CareTransfer, type CareUnit, type CareUnitRole, type EpisodeDetail,
   type LabCatalogueItem, type PatientSummary, type ResultObservation, type ServiceRequest,
@@ -76,11 +76,18 @@ export function requestStage(request: ServiceRequest, reviewedRequestIds: Set<st
 export function RequestDialog({ episode, unit, onClose, onDone }: { episode: { id: string; patientId: string }; unit: CareUnit; onClose: () => void; onDone: () => void }) {
   const [units, setUnits] = useState<CareUnit[]>([]);
   const [form, setForm] = useState({ performerUnitId: "", category: "EXAMEN", code: "", label: "", reason: "", priority: "URGENT" as CarePriority, draft: false });
-  const [labCatalogue, setLabCatalogue] = useState<LabCatalogueItem[] | null>(null);
+  const [catalogues, setCatalogues] = useState<Record<string, LabCatalogueItem[]>>({});
   useEffect(() => { void fetchClinicUnits().then((rows) => setUnits(rows.filter((item) => item.id !== unit.id))).catch(() => setUnits([])); }, [unit.id]);
   const performer = units.find((item) => item.id === form.performerUnitId);
-  const isLab = performer?.kind === "LABORATORY";
-  useEffect(() => { if (isLab && !labCatalogue) void fetchLaboratoryCatalogue().then(setLabCatalogue).catch(() => setLabCatalogue([])); }, [isLab, labCatalogue]);
+  // Exams for the laboratory or imaging are chosen from their catalogue: it carries the billed price.
+  const examKind = performer?.kind === "LABORATORY" || performer?.kind === "IMAGING" ? performer.kind : null;
+  const isLab = Boolean(examKind);
+  const labCatalogue = examKind ? catalogues[examKind] ?? null : null;
+  useEffect(() => {
+    if (!examKind || catalogues[examKind]) return;
+    const load = examKind === "LABORATORY" ? fetchLaboratoryCatalogue : fetchImagingCatalogue;
+    void load().then((rows) => setCatalogues((current) => ({ ...current, [examKind]: rows }))).catch(() => setCatalogues((current) => ({ ...current, [examKind]: [] })));
+  }, [examKind, catalogues]);
   const ready = form.performerUnitId && form.label.trim().length >= 2 && form.code.trim();
   const submit = async () => {
     try {
@@ -108,9 +115,9 @@ export function RequestDialog({ episode, unit, onClose, onDone }: { episode: { i
         </Field>
         {isLab ? (
           <div className="md:col-span-2">
-            <Field label="Examen (catalogue du laboratoire)" hint="Facturé au tarif du catalogue : la facture part à la caisse, l’examen n’attend pas le paiement.">
+            <Field label={examKind === "IMAGING" ? "Examen (catalogue d’imagerie)" : "Examen (catalogue du laboratoire)"} hint="Facturé au tarif du catalogue : la facture part à la caisse (ou sur l’abonnement de l’entreprise du patient), l’examen n’attend pas le paiement.">
               <select className={inputClass} value={form.code} onChange={(e) => { const item = labCatalogue?.find((row) => row.code === e.target.value); setForm({ ...form, code: e.target.value, label: item?.name ?? "", category: "EXAMEN" }); }}>
-                <option value="">{labCatalogue === null ? "Chargement du catalogue…" : labCatalogue.length ? "Choisir un examen…" : "Catalogue vide : à compléter dans le module Laboratoire"}</option>
+                <option value="">{labCatalogue === null ? "Chargement du catalogue…" : labCatalogue.length ? "Choisir un examen…" : (examKind === "IMAGING" ? "Catalogue vide : à compléter dans le module Imagerie" : "Catalogue vide : à compléter dans le module Laboratoire")}</option>
                 {(labCatalogue ?? []).map((item) => <option key={item.id} value={item.code}>{item.name} · {item.code}{item.price ? ` · ${Number(item.price).toLocaleString("fr-FR")}` : ""}</option>)}
               </select>
             </Field>
@@ -485,6 +492,7 @@ export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extr
                                   </table>
                                 )}
                                 {typeof event.payload?.conclusion === "string" && event.payload.conclusion && <p className="mt-1">Conclusion : {event.payload.conclusion}</p>}
+                                {Boolean(event.payload?.imaging) && <p className="mt-1 text-amber-700 dark:text-amber-300">Compte rendu enregistré dans le module Imagerie · vérification par le radiologue à faire.</p>}
                                 {Boolean(event.payload?.laboratory) && <p className="mt-1 text-amber-700 dark:text-amber-300">Validé techniquement par le laboratoire · validation biologique à faire dans le module Laboratoire.</p>}
                                 <p className="mt-1 text-slate-500">{personName(event.author)} · {timeLabel(event.occurredAt)}</p>
                               </div>

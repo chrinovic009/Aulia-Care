@@ -567,7 +567,9 @@ export function AuthProvider({
       );
 
       if (!loginRes.ok) {
-        setError("Identifiants invalides");
+        // An expired 6-digit code has its own message: the person must ask for a new one.
+        const failure = (await loginRes.json().catch(() => null)) as { message?: string } | null;
+        setError(failure?.message && /code a expiré/i.test(failure.message) ? failure.message : "Identifiants invalides");
         setSessionSecurityState("UNLOCKED");
         return null;
       }

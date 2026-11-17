@@ -50,6 +50,12 @@ export class UsersController {
     return this.usersService.findMyWorkLocation(req.user?.userId);
   }
 
+  @Get('password-reset-requests')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  passwordResetRequests(@Request() req: any) {
+    return this.usersService.passwordResetRequests(req.user?.userId);
+  }
+
   @Get(':id')
   @Roles('SUPER_ADMIN', 'ADMIN')
   findOne(@Param('id') id: string, @Request() req: any) {
@@ -66,6 +72,18 @@ export class UsersController {
   @Roles('SUPER_ADMIN')
   createAdmin(@Body() createUserDto: CreateUserDto, @Request() req: any) {
     return this.usersService.createAdmin(createUserDto, req.user?.userId);
+  }
+
+  @Post('password-reset-requests/:requestId/approve')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  approvePasswordReset(@Param('requestId') requestId: string, @Request() req: any) {
+    return this.usersService.approvePasswordReset(requestId, req.user?.userId);
+  }
+
+  @Post('password-reset-requests/:requestId/reject')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  rejectPasswordReset(@Param('requestId') requestId: string, @Body() body: { note?: string }, @Request() req: any) {
+    return this.usersService.rejectPasswordReset(requestId, body?.note, req.user?.userId);
   }
 
   @Post(':id/reset-password')

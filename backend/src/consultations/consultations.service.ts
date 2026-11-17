@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus, PrescriptionReplacementFinancialHandling, Prisma, RoleSlug } from '@prisma/client';
 import { assertPrescribable, evaluateForPatient, overrideRows } from '../clinical-safety/prescription-safety.check';
 import { PrismaService } from '../prisma/prisma.service';
+import { chargeInvoiceToSubscription } from '../billing/subscription-coverage';
 import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreateConsultationDto } from './dto/create-consultation.dto';
@@ -24,7 +25,7 @@ export class ConsultationsService {
     private readonly patientWorkflow: PatientWorkflowService,
   ) {}
 
-  private async recordSubscriptionChargeForInvoice(
+  private recordSubscriptionChargeForInvoice(
     tx: any,
     patientId: string,
     clinicId: string,
@@ -33,82 +34,7 @@ export class ConsultationsService {
     amount: number | Prisma.Decimal,
     serviceId?: string | null,
   ) {
-    const employee = await tx.subscriptionEmployee.findFirst({
-      where: {
-        patientId,
-        deletedAt: null,
-        status: 'ACTIVE',
-        patient: { clinicId, deletedAt: null },
-        company: { clinicId, status: 'ACTIVE', deletedAt: null },
-      },
-      include: { company: true },
-    });
-    if (!employee) return false;
-    if (!employee.company.coversAllServices) return false;
-
-    // The company lock protects both credit-limit decisions and monthly
-    // consolidation from concurrent charges for this establishment.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`subscription-company:${employee.companyId}`}))`;
-
-    // The invoice is the immutable origin of a corporate charge. Replaying an
-    // order must not add the same expense twice to the monthly statement.
-    const existingCharge = await tx.subscriptionCharge.findFirst({
-      where: { sourceInvoiceId: invoiceId, companyId: employee.companyId, deletedAt: null },
-      select: { id: true },
-    });
-    if (existingCharge) return true;
-
-    if (employee.company.creditLimit !== null) {
-      const [unbilled, billed] = await Promise.all([
-        tx.subscriptionCharge.aggregate({
-          where: { companyId: employee.companyId, status: 'PENDING_MONTHLY_INVOICE', deletedAt: null },
-          _sum: { amount: true },
-        }),
-        tx.invoice.aggregate({
-          where: {
-            clinicId,
-            type: 'SUBSCRIPTION_MONTHLY',
-            deletedAt: null,
-            status: { not: 'CANCELLED' },
-            monthlySubscriptionInvoices: { some: { companyId: employee.companyId, deletedAt: null } },
-          },
-          _sum: { balanceDue: true },
-        }),
-      ]);
-      const exposure = new Prisma.Decimal(unbilled._sum.amount || 0)
-        .plus(billed._sum.balanceDue || 0)
-        .plus(amount);
-      if (exposure.gt(employee.company.creditLimit)) return false;
-    }
-
-    const serviceDate = new Date();
-    await tx.subscriptionCharge.create({
-      data: {
-        companyId: employee.companyId,
-        employeeId: employee.id,
-        patientId,
-        invoiceId,
-        sourceInvoiceId: invoiceId,
-        serviceId: serviceId || null,
-        label,
-        amount,
-        currency: 'CDF',
-        serviceDate,
-        month: serviceDate.getMonth() + 1,
-        year: serviceDate.getFullYear(),
-      },
-    });
-
-    await tx.invoice.update({
-      where: { id: invoiceId },
-      data: {
-        // Coverage authorizes service, but is not money collected by a cashier.
-        status: 'COVERED',
-        balanceDue: 0,
-      },
-    });
-
-    return true;
+    return chargeInvoiceToSubscription(tx, patientId, clinicId, invoiceId, label, amount, serviceId);
   }
 
   private normalizeConsultationStatus(status?: string | null): ConsultationStatus {

@@ -6,6 +6,7 @@ import Label from "../form/Label";
 import Input from "../form/input/InputField";
 import Checkbox from "../form/input/Checkbox";
 import Button from "../ui/button/Button";
+import ForgotPasswordDialog from "./ForgotPasswordDialog";
 
 export default function SignInForm() {
   const { currentUser, login, logout, isLoading, error: contextError, restrictedAccount, clearRestrictedAccount } = useAuth();
@@ -16,6 +17,7 @@ export default function SignInForm() {
     ? `${requestedPath.pathname}${requestedPath.search || ""}${requestedPath.hash || ""}`
     : null;
   const [showPassword, setShowPassword] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -144,12 +146,13 @@ export default function SignInForm() {
                       Se souvenir de moi
                     </span>
                   </div>
-                  <Link
-                    to="/reset-password"
+                  <button
+                    type="button"
+                    onClick={() => setForgotOpen(true)}
                     className="text-sm text-brand-500 hover:text-brand-600 dark:text-brand-400"
                   >
                     Mot de passe oublié ?
-                  </Link>
+                  </button>
                 </div>
                 <div>
                   <Button 
@@ -184,6 +187,7 @@ export default function SignInForm() {
           </div>
         </div>
       ) : null}
+      {forgotOpen && <ForgotPasswordDialog initialIdentifier={identifier} onClose={() => setForgotOpen(false)} />}
     </div>
   );
 }

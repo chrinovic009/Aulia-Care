@@ -24,7 +24,7 @@ import { CurrentUser } from './current-user.decorator';
 import { CurrentUserResponseDto } from './dto/current-user-response.dto';
 import { UpdateUserDto } from '../users/dto/update-user.dto';
 import { ChangePinDto } from './dto/change-pin.dto';
-import { ChangePasswordDto } from './dto/change-password.dto';
+import { ChangePasswordDto, RequestPasswordResetDto } from './dto/change-password.dto';
 import { VerifyPinDto } from './dto/verify-pin.dto';
 
 @Controller('auth')
@@ -133,6 +133,15 @@ export class AuthController {
     });
     this.setSessionCookies(response, session);
     return { user: session.user };
+  }
+
+  // 🔓 PUBLIC - Mot de passe oublié : la demande part à l'administrateur.
+  @Public()
+  @Throttle({ default: { limit: 3, ttl: 60_000, blockDuration: 15 * 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('password-reset-requests')
+  requestPasswordReset(@Body() body: RequestPasswordResetDto) {
+    return this.authService.requestPasswordReset(body.identifier);
   }
 
   // 🔓 PUBLIC - Renouvellement du token

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, LoaderCircle, Plus, ShieldCheck, UserCog, X } from "lucide-react";
 import { apiFetch } from "../../config/api";
+import PasswordResetRequests from "../../components/auth/PasswordResetRequests";
 
 type AdminRecord = { id: string; displayName: string; firstName?: string | null; lastName?: string | null; email: string; username: string; phone?: string | null; status: string; createdAt: string };
 type AdminForm = { firstName: string; lastName: string; email: string; username: string; phone: string; password: string };
@@ -49,7 +50,7 @@ export default function AdminManagement() {
       setAdmins((current) => [...current, created].sort((a, b) => a.displayName.localeCompare(b.displayName, "fr")));
       setForm(emptyForm);
       setOpen(false);
-      setMessage({ kind: "success", text: `${created.displayName} a été créé comme administrateur de votre établissement. Son rattachement institutionnel a été fixé par le serveur.${created.generatedPassword ? ` Mot de passe temporaire (affiché une seule fois, à transmettre par un canal sûr) : ${created.generatedPassword} — il devra être remplacé dès la première connexion.` : ""}` });
+      setMessage({ kind: "success", text: `${created.displayName} a été créé comme administrateur de votre établissement. Son rattachement institutionnel a été fixé par le serveur.${created.generatedPassword ? ` Code à 6 chiffres (affiché une seule fois, à remettre en main propre) : ${created.generatedPassword}. L’administrateur choisira son mot de passe à sa première connexion.` : ""}` });
     } catch (error) {
       setMessage({ kind: "error", text: error instanceof Error ? error.message : "La création de l’administrateur a échoué." });
     } finally {
@@ -58,6 +59,7 @@ export default function AdminManagement() {
   };
 
   return <section className="space-y-5">
+    <PasswordResetRequests roleLabel={(role) => (role === "ADMIN" ? "Administrateur" : role)} onCode={(credential) => setMessage({ kind: "success", text: `Code à 6 chiffres pour ${credential.name} (${credential.username}), affiché une seule fois : ${credential.password}. Remettez-le en main propre ; il expire dans 24 h.` })} />
     <article className="aulia-card p-5 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div><p className="text-xs font-bold uppercase tracking-[.16em] text-aulia-teal">Gouvernance institutionnelle</p><h2 className="mt-2 text-xl font-bold text-aulia-navy dark:text-white">Administrateurs de l’établissement</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">Chaque compte créé ici appartient automatiquement à votre établissement. Il ne peut ni sélectionner, ni manipuler une autre clinique.</p></div>

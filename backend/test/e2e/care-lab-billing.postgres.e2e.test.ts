@@ -91,6 +91,49 @@ test('PostgreSQL : un examen demandé par une unité passe par le laboratoire et
     assert.equal(cancelled.status, 'CANCELLED');
     assert.equal((await prisma.invoice.findUniqueOrThrow({ where: { id: cancelled.externalReference! } })).status, 'CANCELLED');
 
+    // Imaging follows the same path: catalogue exam, imaging request without consultation, RADIOLOGY invoice, report.
+    const radiologist = await user('radio', RoleSlug.RADIOLOGIST);
+    const imagingUnit = await prisma.careUnit.create({ data: { clinicId: clinic.id, kind: 'IMAGING', code: `IMG-${suffix}`.toUpperCase(), name: 'Imagerie' } });
+    await prisma.careUnitAssignment.create({ data: { clinicId: clinic.id, careUnitId: imagingUnit.id, userId: radiologist.id, unitRole: 'MEMBER' } });
+    await prisma.imagingCatalogue.create({ data: { clinicId: clinic.id, code: 'RX-THORAX', name: 'Radiographie thoracique', price: 40, modality: 'XRAY' } });
+    assert.deepEqual((await engine.imagingCatalogue(doc)).map((item) => item.code), ['RX-THORAX']);
+    const xray = await engine.createRequest({
+      patientId: patient.id, episodeId: episode.id, requesterUnitId: emergency.id, performerUnitId: imagingUnit.id,
+      category: 'EXAMEN', code: 'rx-thorax', label: 'RX thorax', priority: 'URGENT', reason: 'Dyspnée',
+    }, doc);
+    const imagingRequest = await prisma.imagingRequest.findUniqueOrThrow({ where: { serviceRequestId: xray.id } });
+    assert.equal(imagingRequest.consultationId, null);
+    assert.equal(imagingRequest.modality, 'XRAY');
+    const xrayInvoice = await prisma.invoice.findFirstOrThrow({ where: { clinicId: clinic.id, type: 'RADIOLOGY', remarks: { startsWith: `ImagingRequest:${imagingRequest.id} ` } } });
+    assert.equal(Number(xrayInvoice.totalAmount), 40);
+    assert.equal(xrayInvoice.status, 'PENDING');
+    const xrayTask = await prisma.careTask.findFirstOrThrow({ where: { requestId: xray.id } });
+    const xrayAccepted = await engine.changeTaskStatus(xrayTask.id, { version: xrayTask.version, status: 'ACCEPTED' }, { userId: radiologist.id });
+    await engine.reportTaskResult(xrayTask.id, { version: xrayAccepted.version, summary: 'Opacité basale droite', conclusion: 'Pneumopathie probable' }, { userId: radiologist.id });
+    const report = await prisma.imagingReport.findUniqueOrThrow({ where: { imagingRequestId: imagingRequest.id } });
+    assert.equal(report.verified, false);
+    assert.equal(report.impression, 'Pneumopathie probable');
+    assert.equal((await prisma.imagingRequest.findUniqueOrThrow({ where: { id: imagingRequest.id } })).status, 'COMPLETED');
+
+    // A patient covered by a company subscription: the exam goes to the monthly statement, not to the cashier.
+    const company = await prisma.subscriptionCompany.create({ data: { clinicId: clinic.id, name: `Entreprise ${suffix}`, coversAllServices: true } });
+    const covered = await prisma.patient.create({ data: { clinicId: clinic.id, firstName: 'Abonné', lastName: `Labo ${suffix}`, gender: 'OTHER', dateOfBirth: new Date('1980-01-01T00:00:00.000Z') } });
+    await prisma.subscriptionEmployee.create({ data: { companyId: company.id, patientId: covered.id, firstName: 'Abonné', lastName: 'Labo', policyNumber: `POL-${suffix}` } });
+    const coveredEpisode = await engine.openEpisode({ careUnitId: emergency.id, patientId: covered.id, start: true }, doc);
+    const coveredRequest = await engine.createRequest({
+      patientId: covered.id, episodeId: coveredEpisode.id, requesterUnitId: emergency.id, performerUnitId: laboratory.id,
+      category: 'EXAMEN', code: 'NFS', label: 'NFS', priority: 'URGENT',
+    }, doc);
+    const coveredLab = await prisma.labRequest.findUniqueOrThrow({ where: { serviceRequestId: coveredRequest.id } });
+    const coveredInvoice = await prisma.invoice.findUniqueOrThrow({ where: { id: coveredLab.externalReference! } });
+    assert.equal(coveredInvoice.status, 'COVERED');
+    assert.equal(Number(coveredInvoice.balanceDue), 0);
+    const charge = await prisma.subscriptionCharge.findUniqueOrThrow({ where: { sourceInvoiceId: coveredInvoice.id } });
+    assert.equal(Number(charge.amount), 15);
+    await engine.changeRequestStatus(coveredRequest.id, { version: coveredRequest.version, status: 'REVOKED', reason: 'Doublon' }, doc);
+    assert.equal((await prisma.subscriptionCharge.findUniqueOrThrow({ where: { id: charge.id } })).status, 'CANCELLED');
+    assert.equal((await prisma.invoice.findUniqueOrThrow({ where: { id: coveredInvoice.id } })).status, 'CANCELLED');
+
     // Protocols: only a clinician leading the unit validates; an administrative change lifts the validation.
     const admin = await user('admin', RoleSlug.ADMIN);
     const units = new CareUnitsService(prisma as never, new ClinicContextService(prisma as never));
@@ -121,6 +164,12 @@ test('PostgreSQL : un examen demandé par une unité passe par le laboratoire et
         await prisma.labResult.deleteMany({ where: { labRequest: { clinicId } } });
         await prisma.labRequestItem.deleteMany({ where: { labRequest: { clinicId } } });
         await prisma.labRequest.deleteMany({ where });
+        await prisma.imagingReport.deleteMany({ where: { imagingRequest: { clinicId } } });
+        await prisma.imagingRequest.deleteMany({ where });
+        await prisma.imagingCatalogue.deleteMany({ where });
+        await prisma.subscriptionCharge.deleteMany({ where: { company: { clinicId } } });
+        await prisma.subscriptionEmployee.deleteMany({ where: { company: { clinicId } } });
+        await prisma.subscriptionCompany.deleteMany({ where });
         await prisma.invoiceLine.deleteMany({ where: { invoiceId: { in: (await prisma.invoice.findMany({ where, select: { id: true } })).map((row) => row.id) } } });
         await prisma.invoice.deleteMany({ where });
         await prisma.labTest.deleteMany({ where });

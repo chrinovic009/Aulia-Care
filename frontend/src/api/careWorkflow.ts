@@ -76,6 +76,8 @@ export const fetchPatientTimeline = (patientId: string) => apiFetch<CareEvent[]>
 /** Laboratory catalogue: an exam asked of a LABORATORY unit is chosen here (it carries the billed price). */
 export type LabCatalogueItem = { id: string; code: string; name: string; price: string | number | null };
 export const fetchLaboratoryCatalogue = () => apiFetch<LabCatalogueItem[]>(`${base}/catalogue/laboratory`);
+/** Imaging catalogue: same rule for an exam asked of an IMAGING unit. */
+export const fetchImagingCatalogue = () => apiFetch<Array<LabCatalogueItem & { modality?: string }>>(`${base}/catalogue/imaging`);
 export const searchCarePatients = (q: string) => apiFetch<PatientSummary[]>(`${base}/patients/search?q=${encodeURIComponent(q)}`);
 
 export const registerArrival = (unitId: string, body: {

@@ -9,7 +9,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { isStaffRole } from '../core/tenant-roles';
 import { SPECIALTY_ROLES, findSpecialty } from '../reference/medical-specialties';
 import * as bcrypt from 'bcrypt';
-import { generateTemporaryPassword } from '../auth/password-policy';
+import { TEMPORARY_CODE_TTL_MS, generateTemporaryPassword } from '../auth/password-policy';
 
 @Injectable()
 export class UsersService {
@@ -207,9 +207,67 @@ export class UsersService {
     if (target.id === actor.id) throw new BadRequestException('Utilisez « Changer mon mot de passe » pour votre propre compte.');
     if (!isStaffRole(target.primaryRole) && target.primaryRole !== RoleSlug.ADMIN) throw new ForbiddenException('Ce compte ne relève pas de l’administration de l’établissement.');
     const generatedPassword = generateTemporaryPassword();
-    await this.prisma.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(generatedPassword, 12), mustChangePassword: true } });
+    await this.prisma.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(generatedPassword, 12), mustChangePassword: true, temporaryPasswordExpiresAt: new Date(Date.now() + TEMPORARY_CODE_TTL_MS.RESET), temporaryPasswordAttempts: 0 } });
+    await this.prisma.passwordResetRequest.updateMany({ where: { userId: id, status: 'PENDING' }, data: { status: 'APPROVED', decidedAt: new Date(), decidedById: actor.id } });
     await this.revokeSessionsAfterReset(id, actor.id);
     return { id, username: target.username, generatedPassword };
+  }
+
+  /** Who may approve a forgotten-password request for this account. */
+  private canApproveReset(actorRole: RoleSlug | null, targetRole: RoleSlug | null) {
+    if (targetRole === RoleSlug.ADMIN) return actorRole === RoleSlug.SUPER_ADMIN;
+    if (isStaffRole(targetRole)) return actorRole === RoleSlug.ADMIN || actorRole === RoleSlug.SUPER_ADMIN;
+    return false;
+  }
+
+  /** Forgotten-password requests waiting for this administrator. */
+  async passwordResetRequests(actorId?: string) {
+    const actor = await this.requireAdministrativeClinic(actorId);
+    const rows = await this.prisma.passwordResetRequest.findMany({
+      where: { status: 'PENDING', user: { clinicId: actor.clinicId, deletedAt: null } },
+      include: { user: { select: { id: true, firstName: true, lastName: true, displayName: true, username: true, primaryRole: true, Employee: { select: { employeeNumber: true }, take: 1 } } } },
+      orderBy: { requestedAt: 'asc' },
+    });
+    return rows.filter((row) => row.user.id !== actor.id && this.canApproveReset(actor.primaryRole, row.user.primaryRole));
+  }
+
+  /**
+   * The administrator approves: a new 6-digit code replaces the forgotten
+   * password, open sessions end, and the code is returned once to be handed
+   * over. At sign-in with it, the holder must choose a new password.
+   */
+  async approvePasswordReset(requestId: string, actorId?: string) {
+    const actor = await this.requireAdministrativeClinic(actorId);
+    const request = await this.prisma.passwordResetRequest.findFirst({
+      where: { id: requestId, status: 'PENDING', user: { clinicId: actor.clinicId, deletedAt: null } },
+      include: { user: { select: { id: true, username: true, firstName: true, lastName: true, primaryRole: true } } },
+    });
+    if (!request) throw new NotFoundException('Demande introuvable ou déjà traitée.');
+    if (request.user.id === actor.id || !this.canApproveReset(actor.primaryRole, request.user.primaryRole)) {
+      throw new ForbiddenException(request.user.primaryRole === RoleSlug.ADMIN ? 'La demande d’un administrateur est approuvée par le Super Admin.' : 'Vous ne pouvez pas approuver cette demande.');
+    }
+    const code = generateTemporaryPassword();
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: request.user.id },
+        data: { passwordHash: await bcrypt.hash(code, 12), mustChangePassword: true, temporaryPasswordExpiresAt: new Date(now.getTime() + TEMPORARY_CODE_TTL_MS.RESET), temporaryPasswordAttempts: 0 },
+      }),
+      this.prisma.passwordResetRequest.update({ where: { id: request.id }, data: { status: 'APPROVED', decidedAt: now, decidedById: actor.id } }),
+    ]);
+    await this.revokeSessionsAfterReset(request.user.id, actor.id);
+    return { id: request.id, username: request.user.username, name: `${request.user.firstName} ${request.user.lastName}`.trim(), generatedPassword: code };
+  }
+
+  async rejectPasswordReset(requestId: string, note: string | undefined, actorId?: string) {
+    const actor = await this.requireAdministrativeClinic(actorId);
+    const request = await this.prisma.passwordResetRequest.findFirst({
+      where: { id: requestId, status: 'PENDING', user: { clinicId: actor.clinicId } },
+      include: { user: { select: { id: true, primaryRole: true } } },
+    });
+    if (!request) throw new NotFoundException('Demande introuvable ou déjà traitée.');
+    if (!this.canApproveReset(actor.primaryRole, request.user.primaryRole)) throw new ForbiddenException('Vous ne pouvez pas traiter cette demande.');
+    return this.prisma.passwordResetRequest.update({ where: { id: request.id }, data: { status: 'REJECTED', decidedAt: new Date(), decidedById: actor.id, decisionNote: note?.trim() || null } });
   }
 
   private async revokeSessionsAfterReset(userId: string, actorId: string) {
@@ -404,6 +462,7 @@ export class UsersService {
           lastName: dto.lastName,
           passwordHash,
           mustChangePassword: true,
+          temporaryPasswordExpiresAt: generatedPassword ? new Date(Date.now() + TEMPORARY_CODE_TTL_MS.NEW_ACCOUNT) : null,
           primaryRole,
           clinicId: creator.clinicId,
 
@@ -534,6 +593,7 @@ export class UsersService {
             lastName: dto.lastName.trim(),
             passwordHash,
             mustChangePassword: true,
+            temporaryPasswordExpiresAt: generatedPassword ? new Date(Date.now() + TEMPORARY_CODE_TTL_MS.NEW_ACCOUNT) : null,
             primaryRole: RoleSlug.ADMIN,
             clinicId: creator.clinicId,
             phone: dto.phone ?? null,

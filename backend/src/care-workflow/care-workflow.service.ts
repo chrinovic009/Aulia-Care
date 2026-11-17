@@ -9,6 +9,7 @@ import { CareTaskStatus, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { AuthenticatedActor, OperationalClinicActor } from '../core/clinic-context.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { cancelSubscriptionChargeForInvoice, chargeInvoiceToSubscription } from '../billing/subscription-coverage';
 import { CareAccessService, Db } from './care-access.service';
 import {
   ENTERED_IN_ERROR_EVENT,
@@ -485,7 +486,8 @@ export class CareWorkflowService {
       }
       const draft = dto.draft ?? false;
       // An exam for the laboratory must be a catalogue exam: it carries the billed price.
-      const labTest = performer.kind === 'LABORATORY' ? await this.findLabTest(tx, actor, dto.code) : null;
+      const labTest = performer.kind === 'LABORATORY' ? await this.findLabTest(tx, actor, dto.code)
+        : performer.kind === 'IMAGING' ? await this.findImagingExam(tx, actor, dto.code) : null;
       const request = await tx.serviceRequest.create({
         data: {
           clinicId: actor.clinicId,
@@ -513,7 +515,7 @@ export class CareWorkflowService {
       });
       if (!draft) {
         await this.dispatchRequest(tx, actor, request, performer.name);
-        if (labTest) await this.openLabExam(tx, actor, request, await this.requesterUnitName(tx, request.requesterUnitId));
+        if (labTest) await this.openExam(tx, actor, performer.kind, request);
       }
       return request;
     });
@@ -572,9 +574,12 @@ export class CareWorkflowService {
       });
       this.conflictIfStale(updated.count);
 
-      let labCancellation: { labRequestId: string; invoiceCancelled: boolean } | null = null;
+      const performer = await this.access.findUnit(tx, actor, request.performerUnitId);
+      let labCancellation: { invoiceCancelled: boolean } | null = null;
       if (dto.status === 'REVOKED' || dto.status === 'ENTERED_IN_ERROR') {
-        labCancellation = await this.cancelLabExam(tx, id, reason ?? null);
+        labCancellation = performer.kind === 'IMAGING'
+          ? await this.cancelImagingExam(tx, actor, id, reason ?? null)
+          : await this.cancelLabExam(tx, id, reason ?? null);
         for (const task of openTasks) {
           await tx.careTask.update({
             where: { id: task.id },
@@ -582,17 +587,16 @@ export class CareWorkflowService {
           });
         }
       }
-      const performer = await this.access.findUnit(tx, actor, request.performerUnitId);
       if (request.status === 'DRAFT' && dto.status === 'ACTIVE') {
         await this.dispatchRequest(tx, actor, request, performer.name);
-        if (performer.kind === 'LABORATORY') await this.openLabExam(tx, actor, request, await this.requesterUnitName(tx, request.requesterUnitId));
+        await this.openExam(tx, actor, performer.kind, request);
       }
       await this.recordEvent(tx, actor, {
         careUnitId: dto.status === 'COMPLETED' ? request.performerUnitId : request.requesterUnitId,
         patientId: request.patientId, episodeId: request.episodeId, requestId: id,
         type: 'REQUEST_STATUS_CHANGED',
         summary: `Demande « ${request.label} » : ${request.status} → ${dto.status}.`,
-        payload: { from: request.status, to: dto.status, reason, cancelledTasks: openTasks.map((task) => task.id), laboratory: labCancellation } as Prisma.InputJsonValue,
+        payload: { from: request.status, to: dto.status, reason, cancelledTasks: openTasks.map((task) => task.id), exam: labCancellation } as Prisma.InputJsonValue,
       });
       if (dto.status !== 'ACTIVE') {
         const toPerformer = dto.status !== 'COMPLETED';
@@ -1311,6 +1315,7 @@ export class CareWorkflowService {
       });
       this.conflictIfStale(updated.count);
       const laboratory = unit.kind === 'LABORATORY' ? await this.recordLabResult(tx, actor, request.id, dto) : null;
+      const imaging = unit.kind === 'IMAGING' ? await this.recordImagingReport(tx, actor, request.id, dto) : null;
       const event = await this.recordEvent(tx, actor, {
         careUnitId: unit.id, patientId: task.patientId, episodeId: request.episodeId, requestId: request.id, taskId,
         type: 'RESULT_REPORTED',
@@ -1320,6 +1325,7 @@ export class CareWorkflowService {
           observations: (dto.observations ?? []).map((item) => ({ ...item })),
           conclusion: dto.conclusion?.trim() || null,
           laboratory: laboratory ? { ...laboratory, biologicalValidation: 'PENDING' } : null,
+          imaging: imaging ? { ...imaging, radiologistVerification: 'PENDING' } : null,
         } as Prisma.InputJsonValue,
       });
       await this.notify(tx, actor, {
@@ -1380,6 +1386,94 @@ export class CareWorkflowService {
     });
   }
 
+  // ================================================================ imaging bridge
+  /** Imaging catalogue the requesting units choose from (code, name, price). */
+  imagingCatalogue(actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) =>
+      tx.imagingCatalogue.findMany({
+        where: { clinicId: actor.clinicId, active: true, deletedAt: null },
+        select: { id: true, code: true, name: true, price: true, modality: true },
+        orderBy: { name: 'asc' },
+        take: 2_000,
+      }));
+  }
+
+  private async findImagingExam(tx: Db, actor: OperationalClinicActor, code: string) {
+    const value = code.trim();
+    const exam = await tx.imagingCatalogue.findFirst({
+      where: { clinicId: actor.clinicId, active: true, deletedAt: null, OR: [{ id: value }, { code: { equals: value, mode: 'insensitive' } }] },
+    });
+    if (!exam) throw new BadRequestException(`L’examen « ${value} » n’est pas dans le catalogue d’imagerie : choisissez un examen du catalogue (il porte le tarif facturé).`);
+    if (Number(exam.price) <= 0) throw new BadRequestException(`Le tarif de l’examen « ${exam.name} » n’est pas renseigné dans le catalogue d’imagerie.`);
+    return exam;
+  }
+
+  private async openImagingExam(
+    tx: Db, actor: OperationalClinicActor,
+    request: { id: string; patientId: string; code: string; label: string; reason: string | null; priority: string; requesterId: string },
+    unitName: string,
+  ) {
+    const existing = await tx.imagingRequest.findFirst({ where: { serviceRequestId: request.id }, select: { id: true } });
+    if (existing) return existing;
+    const exam = await this.findImagingExam(tx, actor, request.code);
+    const price = Number(exam.price);
+    const imagingRequest = await tx.imagingRequest.create({
+      data: {
+        clinicId: actor.clinicId, patientId: request.patientId, serviceRequestId: request.id, consultationId: null,
+        requestedById: request.requesterId, imagingCatalogueId: exam.id, modality: exam.modality, bodyPart: exam.name,
+        urgency: request.priority === 'ROUTINE' ? 'ROUTINE' : 'URGENT', status: 'REQUESTED',
+        clinicalIndication: [request.reason, `Demande de l’unité ${unitName}`].filter(Boolean).join(' — '),
+      },
+    });
+    const invoice = await tx.invoice.create({
+      data: {
+        clinicId: actor.clinicId, patientId: request.patientId, issuedById: actor.id, type: 'RADIOLOGY', status: 'PENDING',
+        totalAmount: price, balanceDue: price,
+        remarks: `ImagingRequest:${imagingRequest.id} - Demande imagerie ${exam.name} (unité ${unitName})`,
+      },
+    });
+    await tx.invoiceLine.create({ data: { invoiceId: invoice.id, label: `Examen d'imagerie - ${exam.name}`, quantity: 1, unitPrice: price, totalAmount: price } });
+    await chargeInvoiceToSubscription(tx, request.patientId, actor.clinicId, invoice.id, `Examen d'imagerie - ${exam.name}`, price, null);
+    return imagingRequest;
+  }
+
+  private async cancelImagingExam(tx: Db, actor: OperationalClinicActor, serviceRequestId: string, reason: string | null) {
+    const imagingRequest = await tx.imagingRequest.findFirst({ where: { serviceRequestId }, select: { id: true, status: true } });
+    if (!imagingRequest || ['COMPLETED', 'VERIFIED', 'CANCELLED'].includes(imagingRequest.status)) return null;
+    await tx.imagingRequest.update({ where: { id: imagingRequest.id }, data: { status: 'CANCELLED', notes: reason ? `Annulée : ${reason}` : 'Annulée par l’unité demandeuse' } });
+    const invoice = await tx.invoice.findFirst({
+      where: { clinicId: actor.clinicId, type: 'RADIOLOGY', remarks: { startsWith: `ImagingRequest:${imagingRequest.id} ` } },
+      select: { id: true },
+    });
+    return { imagingRequestId: imagingRequest.id, invoiceCancelled: invoice ? await this.cancelExamInvoice(tx, invoice.id) : false };
+  }
+
+  /** The unit's report becomes the imaging report, to be verified by the radiologist in the imaging module. */
+  private async recordImagingReport(tx: Db, actor: OperationalClinicActor, serviceRequestId: string, dto: ReportTaskResultDto) {
+    const imagingRequest = await tx.imagingRequest.findFirst({ where: { serviceRequestId }, select: { id: true, report: { select: { id: true } } } });
+    if (!imagingRequest) return null;
+    if (imagingRequest.report) throw new ConflictException('Un compte rendu existe déjà pour cet examen : amendez-le dans le module Imagerie.');
+    const findings = [dto.summary.trim(), ...(dto.observations ?? []).map((obs) => `${obs.name} : ${obs.value}${obs.unit ? ` ${obs.unit}` : ''}${obs.flag && obs.flag !== 'NORMAL' ? ` (${obs.flag})` : ''}`)].join('\n');
+    const report = await tx.imagingReport.create({
+      data: { imagingRequestId: imagingRequest.id, interpretedById: actor.id, findings, impression: dto.conclusion?.trim() || dto.summary.trim(), verified: false },
+    });
+    await tx.imagingRequest.update({ where: { id: imagingRequest.id }, data: { status: 'COMPLETED', completedAt: new Date() } });
+    return { imagingRequestId: imagingRequest.id, imagingReportId: report.id };
+  }
+
+  /**
+   * Invoice of a cancelled exam: cancelled when nothing was paid; a company
+   * subscription charge not yet on a monthly statement is cancelled with it.
+   */
+  private async cancelExamInvoice(tx: Db, invoiceId: string) {
+    const invoice = await tx.invoice.findUnique({ where: { id: invoiceId }, select: { status: true, _count: { select: { payments: true } } } });
+    if (!invoice || invoice._count.payments > 0) return false;
+    if (invoice.status === 'COVERED' && !(await cancelSubscriptionChargeForInvoice(tx, invoiceId))) return false;
+    if (invoice.status !== 'PENDING' && invoice.status !== 'COVERED') return false;
+    await tx.invoice.update({ where: { id: invoiceId }, data: { status: 'CANCELLED', balanceDue: 0 } });
+    return true;
+  }
+
   // ================================================================ laboratory bridge
   /*
    * An exam a care unit asks of a LABORATORY unit goes through the laboratory
@@ -1397,6 +1491,16 @@ export class CareWorkflowService {
         orderBy: { name: 'asc' },
         take: 2_000,
       }));
+  }
+
+  /** Exams asked of the laboratory or imaging go through their module and their billing. */
+  private async openExam(
+    tx: Db, actor: OperationalClinicActor, performerKind: string,
+    request: { id: string; patientId: string; code: string; label: string; reason: string | null; priority: string; requesterId: string; requesterUnitId: string | null },
+  ) {
+    if (performerKind !== 'LABORATORY' && performerKind !== 'IMAGING') return null;
+    const unitName = await this.requesterUnitName(tx, request.requesterUnitId);
+    return performerKind === 'LABORATORY' ? this.openLabExam(tx, actor, request, unitName) : this.openImagingExam(tx, actor, request, unitName);
   }
 
   private async requesterUnitName(tx: Db, unitId: string | null) {
@@ -1443,6 +1547,8 @@ export class CareWorkflowService {
     });
     await tx.invoiceLine.create({ data: { invoiceId: invoice.id, label: `Examen laboratoire - ${labTest.name}`, quantity: 1, unitPrice: price, totalAmount: price } });
     await tx.labRequest.update({ where: { id: labRequest.id }, data: { externalReference: invoice.id } });
+    // A subscribed patient's exam goes to the company's monthly statement, as in consultation.
+    await chargeInvoiceToSubscription(tx, request.patientId, actor.clinicId, invoice.id, `Examen laboratoire - ${labTest.name}`, price, null);
     return labRequest;
   }
 
@@ -1453,11 +1559,7 @@ export class CareWorkflowService {
     await tx.labRequest.update({ where: { id: labRequest.id }, data: { status: 'CANCELLED', notes: reason ? `Annulée : ${reason}` : 'Annulée par l’unité demandeuse' } });
     await tx.labRequestItem.updateMany({ where: { labRequestId: labRequest.id, deletedAt: null }, data: { status: 'CANCELLED' } });
     if (!labRequest.externalReference) return { labRequestId: labRequest.id, invoiceCancelled: false };
-    const cancelled = await tx.invoice.updateMany({
-      where: { id: labRequest.externalReference, status: 'PENDING', payments: { none: {} } },
-      data: { status: 'CANCELLED', balanceDue: 0 },
-    });
-    return { labRequestId: labRequest.id, invoiceCancelled: cancelled.count > 0 };
+    return { labRequestId: labRequest.id, invoiceCancelled: await this.cancelExamInvoice(tx, labRequest.externalReference) };
   }
 
   /** The unit's result becomes a technically validated laboratory result; biological validation stays with the laboratory. */

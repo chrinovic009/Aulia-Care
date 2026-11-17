@@ -1,39 +1,31 @@
 import { randomInt } from 'crypto';
 
-/** No look-alike characters (0/O, 1/l/I) so a temporary password can be read out or copied by hand. */
-const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-const LOWER = 'abcdefghijkmnopqrstuvwxyz';
-const DIGITS = '23456789';
-const ALL = UPPER + LOWER + DIGITS;
-
 /**
- * Temporary password for a new or reset account: 12 random characters from a
- * cryptographic source (about 70 bits), shown once to the administrator. It
- * only opens the forced password-change screen.
+ * Temporary code for a new account or a forgotten password: 6 random digits
+ * from a cryptographic source, shown once to the administrator who hands it
+ * over. It only opens the forced password-change screen, expires, and is
+ * revoked after a few wrong attempts (see AuthService.validateUser).
  */
 export function generateTemporaryPassword(): string {
-  const chars = [UPPER, LOWER, DIGITS].map((set) => set[randomInt(set.length)]);
-  while (chars.length < 12) chars.push(ALL[randomInt(ALL.length)]);
-  for (let i = chars.length - 1; i > 0; i -= 1) {
-    const j = randomInt(i + 1);
-    [chars[i], chars[j]] = [chars[j], chars[i]];
-  }
-  const raw = chars.join('');
-  return `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}`;
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
 }
 
-export const PASSWORD_MIN_LENGTH = 10;
+export const TEMPORARY_CODE_TTL_MS = {
+  /** A new account may wait a few days before its holder first signs in. */
+  NEW_ACCOUNT: 7 * 24 * 60 * 60 * 1000,
+  /** A code issued for a forgotten password is used the same day. */
+  RESET: 24 * 60 * 60 * 1000,
+} as const;
+export const TEMPORARY_CODE_MAX_ATTEMPTS = 5;
 
-/** Returns the reason a chosen password is refused, or null when it is acceptable. */
-export function passwordPolicyError(password: string, context: { username?: string; firstName?: string; lastName?: string } = {}): string | null {
+export const PASSWORD_MIN_LENGTH = 6;
+
+/** The password a person chooses: at least 6 characters, with letters, digits and a symbol. */
+export function passwordPolicyError(password: string): string | null {
   if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH) return `Le mot de passe doit contenir au moins ${PASSWORD_MIN_LENGTH} caractères.`;
   if (password.length > 128) return 'Le mot de passe ne peut pas dépasser 128 caractères.';
-  if (!/[A-Za-zÀ-ÿ]/.test(password) || !/\d/.test(password)) return 'Le mot de passe doit contenir au moins une lettre et un chiffre.';
-  if (/^(.)\1+$/.test(password)) return 'Le mot de passe ne peut pas répéter un seul caractère.';
-  const lowered = password.toLowerCase();
-  for (const word of [context.username, context.firstName, context.lastName]) {
-    if (word && word.trim().length >= 3 && lowered.includes(word.trim().toLowerCase())) return 'Le mot de passe ne doit pas contenir votre nom ou votre identifiant.';
-  }
-  if (['aulia', 'password', 'motdepasse', 'azerty', 'qwerty', '123456'].some((weak) => lowered.includes(weak))) return 'Le mot de passe est trop facile à deviner.';
+  if (!/\p{L}/u.test(password)) return 'Le mot de passe doit contenir au moins une lettre.';
+  if (!/\d/.test(password)) return 'Le mot de passe doit contenir au moins un chiffre.';
+  if (!/[^\p{L}\d\s]/u.test(password)) return 'Le mot de passe doit contenir au moins un symbole (par exemple ! @ # - _ .).';
   return null;
 }

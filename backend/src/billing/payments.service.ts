@@ -285,7 +285,10 @@ export class PaymentsService {
             },
           });
 
-          if (matchingImagingRequest) {
+          // As for the laboratory: an exam already performed never goes back to REQUESTED.
+          if (matchingImagingRequest && matchingImagingRequest.status !== 'AWAITING_PAYMENT') {
+            imagingRequest = matchingImagingRequest;
+          } else if (matchingImagingRequest) {
             imagingRequest = await prisma.imagingRequest.update({
               where: { id: matchingImagingRequest.id },
               data: { status: 'REQUESTED' },

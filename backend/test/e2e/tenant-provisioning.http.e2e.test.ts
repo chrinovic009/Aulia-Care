@@ -108,8 +108,16 @@ test('HTTP E2E: DEV -> clinic -> layers -> Super Admin -> Admin -> staff preserv
       .expect(201);
     const nurse = await prisma.user.findUniqueOrThrow({ where: { id: createdNurse.body.id }, include: { Employee: true } });
     assert.equal(nurse.mustChangePassword, true);
-    const reset = await request(server).post(`/api/users/${nurse.id}/reset-password`).set('Cookie', adminCookies).send({}).expect(201);
-    assert.match(reset.body.generatedPassword, /^[A-Za-z2-9]{4}-[A-Za-z2-9]{4}-[A-Za-z2-9]{4}$/);
+    // Forgotten password: the holder asks, the administrator approves and hands over a 6-digit code.
+    const asked = await request(server).post('/api/auth/password-reset-requests').send({ identifier: `nurse-${suffix}` }).expect(200);
+    const unknown = await request(server).post('/api/auth/password-reset-requests').send({ identifier: `nobody-${suffix}` }).expect(200);
+    assert.equal(unknown.body.message, asked.body.message);
+    const pending = await request(server).get('/api/users/password-reset-requests').set('Cookie', adminCookies).expect(200);
+    const mine = pending.body.find((row: { user: { id: string } }) => row.user.id === nurse.id);
+    assert.ok(mine);
+    const reset = await request(server).post(`/api/users/password-reset-requests/${mine.id}/approve`).set('Cookie', adminCookies).send({}).expect(201);
+    assert.match(reset.body.generatedPassword, /^\d{6}$/);
+    assert.ok((await prisma.user.findUniqueOrThrow({ where: { id: nurse.id } })).temporaryPasswordExpiresAt);
     const nurseLogin = await request(server).post('/api/auth/login').send({ identifier: `nurse-${suffix}`, password: reset.body.generatedPassword }).expect(200);
     assert.equal(nurseLogin.body.user.mustChangePassword, true);
     assert.equal(nurse.clinicId, clinicId);
@@ -120,6 +128,7 @@ test('HTTP E2E: DEV -> clinic -> layers -> Super Admin -> Admin -> staff preserv
       await prisma.employee.deleteMany({ where: { clinicId } }).catch(() => undefined);
       await prisma.session.deleteMany({ where: { user: { clinicId } } }).catch(() => undefined);
       await prisma.passwordHistory.deleteMany({ where: { user: { clinicId } } }).catch(() => undefined);
+      await prisma.passwordResetRequest.deleteMany({ where: { user: { clinicId } } }).catch(() => undefined);
       await prisma.user.deleteMany({ where: { clinicId } }).catch(() => undefined);
       await prisma.platformLayerConfiguration.deleteMany({ where: { clinicId } }).catch(() => undefined);
       await prisma.clinic.deleteMany({ where: { id: clinicId } }).catch(() => undefined);

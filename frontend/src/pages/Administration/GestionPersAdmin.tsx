@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "../../config/api";
 import { SpecialtySelect } from "../../components/form/SpecialtySelect";
+import PasswordResetRequests from "../../components/auth/PasswordResetRequests";
 import { AdminPageShell, DataTable, Panel, StatCard, StatusBadge, formatDate, formatMoney } from "./adminUi";
 
 type RoleSlug =
@@ -535,6 +536,7 @@ export default function GestionPersAdmin() {
         </>
       }
     >
+      <PasswordResetRequests roleLabel={(role) => roleLabel({ primaryRole: role } as AdminUser)} onCode={(credential) => { setCreatedCredential(credential); void load(); }} />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
         <StatCard icon={<UsersRound size={20} />} label="Personnel total" value={stats.total} hint="Employes actifs et suivis" />
         <StatCard icon={<Stethoscope size={20} />} label="Medecins" value={stats.doctors} tone="blue" />
@@ -763,11 +765,11 @@ function DepartmentResponsibleReplacementModal({
 function GeneratedCredentialModal({ credential, onClose }: { credential: { name: string; username: string; password: string }; onClose: () => void }) {
   return <div className="fixed inset-0 z-[80] grid place-items-center overflow-y-auto overscroll-contain bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6">
     <div role="dialog" aria-modal="true" className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-aulia-teal/30 bg-white p-5 shadow-2xl dark:bg-slate-950 sm:p-6">
-      <p className="text-xs font-bold uppercase tracking-[.2em] text-aulia-teal">Accès initial</p>
-      <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">Compte créé pour {credential.name}</h2>
-      <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Communiquez ces identifiants une seule fois par un canal sûr. Le collaborateur doit changer son mot de passe à sa première connexion.</p>
-      <dl className="mt-5 space-y-3 rounded-xl bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><div><dt className="text-xs font-semibold uppercase opacity-70">Utilisateur</dt><dd className="mt-1 font-bold">{credential.username}</dd></div><div><dt className="text-xs font-semibold uppercase opacity-70">Mot de passe temporaire</dt><dd className="mt-1 break-all font-bold">{credential.password}</dd></div></dl>
-      <button type="button" onClick={onClose} className="mt-6 w-full rounded-xl bg-aulia-navy px-4 py-3 text-sm font-semibold text-white">J’ai communiqué les identifiants</button>
+      <p className="text-xs font-bold uppercase tracking-[.2em] text-aulia-teal">Code d’accès</p>
+      <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">Code pour {credential.name}</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Remettez ce code à la personne elle-même, après avoir vérifié son identité. Il ne s’affiche qu’une fois. Elle se connecte avec son identifiant et ce code, puis choisit aussitôt son propre mot de passe. Le code expire (7 jours pour un nouveau compte, 24 h après un oubli) et il est annulé après 5 essais erronés.</p>
+      <dl className="mt-5 space-y-3 rounded-xl bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><div><dt className="text-xs font-semibold uppercase opacity-70">Utilisateur</dt><dd className="mt-1 font-bold">{credential.username}</dd></div><div><dt className="text-xs font-semibold uppercase opacity-70">Code à 6 chiffres</dt><dd className="mt-1 break-all font-mono text-2xl font-bold tracking-[.3em]">{credential.password}</dd></div></dl>
+      <button type="button" onClick={onClose} className="mt-6 w-full rounded-xl bg-aulia-navy px-4 py-3 text-sm font-semibold text-white">J’ai remis le code</button>
     </div>
   </div>;
 }
@@ -803,8 +805,8 @@ function ConfirmActionModal({
     },
     RESET_PASSWORD: {
       title: "Réinitialiser le mot de passe ?",
-      text: `Un nouveau mot de passe temporaire sera généré et affiché une seule fois. Les sessions ouvertes de ${name} seront fermées, et ${name} devra choisir son propre mot de passe à sa prochaine connexion.`,
-      button: "Générer un mot de passe temporaire",
+      text: `Un nouveau code à 6 chiffres sera généré et affiché une seule fois. Les sessions ouvertes de ${name} seront fermées, et ${name} devra choisir son propre mot de passe à sa prochaine connexion.`,
+      button: "Générer un code à 6 chiffres",
       tone: "bg-aulia-navy hover:bg-aulia-navy/90",
     },
     DELETE: {
@@ -887,7 +889,7 @@ function EmployeeForm({
 
           <FormSection title="Informations professionnelles">
             <FormInput label="Nom utilisateur" value={form.username} onChange={(username) => onChange({ username })} />
-            <div className="rounded-xl border border-aulia-teal/30 bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><p className="font-semibold">Mot de passe</p><p className="mt-1 text-xs leading-5">{editing ? "L’administrateur ne choisit pas le mot de passe. En cas d’oubli, utilisez « Réinitialiser le mot de passe » dans la liste du personnel." : "Un mot de passe temporaire aléatoire est généré à l’enregistrement et affiché une seule fois. Le collaborateur devra le remplacer par le sien dès sa première connexion."}</p></div>
+            <div className="rounded-xl border border-aulia-teal/30 bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><p className="font-semibold">Mot de passe</p><p className="mt-1 text-xs leading-5">{editing ? "L’administrateur ne choisit pas le mot de passe. En cas d’oubli, la personne fait une demande depuis l’écran de connexion ; vous l’approuvez en haut de cette page." : "Un code aléatoire à 6 chiffres est généré à l’enregistrement et affiché une seule fois. Le collaborateur se connecte avec ce code et choisit aussitôt son propre mot de passe."}</p></div>
             <FormSelect label="Role" value={form.primaryRole} onChange={(primaryRole) => onChange({ primaryRole: primaryRole as RoleSlug })} options={roleOptions.map((role) => [role, roleLabel({ primaryRole: role } as AdminUser)])} />
             {SPECIALTY_ROLES.has(form.primaryRole) ? (
               <label className="text-sm">

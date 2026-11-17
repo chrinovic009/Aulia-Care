@@ -2,24 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { generateTemporaryPassword, passwordPolicyError } from './password-policy';
 
-test('temporary passwords are random, well-formed and accepted by the policy', () => {
+test('temporary codes are 6 random digits', () => {
   const seen = new Set<string>();
-  for (let i = 0; i < 200; i += 1) {
+  for (let i = 0; i < 300; i += 1) {
     const value = generateTemporaryPassword();
-    assert.match(value, /^[A-Za-z2-9]{4}-[A-Za-z2-9]{4}-[A-Za-z2-9]{4}$/);
-    assert.match(value, /[A-Z]/);
-    assert.match(value, /[a-z]/);
-    assert.match(value, /\d/);
-    assert.doesNotMatch(value, /[01OIl]/);
+    assert.match(value, /^\d{6}$/);
     seen.add(value);
   }
-  assert.equal(seen.size, 200);
+  assert.ok(seen.size > 290);
 });
 
-test('password policy refuses short, letter-only, personal or common passwords', () => {
-  assert.ok(passwordPolicyError('court1'));
-  assert.ok(passwordPolicyError('seulementdeslettres'));
-  assert.ok(passwordPolicyError('jdupont2026xx', { username: 'jdupont' }));
-  assert.ok(passwordPolicyError('Aulia2026care'));
-  assert.equal(passwordPolicyError('Bonjour-Kolwezi-48'), null);
+test('a chosen password has at least 6 characters with a letter, a digit and a symbol', () => {
+  assert.ok(passwordPolicyError('a1!'));
+  assert.ok(passwordPolicyError('abcdef1'));
+  assert.ok(passwordPolicyError('abcdef!'));
+  assert.ok(passwordPolicyError('123456!'));
+  assert.equal(passwordPolicyError('kbs#2026'), null);
+  assert.equal(passwordPolicyError('Élan-7'), null);
 });

@@ -70,6 +70,11 @@ model User {
   /// Set when an administrator opens or resets the account: the temporary password only opens the change screen.
   mustChangePassword               Boolean                          @default(false)
   passwordChangedAt                DateTime?
+  /// Expiry of the temporary 6-digit code (null: no temporary code).
+  temporaryPasswordExpiresAt       DateTime?
+  temporaryPasswordAttempts        Int                              @default(0)
+  passwordResetRequests            PasswordResetRequest[]           @relation("PasswordResetRequestUser")
+  passwordResetDecisions           PasswordResetRequest[]           @relation("PasswordResetRequestDecider")
   status                           UserStatus                       @default(ACTIVE)
   primaryRole                      RoleSlug?
   specialty                        String?
@@ -1834,7 +1839,10 @@ model ImagingMachine {
 /// Imaging workflow.
 model ImagingRequest {
   id                 String               @id @default(uuid())
-  consultationId     String
+  /// Null for an exam requested by a care unit: see serviceRequestId.
+  consultationId     String?
+  /// Care-workflow request (emergency, maternity...) this exam fulfils.
+  serviceRequestId   String?              @unique
   patientId          String
   clinicId           String
   requestedById      String?
@@ -1863,7 +1871,8 @@ model ImagingRequest {
   clinicalIndication String?
   contraindications  String?
   report             ImagingReport?
-  consultation       Consultation         @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  consultation       Consultation?        @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  serviceRequest     ServiceRequest?      @relation(fields: [serviceRequestId], references: [id], onDelete: SetNull)
   clinic             Clinic               @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   imagingCatalogue   ImagingCatalogue?    @relation(fields: [imagingCatalogueId], references: [id])
   machine            ImagingMachine?      @relation(fields: [machineId], references: [id])
@@ -2184,6 +2193,7 @@ model Clinic {
   careUnits                CareUnit[]
   careResources            CareResource[]
   pregnancies              Pregnancy[]
+  passwordResetRequests    PasswordResetRequest[]
   careUnitAssignments      CareUnitAssignment[]
   careEpisodes             CareEpisode[]
   serviceRequests          ServiceRequest[]
@@ -3361,6 +3371,31 @@ model AuditTrail {
   @@index([entity, entityId])
 }
 
+enum PasswordResetRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// Forgotten password: the holder asks, an administrator approves and hands over a new temporary code.
+model PasswordResetRequest {
+  id           String                     @id @default(uuid())
+  clinicId     String?
+  userId       String
+  status       PasswordResetRequestStatus @default(PENDING)
+  requestedAt  DateTime                   @default(now())
+  decidedAt    DateTime?
+  decidedById  String?
+  decisionNote String?
+  user         User                       @relation("PasswordResetRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  decidedBy    User?                      @relation("PasswordResetRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  clinic       Clinic?                    @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+
+  @@index([clinicId, status])
+  @@index([userId, status])
+}
+
 model PasswordHistory {
   id           String   @id @default(uuid())
   userId       String
@@ -4404,6 +4439,7 @@ model ServiceRequest {
   events         CareEvent[]
   transfers      CareTransfer[]
   labRequest     LabRequest?
+  imagingRequest ImagingRequest?
 
   @@index([clinicId, performerUnitId, status])
   @@index([patientId, authoredAt])

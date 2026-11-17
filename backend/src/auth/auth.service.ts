@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
-import { passwordPolicyError } from './password-policy';
+import { TEMPORARY_CODE_MAX_ATTEMPTS, passwordPolicyError } from './password-policy';
 import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -49,9 +49,25 @@ export class AuthService {
       return null;
     }
     const passwordMatches = await bcrypt.compare(password, user.passwordHash);
+    const hasTemporaryCode = user.mustChangePassword && Boolean(user.temporaryPasswordExpiresAt);
     if (!passwordMatches) {
       await this.prisma.loginAttempt.create({ data: { userId: user.id, username: normalized, result: 'FAILURE' } });
+      if (hasTemporaryCode) {
+        // A 6-digit code is short: after a few wrong attempts it is revoked and
+        // the holder must ask for a new one.
+        const attempts = user.temporaryPasswordAttempts + 1;
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: attempts >= TEMPORARY_CODE_MAX_ATTEMPTS
+            ? { temporaryPasswordAttempts: attempts, temporaryPasswordExpiresAt: new Date(0), passwordHash: await bcrypt.hash(randomUUID(), 10) }
+            : { temporaryPasswordAttempts: attempts },
+        });
+      }
       return null;
+    }
+    if (hasTemporaryCode && user.temporaryPasswordExpiresAt! <= new Date()) {
+      await this.prisma.loginAttempt.create({ data: { userId: user.id, username: normalized, result: 'FAILURE' } });
+      throw new UnauthorizedException('Ce code a expiré. Faites une demande « Mot de passe oublié » : l’administrateur vous remettra un nouveau code.');
     }
 
     await this.prisma.loginAttempt.create({ data: { userId: user.id, username: normalized, result: 'SUCCESS' } });
@@ -149,7 +165,7 @@ export class AuthService {
       await this.prisma.loginAttempt.create({ data: { userId, username: user.username, result: 'FAILURE' } });
       throw new BadRequestException('Le mot de passe actuel est incorrect.');
     }
-    const refused = passwordPolicyError(newPassword, user);
+    const refused = passwordPolicyError(newPassword);
     if (refused) throw new BadRequestException(refused);
     if (newPassword === currentPassword) throw new BadRequestException('Choisissez un mot de passe différent du mot de passe actuel.');
     for (const previous of user.PasswordHistory) {
@@ -159,7 +175,7 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(newPassword, 12);
     await this.prisma.$transaction([
       this.prisma.passwordHistory.create({ data: { userId, passwordHash: user.passwordHash } }),
-      this.prisma.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false, passwordChangedAt: now } }),
+      this.prisma.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false, passwordChangedAt: now, temporaryPasswordExpiresAt: null, temporaryPasswordAttempts: 0 } }),
       this.prisma.session.updateMany({
         where: { userId, status: 'ACTIVE', ...(sessionId ? { id: { not: sessionId } } : {}) },
         data: { status: 'REVOKED', revokedAt: now, revocationReason: 'PASSWORD_CHANGED', lastSeenAt: now },
@@ -167,6 +183,30 @@ export class AuthService {
     ]);
     await this.audit(userId, 'USER', userId, { event: 'PASSWORD_CHANGED', required: user.mustChangePassword });
     return { ok: true, mustChangePassword: false };
+  }
+
+  /**
+   * Forgotten password. The holder only asks: an administrator of the
+   * establishment approves and hands over a new 6-digit code. The answer is
+   * the same whether or not the account exists.
+   */
+  async requestPasswordReset(identifier: string) {
+    const raw = identifier.trim();
+    const answer = { ok: true, message: 'Si ce compte existe, votre demande a été transmise à l’administrateur de votre établissement. Il vous remettra un nouveau code.' };
+    if (!raw) return answer;
+    const user = await this.prisma.user.findFirst({
+      where: {
+        deletedAt: null, status: 'ACTIVE', primaryRole: { notIn: ['PATIENT', 'DEV'] },
+        OR: [{ email: raw.toLowerCase() }, { username: raw.toLowerCase() }, { Employee: { some: { employeeNumber: raw } } }, { Employee: { some: { employeeNumber: raw.toUpperCase() } } }],
+      },
+      select: { id: true, clinicId: true },
+    });
+    if (!user) return answer;
+    const pending = await this.prisma.passwordResetRequest.findFirst({ where: { userId: user.id, status: 'PENDING' }, select: { id: true } });
+    if (!pending) {
+      await this.prisma.passwordResetRequest.create({ data: { userId: user.id, clinicId: user.clinicId } }).catch(() => undefined);
+    }
+    return answer;
   }
 
   async logoutCurrentSession(userId?: string, sessionId?: string) {
