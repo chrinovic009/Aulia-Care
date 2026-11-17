@@ -9,7 +9,8 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { isStaffRole } from '../core/tenant-roles';
 import { SPECIALTY_ROLES, findSpecialty } from '../reference/medical-specialties';
 import * as bcrypt from 'bcrypt';
-import { TEMPORARY_CODE_TTL_MS, generateTemporaryPassword } from '../auth/password-policy';
+import { generateTemporaryPassword } from '../auth/password-policy';
+import { openAccessCode, sealAccessCode } from '../auth/access-code-vault';
 
 @Injectable()
 export class UsersService {
@@ -207,7 +208,7 @@ export class UsersService {
     if (target.id === actor.id) throw new BadRequestException('Utilisez « Changer mon mot de passe » pour votre propre compte.');
     if (!isStaffRole(target.primaryRole) && target.primaryRole !== RoleSlug.ADMIN) throw new ForbiddenException('Ce compte ne relève pas de l’administration de l’établissement.');
     const generatedPassword = generateTemporaryPassword();
-    await this.prisma.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(generatedPassword, 12), mustChangePassword: true, temporaryPasswordExpiresAt: new Date(Date.now() + TEMPORARY_CODE_TTL_MS.RESET), temporaryPasswordAttempts: 0 } });
+    await this.prisma.user.update({ where: { id }, data: await this.accessCodeData(generatedPassword, 'RESET', actor.id) });
     await this.prisma.passwordResetRequest.updateMany({ where: { userId: id, status: 'PENDING' }, data: { status: 'APPROVED', decidedAt: new Date(), decidedById: actor.id } });
     await this.revokeSessionsAfterReset(id, actor.id);
     return { id, username: target.username, generatedPassword };
@@ -221,6 +222,39 @@ export class UsersService {
   }
 
   /** Forgotten-password requests waiting for this administrator. */
+  /**
+   * 6-digit codes issued and not yet used, visible to the administrators who
+   * may issue them (staff: administrator or Super Admin; administrator: Super
+   * Admin) until the holder has signed in with the code.
+   */
+  async pendingAccessCodes(actorId?: string) {
+    const actor = await this.requireAdministrativeClinic(actorId);
+    const rows = await this.prisma.user.findMany({
+      where: { clinicId: actor.clinicId, deletedAt: null, mustChangePassword: true, temporaryCodeCipher: { not: null } },
+      select: {
+        id: true, firstName: true, lastName: true, displayName: true, username: true, primaryRole: true,
+        temporaryCodeCipher: true, temporaryCodeReason: true, temporaryCodeIssuedAt: true, temporaryPasswordAttempts: true,
+      },
+      orderBy: { temporaryCodeIssuedAt: 'desc' },
+    });
+    return rows
+      .filter((row) => row.id !== actor.id && this.canApproveReset(actor.primaryRole, row.primaryRole))
+      .map((row) => ({
+        userId: row.id, name: row.displayName || `${row.firstName} ${row.lastName}`.trim(), username: row.username, primaryRole: row.primaryRole,
+        code: row.temporaryCodeCipher ? openAccessCode(row.temporaryCodeCipher) : null,
+        reason: row.temporaryCodeReason ?? 'NEW_ACCOUNT', issuedAt: row.temporaryCodeIssuedAt, wrongAttempts: row.temporaryPasswordAttempts,
+      }))
+      .filter((row) => row.code);
+  }
+
+  /** Fields of an account that receives a new 6-digit code (valid until used). */
+  private async accessCodeData(code: string, reason: 'NEW_ACCOUNT' | 'RESET', issuedById: string) {
+    return {
+      passwordHash: await bcrypt.hash(code, 12), mustChangePassword: true, temporaryPasswordExpiresAt: null, temporaryPasswordAttempts: 0,
+      temporaryCodeCipher: sealAccessCode(code), temporaryCodeReason: reason, temporaryCodeIssuedAt: new Date(), temporaryCodeIssuedById: issuedById,
+    };
+  }
+
   async passwordResetRequests(actorId?: string) {
     const actor = await this.requireAdministrativeClinic(actorId);
     const rows = await this.prisma.passwordResetRequest.findMany({
@@ -251,7 +285,7 @@ export class UsersService {
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: request.user.id },
-        data: { passwordHash: await bcrypt.hash(code, 12), mustChangePassword: true, temporaryPasswordExpiresAt: new Date(now.getTime() + TEMPORARY_CODE_TTL_MS.RESET), temporaryPasswordAttempts: 0 },
+        data: await this.accessCodeData(code, 'RESET', actor.id),
       }),
       this.prisma.passwordResetRequest.update({ where: { id: request.id }, data: { status: 'APPROVED', decidedAt: now, decidedById: actor.id } }),
     ]);
@@ -462,7 +496,8 @@ export class UsersService {
           lastName: dto.lastName,
           passwordHash,
           mustChangePassword: true,
-          temporaryPasswordExpiresAt: generatedPassword ? new Date(Date.now() + TEMPORARY_CODE_TTL_MS.NEW_ACCOUNT) : null,
+          temporaryPasswordExpiresAt: null,
+          ...(generatedPassword ? { temporaryCodeCipher: sealAccessCode(generatedPassword), temporaryCodeReason: 'NEW_ACCOUNT', temporaryCodeIssuedAt: new Date(), temporaryCodeIssuedById: creator.id } : {}),
           primaryRole,
           clinicId: creator.clinicId,
 
@@ -592,8 +627,10 @@ export class UsersService {
             firstName: dto.firstName.trim(),
             lastName: dto.lastName.trim(),
             passwordHash,
-            mustChangePassword: true,
-            temporaryPasswordExpiresAt: generatedPassword ? new Date(Date.now() + TEMPORARY_CODE_TTL_MS.NEW_ACCOUNT) : null,
+            // A password chosen for the administrator is final; only a 6-digit code must be replaced.
+            mustChangePassword: Boolean(generatedPassword),
+            temporaryPasswordExpiresAt: null,
+            ...(generatedPassword ? { temporaryCodeCipher: sealAccessCode(generatedPassword), temporaryCodeReason: 'NEW_ACCOUNT', temporaryCodeIssuedAt: new Date(), temporaryCodeIssuedById: creator.id } : {}),
             primaryRole: RoleSlug.ADMIN,
             clinicId: creator.clinicId,
             phone: dto.phone ?? null,
@@ -1518,7 +1555,13 @@ export class UsersService {
       // at the next sign-in, and their open sessions end now.
       this.assertAdministratorPassword(dto.password);
       data.passwordHash = await bcrypt.hash(dto.password, 12);
-      data.mustChangePassword = true;
+      // Staff must replace it; an administrator or Super Admin keeps the password chosen for them.
+      const targetRole = data.primaryRole ?? (await this.prisma.user.findUnique({ where: { id }, select: { primaryRole: true } }))?.primaryRole;
+      data.mustChangePassword = !(targetRole === RoleSlug.ADMIN || targetRole === RoleSlug.SUPER_ADMIN);
+      data.temporaryPasswordExpiresAt = null;
+      data.temporaryPasswordAttempts = 0;
+      data.temporaryCodeCipher = null;
+      data.temporaryCodeReason = null;
       passwordReset = true;
       delete data.password;
     }

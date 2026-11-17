@@ -49,7 +49,8 @@ export class AuthService {
       return null;
     }
     const passwordMatches = await bcrypt.compare(password, user.passwordHash);
-    const hasTemporaryCode = user.mustChangePassword && Boolean(user.temporaryPasswordExpiresAt);
+    // A 6-digit code is pending: valid until used, revoked after a few wrong attempts.
+    const hasTemporaryCode = user.mustChangePassword && (Boolean(user.temporaryCodeCipher) || Boolean(user.temporaryPasswordExpiresAt));
     if (!passwordMatches) {
       await this.prisma.loginAttempt.create({ data: { userId: user.id, username: normalized, result: 'FAILURE' } });
       if (hasTemporaryCode) {
@@ -59,13 +60,13 @@ export class AuthService {
         await this.prisma.user.update({
           where: { id: user.id },
           data: attempts >= TEMPORARY_CODE_MAX_ATTEMPTS
-            ? { temporaryPasswordAttempts: attempts, temporaryPasswordExpiresAt: new Date(0), passwordHash: await bcrypt.hash(randomUUID(), 10) }
+            ? { temporaryPasswordAttempts: attempts, temporaryPasswordExpiresAt: new Date(0), temporaryCodeCipher: null, passwordHash: await bcrypt.hash(randomUUID(), 10) }
             : { temporaryPasswordAttempts: attempts },
         });
       }
       return null;
     }
-    if (hasTemporaryCode && user.temporaryPasswordExpiresAt! <= new Date()) {
+    if (hasTemporaryCode && user.temporaryPasswordExpiresAt && user.temporaryPasswordExpiresAt <= new Date()) {
       await this.prisma.loginAttempt.create({ data: { userId: user.id, username: normalized, result: 'FAILURE' } });
       throw new UnauthorizedException('Ce code a expiré. Faites une demande « Mot de passe oublié » : l’administrateur vous remettra un nouveau code.');
     }
@@ -175,7 +176,7 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(newPassword, 12);
     await this.prisma.$transaction([
       this.prisma.passwordHistory.create({ data: { userId, passwordHash: user.passwordHash } }),
-      this.prisma.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false, passwordChangedAt: now, temporaryPasswordExpiresAt: null, temporaryPasswordAttempts: 0 } }),
+      this.prisma.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false, passwordChangedAt: now, temporaryPasswordExpiresAt: null, temporaryPasswordAttempts: 0, temporaryCodeCipher: null, temporaryCodeReason: null } }),
       this.prisma.session.updateMany({
         where: { userId, status: 'ACTIVE', ...(sessionId ? { id: { not: sessionId } } : {}) },
         data: { status: 'REVOKED', revokedAt: now, revocationReason: 'PASSWORD_CHANGED', lastSeenAt: now },

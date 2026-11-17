@@ -17,6 +17,8 @@ import {
 import { apiFetch } from "../../config/api";
 import { SpecialtySelect } from "../../components/form/SpecialtySelect";
 import PasswordResetRequests from "../../components/auth/PasswordResetRequests";
+import GeneratedCredentialModal from "../../components/auth/GeneratedCredentialModal";
+import PendingAccessCodes from "../../components/auth/PendingAccessCodes";
 import { AdminPageShell, DataTable, Panel, StatCard, StatusBadge, formatDate, formatMoney } from "./adminUi";
 
 type RoleSlug =
@@ -536,6 +538,7 @@ export default function GestionPersAdmin() {
         </>
       }
     >
+      <PendingAccessCodes roleLabel={(role) => roleLabel({ primaryRole: role } as AdminUser)} refreshKey={createdCredential ? 1 : 0} />
       <PasswordResetRequests roleLabel={(role) => roleLabel({ primaryRole: role } as AdminUser)} onCode={(credential) => { setCreatedCredential(credential); void load(); }} />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
         <StatCard icon={<UsersRound size={20} />} label="Personnel total" value={stats.total} hint="Employes actifs et suivis" />
@@ -760,18 +763,6 @@ function DepartmentResponsibleReplacementModal({
       </section>
     </div>
   );
-}
-
-function GeneratedCredentialModal({ credential, onClose }: { credential: { name: string; username: string; password: string }; onClose: () => void }) {
-  return <div className="fixed inset-0 z-[80] grid place-items-center overflow-y-auto overscroll-contain bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6">
-    <div role="dialog" aria-modal="true" className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-aulia-teal/30 bg-white p-5 shadow-2xl dark:bg-slate-950 sm:p-6">
-      <p className="text-xs font-bold uppercase tracking-[.2em] text-aulia-teal">Code d’accès</p>
-      <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">Code pour {credential.name}</h2>
-      <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Remettez ce code à la personne elle-même, après avoir vérifié son identité. Il ne s’affiche qu’une fois. Elle se connecte avec son identifiant et ce code, puis choisit aussitôt son propre mot de passe. Le code expire (7 jours pour un nouveau compte, 24 h après un oubli) et il est annulé après 5 essais erronés.</p>
-      <dl className="mt-5 space-y-3 rounded-xl bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><div><dt className="text-xs font-semibold uppercase opacity-70">Utilisateur</dt><dd className="mt-1 font-bold">{credential.username}</dd></div><div><dt className="text-xs font-semibold uppercase opacity-70">Code à 6 chiffres</dt><dd className="mt-1 break-all font-mono text-2xl font-bold tracking-[.3em]">{credential.password}</dd></div></dl>
-      <button type="button" onClick={onClose} className="mt-6 w-full rounded-xl bg-aulia-navy px-4 py-3 text-sm font-semibold text-white">J’ai remis le code</button>
-    </div>
-  </div>;
 }
 
 function ConfirmActionModal({

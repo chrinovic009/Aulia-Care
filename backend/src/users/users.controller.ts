@@ -50,6 +50,12 @@ export class UsersController {
     return this.usersService.findMyWorkLocation(req.user?.userId);
   }
 
+  @Get('pending-access-codes')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  pendingAccessCodes(@Request() req: any) {
+    return this.usersService.pendingAccessCodes(req.user?.userId);
+  }
+
   @Get('password-reset-requests')
   @Roles('SUPER_ADMIN', 'ADMIN')
   passwordResetRequests(@Request() req: any) {

@@ -73,6 +73,12 @@ model User {
   /// Expiry of the temporary 6-digit code (null: no temporary code).
   temporaryPasswordExpiresAt       DateTime?
   temporaryPasswordAttempts        Int                              @default(0)
+  /// Pending 6-digit access code, encrypted, shown to the issuing administrators until used.
+  temporaryCodeCipher              String?
+  /// NEW_ACCOUNT or RESET.
+  temporaryCodeReason              String?
+  temporaryCodeIssuedAt            DateTime?
+  temporaryCodeIssuedById          String?
   passwordResetRequests            PasswordResetRequest[]           @relation("PasswordResetRequestUser")
   passwordResetDecisions           PasswordResetRequest[]           @relation("PasswordResetRequestDecider")
   status                           UserStatus                       @default(ACTIVE)

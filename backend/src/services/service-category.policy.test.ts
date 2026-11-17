@@ -29,3 +29,5 @@ test('only the structured administration category is administrative', () => {
   assert.equal(isAdministrativeServiceCategory(ServiceCategory.CONSULTATION), false);
   assert.equal(isAdministrativeServiceCategory(ServiceCategory.LABORATORY), false);
 });
+
+

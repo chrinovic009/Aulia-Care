@@ -3,19 +3,13 @@ import { randomInt } from 'crypto';
 /**
  * Temporary code for a new account or a forgotten password: 6 random digits
  * from a cryptographic source, shown once to the administrator who hands it
- * over. It only opens the forced password-change screen, expires, and is
- * revoked after a few wrong attempts (see AuthService.validateUser).
+ * over. It only opens the forced password-change screen, stays valid until
+ * used, and is revoked after a few wrong attempts (see AuthService.validateUser).
  */
 export function generateTemporaryPassword(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, '0');
 }
 
-export const TEMPORARY_CODE_TTL_MS = {
-  /** A new account may wait a few days before its holder first signs in. */
-  NEW_ACCOUNT: 7 * 24 * 60 * 60 * 1000,
-  /** A code issued for a forgotten password is used the same day. */
-  RESET: 24 * 60 * 60 * 1000,
-} as const;
 export const TEMPORARY_CODE_MAX_ATTEMPTS = 5;
 
 export const PASSWORD_MIN_LENGTH = 6;
