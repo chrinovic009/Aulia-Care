@@ -1163,8 +1163,7 @@ export function ClinicalConsultationWorkspace({
             {prescriptionSlot || <Notice>Choisissez d’abord un patient puis enregistrez le brouillon pour prescrire de façon traçable.</Notice>}
           </Step>
         )}
-        {step === 7 &&
-          (true ? (
+        {step === 7 && (
             <Step
               title="Orientation & synthèse"
               hint="Décision clinique après résultats."
@@ -1181,13 +1180,7 @@ export function ClinicalConsultationWorkspace({
                 ))}
               </Grid>
             </Step>
-          ) : (
-            <Notice>
-              Orientation verrouillée jusqu’à disponibilité d’un résultat
-              d’examen pour cette consultation. Le brouillon peut être
-              enregistré et les examens demandés depuis l’onglet Examens.
-            </Notice>
-          ))}
+          )}
         {step === 8 && (
           <Step
             title="Prise en charge & suivi"
