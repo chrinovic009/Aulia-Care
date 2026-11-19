@@ -129,14 +129,14 @@ export function Pager({
           →
         </button>
       </div>
-      <div className="mt-2 flex gap-1 overflow-x-auto">
+      <div className="mt-2 flex min-w-0 gap-1">
         {labels.map((label, index) => (
           <button
             type="button"
             aria-label={label}
             key={label}
             onClick={() => setPage(index)}
-            className={`h-1.5 min-w-6 rounded-full ${page === index ? "bg-aulia-teal" : "bg-slate-300 dark:bg-slate-700"}`}
+            className={`h-1.5 min-w-0 flex-1 rounded-full ${page === index ? "bg-aulia-teal" : "bg-slate-300 dark:bg-slate-700"}`}
           />
         ))}
       </div>

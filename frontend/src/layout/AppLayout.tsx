@@ -26,13 +26,13 @@ const LayoutContent: React.FC = () => {
   useEffect(() => { bindOfflineQueue(currentUser?.id ?? null); }, [currentUser?.id]);
 
   return (
-    <div className="min-h-screen xl:flex">
+    <div className="min-h-screen flex">
       <div>
         <AppSidebar />
         <Backdrop />
       </div>
       <div
-        className={`min-w-0 flex-1 transition-all duration-300 ease-in-out md:ml-[90px] ${
+        className={`w-0 min-w-0 flex-1 transition-all duration-300 ease-in-out md:ml-[90px] ${
           isExpanded || isHovered ? "lg:ml-[290px]" : "lg:ml-[90px]"
         } ${isMobileOpen ? "ml-0" : ""}`}
       >

@@ -42,7 +42,11 @@ function prescribingService(options: { allergies: unknown[]; overrides?: Array<R
     $transaction: async (callback: (tx: unknown) => Promise<unknown>) => {
       options.onTransaction?.();
       return callback({
-        prescription: { create: async () => ({ id: 'prescription-a', version: 1 }) },
+        $executeRaw: async () => 1,
+        consultation: { findUnique: async () => ({ status: "IN_PROGRESS" }) },
+        allergy: { findMany: async () => options.allergies },
+        drugInteractionRule: { findMany: async () => [] },
+        prescription: { findMany: async () => [], create: async () => ({ id: 'prescription-a', version: 1 }) },
         prescriptionSafetyOverride: { createMany: async (input: { data: Array<Record<string, unknown>> }) => { options.overrides?.push(...input.data); } },
         invoice: { create: async (input: { data: Record<string, unknown> }) => ({ id: 'invoice-a', ...input.data }) },
         invoiceLine: { create: async () => undefined },
@@ -65,7 +69,7 @@ test('a documented allergy blocks the prescription until it is justified in writ
     blocked.createPrescription('consultation-a', { lines: [{ medicationId: 'med-a', quantity: 1 }], safetyOverrideReason: 'court' } as CreatePrescriptionDto, 'doctor-a'),
     (error: any) => error instanceof ConflictException && (error.getResponse() as any).code === 'PRESCRIPTION_SAFETY_ALERTS' && (error.getResponse() as any).alerts.length === 1,
   );
-  assert.equal(transactionStarted, false);
+  assert.equal(transactionStarted, true);
 
   const overrides: Array<Record<string, unknown>> = [];
   const justified = prescribingService({ allergies: [allergy], overrides });
@@ -90,7 +94,10 @@ test('prescription snapshots clinic sale price rather than stock purchase cost',
     ...noSafetyFindings,
     user: { findMany: async () => [] },
     $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
-      prescription: { create: async () => ({ id: 'prescription-a', version: 1 }) },
+      $executeRaw: async () => 1,
+      consultation: { findUnique: async () => ({ status: "IN_PROGRESS" }) },
+      ...noSafetyFindings,
+      prescription: { findMany: async () => [], create: async () => ({ id: 'prescription-a', version: 1 }) },
       invoice: { create: async (input: { data: Record<string, unknown> }) => {
         invoiceRows.push(input.data);
         return { id: 'invoice-a', ...input.data };
@@ -335,6 +342,8 @@ test('lab requests reject inactive tests selected by id', async () => {
   const service = new ConsultationsService(
     {
       $transaction: async (callback: (tx: any) => Promise<unknown>) => callback({
+        $executeRaw: async () => 1,
+        consultation: { findUnique: async () => ({ status: "IN_PROGRESS" }) },
         labTest: {
           findUnique: async (query: Record<string, unknown>) => {
             queries.push(query);
@@ -385,6 +394,7 @@ test('finalizing a consultation refuses any ordered exam without a final result'
   const service = new ConsultationsService(
     {
       $transaction: async (callback: (tx: any) => Promise<unknown>) => callback({
+        $executeRaw: async () => 1,
         consultation: {
           update: async () => ({
             id: 'consultation-a',
@@ -399,12 +409,10 @@ test('finalizing a consultation refuses any ordered exam without a final result'
           }),
         },
         labRequest: {
-          findFirst: async () => ({
-            items: [],
-          }),
+          findMany: async () => [{ items: [] }],
         },
         imagingRequest: {
-          findFirst: async () => null,
+          findMany: async () => [],
         },
         appointment: { update: async () => undefined },
         patientVisit: { updateMany: async () => undefined },
@@ -439,7 +447,7 @@ test('finalizing a consultation refuses any ordered exam without a final result'
       },
       'physician-a',
     ),
-    /tous les examens complémentaires commandés n’ont pas de résultat final/,
+    /résultat final valide pour tous les examens/,
   );
 });
 
@@ -478,4 +486,37 @@ test('a concurrent consultation change is refused with 409 instead of being over
     service.update('consultation-a', { chiefComplaint: 'Toux', expectedVersion: 3 }, 'doctor-a'),
     (error: unknown) => error instanceof ConflictException && /modifiée entre-temps/.test(error.message),
   );
+});
+
+for (const status of ['FINALIZED', 'CANCELLED'] as const) {
+ test(`generic update cannot set ${status}`, async () => {
+  let writes=0; const service=consultationServiceForUpdate(async()=>{writes++;return {};});
+  await assert.rejects(service.update('consultation-a',{status},'doctor-a'),/parcours/); assert.equal(writes,0);
+ });
+ test(`creation cannot start ${status}`, async()=>{
+  const service=new ConsultationsService({} as PrismaService,{} as NotificationsGateway,{} as PatientWorkflowService);
+  await assert.rejects(service.create({patientId:'p',appointmentId:'a',status},'doctor-a'),/parcours/);
+ });
+}
+for(const method of ['createLabRequest','createImagingRequest','createPrescription'] as const){
+ test(`${method} refuses new orders on a signed record`,async()=>{
+  let writes=0;const service=new ConsultationsService({$transaction:async()=>{writes++;}} as unknown as PrismaService,{} as NotificationsGateway,{} as PatientWorkflowService);
+  Object.defineProperty(service,'findOne',{value:async()=>({status:'FINALIZED',providerId:'doctor-a'})});
+  Object.defineProperty(service,'ensureWriteAccess',{value:async()=>undefined});
+  await assert.rejects((service[method] as any)('c',{},'doctor-a'),/finalisée/);assert.equal(writes,0);
+ });
+}
+
+test('author archive predicates on the observed draft version and status',async()=>{
+ let where:unknown;const service=new ConsultationsService({consultation:{findUnique:async()=>({id:'c',providerId:'doctor',status:'DRAFT',version:7})},$transaction:async(fn:any)=>fn({consultation:{update:async(q:any)=>{where=q.where;}},consultationNote:{create:async()=>{}}})} as unknown as PrismaService,{} as NotificationsGateway,{} as PatientWorkflowService);
+ await service.archiveOwnDraft('c','doctor');assert.deepEqual(where,{id:'c',version:7,status:'DRAFT'});
+});
+test('author archive fails rather than overwriting a concurrently signed draft',async()=>{
+ const service=new ConsultationsService({consultation:{findUnique:async()=>({id:'c',providerId:'doctor',status:'DRAFT',version:7})},$transaction:async(fn:any)=>fn({consultation:{update:async()=>{throw new Prisma.PrismaClientKnownRequestError('changed',{code:'P2025',clientVersion:'test'});}}})} as unknown as PrismaService,{} as NotificationsGateway,{} as PatientWorkflowService);
+ await assert.rejects(service.archiveOwnDraft('c','doctor'),error=>error instanceof ConflictException);
+});
+test('administrative archive predicates on the observed encounter version and status',async()=>{
+ let where:unknown;const service=new ConsultationsService({$transaction:async(fn:any)=>fn({consultation:{update:async(q:any)=>{where=q.where;}},consultationNote:{create:async()=>{}},patientVisit:{updateMany:async()=>{}}})} as unknown as PrismaService,{} as NotificationsGateway,{} as PatientWorkflowService);
+ Object.defineProperty(service,'findOne',{value:async()=>({status:'IN_PROGRESS',version:5,appointmentId:'a'})});
+ await service.remove('c','admin');assert.deepEqual(where,{id:'c',version:5,status:'IN_PROGRESS'});
 });

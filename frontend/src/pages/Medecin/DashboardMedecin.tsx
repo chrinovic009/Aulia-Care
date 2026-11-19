@@ -535,15 +535,7 @@ export default function DashboardMedecin() {
       return;
     }
     if (declinedServerDraftsRef.current.has(restoreKey)) return;
-    // The legacy prompt below is intentionally bypassed: confirmations are Aulia modals.
     restoredServerDraftRef.current = restoreKey;
-    if (restoredServerDraftRef.current !== restoreKey) {
-      restoredServerDraftRef.current = restoreKey;
-      if (!window.confirm(`Un brouillon enregistré le ${formatDateTime(consultation.updatedAt || consultation.createdAt)} existe pour ${formatDoctorPatientName(selectedPatient)}. Voulez-vous continuer cette consultation ?`)) {
-        setActionMessage("Brouillon conservé. Vous pourrez le reprendre depuis l’onglet Brouillons.");
-        return;
-      }
-    }
     setClinicalForm((current) => ({
       ...current,
       chiefComplaint: consultation.chiefComplaint || current.chiefComplaint,
@@ -567,7 +559,7 @@ export default function DashboardMedecin() {
       followUp: parsed.followUp?.notes || "",
     }));
     if (parsed.consultationModule) {
-      setConsultationModule(hydrateConsultationModule(parsed.consultationModule));
+      setConsultationModule({ ...hydrateConsultationModule(parsed.consultationModule), chiefComplaint: consultation.chiefComplaint ?? parsed.consultationModule.chiefComplaint ?? "" });
     } else {
       setConsultationModule((current) => ({
         ...createInitialConsultationModule(),
@@ -658,31 +650,27 @@ export default function DashboardMedecin() {
         capturedAt?: string;
       };
       if (!draft.clinicalForm || !draft.consultationModule) return;
+      const recoveredForm = draft.clinicalForm;
+      const recoveredModule = { ...hydrateConsultationModule(draft.consultationModule), chiefComplaint: draft.clinicalForm.chiefComplaint || draft.consultationModule.chiefComplaint || "" };
       setConfirmation({
         title: "Récupération après interruption",
         message: `Un brouillon local du ${formatDateTime(draft.capturedAt)} a été retrouvé. Souhaitez-vous le restaurer ?`,
         confirmLabel: "Restaurer",
-        onConfirm: () => { setClinicalForm(draft.clinicalForm!); setConsultationModule(hydrateConsultationModule(draft.consultationModule!)); setActionMessage("Brouillon local restauré. Enregistrez-le pour le sécuriser sur le serveur."); setConfirmation(null); },
+        onConfirm: () => { setClinicalForm(recoveredForm); setConsultationModule(recoveredModule); setActionMessage("Brouillon local restauré. Enregistrez-le pour le sécuriser sur le serveur."); setConfirmation(null); },
       });
-      return;
-      if (window.confirm(`Un brouillon non envoyé du ${formatDateTime(draft.capturedAt)} a été retrouvé. Le restaurer ?`)) {
-       setClinicalForm(draft.clinicalForm!);
-       setConsultationModule(hydrateConsultationModule(draft.consultationModule!));
-        setActionMessage("Brouillon local restauré. Enregistrez-le pour le sécuriser sur le serveur.");
-      }
     } catch {
       window.sessionStorage.removeItem(consultationDraftKey);
     }
   }, [consultationDraftKey]);
 
   useEffect(() => {
-    if (!consultationDraftKey) return;
+    if (!consultationDraftKey || !isConsultationOpen) return;
     window.sessionStorage.setItem(consultationDraftKey, JSON.stringify({
       clinicalForm,
       consultationModule,
       capturedAt: new Date().toISOString(),
     }));
-  }, [consultationDraftKey, clinicalForm, consultationModule]);
+  }, [consultationDraftKey, clinicalForm, consultationModule, isConsultationOpen]);
 
   const applyVoiceToConsultationModule = (transcript: string) => {
     const fields = extractClinicalVoiceFields(transcript);
@@ -738,7 +726,7 @@ export default function DashboardMedecin() {
         next.hpiDescription = [next.hpiDescription, `Facteurs aggravants: ${fields.aggravatingFactors}`].filter(Boolean).join(" | ");
       }
       if (next.chiefComplaint && !next.selectedDiagnosis.label) {
-        next.selectedDiagnosis = { codeICD: "R50.9", label: "Symptôme clinique non codé", certaintyLevel: "PRESUMPTION" };
+        next.selectedDiagnosis = { codeICD: "", label: "Symptôme clinique non codé", certaintyLevel: "PRESUMPTION" };
       }
       setClinicalForm((currentForm) => ({
         ...currentForm,
@@ -846,13 +834,13 @@ export default function DashboardMedecin() {
   // session copy above remains a recovery fallback if the browser is killed
   // before the network request can finish.
   useEffect(() => {
-    if (!isConsultationPage || !selectedPatient) return;
+    if (!isConsultationPage || !selectedPatient || !isConsultationOpen) return;
     const saveOnHide = () => {
       if (document.visibilityState === "hidden") void saveDraftConsultation();
     };
     document.addEventListener("visibilitychange", saveOnHide);
     return () => document.removeEventListener("visibilitychange", saveOnHide);
-  }, [isConsultationPage, selectedPatient?.id, currentConsultationId, clinicalForm, consultationModule]);
+  }, [isConsultationPage, selectedPatient?.id, currentConsultationId, clinicalForm, consultationModule, isConsultationOpen]);
 
   const validateConsultation = async () => {
     if (isSavingConsultation) return;
@@ -1256,7 +1244,7 @@ export default function DashboardMedecin() {
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
       <PageMeta title="Dashboard medecin | Aulia Care" description="File medecin alimentee par PostgreSQL." />
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+      <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
@@ -1282,8 +1270,8 @@ export default function DashboardMedecin() {
       {confirmation && <ConfirmationModal {...confirmation} onClose={() => { confirmation.onCancel?.(); setConfirmation(null); }} />}
       {exitConsultationModal && <ExitConsultationModal onCancel={() => setExitConsultationModal(false)} onDiscard={discardConsultationChanges} onSave={() => { setExitConsultationModal(false); void saveDraftConsultation(); }} />}
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[360px_1fr]">
-        <aside className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div className="mt-6 grid gap-6 2xl:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -1316,7 +1304,7 @@ export default function DashboardMedecin() {
           )}
         </aside>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+        <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
           {!selectedPatient ? (
             <p className="text-sm text-slate-500">Selectionnez un patient.</p>
           ) : (

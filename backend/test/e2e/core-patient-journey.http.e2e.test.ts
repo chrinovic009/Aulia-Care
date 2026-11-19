@@ -315,10 +315,12 @@ test(
         .send({ invoiceId: labInvoice.id, amount: Number(labInvoice.totalAmount), method: PaymentMethod.CASH })
         .expect(201);
       await expectStatus('EN_LABORATOIRE', 'examen labo payé');
+      const orderedLabItem = await prisma.labRequestItem.findFirstOrThrow({ where: { labRequestId: labRequest.body.id } });
       await request(server)
         .post(`/api/laboratory/requests/${labRequest.body.id}/results`)
         .set('Cookie', labCookies)
         .send({
+          labRequestItemId: orderedLabItem.id,
           resultName: 'Glycémie contrôlée',
           resultValue: '5.4',
           parameters: [{ labTestParameterId: labParameter.id, valueNumeric: 5.4 }],

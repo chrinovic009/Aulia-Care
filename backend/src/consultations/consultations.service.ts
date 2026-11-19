@@ -14,6 +14,8 @@ import { ClinicalSectionsDto } from './dto/clinical-sections.dto';
 import { CreateLabRequestDto } from './dto/create-lab-request.dto';
 import { CreatePrescriptionDto, RequestPrescriptionReplacementDto, ReviewPrescriptionReplacementDto } from './dto/create-prescription.dto';
 import { TelehealthTranscriptEntryDto } from './dto/save-telehealth-transcript.dto';
+import { assertOpenStatus, assertExamResults } from './consultation-integrity';
+import { validateSpecialtyAssessment } from './specialty-validation';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
 
 @Injectable()
@@ -59,6 +61,7 @@ export class ConsultationsService {
   }
 
   async create(createConsultationDto: CreateConsultationDto, actorId?: string) {
+    assertOpenStatus(createConsultationDto.status);
     if (!actorId) throw new ForbiddenException('Médecin authentifié requis.');
     const actor = await this.prisma.user.findUnique({
       where: { id: actorId },
@@ -344,16 +347,16 @@ export class ConsultationsService {
   /** Archives, rather than physically deletes, the author's unfinished note. */
   async archiveOwnDraft(id: string, actorId?: string) {
     if (!actorId) throw new ForbiddenException('Médecin non identifié.');
-    const draft = await this.prisma.consultation.findUnique({ where: { id }, select: { id: true, providerId: true, status: true } });
+    const draft = await this.prisma.consultation.findUnique({ where: { id }, select: { id: true, providerId: true, status: true, version: true } });
     if (!draft) throw new NotFoundException('Brouillon introuvable.');
     if (draft.providerId !== actorId) throw new ForbiddenException('Seul le médecin responsable peut supprimer ce brouillon.');
     if (draft.status !== ConsultationStatus.DRAFT && draft.status !== ConsultationStatus.IN_PROGRESS) {
       throw new BadRequestException('Seul un brouillon non finalisé peut être supprimé.');
     }
-    await this.prisma.$transaction(async (tx) => {
-      await tx.consultation.update({ where: { id }, data: { status: ConsultationStatus.CANCELLED, deletedAt: new Date(), version: { increment: 1 } } });
+    await this.guardConsultationWrite(() => this.prisma.$transaction(async (tx) => {
+      await tx.consultation.update({ where: { id, version: draft.version, status: draft.status }, data: { status: ConsultationStatus.CANCELLED, deletedAt: new Date(), version: { increment: 1 } } });
       await tx.consultationNote.create({ data: { consultationId: id, authorId: actorId, noteType: 'DRAFT_ARCHIVED_BY_AUTHOR', content: 'Brouillon archivé à la demande de son médecin responsable.' } });
-    });
+    }));
     return { archived: true };
   }
 
@@ -387,8 +390,10 @@ export class ConsultationsService {
   }
 
   async update(id: string, updateConsultationDto: UpdateConsultationDto, actorId?: string) {
+    assertOpenStatus(updateConsultationDto.status);
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    this.assertMutable(consultation);
     if (consultation.status === ConsultationStatus.FINALIZED) {
       throw new BadRequestException('Consultation finalisée : utilisez la procédure d’avenant documentée.');
     }
@@ -478,6 +483,7 @@ export class ConsultationsService {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
 
+    if (consultation.deletedAt || consultation.status === ConsultationStatus.CANCELLED) throw new BadRequestException('Consultation archivée : aucune nouvelle saisie autorisée.');
     const amendmentReason = dto.amendmentReason?.trim();
     const isAmendment = consultation.status === ConsultationStatus.FINALIZED;
     if (isAmendment && !amendmentReason) {
@@ -584,59 +590,13 @@ export class ConsultationsService {
       ? consultationModule.orderedExams
       : [];
 
-    const hasPendingOrderedExams = orderedExams.length > 0
-      ? await this.prisma.$transaction(async (tx) => {
-          for (const exam of orderedExams) {
-            if (!exam || typeof exam !== 'object') return true;
-            const category = String(exam.category || '').toUpperCase();
-            const catalogueItemId = typeof exam.catalogueItemId === 'string' ? exam.catalogueItemId.trim() : '';
-            if (!category || !catalogueItemId) return true;
-
-            if (category === 'LABORATORY') {
-              const request = await tx.labRequest.findFirst({
-                where: {
-                  consultationId: id,
-                  patientId: consultation.patientId,
-                  clinicId,
-                  deletedAt: null,
-                },
-                include: {
-                  items: {
-                    where: { deletedAt: null },
-                    select: { labTestId: true, status: true },
-                  },
-                },
-              });
-              const hasFinalResult = request?.items.some(
-                (item) => item.labTestId === catalogueItemId && ['AVAILABLE', 'SENT', 'COMPLETED', 'VERIFIED'].includes(String(item.status || '')),
-              );
-              if (!hasFinalResult) return true;
-            }
-
-            if (category === 'IMAGING') {
-              const imagingRequest = await tx.imagingRequest.findFirst({
-                where: {
-                  consultationId: id,
-                  patientId: consultation.patientId,
-                  clinicId,
-                  imagingCatalogueId: catalogueItemId,
-                  deletedAt: null,
-                  status: { in: ['COMPLETED', 'VERIFIED'] },
-                },
-                select: { report: true },
-              });
-              if (!imagingRequest?.report) return true;
-            }
-          }
-          return false;
-        })
-      : false;
-
-    if (!isAmendment && normalizedStatus === ConsultationStatus.FINALIZED && hasPendingOrderedExams) {
-      throw new BadRequestException('La consultation ne peut être finalisée que lorsque tous les examens complémentaires commandés n’ont pas de résultat final valide.');
-    }
+    validateSpecialtyAssessment(consultationModule, consultation.provider?.specialty, !isAmendment && normalizedStatus === ConsultationStatus.FINALIZED);
 
     const transactionResult = await this.guardConsultationWrite(() => this.prisma.$transaction(async (tx) => {
+      await this.lockPatient(tx, clinicId, consultation.patientId);
+      if (!isAmendment && normalizedStatus === ConsultationStatus.FINALIZED) {
+        await assertExamResults(tx, { id, clinicId, patientId: consultation.patientId }, orderedExams);
+      }
       const updated = await tx.consultation.update({
         // Same version and status as read above, or as last seen by the client.
         where: { id, version: dto.expectedVersion ?? consultation.version, status: consultation.status },
@@ -1361,11 +1321,16 @@ export class ConsultationsService {
   async createLabRequest(id: string, dto: CreateLabRequestDto, actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    this.assertMutable(consultation);
     const clinicId = consultation.clinicId || consultation.patient?.clinicId;
     if (!clinicId) {
       throw new ForbiddenException('La consultation doit être rattachée à un établissement actif.');
     }
     const request = await this.prisma.$transaction(async (tx) => {
+      await this.lockPatient(tx, consultation.clinicId, consultation.patientId);
+      const currentConsultation = await tx.consultation.findUnique({ where: { id: consultation.id || id } });
+      if (!currentConsultation || currentConsultation.deletedAt) throw new ConflictException('Consultation indisponible.');
+      this.assertMutable(currentConsultation);
       const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
       const requestedLabTestIds = Array.isArray(dto.labTestIds)
         ? dto.labTestIds.filter((value: unknown): value is string => typeof value === 'string' && Boolean(value))
@@ -1660,12 +1625,17 @@ export class ConsultationsService {
   async createImagingRequest(id: string, dto: CreateImagingRequestDto, actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    this.assertMutable(consultation);
     const clinicId = consultation.clinicId || consultation.patient?.clinicId;
     if (!clinicId) {
       throw new ForbiddenException('La consultation doit être rattachée à un établissement actif.');
     }
 
     const request = await this.prisma.$transaction(async (tx) => {
+      await this.lockPatient(tx, consultation.clinicId, consultation.patientId);
+      const currentConsultation = await tx.consultation.findUnique({ where: { id: consultation.id || id } });
+      if (!currentConsultation || currentConsultation.deletedAt) throw new ConflictException('Consultation indisponible.');
+      this.assertMutable(currentConsultation);
       const trimmedExamName = typeof dto.examName === 'string' ? dto.examName.trim() : '';
       const imagingCatalogueId = typeof dto.imagingCatalogueId === 'string' && dto.imagingCatalogueId ? dto.imagingCatalogueId : null;
 
@@ -1981,9 +1951,10 @@ export class ConsultationsService {
     return Array.from(usageByKey.values());
   }
 
-  async createPrescription(id: string, dto: CreatePrescriptionDto, actorId?: string) {
+  async createPrescription(id: string, dto: CreatePrescriptionDto, actorId?: string, amendmentReason?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    this.assertMutable(consultation, amendmentReason);
     const clinicId = consultation.clinicId || consultation.patient?.clinicId;
     if (!clinicId) {
       throw new ForbiddenException('La consultation doit être rattachée à un établissement actif.');
@@ -2028,22 +1999,24 @@ export class ConsultationsService {
       return { ...line, quantity, unitPrice, medication };
     });
 
-    // Safety check against documented allergies, the establishment's validated
-    // interaction rules and treatments in progress. Blocking alerts need a
-    // written justification; every alert shown is kept with the prescription.
-    const safety = await evaluateForPatient(this.prisma as any, {
-      clinicId,
-      patientId: consultation.patientId,
-      prescribed: medications.map((item) => ({ id: item.id, name: item.name, activeSubstance: item.activeSubstance, atcCode: item.atcCode })),
-    });
-    const safetyReason = assertPrescribable(safety, dto.safetyOverrideReason);
-
     const total = enrichedLines.reduce(
       (sum: Prisma.Decimal, line: { unitPrice: Prisma.Decimal; quantity: number }) => sum.plus(line.unitPrice.times(line.quantity)),
       new Prisma.Decimal(0),
     );
 
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.lockPatient(tx, consultation.clinicId, consultation.patientId);
+      const currentConsultation = await tx.consultation.findUnique({ where: { id: consultation.id || id } });
+      if (!currentConsultation || currentConsultation.deletedAt) throw new ConflictException('Consultation indisponible.');
+      this.assertMutable(currentConsultation, amendmentReason);
+      const safety = await evaluateForPatient(tx as any, {
+        clinicId, patientId: consultation.patientId,
+        prescribed: medications.map((item) => ({ id: item.id, name: item.name, activeSubstance: item.activeSubstance, atcCode: item.atcCode })),
+      });
+      const safetyReason = assertPrescribable(safety, dto.safetyOverrideReason);
+      if (currentConsultation.status === ConsultationStatus.FINALIZED) {
+        await tx.consultationNote.create({ data: { consultationId: id, authorId: actorId, noteType: 'AMENDMENT', content: `Remplacement d’ordonnance autorisé : ${amendmentReason}` } });
+      }
       const prescription = await tx.prescription.create({
         data: {
           consultationId: id,
@@ -2242,6 +2215,7 @@ export class ConsultationsService {
   async updatePrescription(consultationId: string, prescriptionId: string, dto: CreatePrescriptionDto, actorId?: string) {
     const consultation = await this.findOne(consultationId, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    this.assertMutable(consultation);
 
     const prescription = await this.prisma.prescription.findUnique({
       where: { id: prescriptionId },
@@ -2314,6 +2288,10 @@ export class ConsultationsService {
     });
 
     return this.prisma.$transaction(async (tx) => {
+      await this.lockPatient(tx, consultation.clinicId, consultation.patientId);
+      const currentConsultation = await tx.consultation.findUnique({ where: { id: consultation.id || consultationId } });
+      if (!currentConsultation || currentConsultation.deletedAt) throw new ConflictException('Consultation indisponible.');
+      this.assertMutable(currentConsultation);
       await tx.medicalHistory.create({
         data: {
           patientId: prescription.patientId,
@@ -2322,6 +2300,11 @@ export class ConsultationsService {
           createdById: actorId,
         },
       });
+      const invoiceAtWrite = await tx.invoice.findFirst({ where: { clinicId: consultation.clinicId, OR: [{ prescriptionId }, { prescriptionId: null, remarks: `Prescription:${prescriptionId}` }] } });
+      if (invoiceAtWrite) throw new ConflictException('Cette ordonnance est déjà facturée.');
+      const safety = await evaluateForPatient(tx as any, { clinicId: consultation.clinicId, patientId: consultation.patientId, prescribed: medications.map((item) => ({ id: item.id, name: item.name, activeSubstance: item.activeSubstance, atcCode: item.atcCode })) });
+      const safetyReason = assertPrescribable(safety, dto.safetyOverrideReason);
+      if (safety.alerts.length) await tx.prescriptionSafetyOverride.createMany({ data: overrideRows(safety.alerts, { clinicId: consultation.clinicId, prescriptionId, prescriberId: actorId || consultation.providerId, reason: safetyReason }) });
       await tx.prescriptionLine.deleteMany({ where: { prescriptionId } });
       await tx.prescription.update({
         where: { id: prescriptionId },
@@ -2536,6 +2519,7 @@ export class ConsultationsService {
       consultationId,
       { instruction: payload.instruction || undefined, safetyOverrideReason: payload.safetyOverrideReason || undefined, lines: payload.lines },
       reviewed.requestedById,
+      reviewed.reason,
     );
 
     return this.prisma.$transaction(async (tx) => {
@@ -2693,9 +2677,9 @@ export class ConsultationsService {
     if (consultation.status === ConsultationStatus.FINALIZED) {
       throw new BadRequestException('Une consultation finalisée est un document médical : elle ne peut pas être supprimée. Créez un avenant ou une annulation motivée.');
     }
-    await this.prisma.$transaction(async (tx) => {
+    await this.guardConsultationWrite(() => this.prisma.$transaction(async (tx) => {
       await tx.consultation.update({
-        where: { id },
+        where: { id, version: consultation.version, status: consultation.status },
         data: { status: ConsultationStatus.CANCELLED, deletedAt: new Date(), version: { increment: 1 } },
       });
       await tx.consultationNote.create({
@@ -2705,8 +2689,17 @@ export class ConsultationsService {
         where: { appointmentId: consultation.appointmentId, status: { in: ['REGISTERED', 'ORIENTED', 'IN_CONSULTATION'] } },
         data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: 'Consultation annulée et archivée.' },
       });
-    });
+    }));
     return { archived: true };
+  }
+
+  private assertMutable(consultation: { status?: string; deletedAt?: Date | null }, amendmentReason?: string) {
+    if (consultation.deletedAt || consultation.status === 'CANCELLED') throw new BadRequestException('Consultation archivée : aucune nouvelle saisie autorisée.');
+    if (consultation.status === 'FINALIZED' && !amendmentReason?.trim()) throw new BadRequestException('Consultation finalisée : ouvrez une nouvelle consultation ou un remplacement documenté.');
+  }
+
+  private async lockPatient(tx: Prisma.TransactionClient, clinicId: string, patientId: string) {
+    await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`patient-workflow:${clinicId}:${patientId}`}))`);
   }
 
   private async ensureWriteAccess(assignedDoctorId?: string | null, actorId?: string | null) {

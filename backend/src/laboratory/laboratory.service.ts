@@ -2195,6 +2195,10 @@ export class LaboratoryService {
         },
       });
 
+      if (created.labRequestItemId) {
+        await tx.labRequestItem.update({ where: { id: created.labRequestItemId }, data: { status: canDirectSend ? 'AVAILABLE' : 'TECHNICAL_VALIDATION', completedAt: canDirectSend ? new Date() : null } });
+      }
+
       if (canDirectSend) {
         await this.consumeConsumablesForValidatedResult(tx, created.id, created.labRequestItemId, reportedById);
       }

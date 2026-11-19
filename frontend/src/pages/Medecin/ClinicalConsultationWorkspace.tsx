@@ -375,7 +375,7 @@ export function ClinicalConsultationWorkspace({
         </div>
       </header>
       <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex min-w-0 flex-wrap gap-2 pb-1">
           {steps.map((name, index) => (
             <button
               type="button"

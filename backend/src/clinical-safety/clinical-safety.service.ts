@@ -62,12 +62,14 @@ export class ClinicalSafetyService {
     const actor = await this.actor(user, ALLERGY_WRITERS);
     await this.patientInClinic(patientId, actor.clinicId);
     const substance = dto.substance.trim();
-    const duplicate = await this.prisma.allergy.findFirst({
+    return this.prisma.$transaction(async (tx) => {
+    await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`patient-workflow:${actor.clinicId}:${patientId}`}))`);
+    const duplicate = await tx.allergy.findFirst({
       where: { patientId, resolved: false, deletedAt: null, substance: { equals: substance, mode: 'insensitive' } },
       select: { id: true },
     });
     if (duplicate) throw new ConflictException('Cette allergie est déjà documentée pour ce patient.');
-    return this.prisma.allergy.create({
+    return tx.allergy.create({
       data: {
         patientId,
         substance,
@@ -76,6 +78,7 @@ export class ClinicalSafetyService {
         notes: dto.notes?.trim() || null,
         recordedById: actor.id,
       },
+    });
     });
   }
 
