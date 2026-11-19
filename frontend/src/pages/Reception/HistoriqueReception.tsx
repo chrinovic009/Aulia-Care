@@ -8,6 +8,7 @@ import { formatPatientDossierId } from "../../utils/formatId";
 
 type AdmissionRecord = {
   id: string;
+  visitId: string;
   patientId: string;
   patient: string;
   service: string;
@@ -40,6 +41,7 @@ const toAdmissionRecord = (visit: ReceptionVisitRecord): AdmissionRecord => {
   const createdAt = visit.arrivedAt;
   const createdDate = new Date(createdAt);
   return {
+    visitId: visit.id,
     id: formatPatientDossierId(visit.patient.id, visit.patient.externalId, { truncateTo: 8 }),
     patientId: visit.patient.id,
     patient: patientName(visit.patient),
@@ -118,10 +120,10 @@ export default function HistoriqueReception() {
   }, [records]);
 
   const frequentAdmissions = useMemo(() => {
-    const counts = new Map<string, { patient: string; count: number }>();
+    const counts = new Map<string, { patientId: string; patient: string; count: number }>();
     records.forEach((record) => {
       const existing = counts.get(record.patientId);
-      counts.set(record.patientId, { patient: record.patient, count: (existing?.count || 0) + 1 });
+      counts.set(record.patientId, { patientId: record.patientId, patient: record.patient, count: (existing?.count || 0) + 1 });
     });
     return Array.from(counts.values())
       .filter((item) => item.count > 1)
@@ -187,7 +189,7 @@ export default function HistoriqueReception() {
                 ) : filteredRecords.length === 0 ? (
                   <tr><td colSpan={7} className="py-8 text-center text-slate-500">Aucune admission trouvee.</td></tr>
                 ) : admissionPagination.pageItems.map((record) => (
-                  <tr key={record.id} onClick={() => setSelectedRecord(record)} className="cursor-pointer border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-950">
+                  <tr key={record.visitId} onClick={() => setSelectedRecord(record)} className="cursor-pointer border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-950">
                     <td className="py-3 pr-4 font-medium text-slate-900 dark:text-white">{record.id}</td>
                     <td className="py-3 pr-4">{record.patient}</td>
                     <td className="py-3 pr-4">{record.service}</td>
@@ -232,7 +234,7 @@ export default function HistoriqueReception() {
               {frequentAdmissions.length === 0 ? (
                 <p className="text-sm text-slate-500">Aucune recurrence detectee.</p>
               ) : frequentAdmissions.map((item) => (
-                <div key={item.patient} className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950">
+                <div key={item.patientId} className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950">
                   <span className="font-medium text-slate-900 dark:text-white">{item.patient}</span>
                   <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">{item.count}</span>
                 </div>

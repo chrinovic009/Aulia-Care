@@ -1,3 +1,4 @@
+import { isBackgroundEndpoint } from "./backgroundEndpoints";
 /**
  * Centralized API configuration
  * All API endpoints and base URLs are defined here.
@@ -138,7 +139,7 @@ const reportApiFailure = (
   message: string,
   status?: number,
 ) => {
-  if (typeof window === "undefined") {
+  if (typeof window === "undefined" || isBackgroundEndpoint(endpoint)) {
     return;
   }
 
@@ -173,7 +174,8 @@ const reportApiSuccess = (
     typeof window === "undefined" ||
     method === "GET" ||
     // Read-only POSTs (safety checks) save nothing: no "action enregistrée" notice.
-    /\/check(?:\?|$)/.test(endpoint)
+    /\/check(?:\?|$)/.test(endpoint) ||
+    isBackgroundEndpoint(endpoint)
   ) {
     return;
   }

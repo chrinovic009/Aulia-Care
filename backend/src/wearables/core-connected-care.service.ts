@@ -29,7 +29,7 @@ export class CoreConnectedCareService implements PatientDirectoryPort, ConsentPo
     });
     if (!owner) throw new ForbiddenException('Compte patient actif requis.');
     const patient = await this.prisma.patient.findFirst({
-      where: { id: patientId, portalUserId: owner.id, clinicId: { not: null }, deletedAt: null },
+      where: { id: patientId, portalUserId: owner.id, deletedAt: null },
       select: { id: true, clinicId: true },
     });
     if (!patient?.clinicId) throw new ForbiddenException('Le dossier patient ne peut pas être résolu pour cet établissement.');

@@ -140,6 +140,8 @@ export function ChirurgieModule({ worklist, tab, reload, openDossier }: Props) {
   const at = (...codes: string[]) => episodes.filter((episode) => codes.includes(stageOf(episode)));
   const scheduled = useMemo(() => episodes.filter((episode) => scheduleOf(episode)).sort((a, b) => scheduleOf(a)!.startMs - scheduleOf(b)!.startMs), [episodes]);
   const inTheatre = at("IN_ROOM", "ANESTHESIA", "INCISION", "CLOSURE");
+  // Same population as the "Programmés" counter; dated interventions first.
+  const upcoming = at("SCHEDULED", "PREOP").sort((a, b) => (scheduleOf(a)?.startMs ?? Infinity) - (scheduleOf(b)?.startMs ?? Infinity));
   const rooms = resources.filter((item) => item.kind === "ROOM");
 
   const step = async (episode: CareEpisode, code: string) => {
@@ -194,7 +196,7 @@ export function ChirurgieModule({ worklist, tab, reload, openDossier }: Props) {
             <Stat label="Salles disponibles" value={`${rooms.filter((item) => item.status === "AVAILABLE").length} / ${rooms.length}`} />
           </div>
           <Card title="Au bloc maintenant">{list(inTheatre, "Aucune intervention en cours.", nextStep)}</Card>
-          <Card title="Programme à venir">{list(scheduled.filter((episode) => ["SCHEDULED", "PREOP"].includes(stageOf(episode))), "Rien de programmé.")}</Card>
+          <Card title="Programme à venir">{list(upcoming, "Rien de programmé.")}</Card>
         </div>
       );
       break;

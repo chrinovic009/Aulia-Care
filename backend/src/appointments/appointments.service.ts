@@ -88,7 +88,6 @@ export class AppointmentsService {
       where: {
         id: patientId,
         portalUserId: user.id,
-        clinicId: { not: null },
         deletedAt: null,
       },
       select: { clinicId: true },
@@ -255,7 +254,7 @@ export class AppointmentsService {
   async getBookingOptions(userId?: string) {
     if (!userId) throw new ForbiddenException('Compte patient non authentifié.');
     const patient = await this.prisma.patient.findFirst({
-      where: { portalUserId: userId, deletedAt: null, clinicId: { not: null } },
+      where: { portalUserId: userId, deletedAt: null },
       select: { clinicId: true },
     });
     if (!patient?.clinicId) {
@@ -286,7 +285,7 @@ export class AppointmentsService {
   async createOwn(dto: CreateOwnAppointmentDto, userId?: string) {
     if (!userId) throw new ForbiddenException('Compte patient non authentifié.');
     const patient = await this.prisma.patient.findFirst({
-      where: { portalUserId: userId, deletedAt: null, clinicId: { not: null } },
+      where: { portalUserId: userId, deletedAt: null },
       select: { id: true },
     });
     if (!patient) {

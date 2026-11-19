@@ -492,7 +492,7 @@ export class WearablesService {
 
   private async createCriticalAlert(patientId: string, measurementId: string, reason: string) {
     const patient = await this.prisma.patient.findFirst({
-      where: { id: patientId, deletedAt: null, clinicId: { not: null } },
+      where: { id: patientId, deletedAt: null },
       select: { clinicId: true },
     });
     if (!patient?.clinicId) return;

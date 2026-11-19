@@ -1678,7 +1678,9 @@ export class UsersService {
       where: { userId, status: 'ACTIVE' },
       select: { id: true, clinicId: true, shiftPattern: true, rotationAnchorAt: true, rotationDays: true, permanentShiftEndTime: true },
     });
-    if (!employee) throw new NotFoundException('Employe introuvable');
+    // Opening a screen must never fail because HR has not created the
+    // employee record yet: attendance is simply not tracked for this user.
+    if (!employee) return null;
     const now = new Date();
     const existing = await this.prisma.attendance.findFirst({
       where: {

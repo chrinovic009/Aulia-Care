@@ -58,6 +58,31 @@ export const fallbackLayerForPath = (path: string): AuliaLayer | null => {
   return AuliaLayer.CORE;
 };
 
+/*
+ * Endpoints a patient account may call. Each one is also restricted by its
+ * controller role list and scopes data to the caller (own record, own
+ * conversations, ownership check on the patient id) in its service.
+ */
+const PATIENT_PORTAL_ROUTES: ReadonlyArray<[string, RegExp]> = [
+  ['*', /^\/patients\/me(?:\/|$)/],
+  ['GET', /^\/messages\/unread$/],
+  ['GET', /^\/messages\/with\/[^/]+$/],
+  ['PATCH', /^\/messages\/read$/],
+  ['GET', /^\/users\/contacts$/],
+  ['GET', /^\/appointments\/booking-options$/],
+  ['POST', /^\/appointments\/me$/],
+  ['GET', /^\/wearables\/patients\/[^/]+\/dashboard$/],
+  ['GET', /^\/wearables\/parent-child-links\/me$/],
+];
+
+export const isPatientPortalPath = (path: string, method: string): boolean => {
+  const normalized = path.split('?')[0].replace(/^\/api/, '').replace(/\/+$/, '');
+  const verb = method.toUpperCase();
+  return PATIENT_PORTAL_ROUTES.some(
+    ([allowed, pattern]) => (allowed === '*' || allowed === verb) && pattern.test(normalized),
+  );
+};
+
 const isGlobalPlatformCataloguePath = (
   path: string,
   method: string,
@@ -278,12 +303,10 @@ export class PlatformLayerAccessGuard implements CanActivate {
     }
 
     if (actor.role === RoleSlug.PATIENT) {
-      const patientPortalPath =
-        /^\/patients\/me(?:\/|$)/.test(
-          path
-            .split('?')[0]
-            .replace(/^\/api/, ''),
-        );
+      const patientPortalPath = isPatientPortalPath(
+        path,
+        String(request.method || 'GET'),
+      );
 
       if (!patientPortalPath) {
         throw new ForbiddenException(

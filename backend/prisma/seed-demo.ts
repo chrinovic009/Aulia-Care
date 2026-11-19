@@ -180,6 +180,12 @@ const attendanceRoles = new Set<RoleSlug>([
   RoleSlug.LAB_MANAGER,
   RoleSlug.RADIOLOGIST,
   RoleSlug.PHARMACIST,
+  RoleSlug.LAB_TECHNICIAN,
+  RoleSlug.SURGEON,
+  RoleSlug.ANESTHESIOLOGIST,
+  RoleSlug.MIDWIFE,
+  RoleSlug.PARAMEDIC,
+  RoleSlug.DISPATCHER,
 ]);
 
 /** The public baseline intentionally contains accounts and patients only.

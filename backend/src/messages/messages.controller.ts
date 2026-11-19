@@ -23,6 +23,11 @@ export class MessagesController {
     'CASHIER',
     'FINANCE',
     'PATIENT',
+    'SURGEON',
+    'ANESTHESIOLOGIST',
+    'MIDWIFE',
+    'PARAMEDIC',
+    'DISPATCHER',
   )
   findUnread(@Request() req: any) {
     return this.messagesService.findUnread(req.user.userId);
@@ -42,6 +47,11 @@ export class MessagesController {
     'CASHIER',
     'FINANCE',
     'PATIENT',
+    'SURGEON',
+    'ANESTHESIOLOGIST',
+    'MIDWIFE',
+    'PARAMEDIC',
+    'DISPATCHER',
   )
   findConversation(@Request() req: any, @Param('contactId') contactId: string) {
     return this.messagesService.findConversation(req.user.userId, contactId);
@@ -61,6 +71,11 @@ export class MessagesController {
     'CASHIER',
     'FINANCE',
     'PATIENT',
+    'SURGEON',
+    'ANESTHESIOLOGIST',
+    'MIDWIFE',
+    'PARAMEDIC',
+    'DISPATCHER',
   )
   markRead(@Request() req: any, @Body() body: { senderId: string; messageIds?: string[] }) {
     return this.messagesService.markRead(req.user.userId, body.senderId, body.messageIds);

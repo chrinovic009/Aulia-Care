@@ -33,6 +33,11 @@ export class UsersController {
     'CASHIER',
     'FINANCE',
     'PATIENT',
+    'SURGEON',
+    'ANESTHESIOLOGIST',
+    'MIDWIFE',
+    'PARAMEDIC',
+    'DISPATCHER',
   )
   findContacts(@Request() req: any) {
     return this.usersService.findContactsForRole(req.user?.role, req.user?.userId);

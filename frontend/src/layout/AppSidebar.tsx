@@ -381,7 +381,8 @@ const AppSidebar: React.FC = () => {
   useEffect(() => {
     // DEV is platform-scoped: it has no clinic identity and must never make a
     // hospital-scoped branding request.  The API deliberately denies it.
-    if (!currentUser?.clinicId) {
+    // The API also denies it to patient accounts (portal-only scope).
+    if (!currentUser?.clinicId || currentUser.primaryRole === "PATIENT") {
       setClinicBrand({});
       return;
     }
@@ -398,7 +399,7 @@ const AppSidebar: React.FC = () => {
       window.removeEventListener("aulia:clinic-branding-updated", loadClinicBrand);
       window.removeEventListener("storage", onBrandingStorage);
     };
-  }, [currentUser?.id, currentUser?.clinicId]);
+  }, [currentUser?.id, currentUser?.clinicId, currentUser?.primaryRole]);
   const isReceptionSection = location.pathname.startsWith("/reception");
   const isNurseSection = location.pathname.startsWith("/nurse");
   const isDoctorSection = location.pathname.startsWith("/doctor");
@@ -711,7 +712,11 @@ const AppSidebar: React.FC = () => {
                     ? "SUPER ADMIN"
                     : isDeveloperSection
                     ? "CONFIGURATION DEV"
-                    : "PATIENT INTERFACE"
+                    : isCareUnitsSection
+                    ? "UNITÉS DE SOINS"
+                    : currentUser?.primaryRole === "PATIENT"
+                    ? "PATIENT INTERFACE"
+                    : "MON ESPACE"
                 ) : (
                   <HorizontaLDots className="size-6" />
                 )}

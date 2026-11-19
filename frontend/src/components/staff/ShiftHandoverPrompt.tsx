@@ -28,6 +28,9 @@ const attendanceRoles = new Set([
   "FINANCE",
   "SURGEON",
   "ANESTHESIOLOGIST",
+  "MIDWIFE",
+  "PARAMEDIC",
+  "DISPATCHER",
 ]);
 
 /**
