@@ -65,6 +65,7 @@ export const fallbackLayerForPath = (path: string): AuliaLayer | null => {
  */
 const PATIENT_PORTAL_ROUTES: ReadonlyArray<[string, RegExp]> = [
   ['*', /^\/patients\/me(?:\/|$)/],
+  ['GET', /^\/administration\/clinic-identity$/],
   ['GET', /^\/messages\/unread$/],
   ['GET', /^\/messages\/with\/[^/]+$/],
   ['PATCH', /^\/messages\/read$/],

@@ -364,7 +364,7 @@ const AppSidebar: React.FC = () => {
   const activeSubscriptionLabel = (layers.configured ? layers.enabledLayers : [])
     .map((layer) => ({ CORE: "Aulia Care Core", CONNECTED: "Aulia Care Connected Care", DIAGNOSTIC: "Aulia Care Diagnostic Agent" })[layer])
     .join(" + ") || (currentUser?.primaryRole === "DEV" ? "Provisioning plateforme" : "Configuration en attente");
-  const [clinicBrand, setClinicBrand] = useState<{ name?: string; brandDisplayName?: string | null }>({});
+  const [clinicBrand, setClinicBrand] = useState<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null }>({});
   const isLabManager = Boolean(
     currentUser?.primaryRole === "LAB_MANAGER" ||
     currentUser?.role === "LAB_MANAGER" ||
@@ -381,12 +381,13 @@ const AppSidebar: React.FC = () => {
   useEffect(() => {
     // DEV is platform-scoped: it has no clinic identity and must never make a
     // hospital-scoped branding request.  The API deliberately denies it.
-    // The API also denies it to patient accounts (portal-only scope).
-    if (!currentUser?.clinicId || currentUser.primaryRole === "PATIENT") {
+    // Every clinic account (patients included) reads the minimal identity of
+    // its own establishment: name and logo only.
+    if (!currentUser?.clinicId) {
       setClinicBrand({});
       return;
     }
-    const loadClinicBrand = () => apiFetch<{ name?: string; brandDisplayName?: string | null }>("/administration/clinic-branding")
+    const loadClinicBrand = () => apiFetch<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null }>("/administration/clinic-identity")
       .then(setClinicBrand)
       .catch(() => setClinicBrand({}));
     void loadClinicBrand();
@@ -685,9 +686,19 @@ const AppSidebar: React.FC = () => {
           )}
         </Link>
         {(isExpanded || isHovered || isMobileOpen) && (
-          <p className="max-w-[220px] text-[11px] font-medium tracking-wide text-slate-500 dark:text-slate-400">
-            Géré par {clinicBrand.brandDisplayName || clinicBrand.name || "votre établissement"}
-          </p>
+          <div className="flex max-w-[220px] items-center justify-center gap-2">
+            {clinicBrand.documentLogoUrl && (
+              <img
+                src={clinicBrand.documentLogoUrl}
+                alt={`Logo de ${clinicBrand.brandDisplayName || clinicBrand.name || "l’établissement"}`}
+                className="h-8 w-8 shrink-0 rounded object-contain"
+              />
+            )}
+            <p className="text-[11px] font-medium tracking-wide text-slate-500 dark:text-slate-400">
+              {currentUser?.primaryRole === "PATIENT" ? "Votre établissement : " : "Géré par "}
+              {clinicBrand.brandDisplayName || clinicBrand.name || "votre établissement"}
+            </p>
+          </div>
         )}
       </div>
       <div className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
@@ -715,7 +726,7 @@ const AppSidebar: React.FC = () => {
                     : isCareUnitsSection
                     ? "UNITÉS DE SOINS"
                     : currentUser?.primaryRole === "PATIENT"
-                    ? "PATIENT INTERFACE"
+                    ? "MON ESPACE PATIENT"
                     : "MON ESPACE"
                 ) : (
                   <HorizontaLDots className="size-6" />

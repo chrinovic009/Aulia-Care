@@ -25,6 +25,11 @@ export class AdministrationController {
     private readonly administrationService: AdministrationService,
   ) {}
 
+  @Get('clinic-identity')
+  clinicIdentity(@Request() req: any) {
+    return this.administrationService.getOwnClinicIdentity(req.user?.userId);
+  }
+
   @Get('clinic-branding')
   @Roles(
     'SUPER_ADMIN',
