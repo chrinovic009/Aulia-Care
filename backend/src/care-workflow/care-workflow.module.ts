@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ClinicContextService } from '../core/clinic-context.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CareAccessService } from './care-access.service';
 import { CareUnitsController } from './care-units.controller';
@@ -11,7 +10,7 @@ import { CareWorkflowService } from './care-workflow.service';
 @Module({
   imports: [PrismaModule],
   controllers: [CareUnitsController, CareWorkflowController],
-  providers: [ClinicContextService, CareAccessService, CareWorkflowService, CareUnitsService],
+  providers: [CareAccessService, CareWorkflowService, CareUnitsService],
   exports: [CareAccessService, CareWorkflowService],
 })
 export class CareWorkflowModule {}

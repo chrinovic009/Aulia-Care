@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ROLES_KEY } from '../auth/roles.decorator';
+import { ROLES_KEY } from './roles.decorator';
 import { LaboratoryController } from '../laboratory/laboratory.controller';
 import { ImagingController } from '../imaging/imaging.controller';
 import { PharmacyController } from '../pharmacy/pharmacy.controller';

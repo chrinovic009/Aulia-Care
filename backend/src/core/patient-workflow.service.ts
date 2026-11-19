@@ -1,140 +1,83 @@
-import { Injectable } from '@nestjs/common';
-import {
-  PatientWorkflowStatus,
-  Prisma,
-} from '@prisma/client';
+import { Injectable, Logger } from '@nestjs/common';
+import { PatientWorkflowStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { decideWorkflowTransition } from './patient-workflow.policy';
 
-type WorkflowClient =
-  | PrismaService
-  | Prisma.TransactionClient;
+type WorkflowClient = PrismaService | Prisma.TransactionClient;
 
-const REGRESSIVE_STATUSES =
-  new Set<PatientWorkflowStatus>([
-    PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
-    PatientWorkflowStatus.EN_ATTENTE_VALIDATION_CAISSE,
-    PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE,
-    PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
-  ]);
+export type WorkflowTransitionResult =
+  | { outcome: 'not_found' }
+  | { outcome: 'unchanged'; status: PatientWorkflowStatus }
+  | { outcome: 'applied'; status: PatientWorkflowStatus; previous: PatientWorkflowStatus }
+  | { outcome: 'blocked'; status: PatientWorkflowStatus; requested: PatientWorkflowStatus };
 
-const PRIORITY_STATUSES =
-  new Set<PatientWorkflowStatus>([
-    PatientWorkflowStatus.HOSPITALISE,
-    PatientWorkflowStatus.EN_CONSULTATION,
-    PatientWorkflowStatus.EN_LABORATOIRE,
-    PatientWorkflowStatus.EN_RADIOLOGIE,
-    PatientWorkflowStatus.EN_PHARMACIE,
-  ]);
+/** Raised when the row changed despite the advisory lock: a bug, never a normal case. */
+export class PatientWorkflowConflictError extends Error {
+  constructor(patientId: string) {
+    super(`Patient workflow changed concurrently despite the lock (patient ${patientId}).`);
+    this.name = 'PatientWorkflowConflictError';
+  }
+}
 
 @Injectable()
 export class PatientWorkflowService {
-  private protectedTransition(
-    current: PatientWorkflowStatus,
+  private readonly logger = new Logger(PatientWorkflowService.name);
+
+  /**
+   * Applies a requested status under a per-patient advisory lock and reports
+   * exactly what happened. Callers must notify `result.status`, which is the
+   * persisted status, never the requested one.
+   */
+  async transitionDetailed(
+    tx: WorkflowClient,
+    patientId: string,
     requested: PatientWorkflowStatus,
-  ): PatientWorkflowStatus {
-    if (
-      current === PatientWorkflowStatus.HOSPITALISE &&
-      REGRESSIVE_STATUSES.has(requested)
-    ) {
-      return PatientWorkflowStatus.HOSPITALISE;
+    clinicId: string | null | undefined,
+  ): Promise<WorkflowTransitionResult> {
+    if (!clinicId?.trim()) {
+      throw new Error('Patient workflow transition requires an explicit clinicId.');
     }
 
-    if (
-      current === PatientWorkflowStatus.EN_CONSULTATION &&
-      REGRESSIVE_STATUSES.has(requested)
-    ) {
-      return PatientWorkflowStatus.EN_CONSULTATION;
-    }
+    await tx.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`patient-workflow:${clinicId}:${patientId}`}))`,
+    );
 
-    if (
-      current === PatientWorkflowStatus.HOSPITALISE &&
-      requested === PatientWorkflowStatus.TERMINE
-    ) {
-      return PatientWorkflowStatus.TERMINE;
-    }
+    const patient = await tx.patient.findFirst({
+      where: { id: patientId, clinicId, deletedAt: null },
+      select: { workflowStatus: true },
+    });
+    if (!patient) return { outcome: 'not_found' };
 
-    if (
-      current === PatientWorkflowStatus.EN_CONSULTATION &&
-      PRIORITY_STATUSES.has(requested)
-    ) {
-      return requested;
+    const decision = decideWorkflowTransition(patient.workflowStatus, requested);
+    if (decision.outcome === 'blocked') {
+      this.logger.warn(
+        `Workflow transition refused for patient ${patientId}: ${decision.status} -> ${requested}`,
+      );
+      return decision;
     }
+    if (decision.outcome === 'unchanged') return decision;
 
-    if (
-      current === PatientWorkflowStatus.TERMINE &&
-      requested !== PatientWorkflowStatus.TERMINE
-    ) {
-      return requested;
-    }
+    const update = await tx.patient.updateMany({
+      where: { id: patientId, clinicId, deletedAt: null, workflowStatus: patient.workflowStatus },
+      data: { workflowStatus: decision.status },
+    });
+    if (update.count !== 1) throw new PatientWorkflowConflictError(patientId);
 
-    return requested;
+    return decision;
   }
 
+  /**
+   * Compatibility wrapper: returns the persisted status, or null only when the
+   * patient does not exist in this clinic.
+   */
   async transition(
     tx: WorkflowClient,
     patientId: string,
     requested: PatientWorkflowStatus,
-    clinicId: string,
+    clinicId: string | null | undefined,
   ): Promise<PatientWorkflowStatus | null> {
-    if (!clinicId?.trim()) {
-      throw new Error(
-        'Patient workflow transition requires an explicit clinicId.',
-      );
-    }
-
-    await tx.$executeRaw(
-      Prisma.sql`
-        SELECT pg_advisory_xact_lock(
-          hashtext(${`patient-workflow:${clinicId}:${patientId}`})
-        )
-      `,
-    );
-
-    const patient =
-      await tx.patient.findFirst({
-        where: {
-          id: patientId,
-          clinicId,
-          deletedAt: null,
-        },
-        select: {
-          workflowStatus: true,
-        },
-      });
-
-    if (!patient) {
-      return null;
-    }
-
-    const next =
-      this.protectedTransition(
-        patient.workflowStatus,
-        requested,
-      );
-
-    if (next === patient.workflowStatus) {
-      return next;
-    }
-
-    const update =
-      await tx.patient.updateMany({
-        where: {
-          id: patientId,
-          clinicId,
-          deletedAt: null,
-          workflowStatus:
-            patient.workflowStatus,
-        },
-        data: {
-          workflowStatus: next,
-        },
-      });
-
-    if (update.count !== 1) {
-      return null;
-    }
-
-    return next;
+    const result = await this.transitionDetailed(tx, patientId, requested, clinicId);
+    return result.outcome === 'not_found' ? null : result.status;
   }
 }

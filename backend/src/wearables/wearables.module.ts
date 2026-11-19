@@ -6,12 +6,11 @@ import { ConnectedCareIntegrationGuard } from './connected-care-integration.guar
 import { CoreConnectedCareService } from './core-connected-care.service';
 import { WearablesController } from './wearables.controller';
 import { WearablesService } from './wearables.service';
-import { ClinicContextService } from '../core/clinic-context.service';
 
 @Module({
   imports: [PrismaModule, NotificationsModule],
   controllers: [WearablesController, ConnectedCareIntegrationController],
-  providers: [WearablesService, CoreConnectedCareService, ConnectedCareIntegrationGuard, ClinicContextService],
+  providers: [WearablesService, CoreConnectedCareService, ConnectedCareIntegrationGuard],
   exports: [WearablesService, CoreConnectedCareService],
 })
 export class WearablesModule {}

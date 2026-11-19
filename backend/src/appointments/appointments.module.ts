@@ -3,11 +3,10 @@ import { AppointmentsService } from './appointments.service';
 import { AppointmentsController } from './appointments.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
-import { ClinicContextService } from '../core/clinic-context.service';
 
 @Module({
   imports: [PrismaModule, NotificationsModule],
-  providers: [AppointmentsService, ClinicContextService],
+  providers: [AppointmentsService],
   controllers: [AppointmentsController],
   exports: [AppointmentsService],
 })

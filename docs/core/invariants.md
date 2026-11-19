@@ -8,3 +8,4 @@
 6. Les timestamps sont en UTC. Les règles de jour, nuit et repos utilisent la timezone IANA de la clinique.
 7. Un refresh token consommé qui réapparaît révoque la session concernée.
 8. Les mots de passe, PIN et tokens bruts ne sont jamais écrits dans les journaux d’audit.
+9. Le statut de parcours d’un patient ne change que selon `ALLOWED_WORKFLOW_TRANSITIONS` ; la base refuse tout autre passage (tests : `patient-workflow.policy.test.ts`, `patient-workflow.migration.test.ts`).
