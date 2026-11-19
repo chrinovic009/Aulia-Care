@@ -10,7 +10,7 @@ test('workflow transitions cannot regress a hospitalized patient', async () => {
   const service = new PatientWorkflowService();
 
   const tx = {
-    $executeRaw: async () => undefined,
+    $executeRaw: async () => undefined, auditLog: { create: async () => ({}) },
     patient: {
       findFirst: async () => ({
         workflowStatus: PatientWorkflowStatus.HOSPITALISE,
@@ -54,7 +54,7 @@ test('workflow transitions preserve consultation against regressive states', asy
 
   const result = await service.transition(
     {
-      $executeRaw: async () => undefined,
+      $executeRaw: async () => undefined, auditLog: { create: async () => ({}) },
       patient: {
         findFirst: async () => ({
           workflowStatus:
@@ -70,7 +70,7 @@ test('workflow transitions preserve consultation against regressive states', asy
       },
     } as any,
     'patient-a',
-    PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
+    PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
     'clinic-a',
   );
 
@@ -92,7 +92,7 @@ test('a completed patient can start a new workflow', async () => {
 
   const result = await service.transition(
     {
-      $executeRaw: async () => undefined,
+      $executeRaw: async () => undefined, auditLog: { create: async () => ({}) },
       patient: {
         findFirst: async () => ({
           workflowStatus:
@@ -135,7 +135,7 @@ test('workflow transitions require an explicit clinic id', async () => {
     () =>
       service.transition(
         {
-          $executeRaw: async () => undefined,
+          $executeRaw: async () => undefined, auditLog: { create: async () => ({}) },
           patient: {
             findFirst: async () => ({
               workflowStatus:

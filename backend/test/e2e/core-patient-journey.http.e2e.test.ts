@@ -253,6 +253,10 @@ test(
         })
         .expect(201);
       const patientId = admission.body.patient.id as string;
+      const expectStatus = async (expected: string, step: string) => {
+        const row = await prisma.patient.findUniqueOrThrow({ where: { id: patientId }, select: { workflowStatus: true } });
+        assert.equal(row.workflowStatus, expected, `statut du patient après : ${step}`);
+      };
       const admissionInvoiceId = admission.body.invoice.id as string;
       assert.equal(admission.body.visit.status, 'AWAITING_PAYMENT');
 
@@ -261,6 +265,7 @@ test(
         .set('Cookie', cashierCookies)
         .send({ invoiceId: admissionInvoiceId, amount: 10_000, method: PaymentMethod.CASH })
         .expect(201);
+      await expectStatus('EN_ATTENTE_INFIRMERIE', 'admission payée');
 
       const appointment = await request(server)
         .post('/api/appointments')
@@ -279,6 +284,7 @@ test(
         .set('Cookie', receptionCookies)
         .send({ status: 'CHECKED_IN' })
         .expect(200);
+      await expectStatus('EN_ATTENTE_MEDECIN', 'arrivée au rendez-vous');
 
       await request(server)
         .post(`/api/patients/${patientId}/vital-signs`)
@@ -292,12 +298,14 @@ test(
       });
       const consultationId = triageConsultation?.id;
       assert.ok(consultationId, 'Le triage doit ouvrir une consultation attribuée au médecin.');
+      await expectStatus('EN_CONSULTATION', 'triage infirmier');
 
       const labRequest = await request(server)
         .post(`/api/consultations/${consultationId}/lab-requests`)
         .set('Cookie', physicianCookies)
         .send({ labTestId: labTest.id, specimenType: 'Sang' })
         .expect(201);
+      await expectStatus('EN_ATTENTE_DE_PAIEMENT', 'examen labo prescrit');
       const labInvoice = await prisma.invoice.findFirstOrThrow({
         where: { clinicId: clinic.id, remarks: { contains: `LabRequest:${labRequest.body.id}` } },
       });
@@ -306,6 +314,7 @@ test(
         .set('Cookie', cashierCookies)
         .send({ invoiceId: labInvoice.id, amount: Number(labInvoice.totalAmount), method: PaymentMethod.CASH })
         .expect(201);
+      await expectStatus('EN_LABORATOIRE', 'examen labo payé');
       await request(server)
         .post(`/api/laboratory/requests/${labRequest.body.id}/results`)
         .set('Cookie', labCookies)
@@ -315,6 +324,7 @@ test(
           parameters: [{ labTestParameterId: labParameter.id, valueNumeric: 5.4 }],
         })
         .expect(201);
+      await expectStatus('EN_LABORATOIRE', 'résultat labo');
 
       const imagingRequest = await request(server)
         .post(`/api/consultations/${consultationId}/imaging-requests`)
@@ -327,6 +337,7 @@ test(
           clinicalIndication: 'Toux persistante',
         })
         .expect(201);
+      await expectStatus('EN_ATTENTE_DE_PAIEMENT', 'imagerie prescrite');
       const imagingInvoice = await prisma.invoice.findFirstOrThrow({
         where: { clinicId: clinic.id, remarks: { contains: `ImagingRequest:${imagingRequest.body.id}` } },
       });
@@ -335,11 +346,13 @@ test(
         .set('Cookie', cashierCookies)
         .send({ invoiceId: imagingInvoice.id, amount: Number(imagingInvoice.totalAmount), method: PaymentMethod.CASH })
         .expect(201);
+      await expectStatus('EN_RADIOLOGIE', 'imagerie payée');
       await request(server)
         .post(`/api/imaging/${imagingRequest.body.id}/report`)
         .set('Cookie', radiologistCookies)
         .send({ findings: 'Pas d’anomalie aiguë.', impression: 'Examen sans urgence.', verified: true })
         .expect(201);
+      await expectStatus('EN_RADIOLOGIE', 'compte rendu imagerie');
 
       const prescription = await request(server)
         .post(`/api/consultations/${consultationId}/prescriptions`)
@@ -350,6 +363,7 @@ test(
       assert.equal(prescription.body.invoice.prescriptionId, prescriptionId);
       assert.equal(prescription.body.invoice.prescriptionVersion, prescription.body.prescription.version);
       assert.equal(Number(prescription.body.invoice.totalAmount), 1_500);
+      await expectStatus('EN_ATTENTE_DE_PAIEMENT', 'ordonnance prescrite');
       await request(server)
         .patch(`/api/consultations/${consultationId}/prescriptions/${prescriptionId}`)
         .set('Cookie', physicianCookies)
@@ -360,11 +374,13 @@ test(
         .set('Cookie', cashierCookies)
         .send({ invoiceId: prescription.body.invoice.id, amount: 1_500, method: PaymentMethod.CASH })
         .expect(201);
+      await expectStatus('EN_PHARMACIE', 'ordonnance payée');
       await request(server)
         .post(`/api/pharmacy/prescriptions/${prescriptionId}/dispense`)
         .set('Cookie', pharmacistCookies)
         .send({ notes: 'Traitement remis au patient.' })
         .expect(201);
+      await expectStatus('TERMINE', 'médicaments délivrés');
 
       await request(server)
         .post(`/api/consultations/${consultationId}/clinical-sections`)

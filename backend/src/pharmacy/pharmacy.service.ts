@@ -3,6 +3,7 @@ import { PatientWorkflowStatus, Prisma, RoleSlug } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { ClinicContextService } from '../core/clinic-context.service';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
 import { SetMedicationSalePriceDto } from './dto/set-medication-sale-price.dto';
 
 @Injectable()
@@ -10,7 +11,26 @@ export class PharmacyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly clinicContext: ClinicContextService,
+    private readonly patientWorkflow: PatientWorkflowService = new PatientWorkflowService(),
   ) {}
+
+  /**
+   * Closes an ambulatory journey once the pharmacy has delivered everything and
+   * nothing is left to pay. Hospitalized patients are closed by their discharge.
+   */
+  private async closeAmbulatoryJourneyIfDone(tx: Prisma.TransactionClient, patientId: string, clinicId: string) {
+    const patient = await tx.patient.findFirst({ where: { id: patientId, clinicId, deletedAt: null }, select: { workflowStatus: true } });
+    if (patient?.workflowStatus !== PatientWorkflowStatus.EN_PHARMACIE) return;
+    const pendingPrescriptions = await tx.prescription.count({
+      where: { patientId, clinicId, deletedAt: null, status: { notIn: ['DISPENSED', 'CANCELLED'] } },
+    });
+    if (pendingPrescriptions > 0) return;
+    const unpaid = await tx.invoice.count({
+      where: { patientId, clinicId, deletedAt: null, status: { not: 'CANCELLED' }, balanceDue: { gt: 0 } },
+    });
+    if (unpaid > 0) return;
+    await this.patientWorkflow.transitionDetailed(tx, patientId, PatientWorkflowStatus.TERMINE, clinicId);
+  }
 
   private requireClinic(actorId?: string) {
     return this.clinicContext.requireOperationalActor({ userId: actorId });
@@ -253,6 +273,7 @@ export class PharmacyService {
         data: { status: 'DISPENSED' },
       });
       if (prescriptionUpdate.count !== 1) throw new NotFoundException('Prescription introuvable.');
+      await this.closeAmbulatoryJourneyIfDone(tx, prescription.patientId, actor.clinicId);
 
       return tx.pharmacyDispense.findUnique({
         where: { id: dispense.id },

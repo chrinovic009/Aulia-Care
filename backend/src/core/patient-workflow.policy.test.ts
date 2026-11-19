@@ -10,12 +10,21 @@ test('every workflow status has an explicit transition list', () => {
   }
 });
 
-test('a consultation or hospitalization never falls back to a waiting queue', () => {
-  for (const from of [S.EN_CONSULTATION, S.HOSPITALISE]) {
-    for (const to of [S.EN_ATTENTE_DE_PAIEMENT, S.EN_ATTENTE_VALIDATION_CAISSE, S.EN_ATTENTE_INFIRMERIE, S.EN_ATTENTE_MEDECIN]) {
-      assert.deepEqual(decideWorkflowTransition(from, to), { outcome: 'blocked', status: from, requested: to });
-    }
+test('a hospitalized patient never falls back to a waiting queue', () => {
+  for (const to of [S.EN_ATTENTE_DE_PAIEMENT, S.EN_ATTENTE_VALIDATION_CAISSE, S.EN_ATTENTE_INFIRMERIE, S.EN_ATTENTE_MEDECIN]) {
+    assert.deepEqual(decideWorkflowTransition(S.HOSPITALISE, to), { outcome: 'blocked', status: S.HOSPITALISE, requested: to });
   }
+});
+
+test('a consultation never falls back to the nurse or physician queue', () => {
+  for (const to of [S.EN_ATTENTE_INFIRMERIE, S.EN_ATTENTE_MEDECIN]) {
+    assert.deepEqual(decideWorkflowTransition(S.EN_CONSULTATION, to), { outcome: 'blocked', status: S.EN_CONSULTATION, requested: to });
+  }
+});
+
+test('a consultation may send the patient to the cashier', () => {
+  assert.equal(decideWorkflowTransition(S.EN_CONSULTATION, S.EN_ATTENTE_DE_PAIEMENT).outcome, 'applied');
+  assert.equal(decideWorkflowTransition(S.EN_CONSULTATION, S.EN_ATTENTE_VALIDATION_CAISSE).outcome, 'applied');
 });
 
 test('a closed journey cannot jump straight into a technical service', () => {

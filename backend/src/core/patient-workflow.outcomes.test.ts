@@ -5,11 +5,12 @@ import { PatientWorkflowStatus } from '@prisma/client';
 import { PatientWorkflowConflictError, PatientWorkflowService } from './patient-workflow.service';
 
 const fakeClient = (workflowStatus: PatientWorkflowStatus | null, count = 1) => {
-  const calls = { updates: 0 };
+  const calls = { updates: 0, audits: [] as string[] };
   return {
     calls,
     tx: {
       $executeRaw: async () => undefined,
+      auditLog: { create: async (input: { data: { summary: string } }) => { calls.audits.push(input.data.summary); return input.data; } },
       patient: {
         findFirst: async () => (workflowStatus ? { workflowStatus } : null),
         updateMany: async () => { calls.updates += 1; return { count }; },
@@ -23,6 +24,7 @@ test('a refused transition is reported as blocked, not as success', async () => 
   const result = await new PatientWorkflowService().transitionDetailed(tx, 'p', PatientWorkflowStatus.EN_ATTENTE_MEDECIN, 'c');
   assert.deepEqual(result, { outcome: 'blocked', status: PatientWorkflowStatus.HOSPITALISE, requested: PatientWorkflowStatus.EN_ATTENTE_MEDECIN });
   assert.equal(calls.updates, 0);
+  assert.deepEqual(calls.audits, ['Changement de statut refusé : HOSPITALISE -> EN_ATTENTE_MEDECIN']);
 });
 
 test('an unknown patient is reported as not_found', async () => {

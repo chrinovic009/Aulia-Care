@@ -54,6 +54,17 @@ export class PatientWorkflowService {
       this.logger.warn(
         `Workflow transition refused for patient ${patientId}: ${decision.status} -> ${requested}`,
       );
+      // Visible trace in the clinic audit log, not only in server logs.
+      await tx.auditLog.create({
+        data: {
+          patientId,
+          action: 'REJECT',
+          entity: 'PatientWorkflow',
+          entityId: patientId,
+          summary: `Changement de statut refusé : ${decision.status} -> ${requested}`,
+          metadata: { from: decision.status, requested, clinicId },
+        },
+      });
       return decision;
     }
     if (decision.outcome === 'unchanged') return decision;

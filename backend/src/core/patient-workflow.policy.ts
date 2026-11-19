@@ -14,8 +14,9 @@ export const ALLOWED_WORKFLOW_TRANSITIONS: Readonly<Record<S, ReadonlySet<S>>> =
   [S.EN_ATTENTE_VALIDATION_CAISSE]: new Set([...WAITING, S.EN_CONSULTATION, ...TECHNICAL, S.HOSPITALISE, S.TERMINE, S.ANNULE]),
   [S.EN_ATTENTE_INFIRMERIE]: new Set([...WAITING, S.EN_CONSULTATION, ...TECHNICAL, S.HOSPITALISE, S.TERMINE, S.ANNULE]),
   [S.EN_ATTENTE_MEDECIN]: new Set([...WAITING, S.EN_CONSULTATION, ...TECHNICAL, S.HOSPITALISE, S.TERMINE, S.ANNULE]),
-  // A consultation never falls back to a waiting queue.
-  [S.EN_CONSULTATION]: new Set([...TECHNICAL, S.HOSPITALISE, S.TERMINE, S.ANNULE]),
+  // A consultation never falls back to the nurse or physician queue, but it
+  // may send the patient to the cashier for prescribed exams or medicines.
+  [S.EN_CONSULTATION]: new Set([S.EN_ATTENTE_DE_PAIEMENT, S.EN_ATTENTE_VALIDATION_CAISSE, ...TECHNICAL, S.HOSPITALISE, S.TERMINE, S.ANNULE]),
   // Technical services may send the patient back to payment or to the physician.
   [S.EN_LABORATOIRE]: new Set([...WAITING, S.EN_CONSULTATION, ...TECHNICAL, S.HOSPITALISE, S.TERMINE, S.ANNULE]),
   [S.EN_RADIOLOGIE]: new Set([...WAITING, S.EN_CONSULTATION, ...TECHNICAL, S.HOSPITALISE, S.TERMINE, S.ANNULE]),

@@ -1,9 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditAction, InvoiceType, PatientWorkflowStatus, RoleSlug } from '@prisma/client';
 import { createCipheriv, createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
-import { PatientWorkflowService } from '../core/patient-workflow.service';
+import { PatientWorkflowConflictError, PatientWorkflowService } from '../core/patient-workflow.service';
 import { CapitalInvestmentStatus, FinanceBudgetStatus } from '@prisma/client';
 import {
   CreateBudgetAllocationDto,
@@ -763,17 +763,30 @@ export class BillingService {
       throw new BadRequestException('Impossible d’autoriser la sortie: le patient a encore un solde a payer.');
     }
 
-    const transitioned = await this.patientWorkflow.transition(
-      this.prisma,
-      patientId,
-      PatientWorkflowStatus.TERMINE,
-      clinicId,
-    );
-    if (!transitioned) {
-      throw new NotFoundException('Patient introuvable dans cet établissement.');
-    }
-    const patient = await this.prisma.patient.findFirstOrThrow({
-      where: { id: patientId, clinicId, deletedAt: null },
+    // One transaction: the advisory lock covers the balance check and the change.
+    const patient = await this.prisma.$transaction(async (tx) => {
+      const unpaid = await tx.invoice.count({
+        where: { patientId, clinicId, deletedAt: null, status: { not: 'CANCELLED' }, balanceDue: { gt: 0 } },
+      });
+      if (unpaid > 0) {
+        throw new BadRequestException('Impossible d’autoriser la sortie: le patient a encore un solde a payer.');
+      }
+      let result;
+      try {
+        result = await this.patientWorkflow.transitionDetailed(tx, patientId, PatientWorkflowStatus.TERMINE, clinicId);
+      } catch (error) {
+        if (error instanceof PatientWorkflowConflictError) {
+          throw new ConflictException('Le dossier du patient vient d’être modifié par un collègue. Réessayez.');
+        }
+        throw error;
+      }
+      if (result.outcome === 'not_found') {
+        throw new NotFoundException('Patient introuvable dans cet établissement.');
+      }
+      if (result.outcome === 'blocked') {
+        throw new BadRequestException(`Sortie impossible depuis le statut actuel du patient (${result.status}).`);
+      }
+      return tx.patient.findFirstOrThrow({ where: { id: patientId, clinicId, deletedAt: null } });
     });
 
     return {

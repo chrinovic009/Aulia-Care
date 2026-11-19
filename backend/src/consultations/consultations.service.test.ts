@@ -309,6 +309,7 @@ test('a covered exam notifies its clinic service and reception even beside an un
             : [{ id: 'laboratory-a' }];
       } },
       notification: { create: async (input: { data: { recipientId: string } }) => input.data },
+      patient: { findUnique: async () => ({ workflowStatus: 'EN_ATTENTE_DE_PAIEMENT' }) },
     } as unknown as PrismaService,
     {
       notifyToUser: (userId: string, event: string) => { sent.push({ userId, event }); },

@@ -128,10 +128,7 @@ export class ConsultationsService {
       return created;
     });
 
-    this.notificationsGateway.notify('patient.updated', {
-      id: createConsultationDto.patientId,
-      workflowStatus: PatientWorkflowStatus.EN_CONSULTATION,
-    });
+    await this.notifyPersistedWorkflowStatus(createConsultationDto.patientId);
 
     return consultation;
   }
@@ -227,7 +224,7 @@ export class ConsultationsService {
     });
 
     this.notificationsGateway.notify('consultation.created', consultation);
-    this.notificationsGateway.notify('patient.updated', { id: dto.patientId, workflowStatus: PatientWorkflowStatus.EN_CONSULTATION });
+    await this.notifyPersistedWorkflowStatus(dto.patientId);
     return consultation;
   }
 
@@ -1195,6 +1192,12 @@ export class ConsultationsService {
     return createdInvoices;
   }
 
+  /** Announces the status actually stored, never the one that was requested. */
+  private async notifyPersistedWorkflowStatus(patientId: string) {
+    const patient = await this.prisma.patient.findUnique({ where: { id: patientId }, select: { workflowStatus: true } });
+    if (patient) this.notificationsGateway.notify('patient.updated', { id: patientId, workflowStatus: patient.workflowStatus });
+  }
+
   private async notifyMaterializedExamInvoices(
     clinicId: string,
     patientId: string,
@@ -1304,10 +1307,7 @@ export class ConsultationsService {
         });
       }
 
-      this.notificationsGateway.notify('patient.updated', {
-        id: patientId,
-        workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
-      });
+      await this.notifyPersistedWorkflowStatus(patientId);
     }
 
     // Prévenir la réception pour chaque examen couvert, y compris dans une
@@ -1354,14 +1354,7 @@ export class ConsultationsService {
     );
 
     if (unpaidInvoices.length === 0) {
-      this.notificationsGateway.notify('patient.updated', {
-        id: patientId,
-        workflowStatus: hasLab
-          ? PatientWorkflowStatus.EN_LABORATOIRE
-          : hasImaging
-            ? PatientWorkflowStatus.EN_RADIOLOGIE
-            : PatientWorkflowStatus.EN_CONSULTATION,
-      });
+      await this.notifyPersistedWorkflowStatus(patientId);
     }
   }
 
@@ -1658,12 +1651,7 @@ export class ConsultationsService {
         this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification),
       );
     }
-    this.notificationsGateway.notify('patient.updated', {
-      id: consultation.patientId,
-      workflowStatus: request.handledBySubscription
-        ? PatientWorkflowStatus.EN_LABORATOIRE
-        : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
-    });
+    await this.notifyPersistedWorkflowStatus(consultation.patientId);
     this.notificationsGateway.notify('invoice.created', request.invoice);
 
     return request;
@@ -1952,12 +1940,7 @@ export class ConsultationsService {
         this.notificationsGateway.notifyToUser(notification.recipientId, 'notification.created', notification),
       );
     }
-    this.notificationsGateway.notify('patient.updated', {
-      id: consultation.patientId,
-      workflowStatus: request.handledBySubscription
-        ? PatientWorkflowStatus.EN_RADIOLOGIE
-        : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
-    });
+    await this.notifyPersistedWorkflowStatus(consultation.patientId);
     this.notificationsGateway.notify('invoice.created', request.invoice);
 
     return request;
