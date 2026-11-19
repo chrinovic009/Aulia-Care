@@ -185,6 +185,9 @@ model User {
   surgeriesAsAnesthesiologist      Surgery[]                        @relation("SurgeryAnesthesiologist")
   surgeriesAsSurgeon               Surgery[]                        @relation("SurgerySurgeon")
   clinic                           Clinic?                          @relation(fields: [clinicId], references: [id])
+  referralSent ConsultationReferral[] @relation("ReferralSender")
+  referralReceived ConsultationReferral[] @relation("ReferralRecipient")
+  consultationPolicies ConsultationPolicy[]
   roles                            UserRole[]
   Vaccination                      Vaccination[]
   vitalSignsRecorded               VitalSign[]                      @relation("VitalSignRecordedBy")
@@ -380,6 +383,7 @@ model ServiceResponsable {
 
 /// Patients and clinical records.
 model Patient {
+  consultationReferrals ConsultationReferral[]
   id                     String                     @id @default(uuid())
   firstName              String
   lastName               String
@@ -3489,6 +3493,7 @@ enum UserStatus {
 }
 
 enum RoleSlug {
+  MEDICAL_DIRECTOR
   DEV
   SUPER_ADMIN
   ADMIN
@@ -4757,4 +4762,39 @@ model Pregnancy {
 
   @@index([clinicId, status])
   @@index([patientId])
+}
+
+model ConsultationReferral {
+ id String @id @default(uuid())
+ clinicId String
+ patientId String
+ sourceConsultationId String
+ recipientConsultationId String?
+ senderId String
+ recipientId String
+ operationId String
+ question String
+ urgency String
+ status String @default("REQUESTED")
+ response String?
+ version Int @default(1)
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ patient Patient @relation(fields:[patientId],references:[id],onDelete:Restrict)
+ sender User @relation("ReferralSender",fields:[senderId],references:[id],onDelete:Restrict)
+ recipient User @relation("ReferralRecipient",fields:[recipientId],references:[id],onDelete:Restrict)
+ @@unique([senderId,operationId])
+ @@index([clinicId,recipientId,status])
+}
+model ConsultationPolicy {
+ id String @id @default(uuid())
+ clinicId String
+ specialty String
+ required String[]
+ rationale String
+ approvedById String
+ approvedAt DateTime
+ version Int @default(1)
+ approver User @relation(fields:[approvedById],references:[id],onDelete:Restrict)
+ @@unique([clinicId,specialty])
 }

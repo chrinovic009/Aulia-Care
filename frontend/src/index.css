@@ -1458,3 +1458,33 @@ button.bg-aulia-teal,
     -webkit-overflow-scrolling: touch;
   }
 }
+
+.governance-space { color:var(--color-gray-800); max-width:1100px; margin:0 auto; width:100%; }
+.governance-space h1 { font-size:28px; font-weight:700; }
+.governance-space h2 { font-size:20px; font-weight:700; }
+.governance-space h3 { font-size:16px; font-weight:700; }
+.governance-header,.governance-row { display:flex; gap:16px; justify-content:space-between; align-items:center; flex-wrap:wrap; }
+.governance-eyebrow { color:var(--color-brand-600); font-size:13px; font-weight:700; margin-bottom:6px; }
+.governance-links,.governance-actions { display:flex; gap:12px; flex-wrap:wrap; margin:20px 0; }
+.governance-links a { color:var(--color-brand-600); text-decoration:underline; }
+.governance-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; padding:24px 0; border-bottom:1px solid var(--color-gray-200); }
+.governance-metrics strong { display:block; font-size:30px; color:var(--color-brand-600); }
+.governance-metrics span { font-size:14px; }
+.governance-section { padding:24px 0; border-bottom:1px solid var(--color-gray-200); }
+.governance-section>h2 { margin-bottom:18px; }
+.governance-space label { display:block; font-size:14px; font-weight:600; margin:14px 0; }
+.governance-space select,.governance-space textarea { display:block; width:100%; border:1px solid var(--color-gray-300); border-radius:6px; padding:10px; margin-top:8px; background:var(--color-white); color:var(--color-gray-900); }
+.governance-space input[type=checkbox] { margin-right:10px; accent-color:var(--color-brand-600); }
+.governance-checks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.governance-space fieldset { margin:20px 0; }
+.governance-notice { background:var(--color-brand-50); padding:14px; margin:14px 0; color:var(--color-brand-800); border-radius:6px; }
+.governance-row { padding:16px 0; border-bottom:1px solid var(--color-gray-200); }
+.governance-row p { font-size:14px; margin-top:6px; }
+.governance-referral { padding:24px 0; border-bottom:1px solid var(--color-gray-200); overflow-wrap:anywhere; }
+.governance-question { font-size:17px; margin:16px 0; }
+.dark .governance-space { color:var(--color-gray-200); }
+.dark .governance-space select,.dark .governance-space textarea { background:var(--color-gray-900); color:var(--color-gray-100); }
+@media(max-width:640px) { .governance-metrics,.governance-checks { grid-template-columns:1fr; } .governance-space h1 { font-size:24px; } }
+
+.governance-source { margin:16px 0; padding:16px 0; border-bottom:1px solid var(--color-gray-200); }
+.governance-source pre { white-space:pre-wrap; overflow-wrap:anywhere; font-family:inherit; font-size:14px; }

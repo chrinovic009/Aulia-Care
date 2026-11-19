@@ -408,6 +408,7 @@ test('finalizing a consultation refuses any ordered exam without a final result'
             plan: '[]',
           }),
         },
+        consultationPolicy: {findUnique:async()=>({required:[]})},
         labRequest: {
           findMany: async () => [{ items: [] }],
         },

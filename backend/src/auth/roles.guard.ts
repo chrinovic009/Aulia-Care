@@ -7,7 +7,7 @@ import { ROLES_KEY } from './roles.decorator';
 // Si tu en as besoin plus tard, utilise : new RegExp('[\\x00-\\x1F]') pour éviter l'erreur ESLint.
 
 type Responsibility = { service?: { name?: string | null } | null; department?: { name?: string | null } | null };
-type RequestActor = { role?: string | null; serviceResponsabilites?: Responsibility[]; departmentResponsabilites?: Responsibility[] };
+type RequestActor = { roles?: string[]; role?: string | null; serviceResponsabilites?: Responsibility[]; departmentResponsabilites?: Responsibility[] };
 
 const isLabManager = (user: RequestActor) => {
   const names = [
@@ -42,6 +42,7 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Le Super Admin institutionnel ne peut pas accéder directement aux actes ni aux dossiers cliniques. Utilisez un compte opérationnel autorisé.');
     }
 
+    if (requiredRoles.includes('MEDICAL_DIRECTOR') && user.roles?.includes('MEDICAL_DIRECTOR')) return true;
     if (user.role && requiredRoles.includes(user.role)) {
       return true;
     }

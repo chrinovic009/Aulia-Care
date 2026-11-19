@@ -39,6 +39,7 @@ import { PlatformLayersModule } from './platform/layers/platform-layers.module';
 import { PlatformLayerAccessGuard } from './platform/layers/platform-layer-access.guard';
 import { PlatformProvisioningModule } from './platform/provisioning/platform-provisioning.module';
 import { HealthModule } from './health/health.module';
+import { GovernanceModule } from './medical-governance/governance.module';
 import { CoreModule } from './core/core.module';
 
 const diagnosticAgentModules = process.env.AULIA_ENABLE_DIAGNOSTIC_AGENT === 'false'
@@ -67,6 +68,7 @@ const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
     PatientsModule,
     AppointmentsModule,
     ConsultationsModule,
+    GovernanceModule,
     HealthModule,
     HospitalizationsModule,
     LaboratoryModule,

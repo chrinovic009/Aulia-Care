@@ -1,3 +1,4 @@
+import { assertComplete } from '../medical-governance/governance.rules';
 // backend/src/consultations/consultations.services.ts
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowStatus, PrescriptionReplacementFinancialHandling, Prisma, RoleSlug } from '@prisma/client';
@@ -146,6 +147,8 @@ export class ConsultationsService {
     if (actor?.primaryRole !== 'PHYSICIAN') throw new ForbiddenException('Seul un médecin peut ouvrir une consultation.');
     if (!actor.clinicId) throw new ForbiddenException('Le médecin doit être rattaché à un établissement.');
 
+    const referral = dto.referralId ? await this.prisma.consultationReferral.findFirst({ where: { id: dto.referralId, patientId: dto.patientId, recipientId: actorId, clinicId: actor.clinicId, status: 'ACCEPTED' } }) : null;
+    if (dto.referralId && !referral) throw new ForbiddenException('Demande d’avis non acceptée ou non autorisée.');
     const patient = await this.prisma.patient.findFirst({
       where: {
         id: dto.patientId,
@@ -154,6 +157,7 @@ export class ConsultationsService {
         OR: [
           { consultations: { some: { providerId: actorId, deletedAt: null } } },
           { hospitalizations: { some: { physicianId: actorId, deletedAt: null } } },
+          ...(referral ? [{ id: referral.patientId }] : []),
           { workflowStatus: PatientWorkflowStatus.EN_ATTENTE_MEDECIN },
         ],
       },
@@ -173,7 +177,14 @@ export class ConsultationsService {
         where: { patientId: dto.patientId, providerId: actorId, status: { in: [ConsultationStatus.DRAFT, ConsultationStatus.IN_PROGRESS] }, deletedAt: null },
         orderBy: { createdAt: 'desc' },
       });
-      if (current) return current;
+      if (referral) {
+        const valid = await tx.consultationReferral.findFirst({where:{id:referral.id,recipientId:actorId,status:'ACCEPTED',version:referral.version}});
+        if(!valid) throw new ForbiddenException('La demande a changé.');
+      }
+      if (current) {
+        if(referral) await tx.consultationReferral.update({where:{id:referral.id,version:referral.version,status:'ACCEPTED'},data:{recipientConsultationId:current.id,version:{increment:1}}});
+        return current;
+      }
 
       const appointment = await tx.appointment.create({
         data: {
@@ -222,7 +233,8 @@ export class ConsultationsService {
           },
         });
       }
-      await this.patientWorkflow.transition(tx, dto.patientId, PatientWorkflowStatus.EN_CONSULTATION, actor.clinicId);
+      if(referral) await tx.consultationReferral.update({where:{id:referral.id,version:referral.version,status:'ACCEPTED'},data:{recipientConsultationId:created.id,version:{increment:1}}});
+      if(!referral) await this.patientWorkflow.transition(tx, dto.patientId, PatientWorkflowStatus.EN_CONSULTATION, actor.clinicId);
       return created;
     });
 
@@ -596,6 +608,10 @@ export class ConsultationsService {
     const transactionResult = await this.guardConsultationWrite(() => this.prisma.$transaction(async (tx) => {
       await this.lockPatient(tx, clinicId, consultation.patientId);
       if (!isAmendment && normalizedStatus === ConsultationStatus.FINALIZED) {
+        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`policy:${clinicId}:${consultation.provider?.specialty || ''}`}))`);
+        const policy = await tx.consultationPolicy.findUnique({where:{clinicId_specialty:{clinicId,specialty:consultation.provider?.specialty || ''}}});
+        if(!policy) throw new BadRequestException('Signature refusée : obligations de cette spécialité non approuvées par le médecin directeur.');
+        assertComplete({...structured, chiefComplaint:dto.chiefComplaint ?? consultation.chiefComplaint},policy.required);
         await assertExamResults(tx, { id, clinicId, patientId: consultation.patientId }, orderedExams);
       }
       const updated = await tx.consultation.update({

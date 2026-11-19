@@ -36,6 +36,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         status: true,
         deletedAt: true,
         primaryRole: true,
+        roles: { where: { active: true, role: { deletedAt: null } }, select: { role: { select: { slug: true } } } },
         mustChangePassword: true,
         clinicId: true,
         clinic: { select: { status: true, deletedAt: true } },
@@ -91,6 +92,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: payload.email,
       username: payload.username,
       role: user.primaryRole,
+      roles: user.roles.map(item => item.role.slug),
       clinicId: user.clinicId,
       serviceResponsabilites: user.serviceResponsabilites,
       // CORRIGÉ : Utilisation du bon nom de propriété sans "as any"

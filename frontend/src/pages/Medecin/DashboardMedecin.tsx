@@ -1,3 +1,4 @@
+import ReferralPanel from './ReferralPanel';
 import { Metric, Vital, Panel, Item, SectionBox, SuggestionInput, FormInput, FormTextArea, FormSelect, SaveFeedbackModal, ConfirmationModal, ExitConsultationModal, Empty } from "./dashboardControls";
 import { workflowStatusLabel } from "../../utils/workflowStatusLabel";
 import { useEffect, useMemo, useState, useRef } from "react";
@@ -1426,6 +1427,7 @@ export default function DashboardMedecin() {
                       value={consultationModule.structured}
                       onChange={(structured) => setConsultationModule((current) => ({ ...current, structured }))}
                       hasAvailableResults={hasConsultationResults}
+                      referralSlot={<ReferralPanel ensureConsultation={ensureActiveConsultation}/> }
                       examinationsSlot={
                         <ConsultationExamOrder
                           orderedExams={consultationModule.orderedExams}

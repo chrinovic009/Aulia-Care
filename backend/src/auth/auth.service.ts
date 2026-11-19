@@ -405,6 +405,7 @@ export class AuthService {
         firstName: true,
         lastName: true,
         primaryRole: true,
+        roles: {where:{active:true,role:{deletedAt:null}},select:{role:{select:{slug:true}}}},
         clinicId: true,
         phone: true,
         specialty: true,
@@ -448,7 +449,7 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    return user;
+    return {...user, roles:user.roles.map(item=>item.role.slug)};
   }
 
   /** Exposes no secret: the client only needs to know whether a PIN challenge

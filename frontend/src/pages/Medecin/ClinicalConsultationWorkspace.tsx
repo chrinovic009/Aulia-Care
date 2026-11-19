@@ -212,6 +212,7 @@ type Props = {
   value: StructuredConsultation;
   onChange: (value: StructuredConsultation) => void;
   hasAvailableResults: boolean;
+  referralSlot?: React.ReactNode;
   examinationsSlot?: React.ReactNode;
   prescriptionSlot?: React.ReactNode;
   /** Specialty of the signed-in doctor, as registered by the administration. */
@@ -226,6 +227,7 @@ export function ClinicalConsultationWorkspace({
   value,
   onChange,
   hasAvailableResults,
+  referralSlot,
   examinationsSlot,
   prescriptionSlot,
   doctorSpecialty,
@@ -1162,11 +1164,12 @@ export function ClinicalConsultationWorkspace({
           </Step>
         )}
         {step === 7 &&
-          (hasAvailableResults ? (
+          (true ? (
             <Step
               title="Orientation & synthèse"
               hint="Décision clinique après résultats."
             >
+              {referralSlot}
               <Grid>
                 {Object.entries(value.orientation).map(([key, current]) => (
                   <Text

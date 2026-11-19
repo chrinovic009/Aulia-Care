@@ -19,7 +19,7 @@ import {
   PlusIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
-import { useAuth } from "../context/AuthContext";
+import { useAuth, hasRole } from "../context/AuthContext";
 import { type AuliaLayer, usePlatformLayers } from "../context/PlatformLayersContext";
 import { apiFetch } from "../config/api";
 import SidebarWidget from "./SidebarWidget";
@@ -401,6 +401,7 @@ const AppSidebar: React.FC = () => {
       window.removeEventListener("storage", onBrandingStorage);
     };
   }, [currentUser?.id, currentUser?.clinicId, currentUser?.primaryRole]);
+  const isDirectorSection = location.pathname.startsWith("/medical-director");
   const isReceptionSection = location.pathname.startsWith("/reception");
   const isNurseSection = location.pathname.startsWith("/nurse");
   const isDoctorSection = location.pathname.startsWith("/doctor");
@@ -438,7 +439,11 @@ const AppSidebar: React.FC = () => {
     : isCareUnitsSection
     ? careUnitsNavItems
     : navItems;
-  const visibleNavItems = activeNavItems;
+  const extras:NavItem[]=[];
+  if(hasRole(currentUser,"MEDICAL_DIRECTOR")) extras.push({icon:<DocsIcon/>,name:"Direction médicale",path:"/medical-director"});
+  if(currentUser?.primaryRole==="PHYSICIAN") extras.push({icon:<ChatIcon/>,name:"Avis spécialisés",path:"/doctor/referrals"});
+  if(currentUser?.primaryRole==="ADMIN" || currentUser?.primaryRole==="SUPER_ADMIN") extras.push({icon:<UserCircleIcon/>,name:"Médecin directeur",path:currentUser.primaryRole==="ADMIN"?"/administration/medical-director":"/admin/medical-director"});
+  const visibleNavItems = [...(isDirectorSection ? doctorNavItems : activeNavItems),...extras];
   const [lockedItem, setLockedItem] = useState<NavItem | null>(null);
   const isLayerLocked = (item: NavItem) => !item.platformOnly && !(item.layers ?? ["CORE"]).every(isEnabled);
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(

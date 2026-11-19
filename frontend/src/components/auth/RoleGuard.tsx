@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
-import { useAuth, RoleSlug } from "../../context/AuthContext";
+import { useAuth, RoleSlug, hasRole } from "../../context/AuthContext";
 
 interface RoleGuardProps {
   children: ReactNode;
@@ -29,7 +29,7 @@ export default function RoleGuard({ children, requiredRoles }: RoleGuardProps) {
     responsibility?.service?.name?.toLowerCase().includes('laboratoire'),
   );
 
-  if (!requiredRoles.includes(currentUser.primaryRole) && !isManagedLabUser) {
+  if (!requiredRoles.some(role=>hasRole(currentUser,role)) && !isManagedLabUser) {
     // Rôle non autorisé, rediriger vers le dashboard
     return <Navigate to="/" replace />;
   }

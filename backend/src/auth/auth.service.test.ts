@@ -204,7 +204,7 @@ test('profile updates persist trimmed phone and bio instead of dropping them', a
         id: 'user-1', email: 'user@example.test', username: 'user-1', displayName: 'User One',
         firstName: 'User', lastName: 'One', primaryRole: 'NURSE', clinicId: 'clinic-1',
         phone: '+243990000000', bio: 'Infirmier référent', status: 'ACTIVE',
-        Employee: [], serviceResponsabilites: [], departmentResponsibilities: [],
+        Employee: [], roles: [], serviceResponsabilites: [], departmentResponsibilities: [],
       }),
     },
   };

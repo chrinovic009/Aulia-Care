@@ -107,6 +107,8 @@ test(
         makeUser(RoleSlug.FINANCE, 'finance'),
       ]);
 
+      // Synthetic director policy only, not a clinical approval.
+      await prisma.consultationPolicy.create({data:{clinicId:clinic.id,specialty:'',required:['chiefComplaint'],rationale:'Fixture synthétique uniquement',approvedById:physician.id,approvedAt:new Date()}});
       const receptionService = await prisma.service.create({
         data: {
           clinicId: clinic.id,
@@ -477,6 +479,7 @@ test(
     } finally {
       if (app) await app.close();
       if (clinicId) {
+        await prisma.consultationPolicy.deleteMany({where:{clinicId}}).catch(()=>undefined);
         const clinicScope = { clinicId };
         await prisma.surgerySafetyChecklist.deleteMany({ where: { surgery: { patient: clinicScope } } }).catch(() => undefined);
         await prisma.surgery.deleteMany({ where: { patient: clinicScope } }).catch(() => undefined);

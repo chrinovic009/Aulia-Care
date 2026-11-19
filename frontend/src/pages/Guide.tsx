@@ -18,6 +18,7 @@ const roleLabels: Record<RoleSlug, string> = {
   RECEPTIONIST: "Réception",
   NURSE: "Infirmier",
   PHYSICIAN: "Médecin",
+  MEDICAL_DIRECTOR: "Médecin directeur",
   LAB_TECHNICIAN: "Technicien de laboratoire",
   LAB_MANAGER: "Responsable laboratoire",
   RADIOLOGIST: "Radiologue",
@@ -33,6 +34,7 @@ const roleLabels: Record<RoleSlug, string> = {
 };
 
 const guideByRole: Record<RoleSlug, GuideDefinition> = {
+  MEDICAL_DIRECTOR: {title:"Médecin directeur",description:"Direction médicale de la clinique.",route:"/medical-director",tabs:["Référentiels","Équipe médicale"],workflow:["Examiner les obligations de chaque spécialité.","Approuver les référentiels avec attestation."],tips:["Une approbation engage son auteur médical."]},
   DEV: {
     title: "Développeur d’installation",
     description: "Configure les couches Aulia Care autorisées pour cette installation locale.",

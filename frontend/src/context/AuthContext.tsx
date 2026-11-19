@@ -15,6 +15,7 @@ export type RoleSlug =
   | "RECEPTIONIST"
   | "NURSE"
   | "PHYSICIAN"
+  | "MEDICAL_DIRECTOR"
   | "LAB_TECHNICIAN"
   | "LAB_MANAGER"
   | "RADIOLOGIST"
@@ -38,6 +39,7 @@ export interface AuthUser {
   firstName: string;
   lastName: string;
   primaryRole: RoleSlug;
+  roles?: RoleSlug[];
 
   /** Immutable tenant chosen by secure provisioning; never client-editable. */
   clinicId?: string | null;
@@ -160,6 +162,8 @@ const clearExpiredSessionCookies = async () => {
   ).catch(() => undefined);
 };
 
+export const hasRole = (user:AuthUser|null,role:RoleSlug)=>user?.primaryRole===role || Boolean(user?.roles?.includes(role));
+
 const knownRoles = new Set<RoleSlug>([
   "DEV",
   "SUPER_ADMIN",
@@ -167,6 +171,7 @@ const knownRoles = new Set<RoleSlug>([
   "RECEPTIONIST",
   "NURSE",
   "PHYSICIAN",
+  "MEDICAL_DIRECTOR",
   "LAB_TECHNICIAN",
   "LAB_MANAGER",
   "RADIOLOGIST",
@@ -196,6 +201,7 @@ const normalizeAuthenticatedUser = (
     ...raw,
     primaryRole,
     role: primaryRole,
+    roles: Array.isArray(raw.roles) ? raw.roles.filter(role=>knownRoles.has(role)) : [],
   };
 };
 
@@ -205,6 +211,7 @@ export function getRedirectPath(role: RoleSlug) {
     RECEPTIONIST: "/reception",
     NURSE: "/nurse",
     PHYSICIAN: "/doctor",
+    MEDICAL_DIRECTOR: "/medical-director",
     CASHIER: "/caissier",
     FINANCE: "/finance",
     LAB_TECHNICIAN: "/laboratoire",
@@ -234,7 +241,8 @@ const UNIT_BASED_SPECIALTIES = [
 const normalizeSpecialty = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[’']/g, "'").trim();
 
 /** Home page of a signed-in user: the care units for doctors whose specialty is unit-based. */
-export function getHomePath(user: Pick<AuthUser, "primaryRole" | "specialty">) {
+export function getHomePath(user: Pick<AuthUser, "primaryRole" | "specialty" | "roles">) {
+  if(user.roles?.includes("MEDICAL_DIRECTOR")) return "/medical-director";
   const role = user.primaryRole as RoleSlug;
   if ((role === "PHYSICIAN" || role === "SURGEON") && user.specialty && UNIT_BASED_SPECIALTIES.includes(normalizeSpecialty(user.specialty))) {
     return "/unites";
@@ -266,6 +274,7 @@ export function getGuidePath(role: RoleSlug) {
     RECEPTIONIST: "/reception/guide",
     NURSE: "/nurse/guide",
     PHYSICIAN: "/doctor/guide",
+    MEDICAL_DIRECTOR: "/medical-director",
     CASHIER: "/caissier/guide",
     FINANCE: "/finance/guide",
     LAB_TECHNICIAN: "/laboratoire/guide",
