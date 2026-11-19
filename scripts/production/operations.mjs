@@ -39,7 +39,9 @@ export async function loadTest({ target, confirmation, concurrency = 10, request
   return { ...result, concurrency, elapsedMs: performance.now() - start, passed: result.errorRate <= errorLimit && result.p95Ms <= p95LimitMs };
 }
 export async function checkBackup(directory, maxAgeHours = 26) {
-  const names = (await readdir(directory)).filter(n => /^aulia-care-.*\.dump\.age$/.test(n));
+  const entries = await readdir(directory);
+  if (entries.some(n => /^aulia-care-.*\.dump(?:\.sha256)?$/.test(n))) return { ok: false, reason: 'plaintext_backup_present' };
+  const names = entries.filter(n => /^aulia-care-.*\.dump\.age$/.test(n));
   const files = await Promise.all(names.map(async name => ({ name, info: await stat(join(directory, name)) })));
   files.sort((a, b) => b.info.mtimeMs - a.info.mtimeMs);
   const newest = files[0];

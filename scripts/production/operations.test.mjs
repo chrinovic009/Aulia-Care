@@ -29,3 +29,15 @@ test('backup check detects missing, corrupted and stale encrypted artifacts', as
     assert.equal((await checkBackup(dir)).reason, 'stale_backup');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('monitor rejects plaintext backups even alongside a valid encrypted backup', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aulia-plaintext-test-'));
+  try {
+    await writeFile(join(dir, 'aulia-care-test.dump.age'), 'encrypted');
+    await writeFile(join(dir, 'aulia-care-test.dump.age.sha256'), createHash('sha256').update('encrypted').digest('hex'));
+    await writeFile(join(dir, 'aulia-care-leftover.dump'), 'synthetic plaintext');
+    assert.deepEqual(await checkBackup(dir), { ok: false, reason: 'plaintext_backup_present' });
+    await rm(join(dir, 'aulia-care-leftover.dump'));
+    assert.equal((await checkBackup(dir)).ok, true);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

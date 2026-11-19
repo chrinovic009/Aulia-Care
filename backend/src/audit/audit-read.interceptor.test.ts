@@ -27,3 +27,22 @@ test('audited patient reads only return after recording actor and patient', asyn
   });
   assert.deepEqual(recorded, [actor, 'Patient', 'patient-a']);
 });
+
+for (const [entity, param] of [['Patient', 'id'], ['Patient', 'patientId'], ['Consultation', 'id'], ['Hospitalization', 'id'], ['CareEpisode', 'id']]) {
+  test(`audit records the configured ${entity}/${param} target`, async () => {
+    let recorded: unknown;
+    const interceptor = new AuditReadInterceptor({ get: () => ({ entity, param }) } as never, { recordRead: async (...args: unknown[]) => { recorded = args; } } as never);
+    const actor = { userId: 'actor-a', clinicId: 'clinic-a' };
+    const context = { getHandler: () => () => undefined, switchToHttp: () => ({ getRequest: () => ({ params: { [param]: 'record-a' } }) }) } as never;
+    await runWithRequestContext(actor, async () => {
+      assert.deepEqual(await firstValueFrom(interceptor.intercept(context, { handle: () => of({ id: 'record-a' }) })), { id: 'record-a' });
+    });
+    assert.deepEqual(recorded, [actor, entity, 'record-a']);
+  });
+}
+test('audited reads refuse a missing record parameter even with an authenticated actor', async () => {
+  const interceptor = new AuditReadInterceptor(reflector, { recordRead: async () => undefined } as never);
+  await runWithRequestContext({ userId: 'actor-a', clinicId: 'clinic-a' }, async () => {
+    await assert.rejects(firstValueFrom(interceptor.intercept(execution(), { handle: () => of({ id: 'record-a' }) })), /lecture refusée/);
+  });
+});
