@@ -86,8 +86,21 @@ for ($i = 0; $i -lt 90 -and -not ($up.backend -and $up.frontend); $i++) {
   try { $tcp = New-Object Net.Sockets.TcpClient; $tcp.Connect('127.0.0.1', 3100); $up.backend = $tcp.Connected; $tcp.Close() } catch { }
   try { $tcp = New-Object Net.Sockets.TcpClient; $tcp.Connect('127.0.0.1', 5190); $up.frontend = $tcp.Connected; $tcp.Close() } catch { }
 }
-"Comptes : demo.admin, demo.infirmier, demo.medecin, demo.reception, demo.pharmacie (même mot de passe)`r`nMot de passe : $password" |
+"Comptes : demo.superadmin, demo.admin, demo.finance, demo.caisse, demo.reception, demo.infirmier, demo.medecin, demo.labo, demo.radio, demo.pharmacie, demo.urgences, demo.ambulancier, demo.chirurgien, demo.sagefemme, demo.nephro, demo.patient (même mot de passe)`r`nMot de passe : $password" |
   Out-File (Join-Path $demo 'credentials.txt') -Encoding utf8
-if ($up.backend -and $up.frontend) { Log 'PRET http://localhost:5190 (frontend) / http://localhost:3100 (API)'; exit 0 }
+if ($up.backend -and $up.frontend) {
+  Log 'PRET http://localhost:5190 (frontend) / http://localhost:3100 (API)'
+  # Guided tour (video demo): requested by creating .validation\tour-request.txt.
+  $tourRequest = Join-Path $root '.validation\tour-request.txt'
+  if (Test-Path $tourRequest) {
+    Remove-Item $tourRequest -Force
+    New-Item -ItemType Directory -Force (Join-Path $root '.validation\tour') | Out-Null
+    Log 'VISITE en cours (scripts\dev\tour\tour.mjs)'
+    cmd /c "node scripts\dev\tour\tour.mjs > `"$root\.validation\tour\run.log`" 2>&1"
+    if ($LASTEXITCODE -ne 0) { Log "ECHEC visite (voir .validation\tour\run.log)"; exit 1 }
+    Log 'VISITE terminee'
+  }
+  exit 0
+}
 Log "ECHEC démarrage backend=$($up.backend) frontend=$($up.frontend) (voir backend-$stamp.log / frontend-$stamp.log)"
 exit 1

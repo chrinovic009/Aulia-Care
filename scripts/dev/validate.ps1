@@ -118,6 +118,8 @@ foreach ($step in ($Steps -split ',' | ForEach-Object { $_.Trim() } | Where-Obje
     'e2e'         { 'npm run test:isolated -w @aulia-care/backend' }
     'build'       { 'npm run build' }
     'prisma'      { 'powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev\prisma-migration.ps1' }
+    # Guided tour of the running demo (start it first with the 'demo' request).
+    'tour'        { 'node scripts\dev\tour\tour.mjs' }
     default       { $null }
   }
   if (-not $command) { "$step : ETAPE INCONNUE" | Out-File -Append $summary -Encoding utf8; $failed++; continue }

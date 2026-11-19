@@ -48,7 +48,10 @@ const roleIds: Record<RoleSlug, string> = {
   SURGEON: '21111111-1111-4111-8111-111111111123',
   ANESTHESIOLOGIST: '21111111-1111-4111-8111-111111111124',
   PATIENT: '21111111-1111-4111-8111-111111111125',
-};
+  MIDWIFE: '21111111-1111-4111-8111-111111111126',
+  PARAMEDIC: '21111111-1111-4111-8111-111111111127',
+  DISPATCHER: '21111111-1111-4111-8111-111111111128',
+} as Record<RoleSlug, string>;
 
 const demoRoles = [
   RoleSlug.SUPER_ADMIN,
@@ -61,6 +64,10 @@ const demoRoles = [
   RoleSlug.LAB_MANAGER,
   RoleSlug.RADIOLOGIST,
   RoleSlug.PHARMACIST,
+  RoleSlug.SURGEON,
+  RoleSlug.MIDWIFE,
+  RoleSlug.PARAMEDIC,
+  RoleSlug.PATIENT,
 ] as const;
 
 const accounts = [
@@ -74,6 +81,12 @@ const accounts = [
   { id: '22222222-2222-4222-8222-000000000008', employeeId: '33333333-3333-4333-8333-000000000008', role: RoleSlug.LAB_MANAGER, username: 'demo.labo', firstName: 'Hervé', lastName: 'Mbuyi', label: 'Responsable laboratoire' },
   { id: '22222222-2222-4222-8222-000000000009', employeeId: '33333333-3333-4333-8333-000000000009', role: RoleSlug.RADIOLOGIST, username: 'demo.radio', firstName: 'Inès', lastName: 'Kalala', label: 'Radiologue', specialty: 'Radiologie' },
   { id: '22222222-2222-4222-8222-000000000010', employeeId: '33333333-3333-4333-8333-000000000010', role: RoleSlug.PHARMACIST, username: 'demo.pharmacie', firstName: 'Jean', lastName: 'Lukusa', label: 'Pharmacien' },
+  { id: '22222222-2222-4222-8222-000000000011', employeeId: '33333333-3333-4333-8333-000000000011', role: RoleSlug.PHYSICIAN, username: 'demo.urgences', firstName: 'Kevin', lastName: 'Ngoy', label: 'Médecin urgentiste', specialty: 'Médecine d\'urgence' },
+  { id: '22222222-2222-4222-8222-000000000012', employeeId: '33333333-3333-4333-8333-000000000012', role: RoleSlug.SURGEON, username: 'demo.chirurgien', firstName: 'Laure', lastName: 'Mutombo', label: 'Chirurgienne', specialty: 'Chirurgie générale' },
+  { id: '22222222-2222-4222-8222-000000000013', employeeId: '33333333-3333-4333-8333-000000000013', role: RoleSlug.MIDWIFE, username: 'demo.sagefemme', firstName: 'Marie', lastName: 'Kasongo', label: 'Sage-femme' },
+  { id: '22222222-2222-4222-8222-000000000014', employeeId: '33333333-3333-4333-8333-000000000014', role: RoleSlug.PARAMEDIC, username: 'demo.ambulancier', firstName: 'Nathan', lastName: 'Banza', label: 'Ambulancier' },
+  { id: '22222222-2222-4222-8222-000000000015', employeeId: '33333333-3333-4333-8333-000000000015', role: RoleSlug.PHYSICIAN, username: 'demo.nephro', firstName: 'Olivier', lastName: 'Kalonji', label: 'Néphrologue', specialty: 'Néphrologie' },
+  { id: '22222222-2222-4222-8222-000000000016', employeeId: '33333333-3333-4333-8333-000000000016', role: RoleSlug.PATIENT, username: 'demo.patient', firstName: 'Patient', lastName: 'Fictif Alpha', label: 'Patient' },
 ] as const;
 
 const departmentData = [
@@ -180,6 +193,146 @@ function resolveDemoSeedProfile(): 'BASE' | 'FULL' {
     throw new Error('AULIA_DEMO_SEED_PROFILE doit être BASE ou FULL.');
   }
   return profile;
+}
+
+// ---------------------------------------------------------------- care units
+// Care Workflow Engine demonstration: the five unit interfaces, the bridge
+// units (laboratory, imaging, pharmacy), their teams and a few stays in
+// progress. Every identifier is deterministic and reserved for the demo.
+const careUnitIds = {
+  emergency: '9c111111-1111-4111-8111-111111111111',
+  ambulance: '9c111111-1111-4111-8111-111111111112',
+  maternity: '9c111111-1111-4111-8111-111111111113',
+  surgery: '9c111111-1111-4111-8111-111111111114',
+  dialysis: '9c111111-1111-4111-8111-111111111115',
+  laboratory: '9c111111-1111-4111-8111-111111111116',
+  imaging: '9c111111-1111-4111-8111-111111111117',
+  pharmacy: '9c111111-1111-4111-8111-111111111118',
+} as const;
+
+const demoTriageScale = [
+  { code: '1', label: 'Niveau 1 — immédiat', color: '#dc2626', priority: 'STAT', maxWaitMinutes: 0 },
+  { code: '2', label: 'Niveau 2 — très urgent', color: '#ea580c', priority: 'ASAP', maxWaitMinutes: 10 },
+  { code: '3', label: 'Niveau 3 — urgent', color: '#ca8a04', priority: 'URGENT', maxWaitMinutes: 60 },
+  { code: '4', label: 'Niveau 4 — moins urgent', color: '#16a34a', priority: 'ROUTINE', maxWaitMinutes: 120 },
+  { code: '5', label: 'Niveau 5 — non urgent', color: '#2563eb', priority: 'ROUTINE', maxWaitMinutes: 240 },
+];
+const demoChecklist = [
+  { phase: 'SIGN_IN', label: 'Avant l’induction anesthésique', items: ['Identité du patient confirmée', 'Site opératoire confirmé et marqué', 'Intervention confirmée', 'Consentement éclairé signé', 'Vérification de la sécurité anesthésique faite', 'Oxymètre en place et fonctionnel', 'Allergies connues vérifiées', 'Risque d’intubation difficile évalué', 'Risque de saignement > 500 ml évalué (accès veineux, sang disponible)'] },
+  { phase: 'TIME_OUT', label: 'Avant l’incision', items: ['Membres de l’équipe présentés par nom et fonction', 'Patient, site et intervention confirmés à voix haute', 'Étapes critiques et durée prévue annoncées par le chirurgien', 'Points de vigilance annoncés par l’anesthésiste', 'Stérilité du matériel confirmée par l’infirmier', 'Antibioprophylaxie faite (ou non indiquée)', 'Imagerie essentielle disponible'] },
+  { phase: 'SIGN_OUT', label: 'Avant la sortie de salle', items: ['Intitulé de l’intervention enregistré', 'Compte des instruments, compresses et aiguilles correct', 'Prélèvements étiquetés', 'Problèmes de matériel signalés', 'Consignes postopératoires transmises à l’équipe de réveil'] },
+];
+const dialysisSteps = ['ARRIVAL', 'PRE_WEIGHT', 'PRE_ASSESSMENT', 'ACCESS_CHECK', 'MACHINE_PREP', 'CONNECTION', 'START', 'MONITORING', 'END', 'DISCONNECTION', 'POST_ASSESSMENT', 'CLOSURE'];
+
+async function seedCareUnits(tx: Prisma.TransactionClient) {
+  const byUsername = (username: string) => accounts.find((account) => account.username === username)!.id;
+  const units = [
+    { id: careUnitIds.emergency, kind: 'EMERGENCY', code: 'URG', name: 'Urgences', settings: { stages: ['ARRIVAL', 'WAITING', 'IN_CARE', 'DISPOSITION'], triageScale: demoTriageScale, triageScaleValidated: false, locations: ['Box 1', 'Box 2', 'Box 3', 'Déchocage', 'Fauteuil 1'], closureRequirements: [{ eventType: 'ORIENTATION', label: 'Décision d’orientation' }] } },
+    { id: careUnitIds.ambulance, kind: 'AMBULANCE', code: 'SAMU', name: 'Ambulance', settings: { stages: ['CALL', 'QUALIFIED', 'DISPATCHED', 'EN_ROUTE', 'ON_SCENE', 'PATIENT_CONTACT', 'TRANSPORT', 'AT_DESTINATION', 'HANDOVER', 'AVAILABLE'], stageEventType: 'MISSION_STEP', locations: [] } },
+    { id: careUnitIds.maternity, kind: 'MATERNITY', code: 'MAT', name: 'Maternité', settings: { stages: ['ADMITTED', 'LABOUR', 'POSTPARTUM', 'NEWBORN'], partogram: { alertLineFromCm: 4, alertRateCmPerHour: 1, actionLineOffsetHours: 4, validated: false }, locations: ['Salle de pré-travail', 'Salle d’accouchement 1', 'Chambre 1'] } },
+    { id: careUnitIds.surgery, kind: 'SURGERY', code: 'BLOC', name: 'Bloc opératoire', settings: { stages: ['SCHEDULED', 'PREOP', 'IN_ROOM', 'ANESTHESIA', 'INCISION', 'CLOSURE', 'OUT_OF_ROOM', 'RECOVERY', 'POSTOP'], stageEventType: 'SURGERY_STEP', checklist: demoChecklist, checklistValidated: false, locations: [] } },
+    { id: careUnitIds.dialysis, kind: 'DIALYSIS', code: 'DIAL', name: 'Dialyse', settings: { stages: dialysisSteps, stageEventType: 'DIALYSIS_STEP', closureRequirements: [{ eventType: 'DIALYSIS_PRE_ASSESSMENT', label: 'Évaluation avant séance (poids, constantes)' }, { eventType: 'DIALYSIS_SESSION_PARAMETERS', label: 'Paramètres de séance appliqués' }, { eventType: 'DIALYSIS_POST_ASSESSMENT', label: 'Évaluation après séance (poids, constantes)' }], locations: ['Poste 1', 'Poste 2', 'Poste 3', 'Poste 4'] } },
+    { id: careUnitIds.laboratory, kind: 'LABORATORY', code: 'LABO', name: 'Laboratoire', settings: {} },
+    { id: careUnitIds.imaging, kind: 'IMAGING', code: 'IMG', name: 'Imagerie', settings: {} },
+    { id: careUnitIds.pharmacy, kind: 'PHARMACY', code: 'PHAR', name: 'Pharmacie', settings: {} },
+  ] as const;
+  for (const unit of units) {
+    await tx.careUnit.upsert({
+      where: { id: unit.id },
+      update: { clinicId: CLINIC_ID, kind: unit.kind, code: unit.code, name: unit.name, active: true, settings: unit.settings as Prisma.InputJsonValue },
+      create: { id: unit.id, clinicId: CLINIC_ID, kind: unit.kind, code: unit.code, name: unit.name, active: true, settings: unit.settings as Prisma.InputJsonValue },
+    });
+  }
+
+  const team: Array<[string, string, 'LEAD' | 'MEMBER']> = [
+    [careUnitIds.emergency, 'demo.urgences', 'LEAD'], [careUnitIds.emergency, 'demo.infirmier', 'MEMBER'], [careUnitIds.emergency, 'demo.medecin', 'MEMBER'],
+    [careUnitIds.ambulance, 'demo.ambulancier', 'LEAD'], [careUnitIds.ambulance, 'demo.urgences', 'MEMBER'],
+    [careUnitIds.maternity, 'demo.sagefemme', 'LEAD'], [careUnitIds.maternity, 'demo.medecin', 'MEMBER'],
+    [careUnitIds.surgery, 'demo.chirurgien', 'LEAD'], [careUnitIds.surgery, 'demo.infirmier', 'MEMBER'],
+    [careUnitIds.dialysis, 'demo.nephro', 'LEAD'], [careUnitIds.dialysis, 'demo.infirmier', 'MEMBER'],
+    [careUnitIds.laboratory, 'demo.labo', 'LEAD'], [careUnitIds.imaging, 'demo.radio', 'LEAD'], [careUnitIds.pharmacy, 'demo.pharmacie', 'LEAD'],
+  ];
+  for (const [careUnitId, username, unitRole] of team) {
+    const userId = byUsername(username);
+    await tx.careUnitAssignment.upsert({
+      where: { careUnitId_userId: { careUnitId, userId } },
+      update: { unitRole, active: true, clinicId: CLINIC_ID },
+      create: { clinicId: CLINIC_ID, careUnitId, userId, unitRole, active: true },
+    });
+  }
+
+  const resources = [
+    { id: '9d111111-1111-4111-8111-111111111111', careUnitId: careUnitIds.ambulance, kind: 'VEHICLE', code: 'AMB-1', label: 'Ambulance médicalisée 1', details: { plate: 'DEMO-001' } },
+    { id: '9d111111-1111-4111-8111-111111111112', careUnitId: careUnitIds.ambulance, kind: 'VEHICLE', code: 'AMB-2', label: 'Ambulance de transport 2', details: { plate: 'DEMO-002' } },
+    { id: '9d111111-1111-4111-8111-111111111113', careUnitId: careUnitIds.surgery, kind: 'ROOM', code: 'BLOC-1', label: 'Salle d’opération 1', details: {} },
+    { id: '9d111111-1111-4111-8111-111111111114', careUnitId: careUnitIds.surgery, kind: 'ROOM', code: 'BLOC-2', label: 'Salle d’opération 2', details: {} },
+    { id: '9d111111-1111-4111-8111-111111111115', careUnitId: careUnitIds.dialysis, kind: 'MACHINE', code: 'GEN-1', label: 'Générateur 1', details: { model: 'Modèle DEMO', serial: 'SN-DEMO-1' } },
+    { id: '9d111111-1111-4111-8111-111111111116', careUnitId: careUnitIds.dialysis, kind: 'MACHINE', code: 'GEN-2', label: 'Générateur 2', details: { model: 'Modèle DEMO', serial: 'SN-DEMO-2' } },
+    { id: '9d111111-1111-4111-8111-111111111117', careUnitId: careUnitIds.dialysis, kind: 'MACHINE', code: 'GEN-3', label: 'Générateur 3', details: { model: 'Modèle DEMO', serial: 'SN-DEMO-3' } },
+  ] as const;
+  for (const resource of resources) {
+    await tx.careResource.upsert({
+      where: { id: resource.id },
+      update: {},
+      create: { ...resource, clinicId: CLINIC_ID, details: resource.details as Prisma.InputJsonValue },
+    });
+  }
+
+  const now = Date.now();
+  const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000);
+  const urg = byUsername('demo.urgences');
+  const episodes = [
+    { id: '9e111111-1111-4111-8111-111111111111', careUnitId: careUnitIds.emergency, patientId: patientData[1].id, stage: 'IN_CARE', priority: 'URGENT', reason: 'Douleur thoracique', locationLabel: 'Box 1', startedAt: at(95), createdById: urg },
+    { id: '9e111111-1111-4111-8111-111111111112', careUnitId: careUnitIds.emergency, patientId: patientData[2].id, stage: 'WAITING', priority: 'ASAP', reason: 'Dyspnée', locationLabel: null, startedAt: at(40), createdById: urg },
+    { id: '9e111111-1111-4111-8111-111111111113', careUnitId: careUnitIds.emergency, patientId: patientData[3].id, stage: 'ARRIVAL', priority: 'ROUTINE', reason: 'Traumatisme de la cheville', locationLabel: null, startedAt: at(8), createdById: urg },
+    { id: '9e111111-1111-4111-8111-111111111114', careUnitId: careUnitIds.ambulance, patientId: patientData[5].id, stage: 'EN_ROUTE', priority: 'STAT', reason: 'Malaise sur la voie publique', locationLabel: null, startedAt: at(12), createdById: byUsername('demo.ambulancier') },
+    { id: '9e111111-1111-4111-8111-111111111115', careUnitId: careUnitIds.maternity, patientId: patientData[4].id, stage: 'LABOUR', priority: 'URGENT', reason: 'Travail spontané à terme', locationLabel: 'Salle d’accouchement 1', startedAt: at(300), createdById: byUsername('demo.sagefemme') },
+    { id: '9e111111-1111-4111-8111-111111111116', careUnitId: careUnitIds.surgery, patientId: patientData[3].id, stage: 'PREOP', priority: 'URGENT', reason: 'Appendicectomie', locationLabel: 'BLOC-1', startedAt: at(60), createdById: byUsername('demo.chirurgien') },
+    { id: '9e111111-1111-4111-8111-111111111117', careUnitId: careUnitIds.dialysis, patientId: patientData[6].id, stage: 'MONITORING', priority: 'ROUTINE', reason: 'Séance de dialyse', locationLabel: 'Poste 2', startedAt: at(150), createdById: byUsername('demo.nephro') },
+  ] as const;
+  for (const episode of episodes) {
+    await tx.careEpisode.upsert({
+      where: { id: episode.id },
+      update: {},
+      create: { ...episode, clinicId: CLINIC_ID, status: 'IN_PROGRESS', responsibleUserId: episode.createdById },
+    });
+  }
+  await tx.careResource.update({ where: { id: '9d111111-1111-4111-8111-111111111111' }, data: { status: 'ENGAGED', assignedEpisodeId: episodes[3].id } });
+  await tx.careResource.update({ where: { id: '9d111111-1111-4111-8111-111111111113' }, data: { status: 'ENGAGED', assignedEpisodeId: episodes[5].id } });
+  await tx.careResource.update({ where: { id: '9d111111-1111-4111-8111-111111111116' }, data: { status: 'ENGAGED', assignedEpisodeId: episodes[6].id } });
+
+  await tx.pregnancy.upsert({
+    where: { id: '9f111111-1111-4111-8111-111111111111' },
+    update: {},
+    create: { id: '9f111111-1111-4111-8111-111111111111', clinicId: CLINIC_ID, patientId: patientData[4].id, status: 'ONGOING', lastMenstrualPeriod: new Date(now - 280 * 86_400_000), expectedDeliveryDate: new Date(now + 86_400_000), gravida: 2, parity: 1, riskLevel: 'Faible', bloodGroup: 'O+', createdById: byUsername('demo.sagefemme') },
+  });
+
+  // Events are insert-only: they are written once, on a fresh demo database.
+  if (await tx.careEvent.count({ where: { clinicId: CLINIC_ID } })) return;
+  type Ev = { unit: string; ep?: string; patientId: string; type: string; summary: string; payload: Record<string, unknown>; minutesAgo: number; author: string };
+  const ev: Ev[] = [
+    { unit: careUnitIds.emergency, ep: episodes[0].id, patientId: patientData[1].id, type: 'TRIAGE', summary: 'Tri : Niveau 3 — urgent', payload: { level: '3', levelLabel: 'Niveau 3 — urgent', scaleValidated: false, complaint: 'Douleur thoracique', vitals: { heartRate: '104', bloodPressure: '150/90', spo2: '96' } }, minutesAgo: 90, author: 'demo.infirmier' },
+    { unit: careUnitIds.emergency, ep: episodes[0].id, patientId: patientData[1].id, type: 'VITALS', summary: 'Constantes : FC 98, TA 145/88, SpO2 97 %', payload: { heartRate: '98', bloodPressure: '145/88', spo2: '97' }, minutesAgo: 45, author: 'demo.infirmier' },
+    { unit: careUnitIds.emergency, ep: episodes[1].id, patientId: patientData[2].id, type: 'TRIAGE', summary: 'Tri : Niveau 2 — très urgent', payload: { level: '2', levelLabel: 'Niveau 2 — très urgent', scaleValidated: false, complaint: 'Dyspnée', vitals: { respiratoryRate: '28', spo2: '91' } }, minutesAgo: 35, author: 'demo.infirmier' },
+    ...['CALL', 'QUALIFIED', 'DISPATCHED', 'EN_ROUTE'].map((stage, index) => ({ unit: careUnitIds.ambulance, ep: episodes[3].id, patientId: patientData[5].id, type: 'MISSION_STEP', summary: stage, payload: { stage }, minutesAgo: 12 - index * 3, author: 'demo.ambulancier' })),
+    ...[[240, 4, 140], [180, 5, 138], [120, 6, 142], [60, 7, 136], [15, 8, 130]].map(([minutesAgo, dilation, fhr]) => ({ unit: careUnitIds.maternity, ep: episodes[4].id, patientId: patientData[4].id, type: 'PARTOGRAM_ENTRY', summary: `Dilatation : ${dilation} cm · BCF : ${fhr}`, payload: { dilation: String(dilation), fetalHeartRate: String(fhr), contractions: '3/10 min' }, minutesAgo, author: 'demo.sagefemme' })),
+    { unit: careUnitIds.surgery, ep: episodes[5].id, patientId: patientData[3].id, type: 'SURGERY_SCHEDULED', summary: 'Appendicectomie programmée — BLOC-1', payload: { procedure: 'Appendicectomie', room: 'BLOC-1', durationMinutes: '60', scheduledAt: new Date(now + 3_600_000).toISOString() }, minutesAgo: 55, author: 'demo.chirurgien' },
+    { unit: careUnitIds.surgery, ep: episodes[5].id, patientId: patientData[3].id, type: 'SURGERY_STEP', summary: 'Préparation', payload: { stage: 'PREOP' }, minutesAgo: 30, author: 'demo.chirurgien' },
+    { unit: careUnitIds.dialysis, patientId: patientData[6].id, type: 'DIALYSIS_PRESCRIPTION', summary: 'Hémodialyse · 3 séances / semaine · 240 min', payload: { modality: 'Hémodialyse', sessionsPerWeek: '3', durationMinutes: '240', dryWeight: '68', access: 'Fistule artério-veineuse', days: 'Lun, Mer, Ven', slot: 'Matin', status: 'En cours' }, minutesAgo: 20_000, author: 'demo.nephro' },
+    ...['ARRIVAL', 'PRE_WEIGHT', 'PRE_ASSESSMENT', 'ACCESS_CHECK', 'MACHINE_PREP', 'CONNECTION', 'START', 'MONITORING'].map((stage, index) => ({ unit: careUnitIds.dialysis, ep: episodes[6].id, patientId: patientData[6].id, type: 'DIALYSIS_STEP', summary: stage, payload: { stage }, minutesAgo: 150 - index * 15, author: 'demo.infirmier' })),
+    { unit: careUnitIds.dialysis, ep: episodes[6].id, patientId: patientData[6].id, type: 'DIALYSIS_PRE_ASSESSMENT', summary: 'Poids avant : 70,4 kg · TA 150/85', payload: { weight: '70.4', bloodPressure: '150/85', heartRate: '82' }, minutesAgo: 115, author: 'demo.infirmier' },
+    { unit: careUnitIds.dialysis, ep: episodes[6].id, patientId: patientData[6].id, type: 'DIALYSIS_SESSION_PARAMETERS', summary: 'Générateur GEN-2 · débit 300 ml/min · UF 2400 ml', payload: { machine: 'GEN-2', bloodFlow: '300', ufGoal: '2400', duration: '240' }, minutesAgo: 60, author: 'demo.infirmier' },
+    ...[[50, '140/80', 300, 150], [30, '132/78', 300, 160], [10, '126/75', 290, 165]].map(([minutesAgo, bp, flow, venous]) => ({ unit: careUnitIds.dialysis, ep: episodes[6].id, patientId: patientData[6].id, type: 'DIALYSIS_MONITORING', summary: `TA ${bp} · débit ${flow} · PV ${venous}`, payload: { bloodPressure: String(bp), bloodFlow: String(flow), venousPressure: String(venous) }, minutesAgo: Number(minutesAgo), author: 'demo.infirmier' })),
+  ];
+  for (const item of ev) {
+    const author = accounts.find((account) => account.username === item.author)!;
+    await tx.careEvent.create({
+      data: {
+        clinicId: CLINIC_ID, careUnitId: item.unit, episodeId: item.ep ?? null, patientId: item.patientId, type: item.type, summary: item.summary,
+        payload: item.payload as Prisma.InputJsonValue, occurredAt: at(item.minutesAgo), authorId: author.id, authorRole: author.role,
+      },
+    });
+  }
 }
 
 async function assertNoForeignData(tx: Prisma.TransactionClient) {
@@ -572,6 +725,10 @@ async function main() {
       update: { patientId: patientData[1].id, clinicId: CLINIC_ID, serviceUnitId: serviceUnitData[0].id, physicianId: accounts[6].id, nurseInChargeId: accounts[5].id, status: 'ADMITTED', admissionReason: 'Observation fictive de démonstration' },
       create: { id: '8a111111-1111-4111-8111-111111111111', patientId: patientData[1].id, clinicId: CLINIC_ID, serviceUnitId: serviceUnitData[0].id, physicianId: accounts[6].id, nurseInChargeId: accounts[5].id, status: 'ADMITTED', admissionReason: 'Observation fictive de démonstration', sourceNode: DEMO_SOURCE_NODE },
     });
+
+    // Patient portal: the first fictitious patient signs in as demo.patient.
+    await tx.patient.update({ where: { id: patientData[0].id }, data: { portalUserId: accounts.find((account) => account.username === 'demo.patient')!.id } });
+    await seedCareUnits(tx);
     }
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
