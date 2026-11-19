@@ -7,7 +7,7 @@ import { isQueued } from "../../../offline/offlineQueue";
 import { ResourcesBoard } from "../ResourcesBoard";
 import { canWrite, HistoryList, PatientSearch, TransferDialog } from "../shared";
 import { Badge, Button, Card, Dialog, Empty, Field, inputClass, PriorityBadge, Stat } from "../ui";
-import { createPregnancy, fetchPregnancies, fetchUnitEvents, registerNewborn, updatePregnancy, type Pregnancy } from "./maternityApi";
+import { createPregnancy, fetchPregnancies, fetchUnitEvents, registerDelivery, updatePregnancy, type Pregnancy } from "./maternityApi";
 import { PartogramChart, type PartogramSettings } from "./Partogram";
 
 export const MATERNITY_TABS = [
@@ -411,22 +411,18 @@ function DeliveryDialog({ episode, unitId, onClose, onDone }: { episode: CareEpi
   const [birthAt, setBirthAt] = useState(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16));
   const [babies, setBabies] = useState<Array<{ sex: "MALE" | "FEMALE" | "UNKNOWN"; firstName: string; values: Record<string, string> }>>([{ sex: "UNKNOWN", firstName: "", values: {} }]);
   const [saving, setSaving] = useState(false);
+  const [operationId] = useState(() => crypto.randomUUID());
   const submit = async () => {
+    if (saving) return;
     setSaving(true);
     try {
       const at = new Date(birthAt).toISOString();
       const fresh = await fetchEpisode(episode.id);
-      await recordCareEvent({
-        careUnitId: unitId, episodeId: episode.id, type: "DELIVERY", occurredAt: at,
+      await registerDelivery(unitId, {
+        motherEpisodeId: episode.id, version: fresh.version, operationId, birthAt: at,
         summary: `Accouchement — ${summaryOf(DELIVERY_FIELDS, values) || "voir détails"} · ${babies.length} naissance(s)`,
-        payload: { ...values, births: babies.length }, episodeUpdate: { version: fresh.version, stage: "POSTPARTUM" },
-      }, "Accouchement");
-      for (const [index, baby] of babies.entries()) {
-        await registerNewborn(unitId, {
-          motherEpisodeId: episode.id, sex: baby.sex, birthAt: at, firstName: baby.firstName.trim() || undefined,
-          birthOrder: babies.length > 1 ? index + 1 : undefined, measurements: baby.values, closePregnancy: index === 0,
-        });
-      }
+        details: values, babies: babies.map(baby => ({ sex: baby.sex, firstName: baby.firstName.trim() || undefined, measurements: baby.values })),
+      });
       onDone(`Accouchement et ${babies.length} naissance(s) enregistrés : chaque nouveau-né a son propre dossier, relié à celui de la mère.`);
     } catch { /* reported globally */ } finally { setSaving(false); }
   };

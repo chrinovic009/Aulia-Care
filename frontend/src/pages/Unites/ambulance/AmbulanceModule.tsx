@@ -30,9 +30,7 @@ const stepLabel = (stage?: string | null) => MISSION_STEPS[stepIndex(stage)].lab
 
 /** The stage shown is the latest step documented, including steps queued offline but not yet replayed. */
 function currentStage(episode: CareEpisode) {
-  const steps = (episode.events ?? []).filter((event) => event.type === "MISSION_STEP");
-  const latest = steps[0]?.payload?.stage;
-  return typeof latest === "string" ? latest : episode.stage ?? "CALL";
+  return episode.stage ?? 'CALL';
 }
 const stepTime = (episode: CareEpisode, code: string) =>
   (episode.events ?? []).find((event) => event.type === "MISSION_STEP" && event.payload?.stage === code)?.occurredAt;

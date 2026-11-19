@@ -16,9 +16,7 @@ export default function AuliaPageLoader() {
   useEffect(() => {
     const isNewRoute = previousRouteRef.current !== routeKey;
     previousRouteRef.current = routeKey;
-    if (!isNewRoute) return;
-
-    setVisible(true);
+    if (isNewRoute) setVisible(true);
     const timeoutId = window.setTimeout(() => setVisible(false), MINIMUM_TRANSITION_MS);
     return () => window.clearTimeout(timeoutId);
   }, [routeKey]);

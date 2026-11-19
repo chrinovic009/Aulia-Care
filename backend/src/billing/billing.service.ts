@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { AuditAction, InvoiceType, PatientWorkflowStatus, RoleSlug } from '@prisma/client';
+import { AuditAction, InvoiceType, PatientWorkflowStatus, RoleSlug, Prisma } from '@prisma/client';
 import { createCipheriv, createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
@@ -765,6 +765,17 @@ export class BillingService {
 
     // One transaction: the advisory lock covers the balance check and the change.
     const patient = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`patient-workflow:${clinicId}:${patientId}`}))`);
+      const specialty = await tx.careEpisode.findFirst({ where: { clinicId, patientId }, select: { id: true } });
+      if (specialty) {
+        const active = await tx.careEpisode.count({ where: { clinicId, patientId, status: { in: ['PLANNED', 'IN_PROGRESS', 'ON_HOLD'] } } });
+        const tasks = await tx.careTask.count({ where: { clinicId, patientId, status: { in: ['REQUESTED', 'RECEIVED', 'ACCEPTED', 'READY', 'IN_PROGRESS', 'ON_HOLD'] } } });
+        const requests = await tx.serviceRequest.count({ where: { clinicId, patientId, status: { in: ['DRAFT', 'ACTIVE', 'ON_HOLD'] } } });
+        const hospitalization = await tx.hospitalization.count({ where: { clinicId, patientId, deletedAt: null, status: { in: ['ADMITTED', 'TRANSFERRED'] } } });
+        const authorization = await tx.careEvent.findFirst({ where: { clinicId, patientId, type: 'DISCHARGE_AUTHORIZED', authorRole: 'PHYSICIAN', corrections: { none: {} } }, orderBy: { recordedAt: 'desc' } });
+        const lastCare = await tx.careEpisode.findFirst({ where: { clinicId, patientId }, orderBy: { endedAt: 'desc' } });
+        if (active || tasks || requests || hospitalization || !authorization || (lastCare?.endedAt && authorization.recordedAt < lastCare.endedAt)) throw new BadRequestException('Sortie impossible : soins ouverts ou autorisation du médecin manquante.');
+      }
       const unpaid = await tx.invoice.count({
         where: { patientId, clinicId, deletedAt: null, status: { not: 'CANCELLED' }, balanceDue: { gt: 0 } },
       });

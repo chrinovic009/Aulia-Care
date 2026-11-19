@@ -7,6 +7,9 @@ import {
 } from '@nestjs/common';
 import { CareTaskStatus, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { SPECIALTY_STAGES, assertEventProfession, assertStageProgress, assertSpecialtyClosable, activeDialysisPrescription } from './domain/specialty-rules';
+import { PatientWorkflowService } from '../core/patient-workflow.service';
+import { BedAssignmentService } from '../hospitalizations/bed-assignment.service';
 import { AuthenticatedActor, OperationalClinicActor } from '../core/clinic-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { cancelSubscriptionChargeForInvoice, chargeInvoiceToSubscription } from '../billing/subscription-coverage';
@@ -19,6 +22,7 @@ import {
   assertTransition,
   closureRequirementsFromSettings,
   isTerminal,
+  eventsInForce,
 } from './domain/workflow-rules';
 import { PROTOCOLS, ProtocolValidation, fingerprint, hasContent, protocolsOf, withProtocolValidation } from './domain/protocol-validation';
 import {
@@ -37,6 +41,8 @@ import {
   OpenEpisodeDto,
   RegisterArrivalDto,
   RegisterNewbornDto,
+  RegisterDeliveryDto,
+  ScheduleSpecialtySurgeryDto,
   ReportTaskResultDto,
   ValidateProtocolDto,
   RecordCareEventDto,
@@ -95,12 +101,21 @@ export class CareWorkflowService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: CareAccessService,
+    private readonly patientWorkflow: PatientWorkflowService = new PatientWorkflowService(),
   ) {}
 
   // ======================================================================= helpers
 
   private run<T>(actorInput: AuthenticatedActor | undefined, work: (tx: Db, actor: OperationalClinicActor) => Promise<T>): Promise<T> {
     return this.access.actor(actorInput).then((actor) => this.prisma.$transaction((tx) => work(tx, actor)));
+  }
+
+  private async lockPatient(tx: Db, actor: OperationalClinicActor, patientId: string) {
+    await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`patient-workflow:${actor.clinicId}:${patientId}`}))`);
+  }
+
+  private requireMaternity(unit: { kind: string }) {
+    if (unit.kind !== 'MATERNITY') throw new BadRequestException('Cette action exige une unité de maternité.');
   }
 
   private recordEvent(tx: Db, actor: OperationalClinicActor, input: EventInput) {
@@ -215,8 +230,8 @@ export class CareWorkflowService {
             responsible: userSummary,
             // Latest triage documented by a professional (the engine never computes one).
             events: {
-              where: { type: { in: ['TRIAGE', 'MISSION_STEP', 'SURGERY_STEP', 'SURGERY_SCHEDULED', 'DIALYSIS_STEP'] }, correctsEventId: null, corrections: { none: {} } },
-              select: { id: true, type: true, payload: true, occurredAt: true }, orderBy: { occurredAt: 'desc' }, take: 12,
+              where: { type: { in: ['TRIAGE', 'MISSION_STEP', 'SURGERY_STEP', 'SURGERY_SCHEDULED', 'DIALYSIS_STEP'] }, corrections: { none: {} } },
+              select: { id: true, type: true, payload: true, occurredAt: true }, orderBy: [{ occurredAt: 'desc' }, { recordedAt: 'desc' }, { id: 'desc' }],
             },
             resources: { select: { id: true, kind: true, code: true, label: true } },
           },
@@ -325,6 +340,11 @@ export class CareWorkflowService {
     return this.run(actorInput, async (tx, actor) => {
       const { unit } = await this.access.requireUnit(tx, actor, dto.careUnitId, 'write');
       await this.access.requirePatient(tx, actor, dto.patientId);
+      await this.lockPatient(tx, actor, dto.patientId);
+      if (unit.kind === 'DIALYSIS') {
+        const prescriptions = await tx.careEvent.findMany({ where: { clinicId: actor.clinicId, careUnitId: unit.id, patientId: dto.patientId, type: 'DIALYSIS_PRESCRIPTION', corrections: { none: {} } }, orderBy: [{ occurredAt: 'desc' }, { recordedAt: 'desc' }], take: 1 });
+        if (!activeDialysisPrescription(prescriptions[0]?.payload)) throw new ConflictException('Une prescription de dialyse active est obligatoire.');
+      }
       if (dto.sourceRequestId) {
         const request = await this.findRequest(tx, actor, dto.sourceRequestId);
         if (request.performerUnitId !== unit.id || request.patientId !== dto.patientId) {
@@ -341,6 +361,7 @@ export class CareWorkflowService {
       });
       if (existing) throw new ConflictException('Ce patient a déjà une prise en charge ouverte dans cette unité.');
 
+      if (SPECIALTY_STAGES[unit.kind] && dto.stage && dto.stage !== SPECIALTY_STAGES[unit.kind][0]) throw new BadRequestException('Commencez à la première étape du parcours spécialisé.');
       const start = dto.start ?? false;
       const episode = await tx.careEpisode.create({
         data: {
@@ -373,10 +394,19 @@ export class CareWorkflowService {
     return this.run(actorInput, async (tx, actor) => {
       const episode = await this.findEpisode(tx, actor, id);
       const { unit } = await this.access.requireUnit(tx, actor, episode.careUnitId, 'write');
+      await this.lockPatient(tx, actor, episode.patientId);
       const reason = assertTransition('episode', episode.status, dto.status, dto.reason);
       if (dto.status === 'COMPLETED') {
-        const events = await tx.careEvent.findMany({ where: { episodeId: episode.id }, select: { id: true, type: true, correctsEventId: true } });
+        const events = await tx.careEvent.findMany({ where: { episodeId: episode.id }, orderBy: [{ occurredAt: 'asc' }, { recordedAt: 'asc' }] });
         assertClosable(closureRequirementsFromSettings(unit.settings), events);
+        assertSpecialtyClosable(unit.kind, unit.settings, events);
+        if (unit.kind === 'EMERGENCY') {
+          const orientation = eventsInForce(events).filter(e => e.type === 'ORIENTATION').at(-1);
+          if ((orientation?.payload as { outcome?: string } | null)?.outcome === 'HOSPITALIZATION') {
+            const admission = await tx.hospitalization.findFirst({ where: { patientId: episode.patientId, clinicId: actor.clinicId, status: { in: ['ADMITTED', 'TRANSFERRED'] }, deletedAt: null }, select: { id: true } });
+            if (!admission) throw new ConflictException('Créez l’admission et attribuez un lit avant de clôturer les urgences.');
+          }
+        }
       }
       const now = new Date();
       const ending = isTerminal('episode', dto.status);
@@ -392,6 +422,11 @@ export class CareWorkflowService {
         },
       });
       this.conflictIfStale(updated.count);
+      if (ending && unit.kind === 'SURGERY') {
+        const link = await tx.careEvent.findFirst({ where: { episodeId: id, type: 'SURGERY_SCHEDULED', corrections: { none: {} } } });
+        const surgeryId = (link?.payload as { surgeryId?: string } | null)?.surgeryId;
+        if (surgeryId) await tx.surgery.updateMany({ where: { id: surgeryId, patient: { clinicId: actor.clinicId } }, data: { status: dto.status === 'COMPLETED' ? 'COMPLETED' : 'CANCELLED', completedAt: dto.status === 'COMPLETED' ? now : undefined } });
+      }
       if (ending) {
         // A closed stay never keeps a vehicle, a room or a machine engaged.
         await tx.careResource.updateMany({
@@ -415,6 +450,7 @@ export class CareWorkflowService {
       const { unit } = await this.access.requireUnit(tx, actor, episode.careUnitId, 'write');
       if (isTerminal('episode', episode.status)) throw new ConflictException('Cette prise en charge est clôturée.');
 
+      await this.lockPatient(tx, actor, episode.patientId);
       const data: Prisma.CareEpisodeUncheckedUpdateManyInput = {};
       const changes: Record<string, unknown> = {};
       if (dto.stage !== undefined && dto.stage !== episode.stage) {
@@ -422,6 +458,8 @@ export class CareWorkflowService {
         if (Array.isArray(stages) && stages.length && !stages.includes(dto.stage)) {
           throw new BadRequestException(`Étape « ${dto.stage} » non prévue par la configuration de l’unité.`);
         }
+        if (['AMBULANCE', 'DIALYSIS', 'SURGERY'].includes(unit.kind)) throw new BadRequestException('Documentez une étape pour faire progresser cette prise en charge.');
+        assertStageProgress(unit.kind, episode.stage, dto.stage, Array.isArray(stages) ? stages as string[] : undefined);
         data.stage = dto.stage;
         changes.stage = { from: episode.stage, to: dto.stage };
       }
@@ -484,6 +522,7 @@ export class CareWorkflowService {
           throw new BadRequestException('La prise en charge indiquée n’appartient pas à l’unité émettrice.');
         }
       }
+      await this.lockPatient(tx, actor, dto.patientId);
       const draft = dto.draft ?? false;
       // An exam for the laboratory must be a catalogue exam: it carries the billed price.
       const labTest = performer.kind === 'LABORATORY' ? await this.findLabTest(tx, actor, dto.code)
@@ -689,6 +728,8 @@ export class CareWorkflowService {
   recordCareEvent(dto: RecordCareEventDto, actorInput?: AuthenticatedActor) {
     return this.run(actorInput, async (tx, actor) => {
       const { unit } = await this.access.requireUnit(tx, actor, dto.careUnitId, 'write');
+      assertEventProfession(actor.primaryRole, dto.type, dto.payload);
+      if (dto.type === 'DELIVERY' || dto.type === 'BIRTH' || dto.type === 'NEWBORN_REGISTERED' || dto.type === 'SURGERY_SCHEDULED' || dto.type === 'DISCHARGE_AUTHORIZED') throw new BadRequestException('Utilisez l’opération dédiée pour cet événement composite.');
       let patientId = dto.patientId ?? null;
       const adopt = (linkedPatientId: string | null, label: string) => {
         if (!linkedPatientId) return;
@@ -715,7 +756,7 @@ export class CareWorkflowService {
         }
         adopt(request.patientId, 'La demande');
       }
-      if (patientId) await this.access.requirePatient(tx, actor, patientId);
+      if (patientId) { await this.lockPatient(tx, actor, patientId); await this.access.requirePatient(tx, actor, patientId); }
       if (dto.type === ENTERED_IN_ERROR_EVENT) {
         throw new BadRequestException('Utilisez la correction d’un événement pour le déclarer saisi en erreur.');
       }
@@ -750,36 +791,50 @@ export class CareWorkflowService {
   private async applyStageEvent(
     tx: Db,
     actor: OperationalClinicActor,
-    unit: { id: string; settings: Prisma.JsonValue | null },
+    unit: { id: string; kind: string; settings: Prisma.JsonValue | null },
     episodeId: string,
     type: string,
     payload: Record<string, unknown> | undefined,
     occurredAt: Date,
     eventId: string,
   ) {
-    const settings = (unit.settings ?? {}) as { stageEventType?: unknown; stages?: unknown };
+    const settings = (unit.settings ?? {}) as { stageEventType?: unknown; stages?: string[] };
     if (!settings.stageEventType || settings.stageEventType !== type) return;
     const stage = payload?.stage;
     if (typeof stage !== 'string' || !stage) throw new BadRequestException('Étape manquante (payload.stage).');
-    if (Array.isArray(settings.stages) && settings.stages.length && !settings.stages.includes(stage)) {
-      throw new BadRequestException(`Étape « ${stage} » non prévue par la configuration de l’unité.`);
+    const episode = await this.findEpisode(tx, actor, episodeId);
+    await this.lockPatient(tx, actor, episode.patientId);
+    const events = await tx.careEvent.findMany({ where: { episodeId, type, corrections: { none: {} } }, orderBy: [{ occurredAt: 'asc' }, { recordedAt: 'asc' }, { id: 'asc' }] });
+    const effective = eventsInForce(events);
+    const candidateIndex = effective.findIndex(e => e.id === eventId);
+    const previous = effective[candidateIndex - 1];
+    const priorStage = previous ? (previous.payload as { stage?: string } | null)?.stage ?? null : settings.stages?.[0] ?? null;
+    assertStageProgress(unit.kind, priorStage, stage, settings.stages);
+    if (unit.kind === 'DIALYSIS' && ['CONNECTION', 'START'].includes(stage)) {
+      const prescription = await tx.careEvent.findFirst({ where: { clinicId: actor.clinicId, careUnitId: unit.id, patientId: episode.patientId, type: 'DIALYSIS_PRESCRIPTION', corrections: { none: {} } }, orderBy: [{ occurredAt: 'desc' }, { recordedAt: 'desc' }] });
+      if (!activeDialysisPrescription(prescription?.payload)) throw new ConflictException('La prescription est suspendue ou arrêtée.');
+      const machine = await tx.careResource.findFirst({ where: { clinicId: actor.clinicId, careUnitId: unit.id, assignedEpisodeId: episodeId, kind: 'MACHINE', status: 'ENGAGED' } });
+      if (!machine) throw new ConflictException('Attribuez un générateur disponible à cette séance avant le branchement.');
     }
-    const later = await tx.careEvent.findFirst({
-      where: { episodeId, type, id: { not: eventId }, correctsEventId: null, occurredAt: { gt: occurredAt } },
-      select: { id: true },
-    });
-    if (later) return;
-    await tx.careEpisode.updateMany({
-      where: { id: episodeId, clinicId: actor.clinicId, status: { in: [...OPEN_EPISODE] } },
-      data: { stage, version: { increment: 1 } },
-    });
+    if (unit.kind === 'SURGERY' && ['ANESTHESIA', 'INCISION', 'OUT_OF_ROOM'].includes(stage)) {
+      const phase = stage === 'ANESTHESIA' ? ['SIGN_IN'] : stage === 'INCISION' ? ['SIGN_IN', 'TIME_OUT'] : ['SIGN_IN', 'TIME_OUT', 'SIGN_OUT'];
+      const cfg = unit.settings as { checklist?: Array<{ phase: string; items: string[] }> } | null;
+      const all = await tx.careEvent.findMany({ where: { episodeId }, orderBy: [{ occurredAt: 'asc' }, { recordedAt: 'asc' }] });
+      assertSpecialtyClosable('SURGERY', { checklist: cfg?.checklist?.filter(p => phase.includes(p.phase)) }, all);
+    }
+    const latest = effective.at(-1);
+    const latestStage = (latest?.payload as { stage?: string } | null)?.stage ?? settings.stages?.[0] ?? null;
+    await tx.careEpisode.updateMany({ where: { id: episodeId, clinicId: actor.clinicId, status: { in: [...OPEN_EPISODE] } }, data: { stage: latestStage, status: episode.status === 'PLANNED' && latestStage !== 'SCHEDULED' ? 'IN_PROGRESS' : undefined, startedAt: episode.status === 'PLANNED' && latestStage !== 'SCHEDULED' ? new Date() : undefined, version: { increment: 1 } } });
+    const link = await tx.careEvent.findFirst({ where: { episodeId, type: 'SURGERY_SCHEDULED', corrections: { none: {} } } });
+    const surgeryId = (link?.payload as { surgeryId?: string } | null)?.surgeryId;
+    if (surgeryId && unit.kind === 'SURGERY') await tx.surgery.updateMany({ where: { id: surgeryId, patient: { clinicId: actor.clinicId } }, data: { status: latestStage === 'PREOP' ? 'PREOP' : ['IN_ROOM', 'ANESTHESIA', 'INCISION', 'CLOSURE'].includes(latestStage ?? '') ? 'IN_PROGRESS' : ['OUT_OF_ROOM', 'RECOVERY', 'POSTOP'].includes(latestStage ?? '') ? 'COMPLETED' : 'PLANNED' } });
   }
 
   /** Stage / priority / location change carried by an event, under optimistic versioning. */
   private async progressEpisode(
     tx: Db,
     actor: OperationalClinicActor,
-    unit: { id: string; settings: Prisma.JsonValue | null },
+    unit: { id: string; kind: string; settings: Prisma.JsonValue | null },
     episodeId: string,
     update: { version: number; stage?: string; priority?: (typeof CARE_PRIORITY_VALUES)[number]; locationLabel?: string },
   ) {
@@ -791,6 +846,8 @@ export class CareWorkflowService {
       if (Array.isArray(stages) && stages.length && !stages.includes(update.stage)) {
         throw new BadRequestException(`Étape « ${update.stage} » non prévue par la configuration de l’unité.`);
       }
+      if (['AMBULANCE', 'DIALYSIS', 'SURGERY'].includes(unit.kind)) throw new BadRequestException('Documentez une étape pour faire progresser cette prise en charge.');
+      assertStageProgress(unit.kind, episode.stage, update.stage, Array.isArray(stages) ? stages as string[] : undefined);
       data.stage = update.stage;
       changes.stage = { from: episode.stage, to: update.stage };
     }
@@ -815,22 +872,34 @@ export class CareWorkflowService {
     return this.run(actorInput, async (tx, actor) => {
       const original = await tx.careEvent.findFirst({ where: { id, clinicId: actor.clinicId } });
       const reason = assertCorrection(original, dto.reason);
-      if (!original!.careUnitId) throw new ForbiddenException('Cet événement système ne peut pas être corrigé manuellement.');
-      await this.access.requireUnit(tx, actor, original!.careUnitId, 'write');
-      const alreadyCorrected = await tx.careEvent.findFirst({ where: { correctsEventId: id }, select: { id: true } });
-      if (alreadyCorrected) throw new ConflictException('Cet événement a déjà été corrigé : corrigez la dernière version.');
+      if (!original?.careUnitId) throw new ForbiddenException('Cet événement système ne peut pas être corrigé manuellement.');
+      const { unit } = await this.access.requireUnit(tx, actor, original.careUnitId, 'write');
+      assertEventProfession(actor.primaryRole, original.type, dto.payload ?? original.payload as Record<string, unknown> | null);
+      if (['DELIVERY', 'BIRTH', 'NEWBORN_REGISTERED', 'SURGERY_SCHEDULED', 'DISCHARGE_AUTHORIZED'].includes(original.type)) throw new ConflictException('Cet événement est lié à des dossiers métier : une correction composite est requise.');
+      if (original.episodeId && ['MISSION_STEP', 'DIALYSIS_STEP', 'SURGERY_STEP'].includes(original.type)) { const episode = await this.findEpisode(tx, actor, original.episodeId); if (isTerminal('episode', episode.status)) throw new ConflictException('Une étape d’un épisode clôturé exige une réouverture contrôlée.'); }
+      if (original.patientId) await this.lockPatient(tx, actor, original.patientId);
+      if (await tx.careEvent.findFirst({ where: { correctsEventId: id }, select: { id: true } })) throw new ConflictException('Cet événement a déjà été corrigé : corrigez la dernière version.');
       if (!dto.retract && !dto.summary) throw new BadRequestException('Une correction doit contenir la nouvelle information.');
-      return this.recordEvent(tx, actor, {
-        careUnitId: original!.careUnitId, patientId: original!.patientId, episodeId: original!.episodeId,
-        requestId: original!.requestId, taskId: original!.taskId, transferId: original!.transferId,
-        type: dto.retract ? ENTERED_IN_ERROR_EVENT : original!.type,
-        summary: dto.retract ? `Saisie retirée : ${original!.summary}` : dto.summary!.trim(),
-        payload: dto.retract ? undefined : (dto.payload as Prisma.InputJsonValue | undefined) ?? (original!.payload as Prisma.InputJsonValue | undefined),
-        occurredAt: original!.occurredAt,
-        requiresValidation: dto.retract ? false : original!.requiresValidation,
-        correctsEventId: id,
-        correctionReason: reason,
+      const event = await this.recordEvent(tx, actor, {
+        careUnitId: original.careUnitId, patientId: original.patientId, episodeId: original.episodeId,
+        requestId: original.requestId, taskId: original.taskId, transferId: original.transferId,
+        type: dto.retract ? ENTERED_IN_ERROR_EVENT : original.type,
+        summary: dto.retract ? `Saisie retirée : ${original.summary}` : dto.summary?.trim() ?? '',
+        payload: dto.retract ? undefined : dto.payload as Prisma.InputJsonValue | undefined ?? original.payload as Prisma.InputJsonValue,
+        occurredAt: original.occurredAt, requiresValidation: dto.retract ? false : original.requiresValidation,
+        correctsEventId: id, correctionReason: reason,
       });
+      const settings = unit.settings as { stageEventType?: string; stages?: string[] } | null;
+      if (original.episodeId && settings?.stageEventType === original.type) {
+        if (!dto.retract && (!dto.payload?.stage || !settings.stages?.includes(String(dto.payload.stage)))) throw new BadRequestException('Étape corrigée invalide.');
+        const events = await tx.careEvent.findMany({ where: { episodeId: original.episodeId, type: original.type, corrections: { none: {} } }, orderBy: [{ occurredAt: 'asc' }, { recordedAt: 'asc' }, { id: 'asc' }] });
+        const effective = eventsInForce(events);
+        if (!dto.retract) { const index = effective.findIndex(e => e.id === event.id); const previous = effective[index - 1]; const previousStage = (previous?.payload as { stage?: string } | null)?.stage ?? settings.stages?.[0] ?? null; assertStageProgress(unit.kind, previousStage, String(dto.payload?.stage), settings.stages); }
+        const latest = effective.at(-1);
+        const stage = (latest?.payload as { stage?: string } | null)?.stage ?? settings.stages?.[0] ?? null;
+        await tx.careEpisode.updateMany({ where: { id: original.episodeId, clinicId: actor.clinicId }, data: { stage, version: { increment: 1 } } });
+      }
+      return event;
     });
   }
 
@@ -841,6 +910,7 @@ export class CareWorkflowService {
       if (!original.requiresValidation) throw new BadRequestException('Cet événement ne requiert pas de validation.');
       if (!original.careUnitId) throw new ForbiddenException('Événement sans unité : validation impossible.');
       await this.access.requireUnit(tx, actor, original.careUnitId, 'validate');
+      assertEventProfession(actor.primaryRole, original.type, original.payload as Record<string, unknown> | null);
       if (original.authorId === actor.id) throw new ForbiddenException('Un événement ne peut pas être validé par son auteur.');
       const [validated, corrected] = await Promise.all([
         tx.careEvent.findFirst({ where: { validatesEventId: id }, select: { id: true } }),
@@ -1588,6 +1658,121 @@ export class CareWorkflowService {
     return { labRequestId: labRequest.id, labResultId: result.id };
   }
 
+  scheduleSurgery(careUnitId: string, dto: ScheduleSpecialtySurgeryDto, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const { unit } = await this.access.requireUnit(tx, actor, careUnitId, 'write');
+      if (unit.kind !== 'SURGERY') throw new BadRequestException('Unité de chirurgie requise.');
+      assertEventProfession(actor.primaryRole, 'SURGERY_SCHEDULED');
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`surgery-schedule:${actor.clinicId}`}))`);
+      await this.lockPatient(tx, actor, dto.patientId); await this.access.requirePatient(tx, actor, dto.patientId);
+      const prior = await tx.careEvent.findFirst({ where: { clinicId: actor.clinicId, type: 'SURGERY_SCHEDULED', payload: { path: ['operationId'], equals: dto.operationId } } });
+      if (prior?.episodeId) return tx.careEpisode.findFirstOrThrow({ where: { id: prior.episodeId, patientId: dto.patientId } });
+      const at = new Date(dto.scheduledAt); const end = at.getTime() + dto.durationMinutes * 60_000;
+      if (!Number.isFinite(end) || at <= new Date()) throw new BadRequestException('Date future et durée positive requises.');
+      const resource = await tx.careResource.findFirst({ where: { clinicId: actor.clinicId, careUnitId, kind: 'ROOM', code: dto.room } });
+      if (!resource || ['UNAVAILABLE', 'MAINTENANCE', 'RETIRED'].includes(resource.status)) throw new ConflictException('Salle indisponible.');
+      const configuredRoomId = (resource.details as { operatingRoomId?: string } | null)?.operatingRoomId;
+      let room = await tx.operatingRoom.findFirst({ where: { clinicId: actor.clinicId, active: true, deletedAt: null, ...(configuredRoomId ? { id: configuredRoomId } : { name: resource.code }) } });
+      if (!room && !configuredRoomId) room = await tx.operatingRoom.create({ data: { clinicId: actor.clinicId, name: resource.code, location: resource.label } });
+      if (!room) throw new ConflictException('La salle opératoire configurée est inactive ou introuvable.');
+      const existing = await tx.surgery.findMany({ where: { patient: { clinicId: actor.clinicId }, deletedAt: null, status: { in: ['PLANNED', 'PREOP', 'IN_PROGRESS'] }, OR: [{ operatingRoomId: room.id }, { surgeonId: actor.id }] } });
+      for (const item of existing) {
+        if (!item.scheduledAt) continue;
+        const link = await tx.careEvent.findFirst({ where: { clinicId: actor.clinicId, type: 'SURGERY_SCHEDULED', payload: { path: ['surgeryId'], equals: item.id } } });
+        const duration = Number((link?.payload as { durationMinutes?: number } | null)?.durationMinutes ?? 120);
+        if (item.scheduledAt.getTime() < end && at.getTime() < item.scheduledAt.getTime() + duration * 60_000) throw new ConflictException('Salle ou chirurgien déjà réservé sur ce créneau.');
+      }
+      if (await tx.careEpisode.findFirst({ where: { clinicId: actor.clinicId, careUnitId, patientId: dto.patientId, status: { in: [...OPEN_EPISODE] } } })) throw new ConflictException('Prise en charge déjà ouverte dans cette unité.');
+      if (dto.sourceRequestId) {
+        const request = await this.findRequest(tx, actor, dto.sourceRequestId);
+        if (request.patientId !== dto.patientId || request.performerUnitId !== careUnitId) throw new BadRequestException('Demande source incompatible.');
+      }
+      const surgery = await tx.surgery.create({ data: { patientId: dto.patientId, operatingRoomId: room.id, surgeonId: actor.id, scheduledAt: at, procedureName: dto.procedure, indication: String(dto.details?.notes ?? dto.procedure) } });
+      const episode = await tx.careEpisode.create({ data: { clinicId: actor.clinicId, patientId: dto.patientId, careUnitId, status: 'PLANNED', stage: 'SCHEDULED', plannedAt: at, responsibleUserId: actor.id, priority: dto.priority ?? 'ROUTINE', sourceRequestId: dto.sourceRequestId, createdById: actor.id, reason: dto.procedure } });
+      await this.recordEvent(tx, actor, { careUnitId, patientId: dto.patientId, episodeId: episode.id, type: 'SURGERY_SCHEDULED', summary: `Programmé : ${dto.procedure}`, payload: { ...dto.details, operationId: dto.operationId, surgeryId: surgery.id, operatingRoomId: room.id, roomResourceId: resource.id, surgeonId: actor.id, surgeon: actor.id, procedure: dto.procedure, room: resource.code, start: at.toISOString(), durationMinutes: dto.durationMinutes } });
+      return episode;
+    });
+  }
+
+  admitFromEmergency(id: string, version: number, bedId: string, reason: string, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      if (actor.primaryRole !== 'PHYSICIAN') throw new ForbiddenException('Seul le médecin peut hospitaliser.');
+      const episode = await this.findEpisode(tx, actor, id);
+      const { unit } = await this.access.requireUnit(tx, actor, episode.careUnitId, 'write');
+      if (unit.kind !== 'EMERGENCY' || isTerminal('episode', episode.status)) throw new ConflictException('Prise en charge aux urgences active requise.');
+      await this.lockPatient(tx, actor, episode.patientId);
+      if (await tx.hospitalization.findFirst({ where: { clinicId: actor.clinicId, patientId: episode.patientId, status: { in: ['ADMITTED', 'TRANSFERRED'] }, deletedAt: null } })) throw new ConflictException('Patient déjà hospitalisé.');
+      const beds = new BedAssignmentService(); await beds.assertAvailable(tx, bedId, actor.clinicId);
+      const bed = await tx.bed.findFirstOrThrow({ where: { id: bedId }, include: { room: true } });
+      const admission = await tx.hospitalization.create({ data: { clinicId: actor.clinicId, patientId: episode.patientId, physicianId: actor.id, serviceUnitId: bed.room.serviceUnitId, admissionReason: reason, bedNumber: bed.code } });
+      await beds.claim(tx, bedId, admission.id);
+      const updated = await tx.careEpisode.updateMany({ where: { id, version }, data: { stage: 'DISPOSITION', version: { increment: 1 } } }); this.conflictIfStale(updated.count);
+      const workflow = await this.patientWorkflow.transitionDetailed(tx, episode.patientId, 'HOSPITALISE', actor.clinicId);
+      if (workflow.outcome === 'blocked' || workflow.outcome === 'not_found') throw new ConflictException('Statut patient incompatible avec l’admission.');
+      await this.recordEvent(tx, actor, { careUnitId: unit.id, patientId: episode.patientId, episodeId: id, type: 'ORIENTATION', summary: reason, payload: { outcome: 'HOSPITALIZATION', hospitalizationId: admission.id, bedId } });
+      return admission;
+    });
+  }
+
+  availableAdmissionBeds(careUnitId: string, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      await this.access.requireUnit(tx, actor, careUnitId, 'read');
+      return tx.bed.findMany({ where: { status: 'FREE', hospitalizationId: null, room: { serviceUnit: { clinicId: actor.clinicId, category: 'OTHER_CLINICAL', active: true, deletedAt: null } } }, select: { id: true, code: true, room: { select: { name: true } } } });
+    });
+  }
+
+  registerDelivery(careUnitId: string, dto: RegisterDeliveryDto, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const { unit } = await this.access.requireUnit(tx, actor, careUnitId, 'write');
+      this.requireMaternity(unit); assertEventProfession(actor.primaryRole, 'DELIVERY');
+      const motherEpisode = await this.findEpisode(tx, actor, dto.motherEpisodeId);
+      if (motherEpisode.careUnitId !== unit.id) throw new BadRequestException('La mère doit être prise en charge dans cette maternité.');
+      await this.lockPatient(tx, actor, motherEpisode.patientId);
+      const prior = await tx.careEvent.findFirst({ where: { episodeId: motherEpisode.id, type: 'DELIVERY' } });
+      if (prior) {
+        if ((prior.payload as { operationId?: string } | null)?.operationId !== dto.operationId) throw new ConflictException('Accouchement déjà enregistré.');
+        return tx.careEpisode.findMany({ where: { parentEpisodeId: motherEpisode.id }, include: { patient: patientSummary } });
+      }
+      if (isTerminal('episode', motherEpisode.status)) throw new ConflictException('Prise en charge de la mère clôturée.');
+      const mother = await tx.patient.findFirstOrThrow({ where: { id: motherEpisode.patientId, clinicId: actor.clinicId } });
+      const at = this.occurredAt(dto.birthAt);
+      const updated = await tx.careEpisode.updateMany({ where: { id: motherEpisode.id, version: dto.version }, data: { stage: 'POSTPARTUM', version: { increment: 1 } } });
+      this.conflictIfStale(updated.count);
+      await this.recordEvent(tx, actor, { careUnitId, patientId: mother.id, episodeId: motherEpisode.id, type: 'DELIVERY', summary: dto.summary, occurredAt: at, payload: { ...dto.details, births: dto.babies.length, operationId: dto.operationId } });
+      const babies = [];
+      for (const [index, baby] of dto.babies.entries()) {
+        const patient = await tx.patient.create({ data: { clinicId: actor.clinicId, firstName: baby.firstName?.trim() || `Nouveau-né ${index + 1}`, lastName: mother.lastName, gender: baby.sex, dateOfBirth: at, motherPatientId: mother.id } });
+        const episode = await tx.careEpisode.create({ data: { clinicId: actor.clinicId, patientId: patient.id, careUnitId, status: 'IN_PROGRESS', stage: 'NEWBORN', priority: motherEpisode.priority, startedAt: at, parentEpisodeId: motherEpisode.id, createdById: actor.id } });
+        const payload = { birthOrder: index + 1, motherPatientId: mother.id, newbornPatientId: patient.id, newbornEpisodeId: episode.id, measurements: baby.measurements ?? {}, operationId: dto.operationId } as Prisma.InputJsonValue;
+        await this.recordEvent(tx, actor, { careUnitId, patientId: patient.id, episodeId: episode.id, type: 'NEWBORN_REGISTERED', summary: 'Naissance enregistrée.', payload, occurredAt: at });
+        await this.recordEvent(tx, actor, { careUnitId, patientId: mother.id, episodeId: motherEpisode.id, type: 'BIRTH', summary: `Naissance ${index + 1} enregistrée.`, payload, occurredAt: at });
+        babies.push({ ...episode, patient });
+      }
+      await tx.pregnancy.updateMany({ where: { clinicId: actor.clinicId, patientId: mother.id, status: 'ONGOING' }, data: { status: 'DELIVERED', outcome: 'Accouchement', endedAt: at, version: { increment: 1 } } });
+      return babies;
+    });
+  }
+
+  authorizeClinicalDischarge(patientId: string, careUnitId: string, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      await this.access.requireUnit(tx, actor, careUnitId, 'write');
+      if (actor.primaryRole !== 'PHYSICIAN') throw new ForbiddenException('Le médecin doit autoriser la sortie clinique globale.');
+      await this.lockPatient(tx, actor, patientId); await this.access.requirePatient(tx, actor, patientId);
+      const linked = await tx.careEpisode.count({ where: { clinicId: actor.clinicId, patientId, careUnitId } });
+      if (!linked) throw new ForbiddenException('Le patient n’a pas été pris en charge dans cette unité.');
+      const pending = await tx.careEpisode.count({ where: { clinicId: actor.clinicId, patientId, status: { in: [...OPEN_EPISODE] } } });
+      const tasks = await tx.careTask.count({ where: { clinicId: actor.clinicId, patientId, status: { in: OPEN_TASK } } });
+      const requests = await tx.serviceRequest.count({ where: { clinicId: actor.clinicId, patientId, status: { in: ['DRAFT', 'ACTIVE', 'ON_HOLD'] } } });
+      const stays = await tx.hospitalization.count({ where: { clinicId: actor.clinicId, patientId, deletedAt: null, status: { in: ['ADMITTED', 'TRANSFERRED'] } } });
+      if (pending || tasks || requests || stays) throw new ConflictException('Des soins, demandes ou hospitalisations sont encore ouverts.');
+      const patient = await tx.patient.findFirstOrThrow({ where: { id: patientId, clinicId: actor.clinicId } });
+      const target = patient.workflowStatus === 'HOSPITALISE' ? 'HOSPITALISE' : 'EN_ATTENTE_VALIDATION_CAISSE';
+      const workflow = await this.patientWorkflow.transitionDetailed(tx, patientId, target, actor.clinicId);
+      if (workflow.outcome === 'blocked' || workflow.outcome === 'not_found') throw new ConflictException('Le statut patient ne permet pas cette sortie.');
+      return this.recordEvent(tx, actor, { careUnitId, patientId, type: 'DISCHARGE_AUTHORIZED', summary: 'Sortie clinique autorisée par le médecin. Caisse en attente.' });
+    });
+  }
+
   // ======================================================================= maternity
 
   private pregnancyData(dto: Partial<CreatePregnancyDto>) {
@@ -1602,7 +1787,8 @@ export class CareWorkflowService {
 
   listPregnancies(careUnitId: string, status: string | undefined, actorInput?: AuthenticatedActor) {
     return this.run(actorInput, async (tx, actor) => {
-      await this.access.requireUnit(tx, actor, careUnitId, 'read');
+      const { unit } = await this.access.requireUnit(tx, actor, careUnitId, 'read');
+      this.requireMaternity(unit);
       const where: Prisma.PregnancyWhereInput = { clinicId: actor.clinicId };
       if (status === 'ONGOING' || status === 'DELIVERED' || status === 'ENDED') where.status = status;
       return tx.pregnancy.findMany({
@@ -1614,7 +1800,10 @@ export class CareWorkflowService {
   createPregnancy(careUnitId: string, dto: CreatePregnancyDto, actorInput?: AuthenticatedActor) {
     return this.run(actorInput, async (tx, actor) => {
       const { unit } = await this.access.requireUnit(tx, actor, careUnitId, 'write');
+      this.requireMaternity(unit);
+      assertEventProfession(actor.primaryRole, 'BIRTH');
       await this.access.requirePatient(tx, actor, dto.patientId);
+      await this.lockPatient(tx, actor, dto.patientId);
       const ongoing = await tx.pregnancy.findFirst({ where: { clinicId: actor.clinicId, patientId: dto.patientId, status: 'ONGOING' }, select: { id: true } });
       if (ongoing) throw new ConflictException('Cette patiente a déjà une grossesse en cours de suivi.');
       const pregnancy = await tx.pregnancy.create({
@@ -1632,6 +1821,8 @@ export class CareWorkflowService {
   updatePregnancy(careUnitId: string, id: string, dto: UpdatePregnancyDto, actorInput?: AuthenticatedActor) {
     return this.run(actorInput, async (tx, actor) => {
       const { unit } = await this.access.requireUnit(tx, actor, careUnitId, 'write');
+      this.requireMaternity(unit);
+      assertEventProfession(actor.primaryRole, 'BIRTH');
       const pregnancy = await tx.pregnancy.findFirst({ where: { id, clinicId: actor.clinicId } });
       if (!pregnancy) throw new NotFoundException('Grossesse introuvable.');
       const ending = Boolean(dto.status && dto.status !== 'ONGOING');
@@ -1664,10 +1855,15 @@ export class CareWorkflowService {
   registerNewborn(careUnitId: string, dto: RegisterNewbornDto, actorInput?: AuthenticatedActor) {
     return this.run(actorInput, async (tx, actor) => {
       const { unit } = await this.access.requireUnit(tx, actor, careUnitId, 'write');
+      this.requireMaternity(unit);
+      assertEventProfession(actor.primaryRole, 'BIRTH');
       const motherEpisode = await this.findEpisode(tx, actor, dto.motherEpisodeId);
       if (motherEpisode.careUnitId !== unit.id || isTerminal('episode', motherEpisode.status)) {
         throw new BadRequestException('La mère doit être prise en charge dans cette unité.');
       }
+      await this.lockPatient(tx, actor, motherEpisode.patientId);
+      const existing = await tx.careEvent.findFirst({ where: { episodeId: motherEpisode.id, type: 'BIRTH', payload: { path: ['birthOrder'], equals: dto.birthOrder ?? 1 } } });
+      if (existing) throw new ConflictException('Cette naissance est déjà enregistrée pour cette prise en charge.');
       const mother = await tx.patient.findFirstOrThrow({ where: { id: motherEpisode.patientId }, select: { id: true, lastName: true, firstName: true } });
       const birthAt = this.occurredAt(dto.birthAt);
       const order = dto.birthOrder && dto.birthOrder > 1 ? ` ${dto.birthOrder}` : '';

@@ -823,6 +823,7 @@ export class HospitalizationsService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`patient-workflow:${actor.clinicId}:${current.patientId}`}))`);
       const hospitalization = await tx.hospitalization.update({
         where: { id: current.id },
         data,
@@ -836,12 +837,8 @@ export class HospitalizationsService {
           where: { hospitalizationId: current.id, releasedAt: null },
           data: { releasedAt: new Date() },
         });
-        await this.patientWorkflow.transition(
-          tx,
-          current.patientId,
-          PatientWorkflowStatus.TERMINE,
-          actor.clinicId,
-        );
+        const specialty = await tx.careEpisode.findFirst({ where: { patientId: current.patientId, clinicId: actor.clinicId }, select: { id: true } });
+        if (!specialty) await this.patientWorkflow.transition(tx, current.patientId, PatientWorkflowStatus.TERMINE, actor.clinicId);
         await tx.auditTrail.create({
           data: {
             actorId: actor.id,

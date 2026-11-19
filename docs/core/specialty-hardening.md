@@ -1,0 +1,19 @@
+# Specialty workflow hardening
+
+Scope: seven risk groups from the November 19 review. Clinical discharge is authorized by a physician, followed by the cashier's payment verification. Completion of one unit episode never authorizes global discharge.
+
+## Delivered safeguards
+- Ordered ambulance/dialysis/surgical stage recording; direct stage mutation is refused for these specialties. Replacements remain visible, retractions reconcile materialized stage. Missing previous offline steps must be replayed first; rejected writes remain errors, not successful acknowledgments.
+- Corrected triage appears in worklists. Emergency admission atomically creates Hospitalization, claims a real eligible bed, records orientation and updates patient workflow. Closure of a hospitalization-oriented emergency episode requires an actual admission.
+- Unit surgery scheduling is atomic and idempotent, produces Surgery + CareEpisode + canonical event link. Both legacy and unit scheduling serialize clinic schedules; room/surgeon conflicts are refused. The legacy scheduler additionally checks anesthesiologist conflicts. Legacy duration fallback remains 120 minutes. Existing unlinked historical surgeries are NOT fuzzy-matched to episodes. Legacy creation links an episode when the actor has an active surgical unit assignment.
+- Surgery checklist missing/problem answers block closure; phase gates protect anesthesia/incision/exit. Resolution uses signed event correction, never deletion.
+- Suspended/stopped dialysis prescriptions cannot start a session; connection/start requires a current active prescription and assigned engaged machine. Completion requires all intermediate stages plus pre/parameter/post documents.
+- Delivery creates mother event and all child records/episodes in one transaction. operationId makes retries return existing records; mismatched repeat operations are refused. Maternity-specific pregnancy/newborn operations reject other unit kinds.
+- Physician authorization requires no active episodes/tasks/requests/hospitalizations; cashier rechecks these, authorization and payments. Pharmacy and inpatient discharge do not automatically finish specialized journeys. HOSPITALISE is retained until cashier termination after clinical approval, preserving existing global status rules.
+- Sensitive events require a qualified professional in addition to active writable unit assignment; correction and validation use the same profession check. Reception cannot prescribe/triage/birth; nurses cannot prescribe dialysis or perform incision/anesthesia; midwives can document birth. Existing LEAD/no-self-validation rules remain.
+
+## Verification
+167 unit tests; 15 existing PostgreSQL E2E tests, with the workflow test extended to cover stage correction, corrected triage, atomic admission rollback/real bed, twins/retry/rollback, dialysis guards, physician-then-cashier payment refusal and concurrent surgical reservation. Type checks pass using tsgo's node16 override for the external legacy backend configuration. Connected browser recipe: five specialty screens render; HTTP delivery returns 201 and both babies read back in the newborn screen; no browser runtime errors. A pre-existing StrictMode loader timer bug was fixed to make this inspection possible.
+
+## Remaining clinical deployment checks
+These safeguards do not constitute exhaustive validation of all 107 route declarations. Clinical staff must approve the profession matrix and local checklist configuration before use. No automatic migration/reconciliation of historical surgical records, clinical stock consumption, maintenance orders, or generalized anesthesiologist scheduling selector was added. These are documented boundaries, not silently simulated functionality. Source input is the PR #3 head; no production patient data used.

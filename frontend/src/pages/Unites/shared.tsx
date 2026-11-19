@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  acknowledgeTransfer, ageLabel, genderLabel, changeEpisodeStatus, changeRequestStatus, changeTaskStatus, correctCareEvent, createServiceRequest,
+  authorizeClinicalDischarge, acknowledgeTransfer, ageLabel, genderLabel, changeEpisodeStatus, changeRequestStatus, changeTaskStatus, correctCareEvent, createServiceRequest,
   decideTransfer, fetchClinicUnits, fetchImagingCatalogue, fetchLaboratoryCatalogue, fetchEpisode, fetchUnitHistory, KIND_LABELS, mergeProvisionalPatient, patientName, personName,
   PRIORITY_LABELS, recordCareEvent, reportTaskResult, REQUEST_STATUS_LABELS, searchCarePatients, sendTransfer, TASK_STATUS_LABELS, timeLabel,
   type CareEpisode, type CarePriority, type CareTask, type CareTransfer, type CareUnit, type CareUnitRole, type EpisodeDetail,
   type LabCatalogueItem, type PatientSummary, type ResultObservation, type ServiceRequest,
 } from "../../api/careWorkflow";
+import { useAuth } from "../../context/AuthContext";
 import { isQueued } from "../../offline/offlineQueue";
 import { Badge, Button, Card, Dialog, Empty, Field, inputClass, PriorityBadge } from "./ui";
 
@@ -369,6 +370,7 @@ export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extr
   episodeId: string; unit: CareUnit; role: CareUnitRole; onClose: () => void; onChanged: () => void; stageLabels?: Record<string, string>;
   extraActions?: (detail: EpisodeDetail, reload: () => void) => React.ReactNode;
 }) {
+  const { currentUser } = useAuth();
   const [detail, setDetail] = useState<EpisodeDetail | null>(null);
   const [note, setNote] = useState("");
   const [noteType, setNoteType] = useState("OBSERVATION");
@@ -433,6 +435,7 @@ export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extr
             </div>
           )}
 
+          {currentUser?.primaryRole === 'PHYSICIAN' && detail.status === 'COMPLETED' && <Button small onClick={async () => { try { await authorizeClinicalDischarge(detail.patientId, unit.id); setNotice('Sortie clinique autorisée. Contrôle de caisse en attente.'); reload(); } catch { /* reported globally */ } }}>Autoriser la sortie clinique globale</Button>}
           <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
             <Card title="Chronologie">
               {writable && (

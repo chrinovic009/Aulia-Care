@@ -41,8 +41,7 @@ type FieldDef = { key: string; label: string; options?: string[]; long?: boolean
 type Prescription = CareEvent & { patientId?: string | null; patient?: PatientSummary };
 const summaryOf = (fields: FieldDef[], values: Record<string, string>) => fields.filter((f) => values[f.key]).map((f) => `${f.label} : ${values[f.key]}`).join(" · ");
 const stageOf = (episode: CareEpisode) => {
-  const step = (episode.events ?? []).find((event) => event.type === "DIALYSIS_STEP")?.payload?.stage;
-  return typeof step === "string" ? step : episode.stage ?? "ARRIVAL";
+  return episode.stage ?? "ARRIVAL";
 };
 const num = (value: unknown) => { const n = Number(String(value ?? "").replace(",", ".").replace(/[^\d.-]/g, "")); return Number.isFinite(n) && String(value ?? "").trim() !== "" ? n : null; };
 
@@ -132,7 +131,7 @@ export function DialyseModule({ worklist, tab, reload, openDossier }: Props) {
     for (const item of prescriptions) if (item.patientId) map.set(item.patientId, item);
     return [...map.values()].sort((a, b) => patientName(a.patient).localeCompare(patientName(b.patient)));
   }, [prescriptions]);
-  const active = current.filter((item) => item.payload?.status !== "Arrêtée");
+  const active = current.filter((item) => item.payload?.status === "En cours");
   const machines = resources.filter((item) => item.kind === "MACHINE");
   const sessions = episodes;
   const inProgress = sessions.filter((episode) => ["CONNECTION", "START", "MONITORING", "END"].includes(stageOf(episode)));
@@ -227,7 +226,7 @@ export function DialyseModule({ worklist, tab, reload, openDossier }: Props) {
         <Card title={`Patients en dialyse (${active.length})`} actions={writable ? <Button small onClick={() => setNewPatient(true)}>Inscrire un patient</Button> : undefined}>
           {!current.length ? <Empty>Aucun patient. Inscrivez un patient avec sa prescription.</Empty> : (
             <ul className="space-y-2">{current.map((item) => patientRow(item, <>
-              {item.payload?.status !== "Arrêtée" && !sessions.some((episode) => episode.patientId === item.patientId) && <Button small onClick={() => void startSession(item.patientId!)}>Ouvrir la séance</Button>}
+              {item.payload?.status === "En cours" && !sessions.some((episode) => episode.patientId === item.patientId) && <Button small onClick={() => void startSession(item.patientId!)}>Ouvrir la séance</Button>}
             </>))}</ul>
           )}
         </Card>

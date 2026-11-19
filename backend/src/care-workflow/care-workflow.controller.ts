@@ -18,6 +18,10 @@ import {
   OpenEpisodeDto,
   RegisterArrivalDto,
   RegisterNewbornDto,
+  RegisterDeliveryDto,
+  ScheduleSpecialtySurgeryDto,
+  AdmitEmergencyDto,
+  AuthorizeClinicalDischargeDto,
   ReportTaskResultDto,
   ValidateProtocolDto,
   RecordCareEventDto,
@@ -120,6 +124,21 @@ export class CareWorkflowController {
   newborn(@Param('unitId', ParseUUIDPipe) unitId: string, @Body() dto: RegisterNewbornDto, @Request() req: AuthedRequest) {
     return this.workflow.registerNewborn(unitId, dto, req.user);
   }
+
+  @Post('units/:unitId/deliveries')
+  delivery(@Param('unitId', ParseUUIDPipe) unitId: string, @Body() dto: RegisterDeliveryDto, @Request() req: AuthedRequest) { return this.workflow.registerDelivery(unitId, dto, req.user); }
+
+  @Post('units/:unitId/surgeries')
+  scheduleSurgery(@Param('unitId', ParseUUIDPipe) unitId: string, @Body() dto: ScheduleSpecialtySurgeryDto, @Request() req: AuthedRequest) { return this.workflow.scheduleSurgery(unitId, dto, req.user); }
+
+  @Post('patients/:patientId/clinical-discharge')
+  clinicalDischarge(@Param('patientId', ParseUUIDPipe) patientId: string, @Body() dto: AuthorizeClinicalDischargeDto, @Request() req: AuthedRequest) { return this.workflow.authorizeClinicalDischarge(patientId, dto.careUnitId, req.user); }
+
+  @Post('episodes/:id/hospitalization')
+  admitEmergency(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdmitEmergencyDto, @Request() req: AuthedRequest) { return this.workflow.admitFromEmergency(id, dto.version, dto.bedId, dto.reason, req.user); }
+
+  @Get('units/:unitId/admission-beds')
+  admissionBeds(@Param('unitId', ParseUUIDPipe) unitId: string, @Request() req: AuthedRequest) { return this.workflow.availableAdmissionBeds(unitId, req.user); }
 
   @Get('units/:unitId/register')
   register(

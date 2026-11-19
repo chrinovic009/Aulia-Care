@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ClinicContextService } from '../core/clinic-context.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -75,23 +77,16 @@ export class SurgeryService {
       });
       if (!anesthesiologist) throw new BadRequestException('Anesthésiste introuvable dans cet établissement.');
     }
-    const twoHours = 2 * 60 * 60 * 1000;
-    const conflictingSurgery = await this.prisma.surgery.findFirst({
-      where: {
-        operatingRoomId: operatingRoom.id,
-        deletedAt: null,
-        patient: { clinicId: actor.clinicId },
-        status: { in: ['PLANNED', 'PREOP', 'IN_PROGRESS'] },
-        scheduledAt: {
-          gte: new Date(scheduledAt.getTime() - twoHours),
-          lte: new Date(scheduledAt.getTime() + twoHours),
-        },
-      },
-    });
-    if (conflictingSurgery) {
-      throw new BadRequestException('Conflit de créneau : cette salle est déjà réservée dans la fenêtre opératoire de sécurité.');
-    }
     return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`surgery-schedule:${actor.clinicId}`}))`);
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`patient-workflow:${actor.clinicId}:${data.patientId}`}))`);
+      const reservations = await tx.surgery.findMany({ where: { deletedAt: null, patient: { clinicId: actor.clinicId }, status: { in: ['PLANNED', 'PREOP', 'IN_PROGRESS'] }, OR: [{ operatingRoomId: operatingRoom.id }, { surgeonId: actor.id }, ...(data.anesthesiologistId ? [{ anesthesiologistId: data.anesthesiologistId }] : [])] } });
+      for (const reservation of reservations) {
+        if (!reservation.scheduledAt) continue;
+        const link = await tx.careEvent.findFirst({ where: { clinicId: actor.clinicId, type: 'SURGERY_SCHEDULED', payload: { path: ['surgeryId'], equals: reservation.id } } });
+        const duration = Number((link?.payload as { durationMinutes?: number } | null)?.durationMinutes ?? 120);
+        if (reservation.scheduledAt.getTime() < scheduledAt.getTime() + 120 * 60_000 && scheduledAt.getTime() < reservation.scheduledAt.getTime() + duration * 60_000) throw new BadRequestException('Conflit de créneau : salle ou professionnel déjà réservé.');
+      }
       const surgery = await tx.surgery.create({
         data: {
           patientId: data.patientId,
@@ -107,6 +102,13 @@ export class SurgeryService {
         },
         include: { patient: true, operatingRoom: true, surgeon: { select: PUBLIC_USER_SELECT }, consultation: true },
       });
+      const unit = await tx.careUnit.findFirst({ where: { clinicId: actor.clinicId, kind: 'SURGERY', active: true, assignments: { some: { userId: actor.id, active: true, startsAt: { lte: new Date() }, OR: [{ endsAt: null }, { endsAt: { gt: new Date() } }], unitRole: { in: ['MEMBER', 'LEAD'] } } } } });
+      if (unit) {
+        const existingEpisode = await tx.careEpisode.findFirst({ where: { clinicId: actor.clinicId, careUnitId: unit.id, patientId: data.patientId, status: { in: ['PLANNED', 'IN_PROGRESS', 'ON_HOLD'] } } });
+        if (existingEpisode) throw new BadRequestException('Ce patient a déjà une prise en charge chirurgicale ouverte.');
+        const episode = await tx.careEpisode.create({ data: { clinicId: actor.clinicId, patientId: data.patientId, careUnitId: unit.id, status: 'PLANNED', stage: 'SCHEDULED', plannedAt: scheduledAt, responsibleUserId: actor.id, createdById: actor.id, reason: data.procedureName } });
+        await tx.careEvent.create({ data: { clinicId: actor.clinicId, careUnitId: unit.id, patientId: data.patientId, episodeId: episode.id, type: 'SURGERY_SCHEDULED', occurredAt: new Date(), summary: `Programmé : ${data.procedureName}`, authorId: actor.id, authorRole: actor.primaryRole ?? 'PHYSICIAN', payload: { operationId: randomUUID(), surgeryId: surgery.id, operatingRoomId: operatingRoom.id, procedure: data.procedureName, room: operatingRoom.name, surgeonId: actor.id, surgeon: actor.id, start: scheduledAt.toISOString(), durationMinutes: 120 } } });
+      }
       await tx.medicalHistory.create({
         data: {
           patientId: data.patientId,

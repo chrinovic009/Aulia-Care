@@ -187,3 +187,8 @@ export const genderLabel = (gender?: string | null) => (gender ? GENDER_LABELS[g
 export const minutesSince = (iso?: string | null) => (iso ? Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000)) : 0);
 export const durationLabel = (minutes: number) => (minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")}`);
 export const timeLabel = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "—");
+
+export const scheduleSpecialtySurgery = (unitId: string, body: { patientId: string; operationId: string; scheduledAt: string; durationMinutes: number; procedure: string; room: string; sourceRequestId?: string; priority?: CarePriority; details?: Record<string, unknown> }) => post<CareEpisode>(`${base}/units/${unitId}/surgeries`, body);
+export const authorizeClinicalDischarge = (patientId: string, careUnitId: string) => post<CareEvent>(`${base}/patients/${patientId}/clinical-discharge`, { careUnitId });
+export const fetchAdmissionBeds = (unitId: string) => apiFetch<Array<{ id: string; code: string; room: { name: string } }>>(`${base}/units/${unitId}/admission-beds`);
+export const admitFromEmergency = (episodeId: string, body: { version: number; bedId: string; reason: string }) => post(`${base}/episodes/${episodeId}/hospitalization`, body);

@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsDateString,
@@ -293,4 +294,37 @@ export class RegisterNewbornDto {
   @IsOptional() @IsObject() measurements?: Record<string, unknown>;
   /** Mark the mother's ongoing pregnancy as delivered. */
   @IsOptional() @IsBoolean() closePregnancy?: boolean;
+}
+
+export class DeliveryBabyDto {
+  @IsIn(['MALE', 'FEMALE', 'UNKNOWN']) sex: 'MALE' | 'FEMALE' | 'UNKNOWN';
+  @IsOptional() @IsString() @MaxLength(80) firstName?: string;
+  @IsOptional() @IsObject() measurements?: Record<string, unknown>;
+}
+export class RegisterDeliveryDto extends VersionedDto {
+  @IsUUID() motherEpisodeId: string;
+  @IsUUID() operationId: string;
+  @IsDateString() birthAt: string;
+  @IsString() @MinLength(2) @MaxLength(500) summary: string;
+  @IsOptional() @IsObject() details?: Record<string, unknown>;
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(10) @ValidateNested({ each: true }) @Type(() => DeliveryBabyDto) babies: DeliveryBabyDto[];
+}
+export class ScheduleSpecialtySurgeryDto {
+  @IsUUID() patientId: string;
+  @IsUUID() operationId: string;
+  @IsDateString() scheduledAt: string;
+  @Type(() => Number) @IsInt() @Min(1) durationMinutes: number;
+  @IsString() @MinLength(2) @MaxLength(255) procedure: string;
+  @IsString() @MinLength(1) @MaxLength(32) room: string;
+  @IsOptional() @IsUUID() sourceRequestId?: string;
+  @IsOptional() @IsIn(CARE_PRIORITIES) priority?: (typeof CARE_PRIORITIES)[number];
+  @IsOptional() @IsObject() details?: Record<string, unknown>;
+}
+
+export class AdmitEmergencyDto extends VersionedDto {
+  @IsUUID() bedId: string;
+  @IsString() @MinLength(2) @MaxLength(2000) reason: string;
+}
+export class AuthorizeClinicalDischargeDto {
+  @IsUUID() careUnitId: string;
 }

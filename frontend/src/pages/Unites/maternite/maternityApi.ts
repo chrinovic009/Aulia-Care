@@ -24,3 +24,5 @@ export const fetchUnitEvents = (unitId: string, params: { types: string[]; patie
   if (params.to) query.set("to", params.to);
   return apiFetch<Array<CareEvent & { patientId?: string | null; patient?: PatientSummary }>>(`${base(unitId)}/register?${query.toString()}`);
 };
+
+export const registerDelivery = (unitId: string, body: { motherEpisodeId: string; version: number; operationId: string; birthAt: string; summary: string; details: Record<string, string>; babies: Array<{ sex: 'MALE' | 'FEMALE' | 'UNKNOWN'; firstName?: string; measurements: Record<string, string> }> }) => apiFetch(`${base(unitId)}/deliveries`, json('POST', body));

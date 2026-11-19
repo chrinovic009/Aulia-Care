@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  ageLabel, durationLabel, genderLabel, minutesSince, patientName, personName, PRIORITY_RANK, recordCareEvent, registerArrival, timeLabel,
+  admitFromEmergency, fetchAdmissionBeds, ageLabel, durationLabel, genderLabel, minutesSince, patientName, personName, PRIORITY_RANK, recordCareEvent, registerArrival, timeLabel,
   updateEpisode, type CareEpisode, type PatientSummary, type TriageLevel, type Worklist,
 } from "../../../api/careWorkflow";
 import { isQueued } from "../../../offline/offlineQueue";
@@ -415,9 +415,14 @@ function OrientationButton({ episode, unitId, onDone }: { episode: CareEpisode; 
   const [open, setOpen] = useState(false);
   const [decision, setDecision] = useState("");
   const [destination, setDestination] = useState("HOME");
+  const [beds, setBeds] = useState<Array<{ id: string; code: string; room: { name: string } }>>([]);
+  const [bedId, setBedId] = useState("");
+  useEffect(() => { if (open && destination === "HOSPITALIZATION") void fetchAdmissionBeds(unitId).then(setBeds).catch(() => setBeds([])); }, [open, destination, unitId]);
   const submit = async () => {
     try {
-      await recordCareEvent({
+      if (destination === "HOSPITALIZATION") {
+        await admitFromEmergency(episode.id, { version: episode.version, bedId, reason: decision.trim() });
+      } else await recordCareEvent({
         careUnitId: unitId, episodeId: episode.id, type: "ORIENTATION", summary: decision.trim(), payload: { outcome: destination },
         episodeUpdate: { version: episode.version, stage: S.DISPOSITION },
       }, "Orientation");
@@ -436,8 +441,9 @@ function OrientationButton({ episode, unitId, onDone }: { episode: CareEpisode; 
                 <option value="TRANSFER_EXTERNAL">Autre établissement</option><option value="OBSERVATION">Surveillance prolongée aux urgences</option>
               </select>
             </Field>
+            {destination === "HOSPITALIZATION" && <Field label="Lit d’hospitalisation"><select className={inputClass} value={bedId} onChange={e => setBedId(e.target.value)}><option value="">Choisir un lit disponible</option>{beds.map(bed => <option key={bed.id} value={bed.id}>{bed.room.name} · {bed.code}</option>)}</select></Field>}
             <Field label="Décision médicale et consignes"><textarea className={inputClass} rows={3} value={decision} onChange={(e) => setDecision(e.target.value)} /></Field>
-            <div className="flex justify-end gap-2"><Button tone="ghost" onClick={() => setOpen(false)}>Annuler</Button><Button disabled={decision.trim().length < 2} onClick={() => void submit()}>Enregistrer la décision</Button></div>
+            <div className="flex justify-end gap-2"><Button tone="ghost" onClick={() => setOpen(false)}>Annuler</Button><Button disabled={decision.trim().length < 2 || (destination === "HOSPITALIZATION" && !bedId)} onClick={() => void submit()}>Enregistrer la décision</Button></div>
           </div>
         </Dialog>
       )}

@@ -19,6 +19,8 @@ export class PharmacyService {
    * nothing is left to pay. Hospitalized patients are closed by their discharge.
    */
   private async closeAmbulatoryJourneyIfDone(tx: Prisma.TransactionClient, patientId: string, clinicId: string) {
+    await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`patient-workflow:${clinicId}:${patientId}`}))`);
+    if (await tx.careEpisode.findFirst({ where: { patientId, clinicId }, select: { id: true } })) return;
     const patient = await tx.patient.findFirst({ where: { id: patientId, clinicId, deletedAt: null }, select: { workflowStatus: true } });
     if (patient?.workflowStatus !== PatientWorkflowStatus.EN_PHARMACIE) return;
     const pendingPrescriptions = await tx.prescription.count({

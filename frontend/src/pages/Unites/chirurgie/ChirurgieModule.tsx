@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ageLabel, changeEpisodeStatus, fetchEpisode, fetchResources, fetchUnitHistory, genderLabel, openEpisode, patientName, personName, PRIORITY_LABELS,
-  recordCareEvent, timeLabel, updateResource,
+  ageLabel, changeEpisodeStatus, fetchEpisode, fetchResources, fetchUnitHistory, genderLabel, patientName, personName, PRIORITY_LABELS,
+  recordCareEvent, scheduleSpecialtySurgery, timeLabel, updateResource,
   type CareEpisode, type CareEvent, type CareResource, type EpisodeDetail, type Worklist,
 } from "../../../api/careWorkflow";
 import { useAuth } from "../../../context/AuthContext";
@@ -315,6 +315,7 @@ function ScheduleDialog({ unitId, target, rooms, scheduled, onClose, onDone }: {
     procedure: target.label ?? "", start: "", durationMinutes: "", room: "", surgeon: currentUser ? `${currentUser.firstName} ${currentUser.lastName}` : "", side: "", anesthesia: "", notes: "",
   });
   const set = (key: keyof typeof values, value: string) => setValues({ ...values, [key]: value });
+  const [operationId] = useState(() => crypto.randomUUID());
   const startMs = values.start ? new Date(values.start).getTime() : NaN;
   const endMs = startMs + (Number(values.durationMinutes) || 0) * 60_000;
   // Overlap of the times announced by the surgeons in the same room: a conflict to check, not a prediction.
@@ -322,15 +323,11 @@ function ScheduleDialog({ unitId, target, rooms, scheduled, onClose, onDone }: {
     const plan = scheduleOf(episode);
     return plan && plan.room === values.room && plan.startMs < endMs && startMs < plan.endMs;
   }) : [];
-  const ready = values.procedure.trim().length >= 2 && Number.isFinite(startMs) && Number(values.durationMinutes) > 0 && target.patientId;
+  const ready = !conflicts.length && Boolean(values.room) && values.procedure.trim().length >= 2 && Number.isFinite(startMs) && Number(values.durationMinutes) > 0 && target.patientId;
   const submit = async () => {
     try {
-      const episode = await openEpisode({ careUnitId: unitId, patientId: target.patientId!, sourceRequestId: target.requestId, priority: target.priority, reason: values.procedure.trim(), stage: "SCHEDULED", start: true });
-      await recordCareEvent({
-        careUnitId: unitId, episodeId: episode.id, type: "SURGERY_SCHEDULED",
-        summary: `Programmé : ${values.procedure.trim()} le ${new Date(startMs).toLocaleString("fr-FR")} (${values.durationMinutes} min annoncées)${values.room ? ` · ${values.room}` : ""}`,
-        payload: { ...values, start: new Date(startMs).toISOString(), durationMinutes: Number(values.durationMinutes), conflictsAcknowledged: conflicts.length },
-      }, "Programmation");
+      if (!target.patientId) return;
+      await scheduleSpecialtySurgery(unitId, { patientId: target.patientId, sourceRequestId: target.requestId, priority: target.priority, operationId: operationId, scheduledAt: new Date(startMs).toISOString(), durationMinutes: Number(values.durationMinutes), procedure: values.procedure.trim(), room: values.room, details: values });
       onDone();
     } catch { /* reported globally */ }
   };
@@ -410,7 +407,7 @@ function ChecklistDialog({ episode, unitId, checklist, onClose }: { episode: Car
   return (
     <Dialog title={`Check-list de sécurité — ${patientName(episode.patient)}`} onClose={onClose} wide>
       {!detail ? <p className="text-sm text-slate-500">Chargement…</p> : checklist.map((phase) => {
-        const done = phase.items.filter((item) => ticks.has(`${phase.phase}|${item}`)).length;
+        const done = phase.items.filter((item) => ["Fait", "Oui", "Non applicable"].includes(String(ticks.get(`${phase.phase}|${item}`)?.payload?.answer))).length;
         return (
           <div key={phase.phase} className="mb-4 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
             <p className="mb-2 text-sm font-bold">{phase.label} <Badge tone={done === phase.items.length ? "green" : "amber"}>{done}/{phase.items.length}</Badge></p>
