@@ -417,6 +417,7 @@ export class ConsultationsService {
   async saveTelehealthTranscript(id: string, sessionId: string, entries: TelehealthTranscriptEntryDto[], actorId?: string) {
     const consultation = await this.findOne(id, actorId);
     await this.ensureWriteAccess(consultation.providerId, actorId);
+    this.assertMutable(consultation);
     if (consultation.status === ConsultationStatus.FINALIZED) {
       throw new BadRequestException('Une consultation finalisée ne peut pas recevoir de transcription sans avenant.');
     }
@@ -448,9 +449,9 @@ export class ConsultationsService {
       capturedAt: new Date().toISOString(),
       disclaimer: 'Transcription automatisée à relire et valider par le médecin.',
     };
-    const result = await this.prisma.$transaction(async (tx) => {
+    return this.guardConsultationWrite(() => this.prisma.$transaction(async (tx) => {
       const updated = await tx.consultation.update({
-        where: { id },
+        where: { id, version: consultation.version, status: consultation.status, deletedAt: null },
         data: { clinicalSummary: JSON.stringify(summary), version: { increment: 1 } },
       });
       await tx.consultationNote.create({
@@ -462,7 +463,7 @@ export class ConsultationsService {
         },
       });
       return updated;
-    });
+    }));
   }
 
   /** A guarded consultation write that found no matching row means a concurrent change. */

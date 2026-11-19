@@ -520,3 +520,8 @@ test('administrative archive predicates on the observed encounter version and st
  Object.defineProperty(service,'findOne',{value:async()=>({status:'IN_PROGRESS',version:5,appointmentId:'a'})});
  await service.remove('c','admin');assert.deepEqual(where,{id:'c',version:5,status:'IN_PROGRESS'});
 });
+test('transcription cannot overwrite a consultation signed after its initial read',async()=>{
+ const service=new ConsultationsService({telehealthSession:{findFirst:async()=>({patientConsentAt:new Date(),transcriptionConsentAt:new Date()})},$transaction:async(fn:any)=>fn({consultation:{update:async(q:any)=>{assert.deepEqual(q.where,{id:'c',version:4,status:'IN_PROGRESS',deletedAt:null});throw new Prisma.PrismaClientKnownRequestError('changed',{code:'P2025',clientVersion:'test'});}}})} as unknown as PrismaService,{} as NotificationsGateway,{} as PatientWorkflowService);
+ Object.defineProperty(service,'findOne',{value:async()=>({status:'IN_PROGRESS',version:4,providerId:'doctor'})});Object.defineProperty(service,'ensureWriteAccess',{value:async()=>{}});
+ await assert.rejects(service.saveTelehealthTranscript('c','session',[],'doctor'),error=>error instanceof ConflictException);
+});

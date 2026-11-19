@@ -293,7 +293,9 @@ export class HospitalizationsService {
           physicianId: actorId,
         },
       });
-      await tx.consultation.update({ where: { id: createHospitalizationDto.consultationId }, data: { hospitalizationId: hospitalization.id } });
+      // A hospitalization may refer to a signed encounter without rewriting it.
+      // Only an open encounter receives the reverse link, under a status predicate.
+      await tx.consultation.updateMany({ where: { id: createHospitalizationDto.consultationId, status: { in: ['DRAFT', 'IN_PROGRESS'] }, deletedAt: null }, data: { hospitalizationId: hospitalization.id, version: { increment: 1 } } });
       if (requestedAssignments.length) {
         await tx.hospitalizationNurseAssignment.createMany({ data: requestedAssignments.map((assignment) => ({ ...assignment, hospitalizationId: hospitalization.id, assignedById: actorId })) });
       }
