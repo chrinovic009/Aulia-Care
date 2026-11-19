@@ -1,3 +1,4 @@
+import { workflowStatusLabel } from "../../utils/workflowStatusLabel";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
@@ -222,7 +223,7 @@ export default function HospitalisationsMedecin() {
                   {hospitalizedPatients.length === 0 ? <SmallEmpty /> : hospitalizedPatients.map((patient) => (
                     <button key={patient.id} onClick={() => setSelectedPatientId(patient.id)} className="block w-full rounded-lg bg-slate-50 p-3 text-left text-sm hover:bg-blue-50 dark:bg-slate-950">
                       <p className="font-semibold text-slate-900 dark:text-white">{formatDoctorPatientName(patient)}</p>
-                      <p className="mt-1 text-xs text-slate-500">{patient.hospitalizations?.[0]?.bedNumber || "Lit non assigne"} - {patient.workflowStatus}</p>
+                      <p className="mt-1 text-xs text-slate-500">{patient.hospitalizations?.[0]?.bedNumber || "Lit non assigne"} - {workflowStatusLabel(patient.workflowStatus)}</p>
                     </button>
                   ))}
                 </Panel>
@@ -240,11 +241,11 @@ function Header({ title, subtitle }: { title: string; subtitle: string }) {
 }
 
 function PatientList({ patients, selectedId, query, onQuery, onSelect }: { patients: DoctorPatient[]; selectedId: string; query: string; onQuery: (value: string) => void; onSelect: (patient: DoctorPatient) => void }) {
-  return <aside className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"><input value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Rechercher patient..." className="mb-4 w-full rounded-lg border border-slate-200 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" /><div className="space-y-3">{patients.map((patient) => <button key={patient.id} onClick={() => onSelect(patient)} className={`w-full rounded-lg border p-3 text-left ${selectedId === patient.id ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"}`}><p className="font-semibold text-slate-900 dark:text-white">{formatDoctorPatientName(patient)}</p><p className="mt-1 text-xs text-slate-500">{serviceLabel(patient)} - {patient.workflowStatus}</p></button>)}</div></aside>;
+  return <aside className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"><input value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Rechercher patient..." className="mb-4 w-full rounded-lg border border-slate-200 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-950 dark:text-white" /><div className="space-y-3">{patients.map((patient) => <button key={patient.id} onClick={() => onSelect(patient)} className={`w-full rounded-lg border p-3 text-left ${selectedId === patient.id ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950"}`}><p className="font-semibold text-slate-900 dark:text-white">{formatDoctorPatientName(patient)}</p><p className="mt-1 text-xs text-slate-500">{serviceLabel(patient)} - {workflowStatusLabel(patient.workflowStatus)}</p></button>)}</div></aside>;
 }
 
 function PatientHeader({ patient }: { patient: DoctorPatient }) {
-  return <div className="flex flex-col gap-2 border-b border-slate-200 pb-4 dark:border-slate-800"><h2 className="text-xl font-semibold text-slate-900 dark:text-white">{formatDoctorPatientName(patient)}</h2><p className="text-sm text-slate-500">{serviceLabel(patient)} - {patient.workflowStatus}</p><span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${patient.access?.canWrite ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>{patient.access?.canWrite ? "Ecriture autorisee" : "Lecture seule"}</span></div>;
+  return <div className="flex flex-col gap-2 border-b border-slate-200 pb-4 dark:border-slate-800"><h2 className="text-xl font-semibold text-slate-900 dark:text-white">{formatDoctorPatientName(patient)}</h2><p className="text-sm text-slate-500">{serviceLabel(patient)} - {workflowStatusLabel(patient.workflowStatus)}</p><span className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${patient.access?.canWrite ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>{patient.access?.canWrite ? "Ecriture autorisee" : "Lecture seule"}</span></div>;
 }
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {

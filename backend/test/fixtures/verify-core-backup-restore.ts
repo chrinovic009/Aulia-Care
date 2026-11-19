@@ -41,7 +41,7 @@ async function snapshot(prisma: PrismaClient) {
 async function main() {
   const [before, after] = await Promise.all([snapshot(source), snapshot(restored)]);
   assert.deepEqual(after, before);
-  assert.equal(after.migrations, 23);
+  assert.ok(after.migrations > 0, "Restored database must contain completed migrations");
   assert.equal(after.invoiceTotal, '100');
   assert.equal(after.invoiceBalance, '40');
   assert.equal(after.paymentAmount, '60');

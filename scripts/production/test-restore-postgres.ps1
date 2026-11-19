@@ -19,6 +19,14 @@ if (-not (Get-Command age -ErrorAction SilentlyContinue)) {
     throw 'La commande age est requise pour tester une restauration chiffrée.'
 }
 
+$checksumPath = "$EncryptedBackupPath.sha256"
+if (-not (Test-Path -LiteralPath $checksumPath)) { throw 'Checksum de sauvegarde requis.' }
+$expectedHash = ((Get-Content -LiteralPath $checksumPath -Raw).Trim() -split '\s+')[0]
+$actualHash = (Get-FileHash -LiteralPath $EncryptedBackupPath -Algorithm SHA256).Hash
+if ($expectedHash -notmatch '^[a-fA-F0-9]{64}$' -or $expectedHash -ne $actualHash) {
+    throw 'Checksum invalide : restauration refusée.'
+}
+
 $suffix = [Guid]::NewGuid().ToString('N').Substring(0, 12)
 $containerName = "aulia-care-restore-test-$suffix"
 $volumeName = "aulia-care-restore-test-$suffix"
@@ -36,12 +44,14 @@ try {
 
     Write-Host '[2/5] Démarrage d’un PostgreSQL isolé et éphémère...'
     docker volume create $volumeName | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Création du volume impossible.' }
     docker run -d --name $containerName `
         -e POSTGRES_USER=aulia_restore `
         -e POSTGRES_PASSWORD=$databasePassword `
         -e POSTGRES_DB=aulia_restore `
         -v "${volumeName}:/var/lib/postgresql/data" `
         postgres:16-alpine | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Démarrage du conteneur impossible.' }
 
     $ready = $false
     for ($attempt = 0; $attempt -lt 30; $attempt++) {

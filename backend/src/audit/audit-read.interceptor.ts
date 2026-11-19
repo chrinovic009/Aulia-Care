@@ -1,4 +1,4 @@
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+import { CallHandler, ExecutionContext, Injectable, NestInterceptor, InternalServerErrorException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Observable, from, mergeMap } from 'rxjs';
 import { currentRequestContext } from '../core/request-context';
@@ -24,7 +24,9 @@ export class AuditReadInterceptor implements NestInterceptor {
       mergeMap((body) => {
         const requestContext = currentRequestContext();
         const entityId = params[target.param];
-        if (!requestContext || !entityId) return from([body]);
+        if (!requestContext || !entityId) {
+          throw new InternalServerErrorException("Contexte d’audit manquant : lecture refusée.");
+        }
         return from(this.ledger.recordRead(requestContext, target.entity, entityId).then(() => body));
       }),
     );

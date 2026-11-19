@@ -3,6 +3,7 @@ param(
     [string]$ContainerName = "aulia-care-prod-postgres-1",
     [string]$BackupDirectory = ".\backups\postgres",
     [string]$RecipientFile = "$env:USERPROFILE\.aulia-care\keys\backup-recipient.txt",
+    [ValidateRange(1, 3650)]
     [int]$RetentionDays = 14
 )
 
@@ -237,6 +238,9 @@ try {
         throw "Le checksum du fichier chiffre n'a pas ete cree."
     }
 
+    Remove-Item -LiteralPath $localBackup -Force
+    Remove-Item -LiteralPath $checksumFile -Force
+
     Write-Host "[7/7] Application de la retention..."
 
     $limit = (Get-Date).AddDays(-$RetentionDays)
@@ -277,6 +281,12 @@ catch {
     throw
 }
 finally {
+    # No plaintext backup may survive success or failure on the host.
+    foreach ($plaintext in @($localBackup, $checksumFile)) {
+        if (Test-Path -LiteralPath $plaintext) {
+            Remove-Item -LiteralPath $plaintext -Force
+        }
+    }
     docker exec `
         $ContainerName `
         rm -f $containerBackup 2>$null |

@@ -58,7 +58,10 @@
   },
   "overrides": {
     "proxy-addr": "2.0.8",
-    "engine.io": "6.6.11"
+    "engine.io": "6.6.11",
+    "body-parser": "2.4.0",
+    "multer": "2.5.0",
+    "qs": "6.17.1"
   },
   "engines": {
     "node": ">=22.0.0",

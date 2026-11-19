@@ -3,3 +3,6 @@
 - Composite birth and surgery operations must use one transaction and a durable idempotency key, so retries cannot create partial or duplicate clinical records.
 - A specialty episode completion is not a global discharge; require physician authorization and a separate cashier check after all active care is completed.
 - Use shared per-patient and per-resource advisory locks before checking and mutating workflow state, so concurrent writes use one consistent serialization boundary.
+- Keep reusable consultation display controls in their own module without moving clinical state or persistence, so presentation refactors preserve workflow behavior.
+- Keep on-premise operations checks outside the web app and accept only disposable local targets for load tests, so production patient records are never load-test fixtures.
+- Delete plaintext backup staging on both success and failure and verify encrypted checksums before restore, so backup artifacts do not silently expose records.

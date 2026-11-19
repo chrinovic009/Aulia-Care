@@ -1,3 +1,4 @@
+import { workflowStatusLabel } from "../../utils/workflowStatusLabel";
 import { useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
@@ -1009,7 +1010,7 @@ function PatientHeader({ patient }: { patient: DoctorPatient }) {
         {formatDoctorPatientName(patient)}
       </h2>
       <p className="text-sm text-slate-500">
-        {serviceLabel(patient)} - {patient.workflowStatus}
+        {serviceLabel(patient)} - {workflowStatusLabel(patient.workflowStatus)}
       </p>
       <span
         className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${patient.access?.canWrite ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}
