@@ -1,3 +1,4 @@
+import { BRAND_PRINT_FONT_CSS } from "../../config/brand";
 import { useEffect, useMemo, useState } from "react";
 import PageMeta from "../../components/common/PageMeta";
 import { apiFetch } from "../../config/api";
@@ -365,7 +366,7 @@ function PatientRecord({ patient, position, labTests, departments }: { patient: 
       <div className="rounded-[32px] border border-slate-200 bg-slate-50 p-6 shadow-sm ring-1 ring-slate-200/70 dark:border-slate-800 dark:bg-slate-950 dark:ring-slate-700/60">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-4">
-            <div className="inline-flex rounded-full bg-blue-100 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.24em] text-blue-700 dark:bg-blue-900/60 dark:text-blue-200">
+            <div className="inline-flex rounded-full bg-blue-100 px-3 py-0.5 text-xs font-semibold uppercase tracking-[0.24em] text-blue-700 dark:bg-blue-900/60 dark:text-blue-200">
               Dossier Patient
             </div>
             <div className="max-w-2xl">
@@ -1099,7 +1100,7 @@ function Metric({ label, value, tone = "default" }: { label: string; value: numb
 function QuickStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-sm transition duration-150 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950">
-      <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">{label}</p>
       <p className="mt-2 text-sm leading-5 text-slate-900 dark:text-white">{value}</p>
     </div>
   );
@@ -1411,7 +1412,7 @@ async function printPatientRecord(patient: DoctorPatient, position?: number, lab
       <head>
         <title>Dossier Patient - ${formatDoctorPatientName(patient)}</title>
         <style>
-          body { font-family: "Calibri", Arial, sans-serif; color: #111; }
+          body { ${BRAND_PRINT_FONT_CSS}; color: #111; }
           .page { padding: 24px; }
           .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #222; padding-bottom: 16px; margin-bottom: 24px; }
           .brand { display: flex; align-items: center; gap: 16px; }

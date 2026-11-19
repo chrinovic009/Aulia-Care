@@ -1,3 +1,4 @@
+import { BRAND_PRINT_FONT_CSS } from "../../config/brand";
 import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, Beaker, ClipboardList, Layers, Users, X } from "lucide-react";
 import { AdminPageShell, Panel, StatCard, DataTable, formatDate, formatDateTime } from "../Administration/adminUi";
@@ -436,7 +437,7 @@ export default function ActivityLab() {
           <style>
             /* Print-friendly A4 with 0.44cm margins */
             @page { size: A4; margin: 0.44cm; }
-            body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 0.44cm; background: #fff; }
+            body { ${BRAND_PRINT_FONT_CSS}; color: #111827; margin: 0; padding: 0.44cm; background: #fff; }
             /* Use box-sizing to ensure widths include padding/borders */
             .page { box-sizing: border-box; max-width: 100%; width: 100%; margin: 0 auto; padding: 6mm; border: 1px solid #d1d5db; border-radius: 8px; }
             .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 2px solid #111827; padding-bottom: 10px; margin-bottom: 12px; }
@@ -800,7 +801,7 @@ export default function ActivityLab() {
                                               <p className="font-semibold text-slate-900 dark:text-white">{item.labTest?.name || "—"}</p>
                                               <p className="mt-1 text-xs text-slate-500">{getLabStatusLabel(item?.status, item?.results?.[0]?.resultStatus)}</p>
                                             </div>
-                                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                                               {isActive ? "Sélectionné" : "Ouvrir"}
                                             </span>
                                           </div>

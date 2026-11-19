@@ -139,7 +139,7 @@ export default function GestionServAdmin() {
             headers={["Service", "Responsable", "Equipe", "Tarif actif", "Statut"]}
             empty={isLoading ? "Chargement des services..." : "Aucun service enregistre."}
             rows={services.map((service) => [
-              <div key="service"><p className="font-semibold text-slate-900 dark:text-white">{service.name} {service.isParamedical ? <span className="ml-2 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Paramédical</span> : null}</p><p className="text-xs text-slate-500">{service.description || "-"}</p></div>,
+              <div key="service"><p className="font-semibold text-slate-900 dark:text-white">{service.name} {service.isParamedical ? <span className="ml-2 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">Paramédical</span> : null}</p><p className="text-xs text-slate-500">{service.description || "-"}</p></div>,
               service.responsables?.map((item) => userName(item.user)).filter(Boolean).join(", ") || "-",
               service.staff?.map((item) => userName(item.user)).filter(Boolean).slice(0, 3).join(", ") || `${service.staff?.length || 0} membre(s)`,
               service.tarifs?.[0]?.prix ? formatMoney(service.tarifs[0].prix) : "-",

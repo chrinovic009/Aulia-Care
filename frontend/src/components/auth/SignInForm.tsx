@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ChevronLeftIcon, EyeCloseIcon, EyeIcon } from "../../icons";
+import { useLocation, useNavigate } from "react-router-dom";
+import { EyeCloseIcon, EyeIcon } from "../../icons";
 import { useAuth, getHomePath, canReturnTo } from "../../context/AuthContext";
 import Label from "../form/Label";
 import Input from "../form/input/InputField";
@@ -77,16 +77,11 @@ export default function SignInForm() {
 
   return (
     <div className="flex flex-col flex-1">
-      <div className="w-full max-w-md pt-10 mx-auto">
-        <Link
-          to="/signin"
-          className="inline-flex items-center text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-        >
-          <ChevronLeftIcon className="size-5" />
-          Retour à la connexion
-        </Link>
+      <div className="flex w-full max-w-md justify-center pt-4 mx-auto sm:pt-10 lg:hidden">
+        <img className="dark:hidden" src="/images/logo/logo.png" alt="Aulia Care" width={160} />
+        <img className="hidden dark:block" src="/images/logo/logo-dark.png" alt="Aulia Care" width={160} />
       </div>
-      <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto">
+      <div className="flex flex-col justify-start flex-1 w-full max-w-md pt-8 mx-auto sm:pt-16 lg:justify-center lg:pt-0">
         <div>
           <div className="mb-5 sm:mb-8">
             <h1 className="mb-2 font-semibold text-gray-800 text-title-sm dark:text-white/90 sm:text-title-md">
@@ -106,7 +101,7 @@ export default function SignInForm() {
                   <Input
                     value={identifier}
                     onChange={(event) => setIdentifier(event.target.value)}
-                    placeholder="AUP-AC12026 ou auliacare04@gmail.com"
+                    placeholder="Ex. : AUP-AC12026 ou nom@clinique.cd"
                     disabled={isLoading}
                   />
                 </div>

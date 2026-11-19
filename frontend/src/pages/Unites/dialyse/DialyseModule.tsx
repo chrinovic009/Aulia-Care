@@ -187,7 +187,7 @@ export function DialyseModule({ worklist, tab, reload, openDossier }: Props) {
           </button>
           {writable && <div className="flex flex-wrap gap-1">{actions}</div>}
         </div>
-        <ol className="mt-2 flex flex-wrap gap-1 text-[11px]">{DIALYSIS_STEPS.map((item, index) => (
+        <ol className="mt-2 flex flex-wrap gap-1 text-xs">{DIALYSIS_STEPS.map((item, index) => (
           <li key={item.code} className={`rounded px-1.5 py-0.5 ${index <= DIALYSIS_STEPS.findIndex((s) => s.code === stageOf(episode)) ? "bg-aulia-teal/15 text-aulia-navy dark:text-aulia-mist" : "bg-slate-100 text-slate-400 dark:bg-slate-800"}`}>{index + 1}. {item.label}</li>
         ))}</ol>
       </li>

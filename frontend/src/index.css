@@ -1,40 +1,40 @@
 @import "tailwindcss";
 
 @font-face {
-  font-family: "Montserrat";
-  src: url("/fonts/montserrat-latin-400-normal.woff2") format("woff2");
+  font-family: "Manrope";
+  src: url("/fonts/manrope-latin-400-normal.woff2") format("woff2");
   font-style: normal;
   font-weight: 400;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Montserrat";
-  src: url("/fonts/montserrat-latin-500-normal.woff2") format("woff2");
+  font-family: "Manrope";
+  src: url("/fonts/manrope-latin-500-normal.woff2") format("woff2");
   font-style: normal;
   font-weight: 500;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Montserrat";
-  src: url("/fonts/montserrat-latin-600-normal.woff2") format("woff2");
+  font-family: "Manrope";
+  src: url("/fonts/manrope-latin-600-normal.woff2") format("woff2");
   font-style: normal;
   font-weight: 600;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Montserrat";
-  src: url("/fonts/montserrat-latin-700-normal.woff2") format("woff2");
+  font-family: "Manrope";
+  src: url("/fonts/manrope-latin-700-normal.woff2") format("woff2");
   font-style: normal;
   font-weight: 700;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Montserrat";
-  src: url("/fonts/montserrat-latin-800-normal.woff2") format("woff2");
+  font-family: "Manrope";
+  src: url("/fonts/manrope-latin-800-normal.woff2") format("woff2");
   font-style: normal;
   font-weight: 800;
   font-display: swap;
@@ -44,9 +44,10 @@
 
 @theme {
   --font-*: initial;
-  /* Montserrat is the Aulia Care reference typeface. Keep the historical
-     utility name so legacy pages inherit it without a component rewrite. */
-  --font-outfit: Montserrat, Arial, sans-serif;
+  /* Manrope is the Aulia Care reference typeface (see
+     src/config/brand.ts for charts and printed documents). */
+  --font-sans: "Manrope", "Segoe UI", Arial, sans-serif;
+  --font-outfit: var(--font-sans);
 
   --breakpoint-*: initial;
   --breakpoint-2xsm: 375px;
@@ -356,7 +357,7 @@
     cursor: pointer;
   }
   body {
-    @apply relative font-normal font-outfit z-1 bg-gray-50 text-gray-900;
+    @apply relative font-normal font-sans antialiased z-1 bg-gray-50 text-gray-900;
   }
 }
 
@@ -1357,8 +1358,14 @@ button.bg-aulia-teal,
 /* Cadre commun : les pages gardent leur propre espacement, sans second padding
    imposé par le layout.  Les zones de contenu restent centrées sur les grands
    écrans et respectent les zones sûres des téléphones. */
+/* One gutter for every screen so no page touches the menu or the screen
+   edge: 16 px on phones, 24 px on tablets and computers. */
 .aulia-content-frame {
-  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+  padding-inline: max(1rem, env(safe-area-inset-left)) max(1rem, env(safe-area-inset-right));
+  padding-top: 1rem;
+}
+@media (min-width: 768px) {
+  .aulia-content-frame { padding-inline: 1.5rem; padding-top: 1.5rem; }
 }
 
 /* Même composition que le dashboard médecin : une page ne colle jamais au
@@ -1382,12 +1389,6 @@ button.bg-aulia-teal,
 
   /* Sécurité de dernier niveau pour les anciens écrans de données : un tableau
      large devient défilable horizontalement au lieu de casser la page. */
-  .aulia-content-frame table {
-    display: block;
-    max-width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
 
   .aulia-content-frame input,
   .aulia-content-frame select,
@@ -1423,4 +1424,36 @@ button.bg-aulia-teal,
 
 .dark .registry-button:hover {
   background: rgb(30 41 59);
+}
+
+/* Phones: wide data tables stay usable — the first column (patient / item)
+   stays pinned while the rest scrolls, and a soft edge shows there is more. */
+@media (max-width: 639px) {
+  .overflow-x-auto:has(> table) {
+    background:
+      linear-gradient(to right, var(--color-white) 30%, transparent) left / 24px 100% no-repeat local,
+      linear-gradient(to left, var(--color-white) 30%, transparent) right / 24px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgb(10 29 58 / 0.14), transparent) left / 10px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgb(10 29 58 / 0.14), transparent) right / 10px 100% no-repeat scroll;
+    -webkit-overflow-scrolling: touch;
+  }
+  .overflow-x-auto > table :is(th, td):first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background-color: var(--color-white);
+  }
+  .dark .overflow-x-auto > table :is(th, td):first-child { background-color: var(--color-gray-900); }
+  .overflow-x-auto > table :is(th, td) { padding-left: 0.75rem; padding-right: 0.75rem; }
+}
+
+/* Phones and tablets: a wide legacy table scrolls inside its card instead of
+   pushing the whole page sideways. */
+@media (max-width: 1023px) {
+  .aulia-content-frame table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }

@@ -1,3 +1,4 @@
+import { BRAND_PRINT_FONT_CSS } from "../../config/brand";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { Modal } from "../../components/ui/modal";
@@ -787,7 +788,7 @@ const stockRows = useMemo(() => {
         <head>
           <title>État du stock laboratoire</title>
           <style>
-            body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+            body { ${BRAND_PRINT_FONT_CSS}; margin: 24px; color: #111827; }
             .page { max-width: 960px; margin: 0 auto; }
             .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
             .brand { display: flex; align-items: center; gap: 14px; }

@@ -1,3 +1,4 @@
+import { BRAND_PRINT_FONT_CSS } from "../../config/brand";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
@@ -192,7 +193,7 @@ export default function ReceptionPatients() {
           <meta charset="utf-8" />
           <title>Fiche Assurance - ${selectedPatient.name}</title>
           <style>
-            body { font-family: Arial, sans-serif; padding: 24px; color: #111827 }
+            body { ${BRAND_PRINT_FONT_CSS}; padding: 24px; color: #111827 }
             .card { border: 1px solid #e5e7eb; padding: 16px; border-radius: 8px }
             h1 { font-size: 20px; margin-bottom: 8px }
             table { width:100%; border-collapse: collapse; margin-top: 12px }
@@ -236,7 +237,7 @@ export default function ReceptionPatients() {
           <style>
             @media print {
               * { margin: 0; padding: 0; box-sizing: border-box; }
-              body { font-family: "Calibri", Arial, sans-serif; font-size: 11pt; line-height: 1.3; color: #333; }
+              body { ${BRAND_PRINT_FONT_CSS}; font-size: 11pt; line-height: 1.3; color: #333; }
               .page { page-break-after: always; min-height: 29.7cm; position: relative; padding: 1.5cm; }
               .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 20px; }
               .clinic-logo { font-weight: bold; font-size: 16pt; color: #0D9488; }
@@ -254,7 +255,7 @@ export default function ReceptionPatients() {
               .patient-name { font-size: 14pt; font-weight: bold; color: #1e8a58; }
               .patient-id { font-size: 9pt; color: #666; }
             }
-            body { font-family: "Calibri", Arial, sans-serif; font-size: 11pt; color: #333; }
+            body { ${BRAND_PRINT_FONT_CSS}; font-size: 11pt; color: #333; }
             .page { min-height: 29.7cm; padding: 1.5cm; border: 1px solid #ddd; }
             .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 20px; }
             .clinic-logo { font-weight: bold; font-size: 16pt; color: #0D9488; }

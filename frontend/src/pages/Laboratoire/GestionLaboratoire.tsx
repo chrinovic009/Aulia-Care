@@ -116,7 +116,7 @@ export default function GestionLaboratoire() {
                 rows={filteredRequests.map((request) => [
                   request.id,
                   `${request.patient?.firstName || "-"} ${request.patient?.lastName || ""}`.trim(),
-                  <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">{request.status}</span>,
+                  <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">{request.status}</span>,
                   request.priority || "NORMAL",
                   formatDate(request.requestedAt),
                   <button className="rounded-lg bg-slate-900 px-3 py-1 text-xs font-semibold text-white">Voir</button>,

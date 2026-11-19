@@ -1,3 +1,4 @@
+import { BRAND_PRINT_FONT_CSS } from "../../config/brand";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ClipboardList, Printer, RefreshCw, ShieldCheck } from "lucide-react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
@@ -223,7 +224,7 @@ export default function ValidationsLab() {
           <title>Resultat laboratoire - ${escapeHtml(selectedItem.patientName)}</title>
           <style>
             @page { size: A4; margin: 16mm; }
-            body { font-family: Inter, Arial, sans-serif; color: #111827; margin: 0; }
+            body { ${BRAND_PRINT_FONT_CSS}; color: #111827; margin: 0; }
             .header { display: flex; justify-content: space-between; gap: 24px; border-bottom: 2px solid #991b1b; padding-bottom: 14px; }
             .brand { display: flex; gap: 12px; align-items: center; }
             .logo { width: 58px; height: 58px; object-fit: contain; }
@@ -486,7 +487,7 @@ export default function ValidationsLab() {
                   <div key={item.id} className="rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-800">
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-semibold text-slate-900 dark:text-white">{item.testName}</p>
-                      <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold uppercase text-slate-700 dark:bg-slate-900 dark:text-slate-200">{item.status}</span>
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold uppercase text-slate-700 dark:bg-slate-900 dark:text-slate-200">{item.status}</span>
                     </div>
                     <p className="mt-1 text-slate-600 dark:text-slate-300">Patient: {item.patientName}</p>
                     <p className="mt-1 text-xs text-slate-500">Responsable: {item.validations?.[0]?.validatorName || "-"}</p>

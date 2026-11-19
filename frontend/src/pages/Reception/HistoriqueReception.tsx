@@ -158,7 +158,7 @@ export default function HistoriqueReception() {
 
       {error && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_360px]">
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_360px] [&>*]:min-w-0">
         <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <input
@@ -262,8 +262,19 @@ function Info({ label, value }: { label: string; value: ReactNode }) {
   return <div className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950"><p className="text-xs text-slate-500">{label}</p><div className="mt-1 font-medium text-slate-900 dark:text-white">{value}</div></div>;
 }
 
+const VISIT_STATUS_LABELS: Record<string, string> = {
+  REGISTERED: "Enregistré",
+  AWAITING_PAYMENT: "En attente de paiement",
+  ORIENTED: "Orienté",
+  IN_CONSULTATION: "En consultation",
+  COMPLETED: "Terminé",
+  CANCELLED: "Annulé",
+};
+
 function StatusBadge({ status }: { status: string }) {
-  const normalized = status.toUpperCase();
+  const raw = status.toUpperCase();
+  const label = VISIT_STATUS_LABELS[raw] ?? status;
+  const normalized = (raw === "COMPLETED" ? "TERMINE" : raw === "CANCELLED" ? "ANNULE" : raw === "AWAITING_PAYMENT" ? "ATTENTE PAIEMENT" : raw);
   const tone = normalized.includes("TERMINE") || normalized.includes("ACTIVE")
     ? "bg-emerald-100 text-emerald-700"
     : normalized.includes("PAIEMENT") || normalized.includes("ATTENTE")
@@ -271,5 +282,5 @@ function StatusBadge({ status }: { status: string }) {
     : normalized.includes("ANNULE")
     ? "bg-red-100 text-red-700"
     : "bg-blue-100 text-blue-700";
-  return <span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>{status}</span>;
+  return <span className={`inline-block whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>{label}</span>;
 }

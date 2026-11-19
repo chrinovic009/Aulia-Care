@@ -1,3 +1,4 @@
+import { BRAND_FONT } from "../../config/brand";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { Dropdown } from "../ui/dropdown/Dropdown";
@@ -27,7 +28,7 @@ export default function ReceptionStatisticsChart() {
   const options: ApexOptions = {
     colors: ["#0D9488", "#0D9488", "#dc2626"],
     chart: {
-      fontFamily: "Outfit, sans-serif",
+      fontFamily: BRAND_FONT,
       type: "bar",
       height: 320,
       toolbar: {
@@ -70,7 +71,7 @@ export default function ReceptionStatisticsChart() {
       show: true,
       position: "top",
       horizontalAlign: "left",
-      fontFamily: "Outfit",
+      fontFamily: BRAND_FONT,
     },
 
     yaxis: {

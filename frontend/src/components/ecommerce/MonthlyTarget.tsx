@@ -1,3 +1,4 @@
+import { BRAND_FONT } from "../../config/brand";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { useState } from "react";
@@ -10,7 +11,7 @@ export default function MonthlyTarget() {
   const options: ApexOptions = {
     colors: ["#34D399"],
     chart: {
-      fontFamily: "Outfit, sans-serif",
+      fontFamily: BRAND_FONT,
       type: "radialBar",
       height: 330,
       sparkline: {

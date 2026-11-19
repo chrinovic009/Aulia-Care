@@ -1,3 +1,4 @@
+import { BRAND_FONT } from "../../config/brand";
 import React from "react";
 import { formatInvoiceId } from "../../utils/formatId";
 import type { ClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
@@ -137,7 +138,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   return (
     <div
       style={{
-        fontFamily: "Arial, sans-serif",
+        fontFamily: BRAND_FONT,
         width: "100%",
         maxWidth: "210mm",
         margin: "0 auto",

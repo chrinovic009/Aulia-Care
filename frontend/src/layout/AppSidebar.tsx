@@ -514,8 +514,8 @@ const AppSidebar: React.FC = () => {
                   : "menu-item-inactive"
               } cursor-pointer ${
                 !isExpanded && !isHovered
-                  ? "lg:justify-center"
-                  : "lg:justify-start"
+                  ? "md:justify-center"
+                  : "md:justify-start"
               }`}
             >
               <span
@@ -655,7 +655,7 @@ const AppSidebar: React.FC = () => {
             : "w-[90px]"
         }
         ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
-        lg:translate-x-0`}
+        md:translate-x-0`}
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -694,7 +694,7 @@ const AppSidebar: React.FC = () => {
                 className="h-8 w-8 shrink-0 rounded object-contain"
               />
             )}
-            <p className="text-[11px] font-medium tracking-wide text-slate-500 dark:text-slate-400">
+            <p className="text-xs font-medium tracking-wide text-slate-500 dark:text-slate-400">
               {currentUser?.primaryRole === "PATIENT" ? "Votre établissement : " : "Géré par "}
               {clinicBrand.brandDisplayName || clinicBrand.name || "votre établissement"}
             </p>
@@ -708,7 +708,7 @@ const AppSidebar: React.FC = () => {
               <h2
                 className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                   !isExpanded && !isHovered
-                    ? "lg:justify-center"
+                    ? "md:justify-center"
                     : "justify-start"
                 }`}
               >
@@ -739,7 +739,7 @@ const AppSidebar: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "md:justify-center"
                       : "justify-start"
                   }`}
                 >

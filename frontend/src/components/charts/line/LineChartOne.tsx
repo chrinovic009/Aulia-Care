@@ -1,3 +1,4 @@
+import { BRAND_FONT } from "../../../config/brand";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 
@@ -10,7 +11,7 @@ export default function LineChartOne() {
     },
     colors: ["#0D9488", "#0D9488"], // Aulia Care unified turquoise
     chart: {
-      fontFamily: "Outfit, sans-serif",
+      fontFamily: BRAND_FONT,
       height: 310,
       type: "line", // Set the chart type to 'line'
       toolbar: {

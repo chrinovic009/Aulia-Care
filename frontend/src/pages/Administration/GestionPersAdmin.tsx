@@ -1,3 +1,4 @@
+import { BRAND_PRINT_FONT_CSS } from "../../config/brand";
 import { useEffect, useMemo, useState } from "react";
 import {
   BriefcaseBusiness,
@@ -517,7 +518,7 @@ export default function GestionPersAdmin() {
       setFormError("L’impression a été bloquée par le navigateur. Autorisez les fenêtres contextuelles puis réessayez.");
       return;
     }
-    printWindow.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Personnel — ${clinicName}</title><style>body{font-family:Arial,sans-serif;color:#0A1D3A;padding:28px}h1{color:#0D9488;margin:0 0 5px}p{color:#475569}table{width:100%;border-collapse:collapse;margin-top:22px;font-size:12px}th,td{border:1px solid #cbd5e1;padding:9px;text-align:left}th{background:#e6fffb;color:#0A1D3A}@media print{body{padding:0}}</style></head><body><h1>${clinicName}</h1><p>Liste officielle du personnel · éditée le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date())}</p><table><thead><tr><th>Employé</th><th>Fonction</th><th>Téléphone</th><th>E-mail</th><th>Statut</th><th>Dernière connexion</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+    printWindow.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Personnel — ${clinicName}</title><style>body{${BRAND_PRINT_FONT_CSS};color:#0A1D3A;padding:28px}h1{color:#0D9488;margin:0 0 5px}p{color:#475569}table{width:100%;border-collapse:collapse;margin-top:22px;font-size:12px}th,td{border:1px solid #cbd5e1;padding:9px;text-align:left}th{background:#e6fffb;color:#0A1D3A}@media print{body{padding:0}}</style></head><body><h1>${clinicName}</h1><p>Liste officielle du personnel · éditée le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date())}</p><table><thead><tr><th>Employé</th><th>Fonction</th><th>Téléphone</th><th>E-mail</th><th>Statut</th><th>Dernière connexion</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
     printWindow.document.close();
     printWindow.focus();
     window.setTimeout(() => printWindow.print(), 250);

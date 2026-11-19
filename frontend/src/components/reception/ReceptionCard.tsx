@@ -1,3 +1,4 @@
+import { BRAND_PRINT_FONT_CSS } from "../../config/brand";
 import { useEffect, useState } from "react";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
@@ -38,7 +39,7 @@ export default function DemographicCard() {
     document.documentElement.lang = "fr";
 
     const style = document.createElement("style");
-    style.textContent = "body{font-family:Arial,sans-serif;color:#0A1D3A;padding:30px}h1{color:#0D9488}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #cbd5e1;padding:10px;text-align:left}th{background:#e6fffb}@media print{body{padding:0}}";
+    style.textContent = `body{${BRAND_PRINT_FONT_CSS};color:#0A1D3A;padding:30px}h1{color:#0D9488}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #cbd5e1;padding:10px;text-align:left}th{background:#e6fffb}@media print{body{padding:0}}`;
     document.head.replaceChildren(style);
 
     const heading = document.createElement("h1");

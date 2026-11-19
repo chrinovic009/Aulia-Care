@@ -32,7 +32,7 @@ const LayoutContent: React.FC = () => {
         <Backdrop />
       </div>
       <div
-        className={`min-w-0 flex-1 transition-all duration-300 ease-in-out ${
+        className={`min-w-0 flex-1 transition-all duration-300 ease-in-out md:ml-[90px] ${
           isExpanded || isHovered ? "lg:ml-[290px]" : "lg:ml-[90px]"
         } ${isMobileOpen ? "ml-0" : ""}`}
       >
@@ -40,7 +40,7 @@ const LayoutContent: React.FC = () => {
         <OfflineStatusBanner />
         <ShiftHandoverPrompt />
         {currentUser?.primaryRole === "PATIENT" && <PatientTelehealthOverlayForDiagnosticAgent />}
-        <div className="aulia-content-frame mx-auto w-full min-w-0 max-w-[1680px] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="aulia-content-frame mx-auto w-full min-w-0 max-w-[1600px] 3xl:px-8 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           <RealtimePageBoundary><Outlet /></RealtimePageBoundary>
         </div>
       </div>

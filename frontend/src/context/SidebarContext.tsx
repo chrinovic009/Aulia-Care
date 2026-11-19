@@ -29,6 +29,8 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isExpanded, setIsExpanded] = useState(true);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  // Tablets (768–1023 px) keep a narrow icon rail instead of the full menu.
+  const [isCompact, setIsCompact] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [activeItem, setActiveItem] = useState<string | null>(null);
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
@@ -37,6 +39,7 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
+      setIsCompact(window.innerWidth < 1024);
       if (!mobile) {
         setIsMobileOpen(false);
       }
@@ -65,7 +68,7 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
   return (
     <SidebarContext.Provider
       value={{
-        isExpanded: isMobile ? false : isExpanded,
+        isExpanded: isMobile || isCompact ? false : isExpanded,
         isMobileOpen,
         isHovered,
         activeItem,

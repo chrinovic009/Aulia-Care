@@ -1480,7 +1480,7 @@ function Pager({
           <p className="truncate text-sm font-bold text-aulia-navy dark:text-white">
             {labels[page]}
           </p>
-          <p className="text-[11px] text-slate-500">
+          <p className="text-xs text-slate-500">
             {page + 1} / {labels.length}
           </p>
         </div>
@@ -1677,7 +1677,7 @@ function Suggest({
                     : item,
                 )
               }
-              className="rounded-full border border-aulia-teal/25 px-2 py-1 text-[11px] font-medium text-aulia-teal hover:bg-aulia-mist dark:hover:bg-aulia-teal/15"
+              className="rounded-full border border-aulia-teal/25 px-2 py-1 text-xs font-medium text-aulia-teal hover:bg-aulia-mist dark:hover:bg-aulia-teal/15"
             >
               {item}
             </button>
@@ -1719,7 +1719,7 @@ function MultiChoice({
             type="button"
             key={option}
             onClick={() => toggle(option)}
-            className={`rounded-full border px-2 py-1 text-[11px] font-medium ${selected.includes(option) ? "border-aulia-teal bg-aulia-teal text-white" : "border-aulia-teal/25 text-aulia-teal"}`}
+            className={`rounded-full border px-2 py-1 text-xs font-medium ${selected.includes(option) ? "border-aulia-teal bg-aulia-teal text-white" : "border-aulia-teal/25 text-aulia-teal"}`}
           >
             {option}
           </button>

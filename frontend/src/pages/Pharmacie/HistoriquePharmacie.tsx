@@ -1,3 +1,4 @@
+import { BRAND_FONT } from "../../config/brand";
 import { useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
@@ -249,7 +250,7 @@ function HistoryPrintTemplate({ records, clinic }: { records: PharmacyHistoryRec
   );
 
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", color: "#111827", padding: "24px", lineHeight: 1.4 }}>
+    <div style={{ fontFamily: BRAND_FONT, color: "#111827", padding: "24px", lineHeight: 1.4 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #0f172a", paddingBottom: "12px" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>

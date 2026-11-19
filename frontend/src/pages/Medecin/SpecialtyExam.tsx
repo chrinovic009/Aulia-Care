@@ -140,9 +140,9 @@ export function SpecialtyExam({ template, specialty, value, onChange, renderFiel
                 {row.map((tooth) => {
                   const state = value.teeth?.[tooth] ?? "";
                   return (
-                    <label key={tooth} className={`flex w-16 shrink-0 flex-col items-center rounded border p-1 text-[11px] ${state && state !== "Saine" ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30" : "border-slate-200 dark:border-slate-700"}`}>
+                    <label key={tooth} className={`flex w-16 shrink-0 flex-col items-center rounded border p-1 text-xs ${state && state !== "Saine" ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30" : "border-slate-200 dark:border-slate-700"}`}>
                       <span className="font-bold">{tooth}</span>
-                      <select className="w-full bg-transparent text-[11px]" value={state} onChange={(e) => onChange({ ...value, specialty, template, teeth: { ...(value.teeth ?? {}), [tooth]: e.target.value } })}>
+                      <select className="w-full bg-transparent text-xs" value={state} onChange={(e) => onChange({ ...value, specialty, template, teeth: { ...(value.teeth ?? {}), [tooth]: e.target.value } })}>
                         {TOOTH_STATES.map((option) => <option key={option} value={option}>{option || "—"}</option>)}
                       </select>
                     </label>

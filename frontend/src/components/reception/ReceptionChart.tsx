@@ -1,3 +1,4 @@
+import { BRAND_FONT } from "../../config/brand";
 import { useEffect, useRef, useState } from "react";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
@@ -223,7 +224,7 @@ export default function StatisticsChart() {
     colors: ["#008fa1", "#0D9488"],
 
     chart: {
-      fontFamily: "Outfit, sans-serif",
+      fontFamily: BRAND_FONT,
       height: 340,
       type: "area",
 

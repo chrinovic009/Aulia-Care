@@ -90,7 +90,7 @@ export function AmbulanceModule({ worklist, tab, reload, openDossier, setTab }: 
           </button>
           <div className="flex items-center gap-1"><PriorityBadge priority={episode.priority} /><Badge tone="teal">{stepLabel(stage)}</Badge></div>
         </div>
-        <ol className="mt-2 flex flex-wrap gap-1 text-[11px]">
+        <ol className="mt-2 flex flex-wrap gap-1 text-xs">
           {MISSION_STEPS.slice(0, 9).map((step, index) => {
             const time = stepTime(episode, step.code);
             const done = index <= stepIndex(stage);
