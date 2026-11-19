@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import PageMeta from "../../components/common/PageMeta";
+import { usePlatformLayers } from "../../context/PlatformLayersContext";
 import { fetchMyPatientProfile, fetchWearableDashboard, PatientProfile, WearableDashboard } from "../../api/patient";
 
 const dateTime = (value?: string | null) => value ? new Intl.DateTimeFormat("fr-CD", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "—";
@@ -12,12 +13,15 @@ export default function PatientDashboard() {
   const [wearable, setWearable] = useState<WearableDashboard | null>(null);
   const [error, setError] = useState("");
   const [carePage, setCarePage] = useState(0);
+  const { isEnabled } = usePlatformLayers();
+  const connectedEnabled = isEnabled("CONNECTED");
 
   const load = async () => {
     try {
       const patient = await fetchMyPatientProfile();
       setProfile(patient);
-      setWearable(await fetchWearableDashboard(patient.id));
+      // The watch is a premium option: never let it break the dashboard.
+      setWearable(connectedEnabled ? await fetchWearableDashboard(patient.id).catch(() => null) : null);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Votre espace patient est momentanément indisponible.");
@@ -35,7 +39,7 @@ export default function PatientDashboard() {
       window.removeEventListener("aulia:wearable.measurement", refresh);
       window.removeEventListener("aulia:invoice.updated", refresh);
     };
-  }, []);
+  }, [connectedEnabled]);
 
   const measures = useMemo(() => wearable?.wearableDevices.flatMap((device) => device.measurements).sort((a, b) => +new Date(b.measuredAt) - +new Date(a.measuredAt)).slice(0, 4) || [], [wearable]);
   const nextAppointment = profile?.appointments?.filter((item) => new Date(item.scheduledAt) >= new Date() && ["SCHEDULED", "CONFIRMED"].includes(item.status)).sort((a, b) => +new Date(a.scheduledAt) - +new Date(b.scheduledAt))[0];

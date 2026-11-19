@@ -1,7 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { CLINICAL_AI_CLIENT, CLINICAL_AI_CONTRACT_VERSION, ClinicalAIClient } from '../platform/contracts/clinical-ai.contract';
+import { AuthenticatedActor, ClinicContextService } from '../core/clinic-context.service';
+import {
+  DIAGNOSTIC_AGENT_CLIENT,
+  DIAGNOSTIC_AGENT_CONTRACT_VERSION,
+  DiagnosticAgentClient,
+} from '../platform/contracts/diagnostic-agent.contract';
 
 const normalise = (value?: string) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
@@ -13,13 +18,18 @@ const normalise = (value?: string) => String(value || '').normalize('NFD').repla
 export class IntelligenceService {
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(CLINICAL_AI_CLIENT) private readonly clinicalAI: ClinicalAIClient,
+    @Inject(DIAGNOSTIC_AGENT_CLIENT)
+    private readonly diagnosticAgent: DiagnosticAgentClient,
+    private readonly clinicContext: ClinicContextService,
   ) {}
 
-  async analyseConsultation(consultationId: string, transcript: string) {
+  async analyseConsultation(consultationId: string, transcript: string, actor?: AuthenticatedActor) {
+    // Tenant boundary first: the clinic comes from the authenticated account,
+    // never from the consultation id supplied by the browser.
+    const clinicId = await this.clinicContext.requireActorClinic(actor);
     if (!transcript?.trim()) throw new BadRequestException('La transcription est requise.');
-    const consultation = await this.prisma.consultation.findUnique({
-      where: { id: consultationId },
+    const consultation = await this.prisma.consultation.findFirst({
+      where: { id: consultationId, deletedAt: null, clinicId, patient: { clinicId } },
       select: {
         id: true,
         patientId: true,
@@ -35,9 +45,9 @@ export class IntelligenceService {
     const ageYears = consultation.patient.dateOfBirth
       ? Math.max(0, Math.floor((Date.now() - consultation.patient.dateOfBirth.getTime()) / 31_557_600_000))
       : undefined;
-    const response = await this.clinicalAI.execute({
-      contractVersion: CLINICAL_AI_CONTRACT_VERSION,
-      tenantId: consultation.patient.clinicId || 'local-unassigned-clinic',
+    const response = await this.diagnosticAgent.execute({
+      contractVersion: DIAGNOSTIC_AGENT_CONTRACT_VERSION,
+      tenantId: this.requireClinicId(consultation.patient.clinicId),
       requestId: randomUUID(),
       idempotencyKey: `transcript:${consultation.id}:updated:${consultation.updatedAt.toISOString()}`,
       purpose: 'DETECT_RISKS',
@@ -54,13 +64,24 @@ export class IntelligenceService {
     };
   }
 
-  async findDuplicateCandidates(identity: any) {
+  private requireClinicId(clinicId: string | null): string {
+    if (!clinicId) {
+      throw new BadRequestException(
+        'La consultation doit être rattachée à un établissement avant toute analyse Diagnostic Agent.',
+      );
+    }
+    return clinicId;
+  }
+
+  async findDuplicateCandidates(identity: any, actor?: AuthenticatedActor) {
+    const clinicId = await this.clinicContext.requireActorClinic(actor);
     const firstName = normalise(identity?.firstName); const lastName = normalise(identity?.lastName);
     const email = normalise(identity?.email); const phone = String(identity?.phone || '').replace(/\D/g, '');
     if (!firstName && !lastName && !email && !phone) throw new BadRequestException('Au moins une donnée d’identité est requise.');
     const patients = await this.prisma.patient.findMany({
       where: {
         deletedAt: null,
+        clinicId,
         OR: [
           email ? { email } : undefined,
           phone ? { phone: { contains: phone } } : undefined,
@@ -68,6 +89,8 @@ export class IntelligenceService {
           lastName ? { lastName: { contains: lastName, mode: 'insensitive' } } : undefined,
         ].filter(Boolean) as any,
       },
+      // Identity fields only: a duplicate check never exposes the clinical record.
+      select: { id: true, firstName: true, lastName: true, email: true, phone: true, dateOfBirth: true, gender: true },
       take: 20,
     });
     return patients.map((patient) => {

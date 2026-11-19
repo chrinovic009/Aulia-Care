@@ -3,13 +3,14 @@ import { NotificationsService } from './notifications.service';
 import { NotificationsController } from './notifications.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsGateway } from './notifications.gateway';
+import { NotificationOutboxService } from './notification-outbox.service';
 import { UsersModule } from '../users/users.module';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [PrismaModule, UsersModule, AuthModule],
   controllers: [NotificationsController],
-  providers: [NotificationsService, NotificationsGateway],
-  exports: [NotificationsService, NotificationsGateway],
+  providers: [NotificationsService, NotificationsGateway, NotificationOutboxService],
+  exports: [NotificationsService, NotificationsGateway, NotificationOutboxService],
 })
 export class NotificationsModule {}

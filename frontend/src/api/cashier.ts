@@ -13,6 +13,15 @@ export interface CashierPatient {
   service: string;
   serviceId: string;
   receptionist: string;
+  invoices: Array<{
+    id: string;
+    type: string;
+    totalAmount: number;
+    balanceDue: number;
+    status: string;
+    issuedAt: string;
+    dueDate: string | null;
+  }>;
   invoice: {
     id: string;
     totalAmount: number;
@@ -122,12 +131,7 @@ export const fetchPatientsAwaitingPayment = async (): Promise<CashierPatient[]> 
  * Récupère toutes les factures depuis la base de données
  */
 export const fetchAllInvoices = async (): Promise<InvoiceDetail[]> => {
-  try {
-    return await fetchDbJson<InvoiceDetail[]>('/billing/invoices');
-  } catch (error) {
-    console.error('Error fetching invoices:', error);
-    return [];
-  }
+  return fetchDbJson<InvoiceDetail[]>('/billing/invoices');
 };
 
 /**

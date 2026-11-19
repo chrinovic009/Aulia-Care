@@ -316,12 +316,14 @@ export type PatientRecord = {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
-const fetchDbJson = async <T>(path: string): Promise<T> => {
+const fetchDbJson = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const url = `${API_BASE_URL.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
   const response = await fetch(url, {
+    ...init,
     headers: {
       "Content-Type": "application/json",
       ...getCookieAuthHeaders(),
+      ...(init.headers || {}),
     },
     credentials: "include",
   });
@@ -352,21 +354,65 @@ const dispatchPatientRecordsUpdated = () => {
   }
 };
 
+type PatientRecordUpdate = Partial<{
+  firstName: string; lastName: string; middleName: string; gender: string;
+  dateOfBirth: string; email: string; phone: string; address: string;
+  city: string; postalCode: string; nationality: string; bloodType: string;
+  emergencyContact: string; emergencyPhone: string; profession: string;
+  insuranceProvider: string; insuranceNumber: string; status: string;
+  admissionType: string; priority: string; arrivalAt: string;
+}>;
+
+const patientUpdateFields = [
+  "firstName", "lastName", "middleName", "gender", "dateOfBirth", "email",
+  "phone", "address", "city", "postalCode", "nationality", "bloodType",
+  "emergencyContact", "emergencyPhone", "profession", "insuranceProvider",
+  "insuranceNumber", "status", "admissionType", "priority", "arrivalAt",
+] as const;
+
 export const updatePatientRecord = async (
-  payload: Partial<PatientRecord> & { id: string }
-): Promise<PatientRecord | null> => {
-  try {
-    const url = `/patients/${payload.id}`;
-    const fullUrl = `${API_BASE_URL.replace(/\/+$/, "")}${url.startsWith('/') ? url : `/${url}`}`;
-    const response = await fetch(fullUrl, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', ...getCookieAuthHeaders() },
-      credentials: 'include',
-      body: JSON.stringify(payload),
-    });
-    if (response.ok) return (await response.json()) as PatientRecord;
-  } catch { return null; }
+  payload: PatientRecordUpdate & { id: string },
+): Promise<PatientRecord> => {
+  const body = Object.fromEntries(
+    patientUpdateFields
+      .filter((field) => payload[field] !== undefined)
+      .map((field) => [field, payload[field]]),
+  );
+  const saved = await fetchDbJson<PatientRecord>(`/patients/${encodeURIComponent(payload.id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  dispatchPatientRecordsUpdated();
+  return saved;
 };
+
+export type PatientFamilyContact = {
+  id: string;
+  name: string;
+  relationship?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+};
+
+export const createPatientFamilyContact = async (
+  patientId: string,
+  payload: Omit<PatientFamilyContact, "id">,
+): Promise<PatientFamilyContact> =>
+  fetchDbJson<PatientFamilyContact>(`/patients/${encodeURIComponent(patientId)}/family-contacts`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  } as RequestInit);
+
+export const updatePatientFamilyContact = async (
+  patientId: string,
+  contactId: string,
+  payload: Omit<PatientFamilyContact, "id">,
+): Promise<PatientFamilyContact> =>
+  fetchDbJson<PatientFamilyContact>(`/patients/${encodeURIComponent(patientId)}/family-contacts/${encodeURIComponent(contactId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  } as RequestInit);
 
 export const createPatientAdmission = async (payload: Partial<PatientRecord>): Promise<PatientRecord> => {
   const url = `/patients/admissions`;

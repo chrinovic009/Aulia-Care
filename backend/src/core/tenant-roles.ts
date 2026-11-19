@@ -29,6 +29,9 @@ export const STAFF_ROLES = [
   RoleSlug.PHARMACIST,
   RoleSlug.CASHIER,
   RoleSlug.FINANCE,
+  RoleSlug.PARAMEDIC,
+  RoleSlug.DISPATCHER,
+  RoleSlug.MIDWIFE,
 ] as const;
 
 export function isPlatformRole(role?: RoleSlug | string | null): boolean {

@@ -19,7 +19,7 @@ import {
   PlusIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
-import { useAuth } from "../context/AuthContext";
+import { useAuth, hasRole } from "../context/AuthContext";
 import { type AuliaLayer, usePlatformLayers } from "../context/PlatformLayersContext";
 import { apiFetch } from "../config/api";
 import SidebarWidget from "./SidebarWidget";
@@ -81,7 +81,7 @@ const navItems: NavItem[] = [
     icon: <TimeIcon />,
     name: "Suivi quotidien",
     path: "/suivi-quotidien",
-    layers: ["AI"],
+    layers: ["CONNECTED"],
   },
   {
     icon: <ChatIcon />,
@@ -170,6 +170,7 @@ const nurseNavItems: NavItem[] = [
     name: "Dashboard soins",
     path: "/nurse",
   },
+  { icon: <TaskIcon />, name: "Mes unités de soins", path: "/unites" },
   {
     icon: <UserCircleIcon />,
     name: "Patients assignés",
@@ -203,6 +204,7 @@ const doctorNavItems: NavItem[] = [
     name: "Dashboard médical",
     path: "/doctor",
   },
+  { icon: <TaskIcon />, name: "Mes unités de soins", path: "/unites" },
   {
     icon: <UserCircleIcon />,
     name: "Patients",
@@ -302,6 +304,7 @@ const radiologyNavItems: NavItem[] = [
 const administrationNavItems: NavItem[] = [
   { icon: <GridIcon />, name: "Dashboard admin", path: "/administration" },
   { icon: <UserCircleIcon />, name: "Personnel", path: "/administration/personnel" },
+  { icon: <TaskIcon />, name: "Unités de soins", path: "/administration/unites-soins" },
   { icon: <BoxCubeIcon />, name: "Services", path: "/administration/services" },
   { icon: <FolderIcon />, name: "Departements", path: "/administration/departements" },
   { icon: <CalenderIcon />, name: "Salles & lits", path: "/administration/salles" },
@@ -313,11 +316,16 @@ const administrationNavItems: NavItem[] = [
   { icon: <LockIcon />, name: "Profil admin", path: "/administration/profile" },
 ];
 
+const careUnitsNavItems: NavItem[] = [
+  { icon: <GridIcon />, name: "Mes unités de soins", path: "/unites" },
+];
+
 const pharmacyNavItems: NavItem[] = [
   { icon: <GridIcon />, name: "Dashboard pharmacie", path: "/pharmacie" },
   { icon: <TaskIcon />, name: "Delivrance", path: "/pharmacie/delivrance" },
   { icon: <FolderIcon />, name: "Historique", path: "/pharmacie/historique" },
   { icon: <BoxCubeIcon />, name: "Stock", path: "/pharmacie/stock" },
+  { icon: <LockIcon />, name: "Sécurité de prescription", path: "/pharmacie/securite" },
   { icon: <ChatIcon />, name: "Messages", path: "/pharmacie/messages" },
   { icon: <LockIcon />, name: "Profil pharmacie", path: "/pharmacie/profile" },
 ];
@@ -354,9 +362,9 @@ const AppSidebar: React.FC = () => {
   // Before the installation configuration is available, never advertise an
   // optional layer as active. This mirrors the fail-closed route/API policy.
   const activeSubscriptionLabel = (layers.configured ? layers.enabledLayers : [])
-    .map((layer) => ({ CORE: "Aulia Care Core", AI: "Aulia AI", CONNECTED: "Aulia Connected" })[layer])
+    .map((layer) => ({ CORE: "Aulia Care Core", CONNECTED: "Aulia Care Connected Care", DIAGNOSTIC: "Aulia Care Diagnostic Agent" })[layer])
     .join(" + ") || (currentUser?.primaryRole === "DEV" ? "Provisioning plateforme" : "Configuration en attente");
-  const [clinicBrand, setClinicBrand] = useState<{ name?: string; brandDisplayName?: string | null }>({});
+  const [clinicBrand, setClinicBrand] = useState<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null }>({});
   const isLabManager = Boolean(
     currentUser?.primaryRole === "LAB_MANAGER" ||
     currentUser?.role === "LAB_MANAGER" ||
@@ -373,11 +381,13 @@ const AppSidebar: React.FC = () => {
   useEffect(() => {
     // DEV is platform-scoped: it has no clinic identity and must never make a
     // hospital-scoped branding request.  The API deliberately denies it.
+    // Every clinic account (patients included) reads the minimal identity of
+    // its own establishment: name and logo only.
     if (!currentUser?.clinicId) {
       setClinicBrand({});
       return;
     }
-    const loadClinicBrand = () => apiFetch<{ name?: string; brandDisplayName?: string | null }>("/administration/clinic-branding")
+    const loadClinicBrand = () => apiFetch<{ name?: string; brandDisplayName?: string | null; documentLogoUrl?: string | null }>("/administration/clinic-identity")
       .then(setClinicBrand)
       .catch(() => setClinicBrand({}));
     void loadClinicBrand();
@@ -390,7 +400,8 @@ const AppSidebar: React.FC = () => {
       window.removeEventListener("aulia:clinic-branding-updated", loadClinicBrand);
       window.removeEventListener("storage", onBrandingStorage);
     };
-  }, [currentUser?.id, currentUser?.clinicId]);
+  }, [currentUser?.id, currentUser?.clinicId, currentUser?.primaryRole]);
+  const isDirectorSection = location.pathname.startsWith("/medical-director");
   const isReceptionSection = location.pathname.startsWith("/reception");
   const isNurseSection = location.pathname.startsWith("/nurse");
   const isDoctorSection = location.pathname.startsWith("/doctor");
@@ -402,6 +413,7 @@ const AppSidebar: React.FC = () => {
   const isLaboratorySection = location.pathname.startsWith("/laboratoire");
   const isSuperAdminSection = location.pathname.startsWith("/admin");
   const isDeveloperSection = location.pathname.startsWith("/dev");
+  const isCareUnitsSection = location.pathname.startsWith("/unites");
   const activeNavItems = isDoctorSection
     ? doctorNavItems
     : isNurseSection
@@ -424,8 +436,14 @@ const AppSidebar: React.FC = () => {
     ? superAdminNavItems
     : isDeveloperSection
     ? developerNavItems
+    : isCareUnitsSection
+    ? careUnitsNavItems
     : navItems;
-  const visibleNavItems = activeNavItems;
+  const extras:NavItem[]=[];
+  if(hasRole(currentUser,"MEDICAL_DIRECTOR")) extras.push({icon:<DocsIcon/>,name:"Direction médicale",path:"/medical-director"});
+  if(currentUser?.primaryRole==="PHYSICIAN") extras.push({icon:<ChatIcon/>,name:"Avis spécialisés",path:"/doctor/referrals"});
+  if(currentUser?.primaryRole==="ADMIN" || currentUser?.primaryRole==="SUPER_ADMIN") extras.push({icon:<UserCircleIcon/>,name:"Médecin directeur",path:currentUser.primaryRole==="ADMIN"?"/administration/medical-director":"/admin/medical-director"});
+  const visibleNavItems = [...(isDirectorSection ? doctorNavItems : activeNavItems),...extras];
   const [lockedItem, setLockedItem] = useState<NavItem | null>(null);
   const isLayerLocked = (item: NavItem) => !item.platformOnly && !(item.layers ?? ["CORE"]).every(isEnabled);
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(
@@ -501,8 +519,8 @@ const AppSidebar: React.FC = () => {
                   : "menu-item-inactive"
               } cursor-pointer ${
                 !isExpanded && !isHovered
-                  ? "lg:justify-center"
-                  : "lg:justify-start"
+                  ? "md:justify-center"
+                  : "md:justify-start"
               }`}
             >
               <span
@@ -642,7 +660,7 @@ const AppSidebar: React.FC = () => {
             : "w-[90px]"
         }
         ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
-        lg:translate-x-0`}
+        md:translate-x-0`}
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -673,9 +691,19 @@ const AppSidebar: React.FC = () => {
           )}
         </Link>
         {(isExpanded || isHovered || isMobileOpen) && (
-          <p className="max-w-[220px] text-[11px] font-medium tracking-wide text-slate-500 dark:text-slate-400">
-            Géré par {clinicBrand.brandDisplayName || clinicBrand.name || "votre établissement"}
-          </p>
+          <div className="flex max-w-[220px] items-center justify-center gap-2">
+            {clinicBrand.documentLogoUrl && (
+              <img
+                src={clinicBrand.documentLogoUrl}
+                alt={`Logo de ${clinicBrand.brandDisplayName || clinicBrand.name || "l’établissement"}`}
+                className="h-8 w-8 shrink-0 rounded object-contain"
+              />
+            )}
+            <p className="text-xs font-medium tracking-wide text-slate-500 dark:text-slate-400">
+              {currentUser?.primaryRole === "PATIENT" ? "Votre établissement : " : "Géré par "}
+              {clinicBrand.brandDisplayName || clinicBrand.name || "votre établissement"}
+            </p>
+          </div>
         )}
       </div>
       <div className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
@@ -685,7 +713,7 @@ const AppSidebar: React.FC = () => {
               <h2
                 className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                   !isExpanded && !isHovered
-                    ? "lg:justify-center"
+                    ? "md:justify-center"
                     : "justify-start"
                 }`}
               >
@@ -700,7 +728,11 @@ const AppSidebar: React.FC = () => {
                     ? "SUPER ADMIN"
                     : isDeveloperSection
                     ? "CONFIGURATION DEV"
-                    : "PATIENT INTERFACE"
+                    : isCareUnitsSection
+                    ? "UNITÉS DE SOINS"
+                    : currentUser?.primaryRole === "PATIENT"
+                    ? "MON ESPACE PATIENT"
+                    : "MON ESPACE"
                 ) : (
                   <HorizontaLDots className="size-6" />
                 )}
@@ -712,7 +744,7 @@ const AppSidebar: React.FC = () => {
                 <h2
                   className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
                     !isExpanded && !isHovered
-                      ? "lg:justify-center"
+                      ? "md:justify-center"
                       : "justify-start"
                   }`}
                 >

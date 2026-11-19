@@ -14,8 +14,9 @@ export default defineConfig(({ mode }) => {
     "aulia-care-dev.pfx"
   );
 
+  // AULIA_DEV_HTTP=1 (local demo script) serves plain HTTP on localhost.
   const https =
-    fs.existsSync(developmentCertificate) && env.AULIA_TLS_PASSWORD
+    env.AULIA_DEV_HTTP !== "1" && fs.existsSync(developmentCertificate) && env.AULIA_TLS_PASSWORD
       ? {
           pfx: fs.readFileSync(developmentCertificate),
           passphrase: env.AULIA_TLS_PASSWORD,
@@ -25,7 +26,7 @@ export default defineConfig(({ mode }) => {
   const backendUrl =
     process.env.AULIA_BACKEND_URL ||
     env.AULIA_BACKEND_URL ||
-    "http://host.docker.internal:3000";
+    "http://localhost:3000";
 
   return {
     root: ".",
@@ -106,7 +107,9 @@ export default defineConfig(({ mode }) => {
     },
 
     build: {
-      outDir: "../dist-frontend",
+      // Docker publishes the monorepo-level directory. Vercel imports the
+      // frontend as its own project, so its output must stay inside that root.
+      outDir: process.env.VERCEL ? "dist" : "../dist-frontend",
       emptyOutDir: true,
     },
   };

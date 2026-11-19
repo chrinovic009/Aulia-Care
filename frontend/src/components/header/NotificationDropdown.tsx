@@ -155,7 +155,7 @@ export default function NotificationDropdown() {
         aria-label="Messages non lus"
       >
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 z-10 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-semibold text-white">
+          <span className="absolute -right-1 -top-1 z-10 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-orange-500 px-1 text-xs font-semibold text-white">
             {unreadCount > 9 ? "9+" : unreadCount}
             <span className="absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-60 animate-ping"></span>
           </span>

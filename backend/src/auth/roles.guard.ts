@@ -7,7 +7,7 @@ import { ROLES_KEY } from './roles.decorator';
 // Si tu en as besoin plus tard, utilise : new RegExp('[\\x00-\\x1F]') pour éviter l'erreur ESLint.
 
 type Responsibility = { service?: { name?: string | null } | null; department?: { name?: string | null } | null };
-type RequestActor = { role?: string | null; serviceResponsabilites?: Responsibility[]; departmentResponsabilites?: Responsibility[] };
+type RequestActor = { roles?: string[]; role?: string | null; serviceResponsabilites?: Responsibility[]; departmentResponsabilites?: Responsibility[] };
 
 const isLabManager = (user: RequestActor) => {
   const names = [
@@ -20,7 +20,7 @@ const isLabManager = (user: RequestActor) => {
 /** Institution Super Admin is not a care-team role. Administrative and
  * financial dashboards stay available, while direct patient-care endpoints
  * require the operational role explicitly assigned to the human actor. */
-const isDirectClinicalRoute = (path: string) => /^\/api\/(patients|consultations|hospitalizations|laboratory|imaging|pharmacy|surgery)(?:\/|$)/.test(path.split('?')[0]);
+const isDirectClinicalRoute = (path: string) => /^\/api\/(patients|consultations|hospitalizations|laboratory|imaging|pharmacy|surgery|care-workflow|clinical-safety)(?:\/|$)/.test(path.split('?')[0]);
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -42,6 +42,7 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Le Super Admin institutionnel ne peut pas accéder directement aux actes ni aux dossiers cliniques. Utilisez un compte opérationnel autorisé.');
     }
 
+    if (requiredRoles.includes('MEDICAL_DIRECTOR') && user.roles?.includes('MEDICAL_DIRECTOR')) return true;
     if (user.role && requiredRoles.includes(user.role)) {
       return true;
     }

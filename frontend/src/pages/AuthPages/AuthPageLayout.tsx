@@ -10,7 +10,7 @@ export default function AuthLayout({
 }) {
   return (
     <div className="relative p-6 bg-white z-1 dark:bg-gray-900 sm:p-0">
-      <div className="relative flex flex-col justify-center w-full h-screen lg:flex-row dark:bg-gray-900 sm:p-0">
+      <div className="relative flex flex-col justify-center w-full min-h-[100dvh] lg:h-screen lg:flex-row dark:bg-gray-900 sm:p-0">
         {children}
         <div className="items-center hidden w-full h-full lg:w-1/2 bg-brand-950 dark:bg-white/5 lg:grid">
           <div className="relative flex items-center justify-center z-1">
@@ -26,12 +26,12 @@ export default function AuthLayout({
                 />
               </Link>
               <p className="text-center text-gray-400 dark:text-white/60">
-                Bienvenue sur notre plateforme médical. Connectez-vous pour accéder à vos rendez-vous, gérer les dossiers patients et bien plus encore.
+                Bienvenue sur notre plateforme médicale. Connectez-vous pour accéder à vos rendez-vous, gérer les dossiers patients et bien plus encore.
               </p>
             </div>
           </div>
         </div>
-        <div className="fixed z-50 hidden bottom-6 right-6 sm:block">
+        <div className="fixed z-50 bottom-4 right-4 sm:bottom-6 sm:right-6">
           <ThemeTogglerTwo />
         </div>
       </div>

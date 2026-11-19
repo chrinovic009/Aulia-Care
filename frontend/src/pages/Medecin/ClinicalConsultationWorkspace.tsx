@@ -1,4 +1,9 @@
+import { Step, Entry, Grid, Add, Rows, Pager, VitalCards, ExamText, Notice, Text, Select, Suggest, MultiChoice } from "./consultationControls";
 import { useEffect, useMemo, useState } from "react";
+import { fetchMedicalSpecialties, specialtyInfo, type SpecialtyGroup } from "../../api/reference";
+import { recordAllergy } from "../../api/clinicalSafety";
+import { PatientAllergiesCard } from "../../components/clinical/PatientAllergiesCard";
+import { SPECIALTY_TEMPLATES, SpecialtyExam, type SpecialtyExamValue } from "./SpecialtyExam";
 import type { DoctorPatient } from "../../api/doctor";
 
 type Item = Record<string, string>;
@@ -36,6 +41,8 @@ export type StructuredConsultation = {
     redFlags: string;
   };
   physical: Record<string, string>;
+  /** Sections specific to the doctor's group of specialties. */
+  specialtyExam?: SpecialtyExamValue;
   orientation: Record<string, string>;
   care: {
     nonPharma: string;
@@ -205,8 +212,11 @@ type Props = {
   value: StructuredConsultation;
   onChange: (value: StructuredConsultation) => void;
   hasAvailableResults: boolean;
+  referralSlot?: React.ReactNode;
   examinationsSlot?: React.ReactNode;
   prescriptionSlot?: React.ReactNode;
+  /** Specialty of the signed-in doctor, as registered by the administration. */
+  doctorSpecialty?: string | null;
 };
 
 export function ClinicalConsultationWorkspace({
@@ -217,9 +227,18 @@ export function ClinicalConsultationWorkspace({
   value,
   onChange,
   hasAvailableResults,
+  referralSlot,
   examinationsSlot,
   prescriptionSlot,
+  doctorSpecialty,
 }: Props) {
+  const [specialtyGroups, setSpecialtyGroups] = useState<SpecialtyGroup[]>([]);
+  useEffect(() => { void fetchMedicalSpecialties().then(setSpecialtyGroups).catch(() => setSpecialtyGroups([])); }, []);
+  const specialty = specialtyInfo(specialtyGroups, doctorSpecialty);
+  const specialtyTemplate = specialty ? SPECIALTY_TEMPLATES[specialty.template] : undefined;
+  const examPages = specialtyTemplate ? [...physicalPages, specialtyTemplate.title] : physicalPages;
+  const [allergyNotice, setAllergyNotice] = useState<string | null>(null);
+  const [allergyRefresh, setAllergyRefresh] = useState(0);
   const [step, setStep] = useState(0),
     [historyPage, setHistoryPage] = useState(0),
     [examPage, setExamPage] = useState(0);
@@ -229,6 +248,7 @@ export function ClinicalConsultationWorkspace({
       duration: "",
       impact: "",
     });
+
   useEffect(() => {
     if (mode === "EMERGENCY") setStep(4);
   }, [mode]);
@@ -239,13 +259,14 @@ export function ClinicalConsultationWorkspace({
   const vitalMap = useMemo(
     () =>
       new Map(
-        (patient.vitalSigns || []).map((v) => [
+        (patient?.vitalSigns || []).map((v) => [
           v.type,
           `${v.value}${v.unit ? ` ${v.unit}` : ""}`,
         ]),
       ),
-    [patient.vitalSigns],
+    [patient?.vitalSigns],
   );
+  if (!patient) return null;
   const rawHeight = parseNumber(vitalMap.get("HEIGHT"));
   const height = rawHeight > 3 ? rawHeight / 100 : rawHeight;
   const weight = parseNumber(vitalMap.get("WEIGHT"));
@@ -266,6 +287,25 @@ export function ClinicalConsultationWorkspace({
     patch("antecedents", {
       [key]: value.antecedents[key].filter((_, i) => i !== index),
     });
+  /**
+   * An allergy noted in the history is also documented on the patient record,
+   * where the prescription check reads it; otherwise it would never block.
+   */
+  const addAllergy = async () => {
+    const substance = draft.substance?.trim();
+    if (!substance) return;
+    const severity = /sév|anaphyl|quincke/i.test(`${draft.severity ?? ""} ${draft.reaction ?? ""}`) ? "SEVERE" : /légère/i.test(draft.severity ?? "") ? "MILD" : "MODERATE";
+    add("allergies", "substance");
+    if (substance.length < 3) { setAllergyNotice("Notée dans l’anamnèse (nom trop court pour la vérification des prescriptions)."); return; }
+    try {
+      await recordAllergy(patient.id, { substance, severity, reaction: draft.reaction?.trim() || undefined, notes: [draft.kind, draft.notes].filter(Boolean).join(" · ") || undefined });
+      setAllergyNotice("Allergie documentée dans le dossier : elle sera vérifiée à chaque prescription.");
+      setAllergyRefresh((value) => value + 1);
+    } catch {
+      setAllergyNotice("Notée dans l’anamnèse. Si elle était déjà documentée, elle reste dans la liste ci-dessus.");
+      setAllergyRefresh((value) => value + 1);
+    }
+  };
   const addTreatment = () => {
     if (!treatment.medication.trim()) return;
     patch("illness", {
@@ -320,6 +360,12 @@ export function ClinicalConsultationWorkspace({
                 : "Aucune"}
             </p>
           </div>
+          <div className="flex flex-wrap gap-2">
+          {(specialty?.label || doctorSpecialty) && (
+            <span className="w-fit rounded-full bg-aulia-navy/10 px-3 py-1 text-xs font-bold text-aulia-navy dark:bg-white/10 dark:text-white" title={specialty?.domain}>
+              {specialty?.label || doctorSpecialty}
+            </span>
+          )}
           <span className="w-fit rounded-full bg-aulia-teal/15 px-3 py-1 text-xs font-bold text-aulia-teal">
             {mode === "EMERGENCY"
               ? "Parcours urgence"
@@ -327,10 +373,11 @@ export function ClinicalConsultationWorkspace({
                 ? "Visite à domicile"
                 : "Consultation présentielle"}
           </span>
+          </div>
         </div>
       </header>
       <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex min-w-0 flex-wrap gap-2 pb-1">
           {steps.map((name, index) => (
             <button
               type="button"
@@ -620,6 +667,8 @@ export function ClinicalConsultationWorkspace({
               </>
             )}
             {historyPage === 2 && (
+              <>
+              <div className="mt-4"><PatientAllergiesCard key={allergyRefresh} patientId={patient.id} /></div>
               <Entry title="Allergies, intolérances et atopie">
                 <Grid>
                   {field("Substance / allergène", "substance", [
@@ -649,9 +698,10 @@ export function ClinicalConsultationWorkspace({
                   ])}
                   {field("Précisions", "notes")}
                 </Grid>
-                <Add onClick={() => add("allergies", "substance")}>
+                <Add onClick={() => void addAllergy()}>
                   Ajouter l’allergie / intolérance
                 </Add>
+                {allergyNotice && <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">{allergyNotice}</p>}
                 <Rows
                   items={value.antecedents.allergies}
                   label={(x) =>
@@ -660,6 +710,7 @@ export function ClinicalConsultationWorkspace({
                   onRemove={(i) => remove("allergies", i)}
                 />
               </Entry>
+              </>
             )}
             {historyPage === 3 && (
               <Entry title="Traitements habituels et vaccinations">
@@ -965,7 +1016,7 @@ export function ClinicalConsultationWorkspace({
             hint="Chaque famille clinique est paginée. Les constantes sont en lecture seule et l’IMC se calcule automatiquement."
           >
             <Pager
-              labels={physicalPages}
+              labels={examPages}
               page={examPage}
               setPage={setExamPage}
             />
@@ -1062,19 +1113,12 @@ export function ClinicalConsultationWorkspace({
                   suggestions={examSuggestions[10]}
                 />
                 <Grid extra="mt-4">
-                  <Suggest
-                    label="Spécialité du médecin"
-                    value={physical("specialist")}
-                    onChange={(v) => setPhysical("specialist", v)}
-                    suggestions={[
-                      "Médecine générale",
-                      "Cardiologie",
-                      "Pédiatrie",
-                      "Gynécologie-obstétrique",
-                      "Chirurgie",
-                      "Médecine interne",
-                    ]}
-                  />
+                  <label className="block text-sm">
+                    <span className="mb-1 block font-medium text-slate-700 dark:text-slate-200">Spécialité du médecin</span>
+                    <span className="block rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                      {specialty?.label || doctorSpecialty || "Non renseignée — à compléter par l’administration"}
+                    </span>
+                  </label>
                   <Text
                     label="Note du spécialiste"
                     value={physical("specialistNote")}
@@ -1089,6 +1133,17 @@ export function ClinicalConsultationWorkspace({
                   multiline
                 />
               </>
+            )}
+            {examPage === 11 && specialty && specialtyTemplate && (
+              <SpecialtyExam
+                template={specialty.template}
+                specialty={specialty.label}
+                value={value.specialtyExam ?? { values: {} }}
+                onChange={(specialtyExam) => onChange({ ...value, specialtyExam })}
+                renderField={(label, input) => (
+                  <label className="block text-sm"><span className="mb-1 block font-medium text-slate-700 dark:text-slate-200">{label}</span>{input}</label>
+                )}
+              />
             )}
           </Step>
         )}
@@ -1108,12 +1163,12 @@ export function ClinicalConsultationWorkspace({
             {prescriptionSlot || <Notice>Choisissez d’abord un patient puis enregistrez le brouillon pour prescrire de façon traçable.</Notice>}
           </Step>
         )}
-        {step === 7 &&
-          (hasAvailableResults ? (
+        {step === 7 && (
             <Step
               title="Orientation & synthèse"
               hint="Décision clinique après résultats."
             >
+              {referralSlot}
               <Grid>
                 {Object.entries(value.orientation).map(([key, current]) => (
                   <Text
@@ -1125,13 +1180,7 @@ export function ClinicalConsultationWorkspace({
                 ))}
               </Grid>
             </Step>
-          ) : (
-            <Notice>
-              Orientation verrouillée jusqu’à disponibilité d’un résultat
-              d’examen pour cette consultation. Le brouillon peut être
-              enregistré et les examens demandés depuis l’onglet Examens.
-            </Notice>
-          ))}
+          )}
         {step === 8 && (
           <Step
             title="Prise en charge & suivi"
@@ -1312,368 +1361,3 @@ const orientationLabels: Record<string, string> = {
   followUp: "Suivi recommandé",
   delay: "Délai",
 };
-function Step({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-4">
-      <div>
-        <h4 className="text-base font-bold text-aulia-navy dark:text-white">
-          {title}
-        </h4>
-        <p className="mt-1 text-sm text-slate-500">{hint}</p>
-      </div>
-      {children}
-    </div>
-  );
-}
-function Entry({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="mt-4 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-      <h5 className="mb-3 text-sm font-bold text-slate-800 dark:text-white">
-        {title}
-      </h5>
-      {children}
-    </section>
-  );
-}
-function Grid({
-  children,
-  extra = "",
-}: {
-  children: React.ReactNode;
-  extra?: string;
-}) {
-  return <div className={`grid gap-3 md:grid-cols-2 ${extra}`}>{children}</div>;
-}
-function Add({
-  children,
-  onClick,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="mt-3 rounded-lg bg-aulia-navy px-3 py-2 text-xs font-bold text-white dark:bg-aulia-teal"
-    >
-      {children}
-    </button>
-  );
-}
-function Rows<T>({
-  items,
-  label,
-  onRemove,
-}: {
-  items: T[];
-  label: (item: T) => string;
-  onRemove: (index: number) => void;
-}) {
-  return items.length ? (
-    <div className="mt-3 space-y-2">
-      {items.map((item, index) => (
-        <div
-          key={index}
-          className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 p-2 text-xs text-slate-700 dark:bg-slate-900 dark:text-slate-200"
-        >
-          <span>{label(item)}</span>
-          <button
-            type="button"
-            onClick={() => onRemove(index)}
-            className="shrink-0 font-semibold text-red-600"
-          >
-            Retirer
-          </button>
-        </div>
-      ))}
-    </div>
-  ) : null;
-}
-function Pager({
-  labels,
-  page,
-  setPage,
-}: {
-  labels: string[];
-  page: number;
-  setPage: (value: number) => void;
-}) {
-  return (
-    <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 p-2 dark:border-slate-800 dark:bg-slate-900/60">
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          disabled={!page}
-          onClick={() => setPage(page - 1)}
-          className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-bold disabled:opacity-40 dark:border-slate-700"
-        >
-          ←
-        </button>
-        <div className="min-w-0 text-center">
-          <p className="truncate text-sm font-bold text-aulia-navy dark:text-white">
-            {labels[page]}
-          </p>
-          <p className="text-[11px] text-slate-500">
-            {page + 1} / {labels.length}
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={page === labels.length - 1}
-          onClick={() => setPage(page + 1)}
-          className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-bold disabled:opacity-40 dark:border-slate-700"
-        >
-          →
-        </button>
-      </div>
-      <div className="mt-2 flex gap-1 overflow-x-auto">
-        {labels.map((label, index) => (
-          <button
-            type="button"
-            aria-label={label}
-            key={label}
-            onClick={() => setPage(index)}
-            className={`h-1.5 min-w-6 rounded-full ${page === index ? "bg-aulia-teal" : "bg-slate-300 dark:bg-slate-700"}`}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-function VitalCards({
-  vitals,
-  bmi,
-}: {
-  vitals: Map<string, string>;
-  bmi: string;
-}) {
-  const cards: Array<[string, string]> = [
-    ["PA", vitals.get("BLOOD_PRESSURE") || "—"],
-    ["FC", vitals.get("HEART_RATE") || "—"],
-    ["FR", vitals.get("RESPIRATORY_RATE") || "—"],
-    ["SpO₂", vitals.get("OXYGEN_SATURATION") || "—"],
-    ["Température", vitals.get("TEMPERATURE") || "—"],
-    ["Poids", vitals.get("WEIGHT") || "—"],
-    ["Taille", vitals.get("HEIGHT") || "—"],
-    ["IMC", bmi],
-  ];
-  return (
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-      {cards.map(([label, reading]) => (
-        <div
-          key={label}
-          className="rounded-xl border border-aulia-teal/15 bg-aulia-mist/50 p-3 dark:bg-aulia-teal/10"
-        >
-          <p className="text-xs text-slate-500">{label}</p>
-          <p className="mt-1 font-bold text-aulia-navy dark:text-white">
-            {reading}
-          </p>
-        </div>
-      ))}
-    </div>
-  );
-}
-function ExamText({
-  title,
-  value,
-  onChange,
-  suggestions = [],
-}: {
-  title: string;
-  value: string;
-  onChange: (value: string) => void;
-  suggestions?: string[];
-}) {
-  return (
-    <Entry title={title}>
-      <Suggest
-        label="Constats et précisions"
-        value={value}
-        onChange={onChange}
-        suggestions={suggestions}
-      />
-    </Entry>
-  );
-}
-function Notice({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-      {children}
-    </div>
-  );
-}
-function Text({
-  label,
-  value,
-  onChange,
-  type = "text",
-  placeholder,
-  multiline,
-  disabled,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  placeholder?: string;
-  multiline?: boolean;
-  disabled?: boolean;
-}) {
-  const css =
-    "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-aulia-teal disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:disabled:bg-slate-800";
-  return (
-    <label className="block text-sm">
-      <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">
-        {label}
-      </span>
-      {multiline ? (
-        <textarea
-          rows={3}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          disabled={disabled}
-          className={css}
-        />
-      ) : (
-        <input
-          type={type}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          disabled={disabled}
-          className={css}
-        />
-      )}
-    </label>
-  );
-}
-function Select({
-  label,
-  value,
-  onChange,
-  options,
-  disabled,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<[string, string]>;
-  disabled?: boolean;
-}) {
-  return (
-    <label className="block text-sm">
-      <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-aulia-teal disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:disabled:bg-slate-800"
-      >
-        {options.map(([key, name]) => (
-          <option key={key} value={key}>
-            {name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-function Suggest({
-  label,
-  value,
-  onChange,
-  suggestions,
-  type,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  suggestions: string[];
-  type?: string;
-}) {
-  return (
-    <div>
-      <Text label={label} value={value} onChange={onChange} type={type} />
-      {suggestions.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {suggestions.map((item) => (
-            <button
-              type="button"
-              key={item}
-              onClick={() =>
-                onChange(
-                  value
-                    ? `${value}${value.includes(item) ? "" : `, ${item}`}`
-                    : item,
-                )
-              }
-              className="rounded-full border border-aulia-teal/25 px-2 py-1 text-[11px] font-medium text-aulia-teal hover:bg-aulia-mist dark:hover:bg-aulia-teal/15"
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-function MultiChoice({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: string[];
-}) {
-  const selected = value
-    .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean);
-  const toggle = (option: string) =>
-    onChange(
-      selected.includes(option)
-        ? selected.filter((x) => x !== option).join(", ")
-        : [...selected, option].join(", "),
-    );
-  return (
-    <div>
-      <p className="mb-1 text-sm font-medium text-slate-600 dark:text-slate-300">
-        {label}
-      </p>
-      <div className="flex flex-wrap gap-1.5">
-        {options.map((option) => (
-          <button
-            type="button"
-            key={option}
-            onClick={() => toggle(option)}
-            className={`rounded-full border px-2 py-1 text-[11px] font-medium ${selected.includes(option) ? "border-aulia-teal bg-aulia-teal text-white" : "border-aulia-teal/25 text-aulia-teal"}`}
-          >
-            {option}
-          </button>
-        ))}
-      </div>
-      <Text label="Autre type / précision" value={value} onChange={onChange} />
-    </div>
-  );
-}

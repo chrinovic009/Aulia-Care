@@ -1,7 +1,7 @@
 # Contrats de plateforme
 
-Ces contrats constituent les frontières entre Aulia Care Core, Aulia Care IA et
-Aulia Connected Care. Ils ne doivent importer ni Prisma, ni DTO HTTP internes,
+Ces contrats constituent les frontières entre Aulia Care Core,
+Aulia Care Diagnostic Agent et Aulia Care Connected Care. Ils ne doivent importer ni Prisma, ni DTO HTTP internes,
 ni composant frontend. Les adaptateurs Core, FHIR et SIH tiers traduisent leurs
 données vers ces contrats versionnés (`1.0`) ; ils ne partagent jamais leurs
 tables entre couches.

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Save, ShieldCheck, UserRound } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { ChangePasswordForm } from "../../components/auth/PasswordChangeGate";
 import { AdminPageShell, Panel, StatCard, StatusBadge, formatDate } from "./adminUi";
 
 const editableFields = [
@@ -10,7 +11,6 @@ const editableFields = [
   ["username", "Nom utilisateur"],
   ["email", "Email"],
   ["phone", "Telephone"],
-  ["specialty", "Specialite / fonction"],
   ["nationality", "Nationalite"],
   ["addressCountry", "Pays"],
   ["addressProvince", "Province"],
@@ -22,7 +22,7 @@ const editableFields = [
 export default function ProfileAdmin() {
   const { currentUser, updateProfile, isLoading, error } = useAuth();
   const [form, setForm] = useState<Record<string, string>>({});
-  const [password, setPassword] = useState("");
+  const [passwordSaved, setPasswordSaved] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -32,10 +32,8 @@ export default function ProfileAdmin() {
 
   const save = async () => {
     const payload: any = { ...form };
-    if (password.trim()) payload.password = password.trim();
     const updated = await updateProfile(payload);
     if (updated) {
-      setPassword("");
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2500);
     }
@@ -87,16 +85,6 @@ export default function ProfileAdmin() {
                 className="min-h-28 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
               />
             </label>
-            <label className="text-sm md:col-span-2">
-              <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Nouveau mot de passe</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Laisser vide pour ne pas changer"
-                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-              />
-            </label>
           </div>
           {error ? <p className="mt-4 text-sm font-medium text-red-600">{error}</p> : null}
           {saved ? <p className="mt-4 text-sm font-medium text-emerald-600">Profil mis a jour.</p> : null}
@@ -104,6 +92,11 @@ export default function ProfileAdmin() {
 
         <Panel title="Acces et securite">
           <div className="space-y-3 text-sm">
+            <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+              <p className="mb-3 font-semibold text-slate-700 dark:text-slate-200">Changer mon mot de passe</p>
+              <ChangePasswordForm onDone={() => { setPasswordSaved(true); window.setTimeout(() => setPasswordSaved(false), 3000); }} />
+              {passwordSaved ? <p className="mt-2 text-sm font-medium text-emerald-600">Mot de passe changé. Vos autres sessions ont été fermées.</p> : null}
+            </div>
             <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-slate-800">
               <span className="text-slate-600 dark:text-slate-300">Role principal</span>
               <StatusBadge label={currentUser.primaryRole} tone="blue" />

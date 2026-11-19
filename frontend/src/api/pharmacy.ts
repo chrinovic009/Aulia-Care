@@ -24,6 +24,22 @@ export const fetchPrescriptions = () => apiFetch<PharmacyPrescription[]>('/pharm
 
 export const fetchReadyPrescriptions = () => apiFetch<PharmacyPrescription[]>('/pharmacy/prescriptions/ready');
 
+export type MedicationSalePrice = {
+  medicationId: string;
+  amount: string;
+  currency: 'CDF';
+  updatedAt: string;
+};
+
+export const fetchMedicationSalePrice = (medicationId: string) =>
+  apiFetch<MedicationSalePrice | null>(`/pharmacy/medications/${medicationId}/sale-price`);
+
+export const setMedicationSalePrice = (medicationId: string, amount: string) =>
+  apiFetch<MedicationSalePrice>(`/pharmacy/medications/${medicationId}/sale-price`, {
+    method: 'PUT',
+    body: JSON.stringify({ amount }),
+  });
+
 export const dispensePrescription = (
   prescriptionId: string, 
   body: { notes?: string; location?: string } = {}

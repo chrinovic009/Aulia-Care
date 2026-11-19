@@ -6,7 +6,7 @@ import AuliaPageLoader from "./components/common/AuliaPageLoader";
 import { RequireAuth, RoleGuard, HomeRedirect } from "./components/auth/RequireAuth";
 import { LayerGuard, LayerRouteGate } from "./components/auth/LayerGuard";
 
-const SignIn = lazy(() => import("./pages/AuthPages/SignIn")); const SignUp = lazy(() => import("./pages/AuthPages/SignUp")); const NotFound = lazy(() => import("./pages/OtherPage/NotFound")); const UserProfiles = lazy(() => import("./pages/UserProfiles")); const Blank = lazy(() => import("./pages/Blank")); const DossierMedical = lazy(() => import("./pages/Patient/DossierMedical")); const SuiviQuotidien = lazy(() => import("./pages/Patient/SuiviQuotidien")); const Messages = lazy(() => import("./pages/Patient/Messages")); const MesTraitements = lazy(() => import("./pages/Patient/MesTraitements")); const HistoriqueMedical = lazy(() => import("./pages/Patient/HistoriqueMedical")); const PatientDashboard = lazy(() => import("./pages/Patient/PatientDashboard")); const PatientAppointments = lazy(() => import("./pages/Patient/PatientAppointments")); const PatientResults = lazy(() => import("./pages/Patient/PatientResults")); const PatientHospitalization = lazy(() => import("./pages/Patient/PatientHospitalization")); const PatientPayments = lazy(() => import("./pages/Patient/PatientPayments")); const MontreConnectee = lazy(() => import("./pages/Patient/MontreConnectee")); const MesEnfants = lazy(() => import("./pages/Patient/MesEnfants"));
+const SignIn = lazy(() => import("./pages/AuthPages/SignIn")); const SignUp = lazy(() => import("./pages/AuthPages/SignUp")); const NotFound = lazy(() => import("./pages/OtherPage/NotFound")); const UserProfiles = lazy(() => import("./pages/UserProfiles")); const DossierMedical = lazy(() => import("./pages/Patient/DossierMedical")); const SuiviQuotidien = lazy(() => import("./pages/Patient/SuiviQuotidien")); const Messages = lazy(() => import("./pages/Patient/Messages")); const MesTraitements = lazy(() => import("./pages/Patient/MesTraitements")); const HistoriqueMedical = lazy(() => import("./pages/Patient/HistoriqueMedical")); const PatientDashboard = lazy(() => import("./pages/Patient/PatientDashboard")); const PatientAppointments = lazy(() => import("./pages/Patient/PatientAppointments")); const PatientResults = lazy(() => import("./pages/Patient/PatientResults")); const PatientHospitalization = lazy(() => import("./pages/Patient/PatientHospitalization")); const PatientPayments = lazy(() => import("./pages/Patient/PatientPayments")); const MontreConnectee = lazy(() => import("./pages/Patient/MontreConnectee")); const MesEnfants = lazy(() => import("./pages/Patient/MesEnfants"));
 const ReceptionDashboard = lazy(() => import("./pages/Reception/Dashboard")); const ReceptionPatients = lazy(() => import("./pages/Reception/Patients")); const ReceptionAdmission = lazy(() => import("./pages/Reception/Admission")); const ReceptionProfile = lazy(() => import("./pages/Reception/ProfileReception")); const ReceptionMessages = lazy(() => import("./pages/Reception/MessagesReception")); const HospitalisationReception = lazy(() => import("./pages/Reception/HospitalisationReception")); const HistoriqueReception = lazy(() => import("./pages/Reception/HistoriqueReception")); const AbonnementsReception = lazy(() => import("./pages/Reception/AbonnementsReception")); const RendezVousReception = lazy(() => import("./pages/Reception/RendezVousReception")); const CreateReceptionService = lazy(() => import("./pages/Reception/CreateService"));
 const MontresReception = lazy(() => import("./pages/Reception/MontresReception"));
 const DashboardInfirmier = lazy(() => import("./pages/Infirmier/DashboardInfirmier")); const PatientAssignes = lazy(() => import("./pages/Infirmier/PatientAssignes")); const MessagesInfirmier = lazy(() => import("./pages/Infirmier/MessagesInfirmier")); const ProfileInfirmier = lazy(() => import("./pages/Infirmier/ProfileInfirmier")); const RoundsInfirmier = lazy(() => import("./pages/Infirmier/Rounds")); const HospitalisationInfirmier = lazy(() => import("./pages/Infirmier/HospitalisationsSuivi"));
@@ -15,10 +15,13 @@ const DashboardCaissier = lazy(() => import("./pages/Caissier/DashboardCaissier"
 const DashboardAdmin = lazy(() => import("./pages/Administration/DashboardAdmin")); const GestionPersAdmin = lazy(() => import("./pages/Administration/GestionPersAdmin")); const GestionServAdmin = lazy(() => import("./pages/Administration/GestionServAdmin")); const GestionDepartAdmin = lazy(() => import("./pages/Administration/GestionDepartAdmin")); const GestionSalleAdmin = lazy(() => import("./pages/Administration/GestionSalleAdmin")); const RapportAdmin = lazy(() => import("./pages/Administration/RapportAdmin")); const GestionStockAdmin = lazy(() => import("./pages/Administration/GestionStockAdmin")); const ProfilAdmin = lazy(() => import("./pages/Administration/ProfileAdmin")); const MessagesAdmin = lazy(() => import("./pages/Administration/MessagesAdmin"));
 const ClinicBrandingPage = lazy(() => import("./pages/Administration/ClinicBranding"));
 const GestionMontresAulia = lazy(() => import("./pages/Administration/GestionMontresAulia"));
-const DashboardPharmacie = lazy(() => import("./pages/Pharmacie/DashboardPharmacie")); const DelivrancePharmacie = lazy(() => import("./pages/Pharmacie/DelivrancePharmacie")); const HistoriquePharmacie = lazy(() => import("./pages/Pharmacie/HistoriquePharmacie")); const GestionStockPharmacie = lazy(() => import("./pages/Pharmacie/GestionStockPharmacie")); const MessagesPharmacie = lazy(() => import("./pages/Pharmacie/MessagesPharmacie")); const ProfilePharmacie = lazy(() => import("./pages/Pharmacie/ProfilePharmacie"));
+const DashboardPharmacie = lazy(() => import("./pages/Pharmacie/DashboardPharmacie")); const DelivrancePharmacie = lazy(() => import("./pages/Pharmacie/DelivrancePharmacie")); const HistoriquePharmacie = lazy(() => import("./pages/Pharmacie/HistoriquePharmacie")); const GestionStockPharmacie = lazy(() => import("./pages/Pharmacie/GestionStockPharmacie")); const MessagesPharmacie = lazy(() => import("./pages/Pharmacie/MessagesPharmacie")); const ProfilePharmacie = lazy(() => import("./pages/Pharmacie/ProfilePharmacie")); const SecuritePrescriptionPharmacie = lazy(() => import("./pages/Pharmacie/SecuritePrescriptionPharmacie")); const MesUnites = lazy(() => import("./pages/Unites/MesUnites")); const UnitWorkspace = lazy(() => import("./pages/Unites/UnitWorkspace")); const UnitesSoinsAdmin = lazy(() => import("./pages/Administration/UnitesSoinsAdmin"));
 const DashboardLaboratoire = lazy(() => import("./pages/Laboratoire/DashboardLaboratoire")); const CatalogueLab = lazy(() => import("./pages/Laboratoire/CatalogueLab")); const ActivityLab = lazy(() => import("./pages/Laboratoire/ActivityLab")); const ValidationsLab = lazy(() => import("./pages/Laboratoire/ValidationsLab")); const TechniciensLab = lazy(() => import("./pages/Laboratoire/TechniciensLab")); const MessagesLaboratoire = lazy(() => import("./pages/Laboratoire/MessagesLaboratoire")); const ProfileLaboratoire = lazy(() => import("./pages/Laboratoire/ProfileLab"));
 const DashboardSupAdmin = lazy(() => import("./pages/SuperAdmin/DashboardSupAdmin")); const ProfileSupAdmin = lazy(() => import("./pages/SuperAdmin/ProfileSupAdmin")); const MessagesSupAdmin = lazy(() => import("./pages/SuperAdmin/MessagesSupAdmin")); const Guide = lazy(() => import("./pages/Guide")); const DashboardFinance = lazy(() => import("./pages/Finance/DashboardFinance")); const TresorerieFinance = lazy(() => import("./pages/Finance/TresorerieFinance")); const BudgetsFinance = lazy(() => import("./pages/Finance/BudgetsFinance")); const MessagesFinance = lazy(() => import("./pages/Finance/MessagesFinance")); const ProfileFinance = lazy(() => import("./pages/Finance/ProfileFinance"));
 const DashboardRadio = lazy(() => import("./pages/Radiologie/DashboardRadio")); const WaitingQueueRadio = lazy(() => import("./pages/Radiologie/WaitingQueueRadio")); const WorkflowRadio = lazy(() => import("./pages/Radiologie/WorkflowRadio")); const CatalogueRadio = lazy(() => import("./pages/Radiologie/CatalogueRadio")); const EquipmentRadio = lazy(() => import("./pages/Radiologie/EquipmentRadio")); const SchedulingRadio = lazy(() => import("./pages/Radiologie/SchedulingRadio")); const HistoryRadio = lazy(() => import("./pages/Radiologie/HistoryRadio")); const ReportsRadio = lazy(() => import("./pages/Radiologie/ReportsRadio")); const MessagesRadio = lazy(() => import("./pages/Radiologie/MessagesRadio")); const ProfileRadio = lazy(() => import("./pages/Radiologie/ProfileRadio"));
+const Director = lazy(()=>import('./pages/MedicalDirector/Director'));
+const DirectorAssignment = lazy(()=>import('./pages/MedicalDirector/DirectorAssignment'));
+const Referrals = lazy(()=>import('./pages/Medecin/Referrals'));
 const CoucheChoix = lazy(() => import("./pages/Dev/CoucheChoix"));
 
 export default function App() {
@@ -33,7 +36,6 @@ export default function App() {
           <Route element={<RequireAuth><LayerRouteGate><AppLayout /></LayerRouteGate></RequireAuth>}>
 
             {/* Page d'erreur */}
-            <Route path="/blank" element={<Blank />} />
             <Route path="/guide" element={<RoleGuard requiredRoles={["PATIENT"]}><Guide /></RoleGuard>} />
 
             {/* Page Patient */}
@@ -45,7 +47,7 @@ export default function App() {
             <Route path="/rendez-vous" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientAppointments /></RoleGuard>} />
             <Route path="/examens-resultats" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientResults /></RoleGuard>} />
             <Route path="/hospitalisation" element={<RoleGuard requiredRoles={["PATIENT"]}><PatientHospitalization /></RoleGuard>} />
-            <Route path="/suivi-quotidien" element={<RoleGuard requiredRoles={["PATIENT"]}><LayerGuard layer="AI"><SuiviQuotidien /></LayerGuard></RoleGuard>} />
+            <Route path="/suivi-quotidien" element={<RoleGuard requiredRoles={["PATIENT"]}><LayerGuard layer="DIAGNOSTIC"><SuiviQuotidien /></LayerGuard></RoleGuard>} />
             <Route path="/montre-connectee" element={<RoleGuard requiredRoles={["PATIENT"]}><LayerGuard layer="CONNECTED"><MontreConnectee /></LayerGuard></RoleGuard>} />
             <Route path="/enfants" element={<RoleGuard requiredRoles={["PATIENT"]}><LayerGuard layer="CONNECTED"><MesEnfants /></LayerGuard></RoleGuard>} />
             <Route path="/messages" element={<RoleGuard requiredRoles={["PATIENT"]}><Messages /></RoleGuard>} />
@@ -76,6 +78,10 @@ export default function App() {
             <Route path="/nurse/messages" element={<RoleGuard requiredRoles={["NURSE"]}><MessagesInfirmier /></RoleGuard>} />
             <Route path="/nurse/profile" element={<RoleGuard requiredRoles={["NURSE"]}><ProfileInfirmier /></RoleGuard>} />
 
+            <Route path="/medical-director" element={<RoleGuard requiredRoles={["MEDICAL_DIRECTOR"]}><Director /></RoleGuard>} />
+            <Route path="/administration/medical-director" element={<RoleGuard requiredRoles={["ADMIN"]}><DirectorAssignment /></RoleGuard>} />
+            <Route path="/admin/medical-director" element={<RoleGuard requiredRoles={["SUPER_ADMIN"]}><DirectorAssignment /></RoleGuard>} />
+            <Route path="/doctor/referrals" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><Referrals /></RoleGuard>} />
             {/* Page Médecin */}
             <Route path="/doctor/" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><DashboardMedecin /></RoleGuard>} />
             <Route path="/doctor/guide" element={<RoleGuard requiredRoles={["PHYSICIAN"]}><Guide /></RoleGuard>} />
@@ -128,6 +134,9 @@ export default function App() {
             <Route path="/administration/stock" element={<RoleGuard requiredRoles={["ADMIN"]}><GestionStockAdmin /></RoleGuard>} />
             <Route path="/administration/identite" element={<RoleGuard requiredRoles={["ADMIN", "SUPER_ADMIN"]}><ClinicBrandingPage /></RoleGuard>} />
             <Route path="/administration/montres" element={<RoleGuard requiredRoles={["ADMIN", "SUPER_ADMIN"]}><LayerGuard layer="CONNECTED"><GestionMontresAulia /></LayerGuard></RoleGuard>} />
+            <Route path="/administration/unites-soins" element={<RoleGuard requiredRoles={["ADMIN"]}><UnitesSoinsAdmin /></RoleGuard>} />
+            <Route path="/unites" element={<RoleGuard requiredRoles={["NURSE", "PHYSICIAN", "SURGEON", "ANESTHESIOLOGIST", "MIDWIFE", "PARAMEDIC", "DISPATCHER", "RECEPTIONIST", "LAB_TECHNICIAN", "LAB_MANAGER", "RADIOLOGIST", "PHARMACIST"]}><MesUnites /></RoleGuard>} />
+            <Route path="/unites/:unitId" element={<RoleGuard requiredRoles={["NURSE", "PHYSICIAN", "SURGEON", "ANESTHESIOLOGIST", "MIDWIFE", "PARAMEDIC", "DISPATCHER", "RECEPTIONIST", "LAB_TECHNICIAN", "LAB_MANAGER", "RADIOLOGIST", "PHARMACIST"]}><UnitWorkspace /></RoleGuard>} />
             <Route path="/administration/profile" element={<RoleGuard requiredRoles={["ADMIN"]}><ProfilAdmin /></RoleGuard>} />
 
             {/* Pharmacie */}
@@ -137,6 +146,7 @@ export default function App() {
             <Route path="/pharmacie/historique" element={<RoleGuard requiredRoles={["PHARMACIST"]}><HistoriquePharmacie /></RoleGuard>} />
             <Route path="/pharmacie/stock" element={<RoleGuard requiredRoles={["PHARMACIST"]}><GestionStockPharmacie /></RoleGuard>} />
             <Route path="/pharmacie/messages" element={<RoleGuard requiredRoles={["PHARMACIST"]}><MessagesPharmacie /></RoleGuard>} />
+            <Route path="/pharmacie/securite" element={<RoleGuard requiredRoles={["PHARMACIST", "PHYSICIAN"]}><SecuritePrescriptionPharmacie /></RoleGuard>} />
             <Route path="/pharmacie/profile" element={<RoleGuard requiredRoles={["PHARMACIST"]}><ProfilePharmacie /></RoleGuard>} />
 
             {/* Laboratoire */}

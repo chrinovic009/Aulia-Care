@@ -1,3 +1,4 @@
+import { BRAND_FONT, BRAND_COLORS } from "../../config/brand";
 import React from "react";
 import { formatInvoiceId } from "../../utils/formatId";
 import type { ClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
@@ -6,6 +7,7 @@ interface InvoicePrintProps {
   patientName: string;
   patientPhone?: string;
   patientEmail?: string;
+  patientCompany?: string | null;
   invoiceNumber?: string;
   invoiceType: string;
   totalAmount: number;
@@ -99,10 +101,10 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   patientName,
   patientPhone,
   patientEmail,
+  patientCompany,
   invoiceNumber,
   invoiceType,
   totalAmount,
-  balanceDue,
   status,
   issuedAt,
   dueDate,
@@ -116,9 +118,6 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   payments,
   visitItems,
   visitTotalAmount,
-  visitPaidAmount,
-  visitBalanceDue,
-  visitWorkflowStatus,
   clinicBranding,
 }) => {
   const resolvedBranding: ClinicDocumentBranding = clinicBranding || { name: "Aulia Care" };
@@ -128,7 +127,6 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
     lastName: restNames[restNames.length - 1] || "",
   });
   const defaultDescription = buildFrenchDescription(invoiceType, remarks);
-  const headlineType = visitItems ? "FACTURE TOTALE" : "FACTURE";
   const invoiceTypeLabel = invoiceType === "ADMISSION_FEE" ? "Frais d'Admission" : invoiceType;
   // The saved hospital identity always wins over legacy print props.
   const clinicDisplayName = resolvedBranding.brandDisplayName || resolvedBranding.name || clinicName || "Aulia Care";
@@ -140,13 +138,13 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
   return (
     <div
       style={{
-        fontFamily: "Arial, sans-serif",
+        fontFamily: BRAND_FONT,
         width: "100%",
         maxWidth: "210mm",
         margin: "0 auto",
         padding: "8mm",
-        backgroundColor: "#fff",
-        color: "#000",
+        backgroundColor: BRAND_COLORS.paper,
+        color: BRAND_COLORS.printInk,
         pageBreakInside: "avoid",
         breakInside: "avoid",
       }}
@@ -154,18 +152,18 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
       {/* Header similar to template */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8mm" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{ width: 72, height: 72, background: "#0f172a", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6 }}>
+          <div style={{ width: 72, height: 72, background: BRAND_COLORS.printHeading, color: BRAND_COLORS.paper, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6 }}>
             <img src={resolvedBranding.documentLogoUrl || "/images/logo/icone.png"} alt="logo de l'établissement" style={{ width: 54, height: 54, objectFit: "contain" }} />
           </div>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "#0D9488" }}>{clinicDisplayName}</div>
-            <div style={{ fontSize: 11, color: "#6b7280", lineHeight: 1.4 }}>{clinicDisplayAddress}</div>
-            <div style={{ fontSize: 11, color: "#6b7280" }}>Tel: {clinicDisplayPhone} | {clinicDisplayEmail}</div>
-            {legalReferences && <div style={{ fontSize: 10, color: "#6b7280", marginTop: 3 }}>{legalReferences}</div>}
+            <div style={{ fontSize: 20, fontWeight: 800, color: BRAND_COLORS.primary }}>{clinicDisplayName}</div>
+            <div style={{ fontSize: 11, color: BRAND_COLORS.printMuted, lineHeight: 1.4 }}>{clinicDisplayAddress}</div>
+            <div style={{ fontSize: 11, color: BRAND_COLORS.printMuted }}>Tel: {clinicDisplayPhone} | {clinicDisplayEmail}</div>
+            {legalReferences && <div style={{ fontSize: 10, color: BRAND_COLORS.printMuted, marginTop: 3 }}>{legalReferences}</div>}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ background: "#0f172a", color: "#fff", padding: "10px 14px", borderRadius: 6, minWidth: 200 }}>
+          <div style={{ background: BRAND_COLORS.printHeading, color: BRAND_COLORS.paper, padding: "10px 14px", borderRadius: 6, minWidth: 200 }}>
             <div style={{ fontSize: 12, opacity: 0.9 }}>N° DOCUMENT</div>
             <div style={{ fontSize: 18, fontWeight: 800 }}>{displayInvoiceId}</div>
             <div style={{ marginTop: 6, fontSize: 11, opacity: 0.85 }}>DATE {new Date(issuedAt).toLocaleDateString("fr-FR")}</div>
@@ -175,17 +173,18 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
 
       {/* Invoice Details (Invoice To / Invoice To layout) */}
       <div style={{ display: "flex", gap: "12px", marginBottom: "10mm" }}>
-        <div style={{ flex: 1, border: "1px solid #eee", padding: "8px" }}>
-          <div style={{ fontSize: 10, fontWeight: 800, color: "#0f172a" }}>PATIENT</div>
+        <div style={{ flex: 1, border: `1px solid ${BRAND_COLORS.printBorder}`, padding: "8px" }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: BRAND_COLORS.printHeading }}>PATIENT</div>
           <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700 }}>{patientName}</div>
-          <div style={{ fontSize: 11, color: "#6b7280" }}>{patientPhone || "-"}</div>
-          <div style={{ fontSize: 11, color: "#6b7280" }}>{patientEmail || "-"}</div>
+          <div style={{ fontSize: 11, color: BRAND_COLORS.printMuted }}>{patientPhone || "-"}</div>
+          <div style={{ fontSize: 11, color: BRAND_COLORS.printMuted }}>{patientEmail || "-"}</div>
+          {patientCompany && <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: BRAND_COLORS.primary }}>Entreprise abonnée : {patientCompany}</div>}
         </div>
-        <div style={{ flex: 1, border: "1px solid #eee", padding: "8px" }}>
-          <div style={{ fontSize: 10, fontWeight: 800, color: "#0f172a" }}>ÉTABLISSEMENT ÉMETTEUR</div>
-          <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: "#0D9488" }}>{clinicDisplayName}</div>
-          <div style={{ fontSize: 11, color: "#6b7280" }}>{clinicDisplayAddress}</div>
-          <div style={{ fontSize: 11, color: "#6b7280" }}>Tel: {clinicDisplayPhone}</div>
+        <div style={{ flex: 1, border: `1px solid ${BRAND_COLORS.printBorder}`, padding: "8px" }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: BRAND_COLORS.printHeading }}>ÉTABLISSEMENT ÉMETTEUR</div>
+          <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: BRAND_COLORS.primary }}>{clinicDisplayName}</div>
+          <div style={{ fontSize: 11, color: BRAND_COLORS.printMuted }}>{clinicDisplayAddress}</div>
+          <div style={{ fontSize: 11, color: BRAND_COLORS.printMuted }}>Tel: {clinicDisplayPhone}</div>
         </div>
       </div>
 
@@ -240,7 +239,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
       {/* Invoice Items: prefer invoiceLines (detailed), else visitItems */}
       <table style={{ width: "100%", marginBottom: "10mm", borderCollapse: "collapse", fontSize: "11px", pageBreakInside: "avoid" }}>
         <thead>
-          <tr style={{ backgroundColor: "#0f172a", color: "#fff" }}>
+          <tr style={{ backgroundColor: BRAND_COLORS.printHeading, color: BRAND_COLORS.paper }}>
             <th style={{ padding: "10px", textAlign: "left" }}>DESCRIPTION</th>
             <th style={{ padding: "10px", textAlign: "center", width: 80 }}>QTY</th>
             <th style={{ padding: "10px", textAlign: "right", width: 120 }}>PRIX (CDF)</th>
@@ -250,7 +249,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
         <tbody>
           {invoiceLines && invoiceLines.length > 0 ? (
             invoiceLines.map((line) => (
-              <tr key={line.id} style={{ borderBottom: "1px solid #eee" }}>
+              <tr key={line.id} style={{ borderBottom: `1px solid ${BRAND_COLORS.printBorder}` }}>
                 <td style={{ padding: "8px" }}>{line.label}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>{line.quantity ?? 1}</td>
                 <td style={{ padding: "8px", textAlign: "right" }}>{Number(line.unitPrice || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} CDF</td>
@@ -259,7 +258,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
             ))
           ) : visitItems && visitItems.length > 0 ? (
             visitItems.map((item, index) => (
-              <tr key={`${item.description}-${index}`} style={{ borderBottom: "1px solid #eee" }}>
+              <tr key={`${item.description}-${index}`} style={{ borderBottom: `1px solid ${BRAND_COLORS.printBorder}` }}>
                 <td style={{ padding: "8px" }}>{(item.description || defaultDescription.label).split("||")[0]}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>1</td>
                 <td style={{ padding: "8px", textAlign: "right" }}>{Number(item.amount || 0).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} CDF</td>
@@ -267,7 +266,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
               </tr>
             ))
           ) : (
-            <tr style={{ borderBottom: "1px solid #eee" }}>
+            <tr style={{ borderBottom: `1px solid ${BRAND_COLORS.printBorder}` }}>
               <td style={{ padding: "8px" }}>{defaultDescription.label}</td>
               <td style={{ padding: "8px", textAlign: "center" }}>1</td>
               <td style={{ padding: "8px", textAlign: "right" }}>{totalAmount.toLocaleString("fr-FR", { minimumFractionDigits: 0 })} CDF</td>
@@ -281,16 +280,16 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
       {/* Totals and payment method */}
       <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", marginBottom: "14mm" }}>
         <div style={{ flex: 1 }}>
-          <div style={{ border: "1px solid #eee", padding: "10px" }}>
+          <div style={{ border: `1px solid ${BRAND_COLORS.printBorder}`, padding: "10px" }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>PAYMENT METHOD</div>
             {payments && payments.length > 0 ? (
               payments.map((p) => (
-                <div key={p.id} style={{ fontSize: 11, color: "#374151", marginBottom: 4 }}>
+                <div key={p.id} style={{ fontSize: 11, color: BRAND_COLORS.printSecondary, marginBottom: 4 }}>
                   {p.method} — {Number(p.amount).toLocaleString("fr-FR")} CDF {p.reference ? `(${p.reference})` : ""}
                 </div>
               ))
             ) : (
-              <div style={{ fontSize: 11, color: "#6b7280" }}>Cash / Carte / Virement</div>
+              <div style={{ fontSize: 11, color: BRAND_COLORS.printMuted }}>Cash / Carte / Virement</div>
             )}
           </div>
         </div>
@@ -303,7 +302,7 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
             <div style={{ fontSize: 12 }}>Tax</div>
             <div style={{ fontWeight: 700 }}>0 CDF</div>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fbbf24", padding: "10px", borderRadius: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: BRAND_COLORS.printTotal, padding: "10px", borderRadius: 6 }}>
             <div style={{ fontSize: 14, fontWeight: 800 }}>TOTAL À PAYER</div>
             <div style={{ fontSize: 16, fontWeight: 900 }}>{(visitItems ? visitTotalAmount ?? totalAmount : totalAmount).toLocaleString("fr-FR")} CDF</div>
           </div>
@@ -312,17 +311,17 @@ export const InvoicePrintTemplate: React.FC<InvoicePrintProps> = ({
 
       {/* Remarks */}
       {remarks && (
-        <div style={{ marginBottom: "10mm", fontSize: "10px", borderTop: "1px solid #ddd", paddingTop: "5mm" }}>
+        <div style={{ marginBottom: "10mm", fontSize: "10px", borderTop: `1px solid ${BRAND_COLORS.printRule}`, paddingTop: "5mm" }}>
           <strong>Remarques:</strong>
           <p style={{ margin: "2mm 0", whiteSpace: "pre-wrap" }}>{remarks}</p>
         </div>
       )}
 
       {/* Footer */}
-      <div style={{ marginTop: "15mm", textAlign: "center", fontSize: "10px", color: "#666", borderTop: "1px solid #ddd", paddingTop: "5mm" }}>
+      <div style={{ marginTop: "15mm", textAlign: "center", fontSize: "10px", color: BRAND_COLORS.printFooter, borderTop: `1px solid ${BRAND_COLORS.printRule}`, paddingTop: "5mm" }}>
         <p style={{ margin: "0" }}>{resolvedBranding.documentFooter || "Merci de votre confiance. Document officiel généré par Aulia Care."}</p>
         <p style={{ margin: "2mm 0" }}>{clinicDisplayName} — Tous droits réservés</p>
-        <p style={{ margin: "2mm 0", color: "#999" }}>Facture n° {displayInvoiceId}</p>
+        <p style={{ margin: "2mm 0", color: BRAND_COLORS.printFaint }}>Facture n° {displayInvoiceId}</p>
       </div>
 
       {/* Print Styles */}

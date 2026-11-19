@@ -24,6 +24,7 @@ import { CurrentUser } from './current-user.decorator';
 import { CurrentUserResponseDto } from './dto/current-user-response.dto';
 import { UpdateUserDto } from '../users/dto/update-user.dto';
 import { ChangePinDto } from './dto/change-pin.dto';
+import { ChangePasswordDto, RequestPasswordResetDto } from './dto/change-password.dto';
 import { VerifyPinDto } from './dto/verify-pin.dto';
 
 @Controller('auth')
@@ -41,10 +42,17 @@ export class AuthController {
 
   private cookieOptions() {
     const production = process.env.NODE_ENV === 'production';
+    // The public demonstration serves its SPA and API from separate HTTPS
+    // origins (Vercel and Render).  Cross-site cookies are opt-in so the
+    // normal single-origin hospital deployment keeps its stricter Lax policy.
+    const crossSiteCookies =
+      production && process.env.AULIA_CROSS_SITE_COOKIES === 'true';
+    const sameSite: 'lax' | 'none' = crossSiteCookies ? 'none' : 'lax';
+
     return {
       httpOnly: true,
-      secure: production,
-      sameSite: 'lax' as const,
+      secure: production || crossSiteCookies,
+      sameSite,
       // The same cookie also authenticates the secured Socket.IO handshake.
       path: '/',
     };
@@ -121,9 +129,19 @@ export class AuthController {
       displayName: user.displayName,
       primaryRole: user.primaryRole || 'PATIENT',
       status: user.status,
+      mustChangePassword: user.mustChangePassword,
     });
     this.setSessionCookies(response, session);
     return { user: session.user };
+  }
+
+  // 🔓 PUBLIC - Mot de passe oublié : la demande part à l'administrateur.
+  @Public()
+  @Throttle({ default: { limit: 3, ttl: 60_000, blockDuration: 15 * 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('password-reset-requests')
+  requestPasswordReset(@Body() body: RequestPasswordResetDto) {
+    return this.authService.requestPasswordReset(body.identifier);
   }
 
   // 🔓 PUBLIC - Renouvellement du token
@@ -220,6 +238,14 @@ export class AuthController {
   @Patch('profile')
   async updateProfile(@CurrentUser() user: any, @Body() payload: UpdateUserDto): Promise<CurrentUserResponseDto> {
     return this.authService.updateProfile(user.userId, payload) as Promise<CurrentUserResponseDto>;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000, blockDuration: 15 * 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('change-password')
+  async changePassword(@CurrentUser() user: any, @Body() body: ChangePasswordDto) {
+    return this.authService.changePassword(user.userId, user.sessionId, body.currentPassword, body.newPassword);
   }
 
   @UseGuards(JwtAuthGuard)

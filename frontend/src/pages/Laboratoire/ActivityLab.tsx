@@ -1,3 +1,4 @@
+import { BRAND_PRINT_FONT_CSS } from "../../config/brand";
 import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, Beaker, ClipboardList, Layers, Users, X } from "lucide-react";
 import { AdminPageShell, Panel, StatCard, DataTable, formatDate, formatDateTime } from "../Administration/adminUi";
@@ -5,14 +6,14 @@ import {
   fetchLaboratoryActivity, 
   fetchLaboratoryRequest, 
   LabActivityPayload, 
-  updateLaboratorySettings ,
+  updateLaboratorySettings,
   apiFetch
 } from "../../api/laboratory";
 import { type PatientRecord } from "../../api/reception";
 import { useAuth } from "../../context/AuthContext";
 import { useRealtime } from "../../context/RealtimeContext";
 import type { LabRequestDetail, LabRequestDetailItem, LabRequestResult } from "./activityLab.types";
-import { buildLabRequestDisplayId, formatNfsParameterReference, getLabStatusLabel, normalizeInitial } from "./activityLab.utils";
+import { buildLabRequestDisplayId, formatNfsParameterReference, getLabStatusLabel } from "./activityLab.utils";
 import { documentIdentityLine, documentLegalLine, documentLogoUrl, getClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
 
 export default function ActivityLab() {
@@ -20,8 +21,8 @@ export default function ActivityLab() {
   const { socket } = useRealtime();
   const [activity, setActivity] = useState<LabActivityPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [technicianDirectRelease, setTechnicianDirectRelease] = useState(false);
   const [isSavingAuthorization, setIsSavingAuthorization] = useState(false);
-  const [directResultAuthorizationEnabled, setDirectResultAuthorizationEnabled] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<string | null>(null);
   const [requestDetail, setRequestDetail] = useState<LabRequestDetail | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
@@ -141,7 +142,10 @@ export default function ActivityLab() {
     try {
       const data = await fetchLaboratoryActivity();
       setActivity(data);
-      setDirectResultAuthorizationEnabled(Boolean(data.directResultAuthorizationEnabled));
+      // La politique canonique est `technicianDirectRelease`.
+      // L'activité peut encore provenir d'un backend en transition ; on ne
+      // réactive jamais implicitement l'ancienne clé parallèle.
+      setTechnicianDirectRelease(Boolean(data.technicianDirectRelease));
     } catch (error) {
       console.error("Impossible de charger l'activité laboratoire", error);
       setActivity(null);
@@ -220,13 +224,16 @@ export default function ActivityLab() {
           const patientPositionFallback = detailData?.patient?.id ? 1 : undefined;
           setPatientList((current) => current ?? [{
             id: detailData.patient?.id || "",
+            matricule: detailData.patient?.id || "",
+            password: "",
+            name: [detailData.patient?.firstName, detailData.patient?.lastName].filter(Boolean).join(" ") || "Patient",
             firstName: detailData.patient?.firstName || "",
             lastName: detailData.patient?.lastName || "",
             phone: detailData.patient?.phone || "",
             email: detailData.patient?.email || "",
             address: detailData.patient?.address || "",
             createdAt: new Date().toISOString(),
-          } as PatientRecord]);
+          }]);
           if (patientPositionFallback) {
             setPatientList((current) => current ?? []);
           }
@@ -317,10 +324,11 @@ export default function ActivityLab() {
     setIsSavingAuthorization(true);
     try {
       // Utilisation de la fonction updateLaboratorySettings déclarée dans laboratory.ts
+      const nextValue = !technicianDirectRelease;
       await updateLaboratorySettings({
-        technicianDirectRelease: !directResultAuthorizationEnabled
+        technicianDirectRelease: nextValue,
       });
-      setDirectResultAuthorizationEnabled(!directResultAuthorizationEnabled);
+      setTechnicianDirectRelease(nextValue);
       await loadActivity();
     } catch (error) {
       console.error("Impossible de mettre à jour l'autorisation d'envoi direct", error);
@@ -429,7 +437,7 @@ export default function ActivityLab() {
           <style>
             /* Print-friendly A4 with 0.44cm margins */
             @page { size: A4; margin: 0.44cm; }
-            body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 0.44cm; background: #fff; }
+            body { ${BRAND_PRINT_FONT_CSS}; color: #111827; margin: 0; padding: 0.44cm; background: #fff; }
             /* Use box-sizing to ensure widths include padding/borders */
             .page { box-sizing: border-box; max-width: 100%; width: 100%; margin: 0 auto; padding: 6mm; border: 1px solid #d1d5db; border-radius: 8px; }
             .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 2px solid #111827; padding-bottom: 10px; margin-bottom: 12px; }
@@ -563,7 +571,10 @@ export default function ActivityLab() {
     <AdminPageShell
       title="Activité Laboratoire"
       subtitle="Vue opérationnelle en temps réel basée sur les demandes, les échantillons et le personnel de laboratoire."
-      actions={
+      actions={<div className="flex items-center gap-2">
+        {isLabManager ? <button onClick={handleAuthorizationToggle} disabled={isSavingAuthorization} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:opacity-50">
+          {isSavingAuthorization ? "Enregistrement..." : technicianDirectRelease ? "Désactiver l'envoi direct" : "Autoriser l'envoi direct"}
+        </button> : null}
         <button
           onClick={loadActivity}
           disabled={isLoading}
@@ -571,7 +582,7 @@ export default function ActivityLab() {
         >
           {isLoading ? 'Chargement...' : 'Actualiser'}
         </button>
-      }
+      </div>}
     >
 
       <section className="grid gap-4 xl:grid-cols-3">
@@ -790,7 +801,7 @@ export default function ActivityLab() {
                                               <p className="font-semibold text-slate-900 dark:text-white">{item.labTest?.name || "—"}</p>
                                               <p className="mt-1 text-xs text-slate-500">{getLabStatusLabel(item?.status, item?.results?.[0]?.resultStatus)}</p>
                                             </div>
-                                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                                               {isActive ? "Sélectionné" : "Ouvrir"}
                                             </span>
                                           </div>

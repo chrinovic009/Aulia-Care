@@ -5,6 +5,8 @@ export class OpenPatientConsultationDto {
   @IsUUID()
   patientId: string;
 
+  @IsOptional() @IsUUID() referralId?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(2_000)

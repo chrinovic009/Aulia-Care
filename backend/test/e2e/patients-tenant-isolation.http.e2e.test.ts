@@ -11,6 +11,7 @@ import {
   PatientWorkflowStatus,
   PrismaClient,
   RoleSlug,
+  ServiceCategory,
 } from '@prisma/client';
 import { AppModule } from '../../src/app.module';
 import { AuthService } from '../../src/auth/auth.service';
@@ -207,6 +208,7 @@ test(
             clinicId: clinicA.id,
             active: true,
             name: `Consultation Generale - Reception A ${suffix}`,
+            category: ServiceCategory.CONSULTATION,
           },
         }),
 
@@ -215,6 +217,7 @@ test(
             clinicId: clinicB.id,
             active: true,
             name: `Consultation Generale - Reception B ${suffix}`,
+            category: ServiceCategory.CONSULTATION,
           },
         }),
       ]);

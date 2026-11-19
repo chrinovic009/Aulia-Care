@@ -1,3 +1,4 @@
+import { BRAND_FONT } from "../../config/brand";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { Dropdown } from "../ui/dropdown/Dropdown";
@@ -9,7 +10,7 @@ export default function MonthlySalesChart() {
   const options: ApexOptions = {
     colors: ["#085c00"],
     chart: {
-      fontFamily: "Outfit, sans-serif",
+      fontFamily: BRAND_FONT,
       type: "bar",
       height: 320,
       toolbar: {
@@ -58,7 +59,7 @@ export default function MonthlySalesChart() {
       show: true,
       position: "top",
       horizontalAlign: "left",
-      fontFamily: "Outfit",
+      fontFamily: BRAND_FONT,
     },
     yaxis: {
       title: {

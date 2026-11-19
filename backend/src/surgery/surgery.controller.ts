@@ -13,14 +13,14 @@ export class SurgeryController {
 
   @Get()
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')
-  findAll() {
-    return this.surgeryService.findAll();
+  findAll(@Request() req: any) {
+    return this.surgeryService.findAll(req.user?.userId);
   }
 
   @Get('operating-rooms/all')
   @Roles('SUPER_ADMIN', 'ADMIN', 'NURSE', 'PHYSICIAN')
-  operatingRooms() {
-    return this.surgeryService.operatingRooms();
+  operatingRooms(@Request() req: any) {
+    return this.surgeryService.operatingRooms(req.user?.userId);
   }
 
   @Post()
@@ -37,7 +37,7 @@ export class SurgeryController {
 
   @Get(':id')
   @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN')
-  findOne(@Param('id') id: string) {
-    return this.surgeryService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.surgeryService.findOne(id, req.user?.userId);
   }
 }

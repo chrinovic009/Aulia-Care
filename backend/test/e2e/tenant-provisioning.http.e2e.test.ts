@@ -28,6 +28,27 @@ test('HTTP E2E: DEV -> clinic -> layers -> Super Admin -> Admin -> staff preserv
     assert.ok(Array.isArray(cookies));
     return cookies as string[];
   };
+  // An account opened by someone else only reaches the password-change screen
+  // until its holder chooses their own password.
+  const ownPassword = 'Kolwezi-Lualaba-48-Soins';
+  // Sign-in and password-change routes are rate limited (5 per minute): only
+  // the first account exercises the refusals.
+  const firstLogin = async (server: Parameters<typeof request>[0], identifier: string, code: string, checkRefusals = false) => {
+    const response = await request(server).post('/api/auth/login').send({ identifier, password: code }).expect(200);
+    assert.equal(response.body.user.mustChangePassword, true);
+    const cookies = response.headers['set-cookie'] as unknown as string[];
+    const blocked = await request(server).get('/api/users').set('Cookie', cookies).expect(403);
+    assert.equal(blocked.body.code, 'PASSWORD_CHANGE_REQUIRED');
+    if (checkRefusals) {
+      await request(server).post('/api/auth/change-password').set('Cookie', cookies).send({ currentPassword: 'wrong-password-1', newPassword: ownPassword }).expect(400);
+      await request(server).post('/api/auth/change-password').set('Cookie', cookies).send({ currentPassword: code, newPassword: 'court1' }).expect(400);
+    }
+    await request(server).post('/api/auth/change-password').set('Cookie', cookies).send({ currentPassword: code, newPassword: ownPassword }).expect(200);
+    const me = await request(server).get('/api/auth/me').set('Cookie', cookies).expect(200);
+    assert.equal(me.body.mustChangePassword, false);
+    if (checkRefusals) await request(server).post('/api/auth/login').send({ identifier, password: code }).expect(401);
+    return cookies;
+  };
 
   try {
     process.env.DATABASE_URL = databaseUrl;
@@ -61,7 +82,7 @@ test('HTTP E2E: DEV -> clinic -> layers -> Super Admin -> Admin -> staff preserv
     await request(server)
       .put(`/api/platform/provisioning/clinics/${clinicId}/layers`)
       .set('Cookie', devCookies)
-      .send({ layers: ['CORE', 'AI'] })
+      .send({ layers: ['CORE'] })
       .expect(200);
     const createdSuperAdmin = await request(server)
       .post(`/api/platform/provisioning/clinics/${clinicId}/super-admin`)
@@ -71,6 +92,7 @@ test('HTTP E2E: DEV -> clinic -> layers -> Super Admin -> Admin -> staff preserv
     assert.equal(createdSuperAdmin.body.clinicId, clinicId);
     await request(server).post(`/api/platform/provisioning/clinics/${clinicId}/activate`).set('Cookie', devCookies).send({}).expect(201);
 
+    // Super Admin and administrator keep the password chosen for them: no forced change.
     const superCookies = await login(server, `super-${suffix}`);
     const createdAdmin = await request(server)
       .post('/api/users/super-admin/admins')
@@ -86,6 +108,26 @@ test('HTTP E2E: DEV -> clinic -> layers -> Super Admin -> Admin -> staff preserv
       .send({ primaryRole: 'NURSE', firstName: 'Nurse', lastName: 'Local', displayName: 'Nurse Local', email: `nurse-${suffix}@clinic.local`, username: `nurse-${suffix}`, password, shiftPattern: 'MANUAL' })
       .expect(201);
     const nurse = await prisma.user.findUniqueOrThrow({ where: { id: createdNurse.body.id }, include: { Employee: true } });
+    assert.equal(nurse.mustChangePassword, true);
+    // Forgotten password: the holder asks, the administrator approves and hands over a 6-digit code.
+    const asked = await request(server).post('/api/auth/password-reset-requests').send({ identifier: `nurse-${suffix}` }).expect(200);
+    const unknown = await request(server).post('/api/auth/password-reset-requests').send({ identifier: `nobody-${suffix}` }).expect(200);
+    assert.equal(unknown.body.message, asked.body.message);
+    const pending = await request(server).get('/api/users/password-reset-requests').set('Cookie', adminCookies).expect(200);
+    const mine = pending.body.find((row: { user: { id: string } }) => row.user.id === nurse.id);
+    assert.ok(mine);
+    const reset = await request(server).post(`/api/users/password-reset-requests/${mine.id}/approve`).set('Cookie', adminCookies).send({}).expect(201);
+    assert.match(reset.body.generatedPassword, /^\d{6}$/);
+    // The code stays visible to the administrator until the nurse has used it, encrypted at rest.
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: nurse.id } });
+    assert.ok(stored.temporaryCodeCipher && !stored.temporaryCodeCipher.includes(reset.body.generatedPassword));
+    const codes = await request(server).get('/api/users/pending-access-codes').set('Cookie', adminCookies).expect(200);
+    assert.equal(codes.body.find((row: { userId: string }) => row.userId === nurse.id)?.code, reset.body.generatedPassword);
+    await firstLogin(server, `nurse-${suffix}`, reset.body.generatedPassword, true);
+    // Used: the code leaves the administrator's list and is erased.
+    const after = await request(server).get('/api/users/pending-access-codes').set('Cookie', adminCookies).expect(200);
+    assert.equal(after.body.some((row: { userId: string }) => row.userId === nurse.id), false);
+    assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: nurse.id } })).temporaryCodeCipher, null);
     assert.equal(nurse.clinicId, clinicId);
     assert.equal(nurse.Employee[0]?.clinicId, clinicId);
   } finally {
@@ -93,6 +135,8 @@ test('HTTP E2E: DEV -> clinic -> layers -> Super Admin -> Admin -> staff preserv
     if (clinicId) {
       await prisma.employee.deleteMany({ where: { clinicId } }).catch(() => undefined);
       await prisma.session.deleteMany({ where: { user: { clinicId } } }).catch(() => undefined);
+      await prisma.passwordHistory.deleteMany({ where: { user: { clinicId } } }).catch(() => undefined);
+      await prisma.passwordResetRequest.deleteMany({ where: { user: { clinicId } } }).catch(() => undefined);
       await prisma.user.deleteMany({ where: { clinicId } }).catch(() => undefined);
       await prisma.platformLayerConfiguration.deleteMany({ where: { clinicId } }).catch(() => undefined);
       await prisma.clinic.deleteMany({ where: { id: clinicId } }).catch(() => undefined);

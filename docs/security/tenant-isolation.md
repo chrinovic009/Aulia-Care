@@ -9,6 +9,6 @@ doit rester non découvrable. Une erreur `403` pour un compte opérationnel doit
 être examinée par `npm run audit:tenant-integrity`, puis corrigée par le
 workflow explicite approprié.
 
-Les couches optionnelles sont des licences par établissement. Une route AI ou
+Les couches optionnelles sont des licences par établissement. Une route Diagnostic Agent ou
 Connected n’est accordée que lorsque la configuration du `clinicId` de l’acteur
 contient explicitement la couche demandée.

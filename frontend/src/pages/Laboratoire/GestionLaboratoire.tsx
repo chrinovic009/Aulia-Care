@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, ShieldCheck, ClipboardList, ListChecks, Users } from "lucide-react";
-import PageBreadcrumb from "../../components/common/PageBreadCrumb";
-import PageMeta from "../../components/common/PageMeta";
-import { apiFetch } from "../../config/api";
+import { Search, ShieldCheck, ClipboardList, ListChecks, Users } from "lucide-react";
 import { AdminPageShell, Panel, StatCard, DataTable, formatDate } from "../Administration/adminUi";
 import { fetchLaboratoryRequests } from "../../api/laboratory";
 
@@ -20,11 +17,9 @@ export default function GestionLaboratoire() {
   const [requests, setRequests] = useState<LabRequestListItem[]>([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [isLoading, setIsLoading] = useState(true);
   const [labMetrics, setLabMetrics] = useState({ total: 0, pending: 0, completed: 0, rejected: 0 });
 
   const loadRequests = async () => {
-    setIsLoading(true);
     try {
       const data = await fetchLaboratoryRequests();
       setRequests(data);
@@ -35,7 +30,6 @@ export default function GestionLaboratoire() {
         rejected: data.filter((item) => ["REJECTED", "CANCELLED"].includes(item.status)).length,
       });
     } finally {
-      setIsLoading(false);
     }
   };
 
@@ -122,7 +116,7 @@ export default function GestionLaboratoire() {
                 rows={filteredRequests.map((request) => [
                   request.id,
                   `${request.patient?.firstName || "-"} ${request.patient?.lastName || ""}`.trim(),
-                  <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">{request.status}</span>,
+                  <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">{request.status}</span>,
                   request.priority || "NORMAL",
                   formatDate(request.requestedAt),
                   <button className="rounded-lg bg-slate-900 px-3 py-1 text-xs font-semibold text-white">Voir</button>,

@@ -66,7 +66,7 @@ const Calendar: React.FC = () => {
   // load current patient name from localStorage (if available)
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("patientName") || "";
+      const saved = "";
       if (saved) setCurrentPatientName(saved);
     } catch (e) {
       // ignore (SSR/dev)

@@ -33,6 +33,11 @@ export class UsersController {
     'CASHIER',
     'FINANCE',
     'PATIENT',
+    'SURGEON',
+    'ANESTHESIOLOGIST',
+    'MIDWIFE',
+    'PARAMEDIC',
+    'DISPATCHER',
   )
   findContacts(@Request() req: any) {
     return this.usersService.findContactsForRole(req.user?.role, req.user?.userId);
@@ -48,6 +53,18 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   workLocation(@Request() req: any) {
     return this.usersService.findMyWorkLocation(req.user?.userId);
+  }
+
+  @Get('pending-access-codes')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  pendingAccessCodes(@Request() req: any) {
+    return this.usersService.pendingAccessCodes(req.user?.userId);
+  }
+
+  @Get('password-reset-requests')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  passwordResetRequests(@Request() req: any) {
+    return this.usersService.passwordResetRequests(req.user?.userId);
   }
 
   @Get(':id')
@@ -66,6 +83,24 @@ export class UsersController {
   @Roles('SUPER_ADMIN')
   createAdmin(@Body() createUserDto: CreateUserDto, @Request() req: any) {
     return this.usersService.createAdmin(createUserDto, req.user?.userId);
+  }
+
+  @Post('password-reset-requests/:requestId/approve')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  approvePasswordReset(@Param('requestId') requestId: string, @Request() req: any) {
+    return this.usersService.approvePasswordReset(requestId, req.user?.userId);
+  }
+
+  @Post('password-reset-requests/:requestId/reject')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  rejectPasswordReset(@Param('requestId') requestId: string, @Body() body: { note?: string }, @Request() req: any) {
+    return this.usersService.rejectPasswordReset(requestId, body?.note, req.user?.userId);
+  }
+
+  @Post(':id/reset-password')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  resetPassword(@Param('id') id: string, @Request() req: any) {
+    return this.usersService.resetPassword(id, req.user?.userId);
   }
 
   @Patch(':id')

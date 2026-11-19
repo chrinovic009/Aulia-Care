@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { useAuth, RoleSlug, getRedirectPath } from "../../context/AuthContext";
+import { useAuth, RoleSlug, getRedirectPath, getHomePath, hasRole } from "../../context/AuthContext";
 
 interface RequireAuthProps {
   children: ReactNode;
@@ -58,7 +58,7 @@ export function RoleGuard({ children, requiredRoles }: RoleGuardProps) {
     ),
   );
 
-  if (!requiredRoles.includes(currentUser.primaryRole) && !(requiredRoles.includes('LAB_MANAGER') && isLabManager)) {
+  if (!requiredRoles.some(role=>hasRole(currentUser,role)) && !(requiredRoles.includes('LAB_MANAGER') && isLabManager)) {
     console.debug('RoleGuard: access denied', { requiredRoles, currentRole: currentUser?.primaryRole });
     return (
       <div className="flex items-center justify-center h-screen">
@@ -94,7 +94,7 @@ export function HomeRedirect() {
   }
 
   if (currentUser) {
-    return <Navigate to={getRedirectPath(currentUser.primaryRole)} replace />;
+    return <Navigate to={getHomePath(currentUser)} replace />;
   }
 
   return <Navigate to="/signin" replace />;

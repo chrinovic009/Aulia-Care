@@ -1,3 +1,4 @@
+import { BRAND_FONT } from "../../../config/brand";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 
@@ -5,7 +6,7 @@ export default function BarChartOne() {
   const options: ApexOptions = {
     colors: ["#0D9488"],
     chart: {
-      fontFamily: "Outfit, sans-serif",
+      fontFamily: BRAND_FONT,
       type: "bar",
       height: 180,
       toolbar: {
@@ -54,7 +55,7 @@ export default function BarChartOne() {
       show: true,
       position: "top",
       horizontalAlign: "left",
-      fontFamily: "Outfit",
+      fontFamily: BRAND_FONT,
     },
     yaxis: {
       title: {

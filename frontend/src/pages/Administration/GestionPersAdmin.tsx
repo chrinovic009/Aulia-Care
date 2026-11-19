@@ -1,3 +1,4 @@
+import { BRAND_PRINT_FONT_CSS } from "../../config/brand";
 import { useEffect, useMemo, useState } from "react";
 import {
   BriefcaseBusiness,
@@ -15,6 +16,10 @@ import {
   UsersRound,
 } from "lucide-react";
 import { apiFetch } from "../../config/api";
+import { SpecialtySelect } from "../../components/form/SpecialtySelect";
+import PasswordResetRequests from "../../components/auth/PasswordResetRequests";
+import GeneratedCredentialModal from "../../components/auth/GeneratedCredentialModal";
+import PendingAccessCodes from "../../components/auth/PendingAccessCodes";
 import { AdminPageShell, DataTable, Panel, StatCard, StatusBadge, formatDate, formatMoney } from "./adminUi";
 
 type RoleSlug =
@@ -29,6 +34,9 @@ type RoleSlug =
   | "RADIOLOGIST"
   | "SURGEON"
   | "ANESTHESIOLOGIST"
+  | "MIDWIFE"
+  | "PARAMEDIC"
+  | "DISPATCHER"
   | "FINANCE"
   | "SUPER_ADMIN"
   | "PATIENT";
@@ -125,7 +133,6 @@ function calculateAge(dateOfBirth: string) {
   if (beforeBirthday) age -= 1;
   return age >= 0 ? age : null;
 }
-
 function phoneValidation(countryCode: PhoneCountry, value: string) {
   const country = phoneCountries.find((item) => item.code === countryCode) || phoneCountries[0];
   const digits = value.replace(/\D/g, '').replace(/^0+/, '');
@@ -152,11 +159,17 @@ const roleFilters: Array<{ key: string; label: string }> = [
   { key: "RADIOLOGIST", label: "Radiologues" },
   { key: "SURGEON", label: "Chirurgiens" },
   { key: "ANESTHESIOLOGIST", label: "Anesthesistes" },
+  { key: "MIDWIFE", label: "Sages-femmes" },
+  { key: "PARAMEDIC", label: "Ambulanciers" },
+  { key: "DISPATCHER", label: "Régulateurs" },
   { key: "FINANCE", label: "Finance" },
   { key: "ACTIVE", label: "Actifs" },
   { key: "INACTIVE", label: "Inactifs" },
   { key: "SUSPENDED", label: "Suspendus" },
 ];
+
+/** Roles whose "Spécialité" is chosen in the establishment's list of medical specialties. */
+const SPECIALTY_ROLES: ReadonlySet<string> = new Set(["PHYSICIAN", "SURGEON", "ANESTHESIOLOGIST"]);
 
 const roleOptions = roleFilters
   .filter((item) => !["ALL", "ACTIVE", "INACTIVE", "SUSPENDED"].includes(item.key))
@@ -194,18 +207,6 @@ const emptyForm = {
   permanentShiftEndTime: "17:30",
 };
 
-function initialPasswordPreview(clinicName: string, role: RoleSlug, firstName: string, lastName: string, position: number) {
-  const establishment = (clinicName || "Aulia Care")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .slice(0, 2)
-    .toUpperCase()
-    .padEnd(2, "A");
-  const initials = `${firstName.charAt(0) || "X"}${lastName.charAt(0) || "X"}`.toUpperCase();
-  return `${establishment}${role.charAt(0)}-${initials}${position}${new Date().getFullYear()}`;
-}
-
 export default function GestionPersAdmin() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [services, setServices] = useState<ServiceRecord[]>([]);
@@ -225,7 +226,7 @@ export default function GestionPersAdmin() {
   const [createdCredential, setCreatedCredential] = useState<{ name: string; username: string; password: string } | null>(null);
   const [pendingAction, setPendingAction] = useState<null | {
     user: AdminUser;
-    type: "SUSPEND" | "INACTIVE" | "ACTIVE" | "DELETE";
+    type: "SUSPEND" | "INACTIVE" | "ACTIVE" | "DELETE" | "RESET_PASSWORD";
   }>(null);
   const [responsibilityReplacement, setResponsibilityReplacement] = useState<null | { departmentId: string; userId: string; name: string }>(null);
 
@@ -237,7 +238,7 @@ export default function GestionPersAdmin() {
         apiFetch<ServiceRecord[]>("/services").catch(() => []),
         apiFetch<DepartmentRecord[]>("/administration/departments").catch(() => []),
         apiFetch<HrReport>("/administration/reports").catch(() => ({})),
-        apiFetch<ClinicBranding>("/administration/clinic-branding").catch(() => ({ name: "Aulia Care" })),
+        apiFetch<ClinicBranding>("/administration/clinic-branding").catch((): ClinicBranding => ({ name: "Aulia Care" })),
         apiFetch<AttendanceSummary>("/users/attendance/summary?days=30").catch(() => null),
       ]);
       setUsers(usersData.filter((user) => user.primaryRole !== "SUPER_ADMIN" && user.primaryRole !== "ADMIN"));
@@ -329,7 +330,7 @@ export default function GestionPersAdmin() {
       username: user.username || "",
       password: "",
       primaryRole: (user.primaryRole || "NURSE") as RoleSlug,
-      specialty: user.specialty || employee?.position || "",
+      specialty: SPECIALTY_ROLES.has(String(user.primaryRole)) ? user.specialty || "" : "",
       serviceId: user.staff?.[0]?.service?.id || "",
       departmentId: departments.find((department) => department.name === employee?.department?.name)?.id || "",
       isResponsible: Boolean((user.serviceResponsabilites && user.serviceResponsabilites.length) || (user as any).departmentResponsabilites?.length),
@@ -397,13 +398,13 @@ export default function GestionPersAdmin() {
         displayName,
         username,
         email: resolvedEmail,
-        password: editingUser ? form.password || undefined : undefined,
         primaryRole: form.primaryRole,
         isResponsible: form.isResponsible,
         isDepartmentResponsible: form.isResponsible,
         phone: validatedPhone.e164 || undefined,
         status: form.status,
-        specialty: form.specialty || undefined,
+        // Only doctors have a medical specialty; other roles carry their role as position.
+        specialty: SPECIALTY_ROLES.has(form.primaryRole) ? form.specialty || undefined : "",
         nationality: form.nationality || undefined,
         addressCountry: form.addressCountry || undefined,
         addressProvince: form.addressProvince || undefined,
@@ -412,7 +413,7 @@ export default function GestionPersAdmin() {
         gender: form.gender || undefined,
         dateOfBirth: form.dateOfBirth || undefined,
         departmentId: form.departmentId || undefined,
-        position: form.specialty || roleLabel({ primaryRole: form.primaryRole } as AdminUser),
+        position: (SPECIALTY_ROLES.has(form.primaryRole) && form.specialty) || roleLabel({ primaryRole: form.primaryRole } as AdminUser),
         salary: form.salary ? Number(form.salary) : undefined,
         salaryFrequency: form.salaryFrequency || undefined,
         shiftPattern: form.shiftMode === "PERMANENT" ? "PERMANENT_DAY" : "THREE_DAY_THREE_NIGHT_THREE_REST",
@@ -498,6 +499,13 @@ export default function GestionPersAdmin() {
       await deleteUser(user);
       return;
     }
+    if (type === "RESET_PASSWORD") {
+      // A new random temporary password, shown once; the holder chooses their own at the next sign-in.
+      const reset = await apiFetch<{ generatedPassword: string }>(`/users/${user.id}/reset-password`, { method: "POST", body: "{}" });
+      setCreatedCredential({ name: user.displayName || `${user.firstName} ${user.lastName}`.trim(), username: user.username, password: reset.generatedPassword });
+      await load();
+      return;
+    }
     await changeStatus(user, type === "ACTIVE" ? "ACTIVE" : type === "SUSPEND" ? "SUSPENDED" : "INACTIVE");
   };
 
@@ -510,7 +518,7 @@ export default function GestionPersAdmin() {
       setFormError("L’impression a été bloquée par le navigateur. Autorisez les fenêtres contextuelles puis réessayez.");
       return;
     }
-    printWindow.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Personnel — ${clinicName}</title><style>body{font-family:Arial,sans-serif;color:#0A1D3A;padding:28px}h1{color:#0D9488;margin:0 0 5px}p{color:#475569}table{width:100%;border-collapse:collapse;margin-top:22px;font-size:12px}th,td{border:1px solid #cbd5e1;padding:9px;text-align:left}th{background:#e6fffb;color:#0A1D3A}@media print{body{padding:0}}</style></head><body><h1>${clinicName}</h1><p>Liste officielle du personnel · éditée le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date())}</p><table><thead><tr><th>Employé</th><th>Fonction</th><th>Téléphone</th><th>E-mail</th><th>Statut</th><th>Dernière connexion</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+    printWindow.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Personnel — ${clinicName}</title><style>body{${BRAND_PRINT_FONT_CSS};color:#0A1D3A;padding:28px}h1{color:#0D9488;margin:0 0 5px}p{color:#475569}table{width:100%;border-collapse:collapse;margin-top:22px;font-size:12px}th,td{border:1px solid #cbd5e1;padding:9px;text-align:left}th{background:#e6fffb;color:#0A1D3A}@media print{body{padding:0}}</style></head><body><h1>${clinicName}</h1><p>Liste officielle du personnel · éditée le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" }).format(new Date())}</p><table><thead><tr><th>Employé</th><th>Fonction</th><th>Téléphone</th><th>E-mail</th><th>Statut</th><th>Dernière connexion</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
     printWindow.document.close();
     printWindow.focus();
     window.setTimeout(() => printWindow.print(), 250);
@@ -531,6 +539,8 @@ export default function GestionPersAdmin() {
         </>
       }
     >
+      <PendingAccessCodes roleLabel={(role) => roleLabel({ primaryRole: role } as AdminUser)} refreshKey={createdCredential ? 1 : 0} />
+      <PasswordResetRequests roleLabel={(role) => roleLabel({ primaryRole: role } as AdminUser)} onCode={(credential) => { setCreatedCredential(credential); void load(); }} />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
         <StatCard icon={<UsersRound size={20} />} label="Personnel total" value={stats.total} hint="Employes actifs et suivis" />
         <StatCard icon={<Stethoscope size={20} />} label="Medecins" value={stats.doctors} tone="blue" />
@@ -606,6 +616,7 @@ export default function GestionPersAdmin() {
               ) : (
                 <button onClick={() => setPendingAction({ user, type: "SUSPEND" })} className="rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">Suspendre</button>
               )}
+              <button onClick={() => setPendingAction({ user, type: "RESET_PASSWORD" })} className="rounded-lg bg-aulia-mist px-3 py-2 text-xs font-semibold text-aulia-navy dark:bg-slate-800 dark:text-slate-200" title="Mot de passe oublié ou compromis">Réinitialiser le mot de passe</button>
               <button onClick={() => setPendingAction({ user, type: "INACTIVE" })} className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">Desactiver</button>
               <button onClick={() => setPendingAction({ user, type: "DELETE" })} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">Supprimer</button>
             </div>,
@@ -672,14 +683,12 @@ export default function GestionPersAdmin() {
         <EmployeeForm
           form={form}
           departments={departments}
-          services={services}
           isSaving={isSaving}
           editing={Boolean(editingUser)}
           onChange={updateForm}
           onClose={() => setShowForm(false)}
           onSave={saveEmployee}
           error={formError}
-          passwordPreview={initialPasswordPreview(clinicName, form.primaryRole, form.firstName, form.lastName, users.filter((user) => user.primaryRole === form.primaryRole).length + 1)}
         />
       ) : null}
 
@@ -757,24 +766,12 @@ function DepartmentResponsibleReplacementModal({
   );
 }
 
-function GeneratedCredentialModal({ credential, onClose }: { credential: { name: string; username: string; password: string }; onClose: () => void }) {
-  return <div className="fixed inset-0 z-[80] grid place-items-center overflow-y-auto overscroll-contain bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6">
-    <div role="dialog" aria-modal="true" className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-aulia-teal/30 bg-white p-5 shadow-2xl dark:bg-slate-950 sm:p-6">
-      <p className="text-xs font-bold uppercase tracking-[.2em] text-aulia-teal">Accès initial</p>
-      <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">Compte créé pour {credential.name}</h2>
-      <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">Communiquez ces identifiants une seule fois par un canal sûr. Le collaborateur doit changer son mot de passe à sa première connexion.</p>
-      <dl className="mt-5 space-y-3 rounded-xl bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><div><dt className="text-xs font-semibold uppercase opacity-70">Utilisateur</dt><dd className="mt-1 font-bold">{credential.username}</dd></div><div><dt className="text-xs font-semibold uppercase opacity-70">Mot de passe temporaire</dt><dd className="mt-1 break-all font-bold">{credential.password}</dd></div></dl>
-      <button type="button" onClick={onClose} className="mt-6 w-full rounded-xl bg-aulia-navy px-4 py-3 text-sm font-semibold text-white">J’ai communiqué les identifiants</button>
-    </div>
-  </div>;
-}
-
 function ConfirmActionModal({
   action,
   onCancel,
   onConfirm,
 }: {
-  action: { user: AdminUser; type: "SUSPEND" | "INACTIVE" | "ACTIVE" | "DELETE" };
+  action: { user: AdminUser; type: "SUSPEND" | "INACTIVE" | "ACTIVE" | "DELETE" | "RESET_PASSWORD" };
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -797,6 +794,12 @@ function ConfirmActionModal({
       text: `${name} pourra de nouveau se connecter à son interface.`,
       button: "Réactiver",
       tone: "bg-emerald-600 hover:bg-emerald-700",
+    },
+    RESET_PASSWORD: {
+      title: "Réinitialiser le mot de passe ?",
+      text: `Un nouveau code à 6 chiffres sera généré et affiché une seule fois. Les sessions ouvertes de ${name} seront fermées, et ${name} devra choisir son propre mot de passe à sa prochaine connexion.`,
+      button: "Générer un code à 6 chiffres",
+      tone: "bg-aulia-navy hover:bg-aulia-navy/90",
     },
     DELETE: {
       title: "Supprimer cet employé ?",
@@ -833,7 +836,6 @@ function ConfirmActionModal({
 
 function EmployeeForm({
   form,
-  services,
   departments,
   isSaving,
   editing,
@@ -841,10 +843,8 @@ function EmployeeForm({
   onClose,
   onSave,
   error,
-  passwordPreview,
 }: {
   form: typeof emptyForm;
-  services: ServiceRecord[];
   departments: DepartmentRecord[];
   isSaving: boolean;
   editing: boolean;
@@ -852,7 +852,6 @@ function EmployeeForm({
   onClose: () => void;
   onSave: () => void;
   error?: string | null;
-  passwordPreview: string;
 }) {
   // Admin assigns employees to departments only; services are managed later by responsables.
 
@@ -882,9 +881,16 @@ function EmployeeForm({
 
           <FormSection title="Informations professionnelles">
             <FormInput label="Nom utilisateur" value={form.username} onChange={(username) => onChange({ username })} />
-            {editing ? <FormInput label="Nouveau mot de passe (laisser vide pour ne pas le changer)" value={form.password} onChange={(password) => onChange({ password })} /> : <div className="rounded-xl border border-aulia-teal/30 bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><p className="font-semibold">Mot de passe initial généré par le système</p><p className="mt-1 text-xs">L’aperçu se met à jour avec le nom, le prénom et le rôle. Le serveur reste la source de vérité au moment de créer le compte.</p><output className="mt-3 block break-all rounded-lg bg-white/80 px-3 py-2 font-mono text-base font-bold text-aulia-navy dark:bg-slate-950">{passwordPreview}</output></div>}
+            <div className="rounded-xl border border-aulia-teal/30 bg-aulia-mist p-4 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-100"><p className="font-semibold">Mot de passe</p><p className="mt-1 text-xs leading-5">{editing ? "L’administrateur ne choisit pas le mot de passe. En cas d’oubli, la personne fait une demande depuis l’écran de connexion ; vous l’approuvez en haut de cette page." : "Un code aléatoire à 6 chiffres est généré à l’enregistrement et affiché une seule fois. Le collaborateur se connecte avec ce code et choisit aussitôt son propre mot de passe."}</p></div>
             <FormSelect label="Role" value={form.primaryRole} onChange={(primaryRole) => onChange({ primaryRole: primaryRole as RoleSlug })} options={roleOptions.map((role) => [role, roleLabel({ primaryRole: role } as AdminUser)])} />
-            <FormInput label="Fonction / Specialite" value={form.specialty} onChange={(specialty) => onChange({ specialty })} />
+            {SPECIALTY_ROLES.has(form.primaryRole) ? (
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-600 dark:text-slate-300">Spécialité</span>
+                <SpecialtySelect required value={form.specialty} onChange={(specialty) => onChange({ specialty })}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-aulia-teal focus:ring-2 focus:ring-aulia-teal/15 dark:border-slate-800 dark:bg-slate-950 dark:text-white" />
+                <span className="mt-1 block text-xs text-slate-500">Elle adapte la consultation du médecin. Généraliste : « Médecine générale ». Urgence, anesthésie, réanimation : affectez aussi le médecin à son unité (Administration › Unités de soins).</span>
+              </label>
+            ) : null}
             <FormSelect label="Departement RH" value={form.departmentId} onChange={(departmentId) => onChange({ departmentId })} options={[["", "Aucun"], ...departments.map((department) => [department.id, department.name] as [string, string])]} />
             <FormSelect label="Responsable du departement" value={form.isResponsible ? "YES" : "NO"} onChange={(value) => onChange({ isResponsible: value === "YES" })} options={[["NO", "Non"], ["YES", "Oui"]]} />
             <FormSelect label="Statut" value={form.status} onChange={(status) => onChange({ status: status as UserStatus })} options={[["ACTIVE", "Actif"], ["INACTIVE", "Inactif"], ["SUSPENDED", "Suspendu"]]} />
@@ -898,7 +904,7 @@ function EmployeeForm({
         <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-end sm:p-5">
           {error ? <div className="mr-auto text-sm text-red-600">{error}</div> : null}
           <button onClick={onClose} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:text-slate-200">Annuler</button>
-          <button disabled={isSaving || !form.firstName || !form.lastName || !form.primaryRole || (calculateAge(form.dateOfBirth) !== null && calculateAge(form.dateOfBirth)! < 18) || (form.shiftMode === "ROTATION" && (!form.rotationAnchorAt || Number(form.rotationDays) < 1))} onClick={onSave} className="rounded-lg bg-aulia-teal px-4 py-2.5 text-sm font-semibold text-white hover:bg-aulia-teal/90 disabled:cursor-not-allowed disabled:opacity-60">
+          <button disabled={isSaving || !form.firstName || !form.lastName || !form.primaryRole || (SPECIALTY_ROLES.has(form.primaryRole) && !form.specialty) || (calculateAge(form.dateOfBirth) !== null && calculateAge(form.dateOfBirth)! < 18) || (form.shiftMode === "ROTATION" && (!form.rotationAnchorAt || Number(form.rotationDays) < 1))} onClick={onSave} className="rounded-lg bg-aulia-teal px-4 py-2.5 text-sm font-semibold text-white hover:bg-aulia-teal/90 disabled:cursor-not-allowed disabled:opacity-60">
             {isSaving ? "Enregistrement..." : "Enregistrer"}
           </button>
         </div>
@@ -1057,6 +1063,12 @@ function roleLabel(user: AdminUser) {
       return gender === "F" ? "Chirurgienne" : "Chirurgien";
     case "ANESTHESIOLOGIST":
       return "Anesthesiste";
+    case "MIDWIFE":
+      return "Sage-femme";
+    case "PARAMEDIC":
+      return gender === "F" ? "Ambulancière" : "Ambulancier";
+    case "DISPATCHER":
+      return gender === "F" ? "Régulatrice" : "Régulateur";
     default:
       return user.primaryRole || "-";
   }
@@ -1076,10 +1088,3 @@ function buildUsername(firstName: string, lastName: string) {
     .toLowerCase();
 }
 
-function normalizeText(value?: string | null) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}

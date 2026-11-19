@@ -9,6 +9,7 @@ import { RecordNurseRoundDto } from './dto/record-nurse-round.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { AuditRead } from '../audit/audit-read.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('hospitalizations')
@@ -75,6 +76,7 @@ export class HospitalizationsController {
     return this.hospitalizationsService.recordMedicationAdministration(id, body, req.user?.userId);
   }
 
+  @AuditRead('Hospitalization')
   @Get(':id/timeline')
   @Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
   timeline(@Param('id') id: string, @Request() req: any) {
@@ -87,6 +89,7 @@ export class HospitalizationsController {
     return this.hospitalizationsService.findAll(req.user, Number(limit) || 100);
   }
 
+  @AuditRead('Hospitalization')
   @Get(':id')
   @Roles('ADMIN', 'RECEPTIONIST', 'PHYSICIAN')
   findOne(@Param('id') id: string, @Request() req: any) {

@@ -1,8 +1,19 @@
+// Optional module membership is decided while this file is evaluated, before
+// ConfigModule.forRoot() runs. Load the same local environment first.
+import 'dotenv/config';
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { RequestContextInterceptor } from './core/request-context.interceptor';
+import { AuditReadInterceptor } from './audit/audit-read.interceptor';
+import { IdempotencyInterceptor } from './idempotency/idempotency.interceptor';
+import { IdempotencyRetentionService } from './idempotency/idempotency-retention.service';
 import { ConfigModule } from '@nestjs/config';
+import { validateEnvironment } from './config/environment.validation';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
+import { CareWorkflowModule } from './care-workflow/care-workflow.module';
+import { ClinicalSafetyModule } from './clinical-safety/clinical-safety.module';
+import { ReferenceModule } from './reference/reference.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
@@ -28,8 +39,10 @@ import { PlatformLayersModule } from './platform/layers/platform-layers.module';
 import { PlatformLayerAccessGuard } from './platform/layers/platform-layer-access.guard';
 import { PlatformProvisioningModule } from './platform/provisioning/platform-provisioning.module';
 import { HealthModule } from './health/health.module';
+import { GovernanceModule } from './medical-governance/governance.module';
+import { CoreModule } from './core/core.module';
 
-const clinicalAiModules = process.env.AULIA_ENABLE_CLINICAL_AI === 'false'
+const diagnosticAgentModules = process.env.AULIA_ENABLE_DIAGNOSTIC_AGENT === 'false'
   ? []
   : [ClinicalIntelligenceModule, IntelligenceModule];
 const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
@@ -38,11 +51,15 @@ const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    CareWorkflowModule,
+    ClinicalSafetyModule,
+    ReferenceModule,
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment('core') }),
     ThrottlerModule.forRoot({
       throttlers: [{ name: 'default', ttl: 60_000, limit: 120, blockDuration: 60_000 }],
     }),
     PrismaModule,
+    CoreModule,
     PlatformLayersModule,
     PlatformProvisioningModule,
     AuthModule,
@@ -51,6 +68,7 @@ const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
     PatientsModule,
     AppointmentsModule,
     ConsultationsModule,
+    GovernanceModule,
     HealthModule,
     HospitalizationsModule,
     LaboratoryModule,
@@ -65,11 +83,17 @@ const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
     NotificationsModule,
     AuditModule,
     ...connectedCareModules,
-    ...clinicalAiModules,
+    ...diagnosticAgentModules,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: PlatformLayerAccessGuard },
+    // Order matters: the request context must wrap the read audit.
+    { provide: APP_INTERCEPTOR, useClass: RequestContextInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: AuditReadInterceptor },
+    // Inside the request context, so replays and stored results are attributed and isolated.
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    IdempotencyRetentionService,
   ],
 })
 export class AppModule {}

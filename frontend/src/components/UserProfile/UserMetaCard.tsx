@@ -35,6 +35,7 @@ export default function UserMetaCard() {
   const [whatsapp, setWhatsapp] = useState("");
   const [linkedin, setLinkedin] = useState("");
   const [instagram, setInstagram] = useState("");
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
     if (!currentUser) return;
@@ -50,10 +51,11 @@ export default function UserMetaCard() {
     setInstagram(currentUser.instagramUrl || "");
   }, [currentUser]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!currentUser) return;
 
-    updateProfile({
+    setSaveError("");
+    const updated = await updateProfile({
       firstName,
       lastName,
       email,
@@ -65,8 +67,14 @@ export default function UserMetaCard() {
       instagramUrl: instagram,
     });
 
+    if (!updated) {
+      setSaveError("La mise à jour n’a pas été enregistrée. Vérifiez les informations puis réessayez.");
+      return;
+    }
+
     try {
-      localStorage.setItem("patientName", `${firstName} ${lastName}`);
+      // Patient identity is never kept in browser storage (shared workstations).
+      localStorage.removeItem("patientName");
     } catch {
       // ignore
     }
@@ -196,6 +204,7 @@ export default function UserMetaCard() {
             </p>
           </div>
           <form className="flex flex-col">
+            {saveError ? <p role="alert" className="mx-2 mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">{saveError}</p> : null}
             <div className="px-2 overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
                 <div>
@@ -247,7 +256,7 @@ export default function UserMetaCard() {
               <Button size="sm" variant="outline" onClick={closeModal}>
                 Fermer
               </Button>
-              <Button size="sm" onClick={handleSave}>
+              <Button size="sm" onClick={() => void handleSave()}>
                 Enregistrer les modifications
               </Button>
             </div>
@@ -257,4 +266,3 @@ export default function UserMetaCard() {
     </>
   );
 }
-

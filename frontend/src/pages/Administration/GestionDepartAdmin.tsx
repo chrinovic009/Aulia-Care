@@ -206,6 +206,7 @@ export default function GestionDepartAdmin() {
         body: JSON.stringify({
           name,
           description: `Service ${name}`,
+          departmentId: unitForm.departmentId,
           active: true,
         }),
       });

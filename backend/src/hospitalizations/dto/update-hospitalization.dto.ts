@@ -1,4 +1,5 @@
-import { IsDateString, IsOptional, IsString } from 'class-validator';
+import { HospitalizationStatus } from '@prisma/client';
+import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class UpdateHospitalizationDto {
   @IsString()
@@ -23,17 +24,13 @@ export class UpdateHospitalizationDto {
 
   @IsString()
   @IsOptional()
-  bedNumber?: string;
-
-  @IsString()
-  @IsOptional()
   physicianId?: string;
 
   @IsString()
   @IsOptional()
   nurseInChargeId?: string;
 
-  @IsString()
+  @IsEnum(HospitalizationStatus)
   @IsOptional()
-  status?: string;
+  status?: HospitalizationStatus;
 }

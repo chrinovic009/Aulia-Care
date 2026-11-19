@@ -1,4 +1,4 @@
-import { IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export class CreateOwnAppointmentDto {
   @IsString()
@@ -16,6 +16,6 @@ export class CreateOwnAppointmentDto {
 
   @IsOptional()
   @IsString()
-  @Max(1000)
+  @MaxLength(1000)
   reason?: string;
 }

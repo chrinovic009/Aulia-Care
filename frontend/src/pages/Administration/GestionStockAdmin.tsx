@@ -59,13 +59,17 @@ export default function GestionStockAdmin() {
           empty={isLoading ? "Chargement du stock..." : "Aucun lot de stock enregistre."}
           rows={(lots.length ? lots : stocks).map((stock: any) => {
             const medication = medicationById.get(stock.medicationId);
-            const critical = stock.quantity <= (stock.criticalLevel || 3);
-            const low = stock.quantity <= (stock.lowStockLevel || 10);
+            // Lots carry no thresholds: they come from the medication's stock line.
+            const levels = stocks.find((item: any) => item.medicationId === stock.medicationId) as any;
+            const criticalLevel = Number(stock.criticalLevel ?? levels?.criticalLevel ?? 3);
+            const lowStockLevel = Number(stock.lowStockLevel ?? levels?.lowStockLevel ?? 10);
+            const critical = stock.quantity <= criticalLevel;
+            const low = stock.quantity <= lowStockLevel;
             return [
               stock.medication?.name || (medication ? `${medication.name} ${medication.strength || ""}` : stock.medicationId),
               stock.batchNumber || "-",
               stock.quantity,
-              `${stock.criticalLevel}/${stock.lowStockLevel}`,
+              `${criticalLevel}/${lowStockLevel}`,
               stock.purchasePrice ? formatMoney(stock.purchasePrice) : "-",
               formatDate(stock.expiryDate),
               critical ? <StatusBadge key="status" label="Critique" tone="red" /> : low ? <StatusBadge key="status" label="Bas" tone="amber" /> : <StatusBadge key="status" label="Normal" tone="green" />,

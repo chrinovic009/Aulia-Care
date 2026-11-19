@@ -183,13 +183,6 @@ export default function DashboardLaboratoire() {
     });
   }, [requests, query, statusFilter]);
 
-  const metrics = useMemo(() => ({
-    total: requests.length,
-    pending: requests.filter((request) => ["REQUESTED", "IN_PROGRESS"].includes(request.status)).length,
-    completed: requests.filter((request) => ["COMPLETED", "VERIFIED"].includes(request.status)).length,
-    urgent: requests.filter((request) => ["URGENT", "CRITICAL"].includes((request.priority || "").toUpperCase())).length,
-  }), [requests]);
-
   // Dashboard is read-only: no creation or modification allowed here
 
   return (

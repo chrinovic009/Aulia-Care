@@ -1,4 +1,4 @@
-/** Versioned boundary for Aulia Connected Care. */
+/** Versioned boundary for Aulia Care Connected Care. */
 export const CONNECTED_CARE_CONTRACT_VERSION = '1.0';
 
 export type ConnectedPurpose = 'WEARABLES' | 'TELEHEALTH' | 'MESSAGING' | 'LOCATION';

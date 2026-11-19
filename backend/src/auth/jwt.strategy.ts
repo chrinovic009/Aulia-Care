@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
@@ -36,7 +36,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         status: true,
         deletedAt: true,
         primaryRole: true,
+        roles: { where: { active: true, role: { deletedAt: null } }, select: { role: { select: { slug: true } } } },
+        mustChangePassword: true,
         clinicId: true,
+        clinic: { select: { status: true, deletedAt: true } },
         serviceResponsabilites: {
           where: { actif: true },
           include: { service: true },
@@ -57,6 +60,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       // it must never receive an unscoped clinical or financial session.
       throw new UnauthorizedException('Compte institutionnel non rattaché à un établissement. Contactez le Super Admin.');
     }
+    if (isOperationalRole(user.primaryRole) && (!user.clinic || user.clinic.deletedAt || user.clinic.status !== 'ACTIVE')) {
+      throw new UnauthorizedException('Cet établissement est désactivé. Contactez la plateforme Aulia Care : contact@aulia-care.com');
+    }
 
     // Access tokens are bound to a persisted session. This makes a targeted
     // logout effective immediately instead of waiting for token expiration.
@@ -73,6 +79,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (session.pinLockedAt && !pinGatePath.some((allowed) => path.startsWith(allowed))) {
       throw new UnauthorizedException('Session verrouillée : saisissez votre code PIN pour continuer.');
     }
+    // An account opened or reset by an administrator only reaches the
+    // password-change screen until its holder has chosen their own password.
+    const passwordGatePath = ['/api/auth/me', '/api/auth/change-password', '/api/auth/security-status', '/api/auth/logout', '/api/auth/logout-all'];
+    if (user.mustChangePassword && !passwordGatePath.some((allowed) => path.startsWith(allowed))) {
+      throw new ForbiddenException({ statusCode: 403, code: 'PASSWORD_CHANGE_REQUIRED', message: 'Vous devez changer votre mot de passe avant de continuer.' });
+    }
 
     return {
       userId: user.id,
@@ -80,6 +92,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: payload.email,
       username: payload.username,
       role: user.primaryRole,
+      roles: user.roles.map(item => item.role.slug),
       clinicId: user.clinicId,
       serviceResponsabilites: user.serviceResponsabilites,
       // CORRIGÉ : Utilisation du bon nom de propriété sans "as any"

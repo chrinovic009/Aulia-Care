@@ -13,15 +13,23 @@ export const RealtimeProvider = ({ children }: PropsWithChildren) => {
   const [socket, setSocket] = useState<Socket | null>(null);
 
   useEffect(() => {
-    if (!currentUser?.id) {
+    // A static Vercel deployment cannot proxy the authenticated Socket.IO
+    // upgrade to a separate Render origin. The public DEMO therefore keeps
+    // persisted API lists as its source of truth and can opt out explicitly;
+    // normal hospital deployments leave this enabled.
+    const realtimeEnabled = import.meta.env.VITE_ENABLE_REALTIME !== 'false';
+
+    if (!realtimeEnabled || !currentUser?.id) {
       setSocket(null);
       return;
     }
 
-    // Always use the web application's origin. In development Vite proxies
-    // `/socket.io` to NestJS; on the LAN this keeps localhost and external
-    // users on the exact same signalling endpoint.
-    const socketUrl = window.location.origin;
+    // In local development Vite proxies Socket.IO through the web origin.
+    // Public DEMO serves the SPA from Vercel and NestJS from Render, so use
+    // the configured API origin (without its `/api` prefix) when present.
+    const configuredApiUrl = String(import.meta.env.VITE_API_BASE_URL || '')
+      .replace(/\/api\/?$/, '');
+    const socketUrl = configuredApiUrl || window.location.origin;
 
     let isActive = true;
     let activeSocket: Socket | null = null;

@@ -397,7 +397,7 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
                         : "border-transparent bg-white"
                     }`}
                   >
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#009488] to-[#0a1d3a] text-sm font-semibold text-white shadow-sm">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0d9488] to-[#0a1d3a] text-sm font-semibold text-white shadow-sm">
                       {contact.name
                         .split(" ")
                         .map((part) => part[0])
@@ -408,7 +408,7 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
                         <span className="truncate text-sm font-semibold text-gray-900 dark:text-white">{contact.name}</span>
-                        {(contact.unreadCount || 0) > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[#009488] px-1 text-[10px] font-bold text-white">{contact.unreadCount! > 99 ? "99+" : contact.unreadCount}</span>}
+                        {(contact.unreadCount || 0) > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[#0d9488] px-1 text-xs font-bold text-white">{contact.unreadCount! > 99 ? "99+" : contact.unreadCount}</span>}
                       </span>
                       <span className={`block truncate text-xs ${contact.unreadCount ? "font-semibold text-slate-700 dark:text-slate-200" : "text-gray-500 dark:text-gray-400"}`}>
                         {contact.lastMessagePreview || `${roleLabels[contact.role] || contact.role} · ${contact.subtitle || "Disponible"}`}
@@ -473,7 +473,7 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
                       <div
                         className={`max-w-[75%] rounded-lg px-4 py-3 text-sm ${
                           chatMessage.from === "me"
-                            ? "bg-gradient-to-br from-[#0a1d3a] to-[#009488] text-white"
+                            ? "bg-gradient-to-br from-[#0a1d3a] to-[#0d9488] text-white"
                             : "border border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                         }`}
                         >
@@ -504,7 +504,7 @@ export default function RoleMessages({ title, description }: RoleMessagesProps) 
                 <button
                   onClick={sendMessage}
                   disabled={!selectedContact || !message.trim()}
-                  className="inline-flex h-12 shrink-0 items-center justify-center rounded-2xl bg-[#009488] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#007c73] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex h-12 shrink-0 items-center justify-center rounded-2xl bg-[#0d9488] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#007c73] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600/50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <PaperPlaneIcon className="h-4 w-4" />
                 </button>

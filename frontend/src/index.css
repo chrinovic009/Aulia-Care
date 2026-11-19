@@ -1,14 +1,53 @@
-@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap");
-
 @import "tailwindcss";
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/fonts/manrope-latin-400-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/fonts/manrope-latin-500-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/fonts/manrope-latin-600-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/fonts/manrope-latin-700-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/fonts/manrope-latin-800-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
   --font-*: initial;
-  /* Montserrat is the Aulia Care reference typeface. Keep the historical
-     utility name so legacy pages inherit it without a component rewrite. */
-  --font-outfit: Montserrat, Arial, sans-serif;
+  /* Manrope is the Aulia Care reference typeface (see
+     src/config/brand.ts for charts and printed documents). */
+  --font-sans: "Manrope", "Segoe UI", Arial, sans-serif;
+  --font-outfit: var(--font-sans);
 
   --breakpoint-*: initial;
   --breakpoint-2xsm: 375px;
@@ -318,7 +357,7 @@
     cursor: pointer;
   }
   body {
-    @apply relative font-normal font-outfit z-1 bg-gray-50 text-gray-900;
+    @apply relative font-normal font-sans antialiased z-1 bg-gray-50 text-gray-900;
   }
 }
 
@@ -442,6 +481,7 @@
 }
 
 .aulia-page-loader--hidden {
+  display: none;
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
@@ -1319,8 +1359,14 @@ button.bg-aulia-teal,
 /* Cadre commun : les pages gardent leur propre espacement, sans second padding
    imposé par le layout.  Les zones de contenu restent centrées sur les grands
    écrans et respectent les zones sûres des téléphones. */
+/* One gutter for every screen so no page touches the menu or the screen
+   edge: 16 px on phones, 24 px on tablets and computers. */
 .aulia-content-frame {
-  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+  padding-inline: max(1rem, env(safe-area-inset-left)) max(1rem, env(safe-area-inset-right));
+  padding-top: 1rem;
+}
+@media (min-width: 768px) {
+  .aulia-content-frame { padding-inline: 1.5rem; padding-top: 1.5rem; }
 }
 
 /* Même composition que le dashboard médecin : une page ne colle jamais au
@@ -1344,12 +1390,6 @@ button.bg-aulia-teal,
 
   /* Sécurité de dernier niveau pour les anciens écrans de données : un tableau
      large devient défilable horizontalement au lieu de casser la page. */
-  .aulia-content-frame table {
-    display: block;
-    max-width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
 
   .aulia-content-frame input,
   .aulia-content-frame select,
@@ -1358,3 +1398,93 @@ button.bg-aulia-teal,
     max-width: 100%;
   }
 }
+
+/* Actions compactes du registre DEV : même lisibilité sur les cartes actives
+   et sur les écrans tactiles étroits. */
+.registry-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: 1px solid rgb(226 232 240);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgb(51 65 85);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.registry-button:hover {
+  background: rgb(248 250 252);
+}
+
+.dark .registry-button {
+  border-color: rgb(51 65 85);
+  color: rgb(226 232 240);
+}
+
+.dark .registry-button:hover {
+  background: rgb(30 41 59);
+}
+
+/* Phones: wide data tables stay usable — the first column (patient / item)
+   stays pinned while the rest scrolls, and a soft edge shows there is more. */
+@media (max-width: 639px) {
+  .overflow-x-auto:has(> table) {
+    background:
+      linear-gradient(to right, var(--color-white) 30%, transparent) left / 24px 100% no-repeat local,
+      linear-gradient(to left, var(--color-white) 30%, transparent) right / 24px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgb(10 29 58 / 0.14), transparent) left / 10px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgb(10 29 58 / 0.14), transparent) right / 10px 100% no-repeat scroll;
+    -webkit-overflow-scrolling: touch;
+  }
+  .overflow-x-auto > table :is(th, td):first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background-color: var(--color-white);
+  }
+  .dark .overflow-x-auto > table :is(th, td):first-child { background-color: var(--color-gray-900); }
+  .overflow-x-auto > table :is(th, td) { padding-left: 0.75rem; padding-right: 0.75rem; }
+}
+
+/* Phones and tablets: a wide legacy table scrolls inside its card instead of
+   pushing the whole page sideways. */
+@media (max-width: 1023px) {
+  .aulia-content-frame table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+.governance-space { color:var(--color-gray-800); max-width:1100px; margin:0 auto; width:100%; }
+.governance-space h1 { font-size:28px; font-weight:700; }
+.governance-space h2 { font-size:20px; font-weight:700; }
+.governance-space h3 { font-size:16px; font-weight:700; }
+.governance-header,.governance-row { display:flex; gap:16px; justify-content:space-between; align-items:center; flex-wrap:wrap; }
+.governance-eyebrow { color:var(--color-brand-600); font-size:13px; font-weight:700; margin-bottom:6px; }
+.governance-links,.governance-actions { display:flex; gap:12px; flex-wrap:wrap; margin:20px 0; }
+.governance-links a { color:var(--color-brand-600); text-decoration:underline; }
+.governance-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; padding:24px 0; border-bottom:1px solid var(--color-gray-200); }
+.governance-metrics strong { display:block; font-size:30px; color:var(--color-brand-600); }
+.governance-metrics span { font-size:14px; }
+.governance-section { padding:24px 0; border-bottom:1px solid var(--color-gray-200); }
+.governance-section>h2 { margin-bottom:18px; }
+.governance-space label { display:block; font-size:14px; font-weight:600; margin:14px 0; }
+.governance-space select,.governance-space textarea { display:block; width:100%; border:1px solid var(--color-gray-300); border-radius:6px; padding:10px; margin-top:8px; background:var(--color-white); color:var(--color-gray-900); }
+.governance-space input[type=checkbox] { margin-right:10px; accent-color:var(--color-brand-600); }
+.governance-checks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.governance-space fieldset { margin:20px 0; }
+.governance-notice { background:var(--color-brand-50); padding:14px; margin:14px 0; color:var(--color-brand-800); border-radius:6px; }
+.governance-row { padding:16px 0; border-bottom:1px solid var(--color-gray-200); }
+.governance-row p { font-size:14px; margin-top:6px; }
+.governance-referral { padding:24px 0; border-bottom:1px solid var(--color-gray-200); overflow-wrap:anywhere; }
+.governance-question { font-size:17px; margin:16px 0; }
+.dark .governance-space { color:var(--color-gray-200); }
+.dark .governance-space select,.dark .governance-space textarea { background:var(--color-gray-900); color:var(--color-gray-100); }
+@media(max-width:640px) { .governance-metrics,.governance-checks { grid-template-columns:1fr; } .governance-space h1 { font-size:24px; } }
+
+.governance-source { margin:16px 0; padding:16px 0; border-bottom:1px solid var(--color-gray-200); }
+.governance-source pre { white-space:pre-wrap; overflow-wrap:anywhere; font-family:inherit; font-size:14px; }

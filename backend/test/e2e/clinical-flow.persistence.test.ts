@@ -52,7 +52,7 @@ test('parcours PostgreSQL : admission, paiement, consultation, demandes, ordonna
     const medication = await prisma.medication.create({ data: { code: `E2E-${suffix}`, name: 'Paracétamol E2E', unit: 'boîte' } });
     const [labRequest, imagingRequest, prescription] = await Promise.all([
       prisma.labRequest.create({ data: { consultationId: consultation.id, patientId: patient.id, clinicId, requestedById: doctor.id, notes: 'NFS E2E' } }),
-      prisma.imagingRequest.create({ data: { consultationId: consultation.id, patientId: patient.id, requestedById: doctor.id, bodyPart: 'Thorax', modality: ImagingModality.XRAY, clinicalIndication: 'Test E2E' } }),
+      prisma.imagingRequest.create({ data: { consultationId: consultation.id, patientId: patient.id, clinicId, requestedById: doctor.id, bodyPart: 'Thorax', modality: ImagingModality.XRAY, clinicalIndication: 'Test E2E' } }),
       prisma.prescription.create({
         data: {
           consultationId: consultation.id,
@@ -63,7 +63,7 @@ test('parcours PostgreSQL : admission, paiement, consultation, demandes, ordonna
         },
       }),
     ]);
-    const hospitalization = await prisma.hospitalization.create({ data: { patientId: patient.id, physicianId: doctor.id, nurseInChargeId: nurse.id, admissionReason: 'Surveillance E2E', status: HospitalizationStatus.ADMITTED } });
+    const hospitalization = await prisma.hospitalization.create({ data: { patientId: patient.id, clinicId, physicianId: doctor.id, nurseInChargeId: nurse.id, admissionReason: 'Surveillance E2E', status: HospitalizationStatus.ADMITTED } });
     await prisma.hospitalization.update({ where: { id: hospitalization.id }, data: { status: HospitalizationStatus.DISCHARGED, dischargedAt: new Date(), dischargeReason: 'Test terminé' } });
     await prisma.consultation.update({ where: { id: consultation.id }, data: { status: ConsultationStatus.FINALIZED } });
     await prisma.appointment.update({ where: { id: appointment.id }, data: { status: AppointmentStatus.COMPLETED } });
@@ -76,9 +76,11 @@ test('parcours PostgreSQL : admission, paiement, consultation, demandes, ordonna
     assert.equal(longitudinalRecord.invoices[0]?.payments.length, 1);
     assert.equal(longitudinalRecord.consultations[0]?.labRequests[0]?.id, labRequest.id);
     assert.equal(longitudinalRecord.consultations[0]?.imagingRequests[0]?.id, imagingRequest.id);
+    assert.equal(longitudinalRecord.consultations[0]?.imagingRequests[0]?.clinicId, clinicId);
     assert.equal(longitudinalRecord.consultations[0]?.prescriptions[0]?.id, prescription.id);
     assert.equal(longitudinalRecord.consultations[0]?.prescriptions[0]?.lineItems.length, 1);
     assert.equal(longitudinalRecord.hospitalizations[0]?.status, HospitalizationStatus.DISCHARGED);
+    assert.equal(longitudinalRecord.hospitalizations[0]?.clinicId, clinicId);
   } finally {
     await prisma.patient.deleteMany({ where: { lastName: `E2E ${suffix}` } }).catch(() => undefined);
     await prisma.user.deleteMany({ where: { email: { endsWith: `-${suffix}@e2e.local` } } }).catch(() => undefined);

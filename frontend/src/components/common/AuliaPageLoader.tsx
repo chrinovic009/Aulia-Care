@@ -16,9 +16,7 @@ export default function AuliaPageLoader() {
   useEffect(() => {
     const isNewRoute = previousRouteRef.current !== routeKey;
     previousRouteRef.current = routeKey;
-    if (!isNewRoute) return;
-
-    setVisible(true);
+    if (isNewRoute) setVisible(true);
     const timeoutId = window.setTimeout(() => setVisible(false), MINIMUM_TRANSITION_MS);
     return () => window.clearTimeout(timeoutId);
   }, [routeKey]);
@@ -46,7 +44,6 @@ export default function AuliaPageLoader() {
         <svg className="aulia-page-loader__ecg" viewBox="0 0 250 36" aria-hidden="true">
           <path d="M0 19h47l9-10 10 21 15-28 11 17h31l10-8 10 16 12-8h75" />
         </svg>
-        <div className="aulia-page-loader__progress" aria-hidden="true"><span /></div>
         <span className="sr-only">Préparation sécurisée de votre espace de soins.</span>
       </div>
     </div>

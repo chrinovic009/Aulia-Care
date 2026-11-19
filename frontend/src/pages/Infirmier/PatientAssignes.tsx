@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isQueued } from "../../offline/offlineQueue";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { playNotificationSound } from "../../utils/notificationSound";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import {
@@ -12,11 +12,11 @@ import {
   NursePatient,
   NurseOrientationHistoryItem,
   recordPatientVitalSigns,
+  reportPatientDeath,
   RecordVitalSignsPayload,
 } from "../../api/nurse";
 import { apiFetch } from "../../config/api";
 import { fetchServices } from "../../api/reception";
-import { callPatientToWaitingRoom } from "../../utils/patientCall";
 import { ClientPagination, useClientPagination } from "../../components/common/ClientPagination";
 
 type VitalsForm = RecordVitalSignsPayload;
@@ -63,6 +63,9 @@ export default function PatientAssignes() {
   const [selectedPatient, setSelectedPatient] = useState<NursePatient | null>(null);
   const [detailsPatient, setDetailsPatient] = useState<NursePatient | null>(null);
   const [vitalsForm, setVitalsForm] = useState<VitalsForm>(emptyVitalsForm);
+  const [deathReportPatient, setDeathReportPatient] = useState<NursePatient | null>(null);
+  const [deathReportNotes, setDeathReportNotes] = useState("");
+  const [deathReportSaving, setDeathReportSaving] = useState(false);
   const [physicians, setPhysicians] = useState<Array<{
     id?: string;
     primaryRole?: string;
@@ -100,6 +103,22 @@ export default function PatientAssignes() {
       setError(err instanceof Error ? err.message : "Impossible de charger l'historique de l'orientation.");
     } finally {
       setIsHistoryLoading(false);
+    }
+  };
+
+  const submitDeathReport = async () => {
+    if (!deathReportPatient) return;
+    try {
+      setDeathReportSaving(true);
+      await reportPatientDeath(deathReportPatient.id, { occurredAt: new Date().toISOString(), notes: deathReportNotes.trim() || undefined });
+      setDeathReportPatient(null);
+      setDeathReportNotes("");
+      setError(null);
+      await loadPatients();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Le signalement de décès n’a pas été enregistré.");
+    } finally {
+      setDeathReportSaving(false);
     }
   };
 
@@ -267,9 +286,13 @@ export default function PatientAssignes() {
     setIsSaving(true);
     setError(null);
     try {
-      await recordPatientVitalSigns(selectedPatient.id, vitalsForm);
+      const saved = await recordPatientVitalSigns(selectedPatient.id, vitalsForm, `Signes vitaux · ${selectedPatient.firstName ?? ""} ${selectedPatient.lastName ?? ""}`.trim());
       setSelectedPatient(null);
       setVitalsForm(emptyVitalsForm);
+      if (isQueued(saved)) {
+        setError("Hors ligne : les signes vitaux sont gardés sur cet appareil avec leur heure de mesure et seront envoyés dès le retour du réseau.");
+        return;
+      }
       await Promise.all([loadPatients(), loadHistory(historyPeriod)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible d'enregistrer les signes vitaux.");
@@ -450,6 +473,12 @@ export default function PatientAssignes() {
                       className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-900/10 dark:text-sky-300"
                     >
                       Contacter medecin
+                    </button>
+                    <button
+                      onClick={() => { setDeathReportPatient(patient); setDeathReportNotes(""); }}
+                      className="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
+                    >
+                      Signaler un décès
                     </button>
                   </div>
                 </div>
@@ -661,6 +690,17 @@ export default function PatientAssignes() {
                 Annuler
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {deathReportPatient && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 px-4 py-6">
+          <div role="dialog" aria-modal="true" className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+            <p className="text-xs font-bold uppercase tracking-[.16em] text-red-700">Alerte clinique infirmière</p>
+            <h3 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">Signaler un décès au médecin</h3>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{formatPatientName(deathReportPatient)}. Ce signalement ne constitue pas un certificat : seul un médecin peut le certifier.</p>
+            <label className="mt-5 block text-sm font-semibold">Observations de constat<textarea rows={5} value={deathReportNotes} onChange={(event) => setDeathReportNotes(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 p-3 dark:border-slate-700 dark:bg-slate-950" placeholder="Date/heure constatée, circonstances, observations…" /></label>
+            <div className="mt-6 flex justify-end gap-3"><button disabled={deathReportSaving} onClick={() => setDeathReportPatient(null)} className="rounded-xl border px-4 py-2 font-semibold">Annuler</button><button disabled={deathReportSaving} onClick={() => void submitDeathReport()} className="rounded-xl bg-red-700 px-4 py-2 font-semibold text-white disabled:opacity-60">{deathReportSaving ? "Signalement…" : "Transmettre au médecin"}</button></div>
           </div>
         </div>
       )}
