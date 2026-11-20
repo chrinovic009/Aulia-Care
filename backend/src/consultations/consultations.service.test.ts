@@ -55,7 +55,7 @@ function prescribingService(options: { allergies: unknown[]; overrides?: Array<R
         notificationOutbox: { create: async () => undefined },
       });
     },
-  } as unknown as PrismaService, {} as NotificationsGateway, { transition: async () => undefined } as unknown as PatientWorkflowService);
+  } as unknown as PrismaService, {} as NotificationsGateway, { projectStatus: async () => undefined } as unknown as PatientWorkflowService);
   Object.defineProperty(service, 'findOne', { value: async () => ({ providerId: 'doctor-a', clinicId: 'clinic-a', patientId: 'patient-a' }) });
   Object.defineProperty(service, 'ensureWriteAccess', { value: async () => undefined });
   return service;
@@ -108,7 +108,7 @@ test('prescription snapshots clinic sale price rather than stock purchase cost',
       notificationOutbox: { create: async (input: { data: Record<string, unknown> }) => { outboxRows.push(input.data); } },
     }),
   } as unknown as PrismaService, {} as NotificationsGateway, {
-    transition: async () => undefined,
+    projectStatus: async () => undefined,
   } as unknown as PatientWorkflowService);
   Object.defineProperty(service, 'findOne', { value: async () => ({ providerId: 'doctor-a', clinicId: 'clinic-a', patientId: 'patient-a' }) });
   Object.defineProperty(service, 'ensureWriteAccess', { value: async () => undefined });

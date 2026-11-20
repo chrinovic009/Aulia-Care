@@ -1,7 +1,9 @@
 import { PatientWorkflowStatus as S } from '@prisma/client';
 
 /**
- * Explicit patient-journey state machine. Every status change goes through
+ * Global journey projection, not medical authorization. Domain services must
+ * validate care, discharge and payment prerequisites before calling Core.
+ * Every status change goes through
  * `decideWorkflowTransition`; a pair that is not listed here is refused.
  * The same table is enforced by the `patient_workflow_transition_guard`
  * database trigger (aulia_app role), so both lists must change together.
@@ -23,7 +25,8 @@ export const ALLOWED_WORKFLOW_TRANSITIONS: Readonly<Record<S, ReadonlySet<S>>> =
   [S.EN_PHARMACIE]: new Set([...WAITING, S.EN_CONSULTATION, ...TECHNICAL, S.HOSPITALISE, S.TERMINE, S.ANNULE]),
   // A hospitalized patient never falls back to a waiting queue.
   [S.HOSPITALISE]: new Set([S.EN_CONSULTATION, ...TECHNICAL, S.TERMINE, S.ANNULE]),
-  // A closed journey can only restart at reception (a new visit), never mid-journey.
+  // Closed journeys may reopen via reception, physician or admission services;
+  // technical services cannot reopen a journey without a new encounter.
   [S.TERMINE]: new Set([...WAITING, S.EN_CONSULTATION, S.HOSPITALISE]),
   [S.ANNULE]: new Set([...WAITING, S.EN_CONSULTATION, S.HOSPITALISE]),
 };

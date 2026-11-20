@@ -181,3 +181,16 @@ test('patient updates reject manual workflow status changes', async () => {
   );
   assert.equal(transactionStarted, false);
 });
+
+
+test('generic patient registration cannot start directly as completed or hospitalized', async () => {
+  let created = false;
+  const service = new PatientsService({patient: {create: async () => {created = true;}}} as unknown as PrismaService,
+    {} as NotificationsGateway,
+    {requireOperationalActor: async () => ({id: 'r', clinicId: 'c'})} as unknown as ClinicContextService,
+    {} as PatientWorkflowService);
+  for (const workflowStatus of ['TERMINE', 'HOSPITALISE'] as const) {
+    await assert.rejects(() => service.create({firstName:'Test',lastName:'Test',gender:'OTHER',dateOfBirth:'2000-01-01',workflowStatus},{userId:'r'}), /statut initial/);
+  }
+  assert.equal(created, false);
+});

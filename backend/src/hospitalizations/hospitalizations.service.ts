@@ -302,7 +302,7 @@ export class HospitalizationsService {
 
       await this.bedAssignments.claim(tx, bedId, hospitalization.id);
 
-      await this.patientWorkflow.transition(
+      await this.patientWorkflow.requireTransition(
         tx,
         createHospitalizationDto.patientId,
         PatientWorkflowStatus.HOSPITALISE,
@@ -840,7 +840,7 @@ export class HospitalizationsService {
           data: { releasedAt: new Date() },
         });
         const specialty = await tx.careEpisode.findFirst({ where: { patientId: current.patientId, clinicId: actor.clinicId }, select: { id: true } });
-        if (!specialty) await this.patientWorkflow.transition(tx, current.patientId, PatientWorkflowStatus.TERMINE, actor.clinicId);
+        if (!specialty) await this.patientWorkflow.requireTransition(tx, current.patientId, PatientWorkflowStatus.TERMINE, actor.clinicId);
         await tx.auditTrail.create({
           data: {
             actorId: actor.id,

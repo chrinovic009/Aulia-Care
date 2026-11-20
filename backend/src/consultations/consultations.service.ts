@@ -128,7 +128,7 @@ export class ConsultationsService {
         where: { appointmentId: createConsultationDto.appointmentId, status: { in: ['REGISTERED', 'ORIENTED'] } },
         data: { status: 'IN_CONSULTATION', orientedAt: new Date() },
       });
-      await this.patientWorkflow.transition(tx, createConsultationDto.patientId, PatientWorkflowStatus.EN_CONSULTATION, actor.clinicId);
+      await this.patientWorkflow.requireTransition(tx, createConsultationDto.patientId, PatientWorkflowStatus.EN_CONSULTATION, actor.clinicId);
       return created;
     });
 
@@ -234,7 +234,7 @@ export class ConsultationsService {
         });
       }
       if(referral) await tx.consultationReferral.update({where:{id:referral.id,version:referral.version,status:'ACCEPTED'},data:{recipientConsultationId:created.id,version:{increment:1}}});
-      if(!referral) await this.patientWorkflow.transition(tx, dto.patientId, PatientWorkflowStatus.EN_CONSULTATION, actor.clinicId);
+      if(!referral) await this.patientWorkflow.requireTransition(tx, dto.patientId, PatientWorkflowStatus.EN_CONSULTATION, actor.clinicId);
       return created;
     });
 
@@ -1139,7 +1139,7 @@ export class ConsultationsService {
       );
 
       if (hasUnpaidInvoice) {
-        await this.patientWorkflow.transition(
+        await this.patientWorkflow.projectStatus(
           tx,
           consultation.patientId,
           PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
@@ -1153,7 +1153,7 @@ export class ConsultationsService {
           (invoice) => invoice.kind === 'IMAGING',
         );
 
-        await this.patientWorkflow.transition(
+        await this.patientWorkflow.projectStatus(
           tx,
           consultation.patientId,
           hasLab
@@ -1509,7 +1509,7 @@ export class ConsultationsService {
         },
       });
 
-      await this.patientWorkflow.transition(
+      await this.patientWorkflow.projectStatus(
         tx,
         consultation.patientId,
         handledBySubscription ? PatientWorkflowStatus.EN_LABORATOIRE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
@@ -1816,7 +1816,7 @@ export class ConsultationsService {
         });
       }
 
-      await this.patientWorkflow.transition(
+      await this.patientWorkflow.projectStatus(
         tx,
         consultation.patientId,
         handledBySubscription ? PatientWorkflowStatus.EN_RADIOLOGIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
@@ -2107,7 +2107,7 @@ export class ConsultationsService {
         null,
       );
 
-      await this.patientWorkflow.transition(
+      await this.patientWorkflow.projectStatus(
         tx,
         consultation.patientId,
         handledBySubscription ? PatientWorkflowStatus.EN_PHARMACIE : PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,

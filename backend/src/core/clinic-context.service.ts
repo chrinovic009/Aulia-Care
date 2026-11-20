@@ -14,6 +14,7 @@ export interface OperationalClinicActor {
   id: string;
   clinicId: string;
   primaryRole: RoleSlug | null;
+  roles: RoleSlug[];
 }
 
 /**
@@ -41,14 +42,16 @@ export class ClinicContextService {
    */
   async requireOperationalActor(
     actor?: AuthenticatedActor,
+    client: Pick<PrismaService, 'user'> = this.prisma,
   ): Promise<OperationalClinicActor> {
     const id = this.actorId(actor);
-    const user = await this.prisma.user.findUnique({
+    const user = await client.user.findUnique({
       where: { id },
       select: {
         id: true,
         clinicId: true,
         primaryRole: true,
+        roles: { where: { active: true, role: { deletedAt: null } }, select: { role: { select: { slug: true } } } },
         status: true,
         deletedAt: true,
       },
@@ -62,7 +65,16 @@ export class ClinicContextService {
       id: user.id,
       clinicId: user.clinicId,
       primaryRole: user.primaryRole,
+      roles: (user.roles ?? []).map(item => item.role.slug),
     };
+  }
+
+  async requireMedicalDirector(userId: string, client: Pick<PrismaService, 'user'> = this.prisma) {
+    const actor = await this.requireOperationalActor({ userId }, client);
+    if (actor.primaryRole !== RoleSlug.PHYSICIAN || !actor.roles.includes(RoleSlug.MEDICAL_DIRECTOR)) {
+      throw new ForbiddenException('Médecin directeur requis.');
+    }
+    return actor;
   }
 
   async requireUserClinic(userId: string): Promise<string> {

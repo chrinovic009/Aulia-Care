@@ -181,7 +181,7 @@ export class PaymentsService {
                 ? PatientWorkflowStatus.EN_ATTENTE_MEDECIN
                 : PatientWorkflowStatus.EN_ATTENTE_INFIRMERIE;
 
-      await this.patientWorkflow.transition(
+      await this.patientWorkflow.projectStatus(
         prisma,
         invoice.patientId,
         nextWorkflowStatus,

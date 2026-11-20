@@ -16,23 +16,15 @@ export const OPERATIONAL_ROLES = Object.values(RoleSlug).filter(
     !PORTAL_ROLES.includes(role as (typeof PORTAL_ROLES)[number]),
 );
 
-/** Roles that an institution administrator can create as hospital staff. */
-export const STAFF_ROLES = [
-  RoleSlug.RECEPTIONIST,
-  RoleSlug.NURSE,
-  RoleSlug.PHYSICIAN,
-  RoleSlug.LAB_TECHNICIAN,
-  RoleSlug.LAB_MANAGER,
-  RoleSlug.RADIOLOGIST,
-  RoleSlug.SURGEON,
-  RoleSlug.ANESTHESIOLOGIST,
-  RoleSlug.PHARMACIST,
-  RoleSlug.CASHIER,
-  RoleSlug.FINANCE,
-  RoleSlug.PARAMEDIC,
-  RoleSlug.DISPATCHER,
-  RoleSlug.MIDWIFE,
-] as const;
+/** Explicit exhaustive classification prevents silently granting new roles as staff. */
+export const ROLE_KIND = {
+  DEV: 'platform', PATIENT: 'portal', SUPER_ADMIN: 'administrator', ADMIN: 'administrator',
+  MEDICAL_DIRECTOR: 'additional', RECEPTIONIST: 'staff', NURSE: 'staff', PHYSICIAN: 'staff',
+  LAB_TECHNICIAN: 'staff', LAB_MANAGER: 'staff', RADIOLOGIST: 'staff', SURGEON: 'staff',
+  ANESTHESIOLOGIST: 'staff', PHARMACIST: 'staff', CASHIER: 'staff', FINANCE: 'staff',
+  PARAMEDIC: 'staff', DISPATCHER: 'staff', MIDWIFE: 'staff',
+} as const satisfies Record<RoleSlug, 'platform' | 'portal' | 'administrator' | 'additional' | 'staff'>;
+export const STAFF_ROLES = Object.values(RoleSlug).filter(role => ROLE_KIND[role] === 'staff');
 
 export function isPlatformRole(role?: RoleSlug | string | null): boolean {
   return Boolean(role) && PLATFORM_ROLES.includes(role as (typeof PLATFORM_ROLES)[number]);

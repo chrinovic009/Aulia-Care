@@ -35,7 +35,15 @@ test('an unknown patient is reported as not_found', async () => {
 test('a concurrent change despite the lock raises an error instead of returning null', async () => {
   const { tx } = fakeClient(PatientWorkflowStatus.EN_ATTENTE_MEDECIN, 0);
   await assert.rejects(
-    () => new PatientWorkflowService().transition(tx, 'p', PatientWorkflowStatus.EN_CONSULTATION, 'c'),
+    () => new PatientWorkflowService().projectStatus(tx, 'p', PatientWorkflowStatus.EN_CONSULTATION, 'c'),
     PatientWorkflowConflictError,
   );
+});
+
+
+test('strict transitions reject while a payment projection preserves hospitalized state', async () => {
+  const { tx } = fakeClient(PatientWorkflowStatus.HOSPITALISE);
+  const core = new PatientWorkflowService();
+  assert.equal(await core.projectStatus(tx, 'p', PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT, 'c'), 'HOSPITALISE');
+  await assert.rejects(() => core.requireTransition(tx, 'p', PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT, 'c'), /refusé/);
 });
