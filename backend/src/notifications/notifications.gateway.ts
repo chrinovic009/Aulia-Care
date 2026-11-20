@@ -52,6 +52,9 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     PrismaService.realtimeEvents.on('db.changed', (payload) => {
       void this.publishDatabaseChange(payload);
     });
+    PrismaService.realtimeEvents.on('message.media.created', (payload) => {
+      void this.publishMediaMessage(payload);
+    });
   }
 
   async handleConnection(client: Socket) {
@@ -546,6 +549,24 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
     // so message delivery state is not incorrectly decided by one local process.
     const sockets = await this.server.in(this.userRoom(userId)).allSockets();
     return sockets.size > 0;
+  }
+
+  private async publishMediaMessage(payload: { id: string; senderId: string; recipientId: string; [key: string]: unknown }) {
+    if (!this.server || !payload.id || !payload.senderId || !payload.recipientId) return;
+    const delivered = await this.isUserOnline(payload.recipientId);
+    if (delivered) {
+      await this.prisma.chatMessage.updateMany({
+        where: { id: payload.id, recipientId: payload.recipientId, deletedAt: null },
+        data: { status: 'DELIVERED', deliveredAt: new Date() },
+      });
+    }
+    const message = { ...payload, status: delivered ? 'DELIVERED' : 'SENT' };
+    this.server.to(this.userRoom(payload.recipientId)).emit('message.received', message);
+    this.server.to(this.userRoom(payload.senderId)).emit('message.status', {
+      messageId: payload.id,
+      contactId: payload.recipientId,
+      status: delivered ? 'delivered' : 'sent',
+    });
   }
 
   private async publishDatabaseChange(payload: { model?: string; action?: string; recordId?: string; at?: string }) {

@@ -4,6 +4,7 @@ import { ImagingService } from './imaging.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClinicContextService } from '../core/clinic-context.service';
 import { ConflictException } from '@nestjs/common';
+import { ImagingPreviewService } from './imaging-preview.service';
 
 test('imaging catalogue is read and created only inside the radiologist clinic', async () => {
   const catalogueQueries: Array<Record<string, unknown>> = [];
@@ -31,6 +32,7 @@ test('imaging catalogue is read and created only inside the radiologist clinic',
         primaryRole: 'RADIOLOGIST',
       }),
     } as unknown as ClinicContextService,
+    {} as unknown as ImagingPreviewService,
   );
 
   await service.findCatalogue('radiologist-a');
@@ -65,6 +67,7 @@ test('imaging requests are read only through the patient clinic boundary', async
         primaryRole: 'RADIOLOGIST',
       }),
     } as unknown as ClinicContextService,
+    {} as unknown as ImagingPreviewService,
   );
 
   await service.findAll('radiologist-a');
@@ -94,6 +97,7 @@ test('a verified imaging report cannot be overwritten by the draft endpoint', as
       $transaction: async (run: (client: typeof tx) => Promise<unknown>) => run(tx),
     } as unknown as PrismaService,
     { requireOperationalActor: async () => ({ id: 'radiologist-a', clinicId: 'clinic-a', primaryRole: 'RADIOLOGIST' }) } as unknown as ClinicContextService,
+    {} as unknown as ImagingPreviewService,
   );
 
   await assert.rejects(
@@ -133,6 +137,7 @@ test('imaging amendment retains the verified original and records clinic, author
   const service = new ImagingService(
     { $transaction: async (run: (client: typeof tx) => Promise<unknown>) => run(tx) } as unknown as PrismaService,
     { requireOperationalActor: async () => ({ id: 'radiologist-a', clinicId: 'clinic-a', primaryRole: 'RADIOLOGIST' }) } as unknown as ClinicContextService,
+    {} as unknown as ImagingPreviewService,
   );
 
   await service.amendReport('request-a', {

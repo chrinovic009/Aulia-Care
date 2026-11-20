@@ -4,6 +4,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { CreateImagingCatalogueDto } from './dto/create-imaging-catalogue.dto';
 import { ClinicContextService } from '../core/clinic-context.service';
+import { SaveImagingReportDto } from './dto/save-imaging-report.dto';
+import { ImagingPreviewService } from './imaging-preview.service';
+import type { MediaUpload } from '../messages/message-media.service';
 
 type DashboardPeriod = 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH';
 
@@ -14,6 +17,7 @@ export class ImagingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly clinicContext: ClinicContextService,
+    private readonly imagingPreviews: ImagingPreviewService,
   ) {}
 
   private requireClinic(actorId?: string) {
@@ -374,7 +378,46 @@ export class ImagingService {
     }));
   }
 
-  async saveReport(id: string, body: { findings: string; impression: string; recommendations?: string; verified?: boolean }, interpretedById?: string) {
+  async addReportPreview(id: string, file: MediaUpload | undefined, actorId?: string) {
+    const actor = await this.requireRadiologist(actorId);
+    await this.assertRequestPaid(id, actor.clinicId);
+    const saved = await this.imagingPreviews.save(file);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT id FROM "ImagingRequest" WHERE id = ${id} FOR UPDATE`);
+        const request = await tx.imagingRequest.findFirst({
+          where: { id, clinicId: actor.clinicId, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+          select: { report: { select: { id: true, verified: true, imagePaths: true } } },
+        });
+        if (!request) throw new NotFoundException("Demande d'imagerie introuvable");
+        if (!request.report) throw new BadRequestException('Enregistrez d’abord un brouillon du compte rendu avant d’ajouter un aperçu.');
+        if (request.report.verified) throw new ConflictException('Ce compte rendu est vérifié. Les aperçus ne peuvent plus être modifiés.');
+        if (request.report.imagePaths.length >= 12) throw new BadRequestException('Un compte rendu peut contenir au maximum 12 aperçus.');
+        return tx.imagingReport.update({
+          where: { id: request.report.id },
+          data: { imagePaths: [...request.report.imagePaths, saved.storageKey], version: { increment: 1 } },
+        });
+      });
+    } catch (error) {
+      await this.imagingPreviews.discard(saved.storageKey);
+      throw error;
+    }
+  }
+
+  async getReportPreview(id: string, rawIndex: string, actorId?: string) {
+    const actor = await this.requireClinic(actorId);
+    const index = Number(rawIndex);
+    if (!Number.isInteger(index) || index < 0) throw new BadRequestException('Numéro d’aperçu invalide.');
+    const request = await this.prisma.imagingRequest.findFirst({
+      where: { id, clinicId: actor.clinicId, deletedAt: null, patient: { clinicId: actor.clinicId, deletedAt: null } },
+      select: { report: { select: { imagePaths: true } } },
+    });
+    const storageKey = request?.report?.imagePaths[index];
+    if (!storageKey) throw new NotFoundException('Aperçu radiologique introuvable.');
+    return this.imagingPreviews.open(storageKey);
+  }
+
+  async saveReport(id: string, body: SaveImagingReportDto, interpretedById?: string) {
     const actor = await this.requireRadiologist(interpretedById);
     await this.findOne(id, actor.id);
     await this.assertRequestPaid(id, actor.clinicId);

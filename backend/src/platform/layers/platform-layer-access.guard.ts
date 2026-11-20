@@ -68,6 +68,8 @@ const PATIENT_PORTAL_ROUTES: ReadonlyArray<[string, RegExp]> = [
   ['GET', /^\/administration\/clinic-identity$/],
   ['GET', /^\/messages\/unread$/],
   ['GET', /^\/messages\/with\/[^/]+$/],
+  ['GET', /^\/messages\/[^/]+\/attachment$/],
+  ['POST', /^\/messages\/media\/[^/]+$/],
   ['PATCH', /^\/messages\/read$/],
   ['GET', /^\/users\/contacts$/],
   ['GET', /^\/appointments\/booking-options$/],

@@ -24,6 +24,27 @@ export type ImagingMachine = {
   updatedAt: string;
 };
 
+export type ImagingReport = {
+  id: string;
+  findings: string;
+  impression: string;
+  recommendations?: string | null;
+  verified: boolean;
+  version: number;
+  imagePaths: string[];
+  dicomStudyInstanceUid?: string | null;
+};
+
+export type ImagingRequestItem = {
+  id: string;
+  status: string;
+  modality: string;
+  bodyPart: string;
+  patient: { id: string; firstName: string; lastName: string; externalId?: string | null };
+  imagingCatalogue?: { name: string } | null;
+  report?: ImagingReport | null;
+};
+
 export const fetchImagingCatalogue = () => apiFetch<ImagingCatalogueItem[]>('/imaging/catalogue');
 export const fetchImagingMachines = () => apiFetch<ImagingMachine[]>('/imaging/machines');
 export const createImagingMachine = (payload: { name: string; roomNumber?: string; isOperational?: boolean }) =>
@@ -31,3 +52,15 @@ export const createImagingMachine = (payload: { name: string; roomNumber?: strin
     method: 'POST',
     body: JSON.stringify(payload),
   });
+
+export const saveImagingReport = (id: string, payload: { findings: string; impression: string; recommendations?: string; verified: boolean }) =>
+  apiFetch<ImagingReport>(`/imaging/${encodeURIComponent(id)}/report`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const uploadImagingPreview = (id: string, file: File) => {
+  const body = new FormData();
+  body.append('file', file, file.name);
+  return apiFetch<ImagingReport>(`/imaging/${encodeURIComponent(id)}/report/previews`, { method: 'POST', body }, 30000);
+};

@@ -6,6 +6,8 @@ import { CreateProvisionedSuperAdminDto } from './dto/create-provisioned-super-a
 import { UpdateProvisionedClinicDto } from './dto/update-provisioned-clinic.dto';
 import { UpdateProvisionedSuperAdminDto } from './dto/update-provisioned-super-admin.dto';
 import { PlatformProvisioningService } from './platform-provisioning.service';
+import { PacsConfigService } from '../../pacs/pacs-config.service';
+import { ConfigurePacsDto } from '../../pacs/configure-pacs.dto';
 
 /** Platform-only provisioning.  No client-provided clinic id is ever accepted
  * when a hospital user is created; the id comes from this controlled route. */
@@ -15,7 +17,17 @@ import { PlatformProvisioningService } from './platform-provisioning.service';
 // a stale JWT role producing Nest's generic “Forbidden resource” response.
 @UseGuards(JwtAuthGuard)
 export class PlatformProvisioningController {
-  constructor(private readonly provisioning: PlatformProvisioningService) {}
+  constructor(private readonly provisioning: PlatformProvisioningService, private readonly pacs: PacsConfigService) {}
+
+  @Get('clinics/:clinicId/pacs')
+  getPacs(@Request() req: { user?: { userId?: string } }, @Param('clinicId') clinicId: string) {
+    return this.pacs.metadata(req.user?.userId, clinicId);
+  }
+
+  @Put('clinics/:clinicId/pacs')
+  configurePacs(@Request() req: { user?: { userId?: string } }, @Param('clinicId') clinicId: string, @Body() dto: ConfigurePacsDto) {
+    return this.pacs.configure(req.user?.userId, clinicId, dto);
+  }
 
   @Post('clinics')
   createClinic(@Request() req: { user?: { userId?: string } }, @Body() dto: CreateProvisionedClinicDto) {
