@@ -1,4 +1,5 @@
 import ReferralPanel from './ReferralPanel';
+import { canPersistDraft, draftDiagnosis } from './draft-state';
 import { Metric, Vital, Panel, Item, SectionBox, SuggestionInput, FormInput, FormTextArea, FormSelect, SaveFeedbackModal, ConfirmationModal, ExitConsultationModal, Empty } from "./dashboardControls";
 import { workflowStatusLabel } from "../../utils/workflowStatusLabel";
 import { useEffect, useMemo, useState, useRef } from "react";
@@ -305,7 +306,7 @@ export default function DashboardMedecin() {
   const [patients, setPatients] = useState<DoctorPatient[]>([]);
   const [workLocation, setWorkLocation] = useState<{ roomName: string; roomNumber: string; location: string; service: string } | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<DoctorPatient | null>(null);
-  const [openedDraft, setOpenedDraft] = useState<{ id: string; status: string; chiefComplaint?: string | null; clinicalSummary?: string | null; createdAt: string; updatedAt?: string; provider?: { id?: string; displayName?: string | null; firstName?: string | null; lastName?: string | null } | null } | null>(null);
+  const [openedDraft, setOpenedDraft] = useState<{ id: string; providerId?: string; version?: number; canWrite?: boolean; status: string; chiefComplaint?: string | null; clinicalSummary?: string | null; createdAt: string; updatedAt?: string; provider?: { id?: string; displayName?: string | null; firstName?: string | null; lastName?: string | null } | null } | null>(null);
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -333,7 +334,9 @@ export default function DashboardMedecin() {
     if (typeof version === "number") consultationVersionsRef.current[consultationId] = version;
   };
   const saveSectionsTracked = async (consultationId: string, payload: Record<string, unknown>) => {
-    const saved = await saveClinicalSections(consultationId, { ...payload, expectedVersion: consultationVersionsRef.current[consultationId] });
+    const expectedVersion = consultationVersionsRef.current[consultationId];
+    if (typeof expectedVersion !== "number") throw new Error("Rechargez le brouillon avant d’enregistrer : sa version n’est pas disponible.");
+    const saved = await saveClinicalSections(consultationId, { ...payload, expectedVersion });
     rememberConsultationVersion(consultationId, saved);
     return saved;
   };
@@ -493,9 +496,12 @@ export default function DashboardMedecin() {
   useEffect(() => {
     const draftId = new URLSearchParams(location.search).get("draft");
     if (!draftId) { setOpenedDraft(null); return; }
+    let cancelled = false;
+    setOpenedDraft(null);
     apiFetch<typeof openedDraft>(`/consultations/${encodeURIComponent(draftId)}/draft-detail`)
-      .then((draft) => setOpenedDraft(draft))
-      .catch((error) => { setOpenedDraft(null); setActionMessage(error instanceof Error ? error.message : "Impossible de charger ce brouillon."); });
+      .then((draft) => { if (!cancelled) setOpenedDraft(draft); })
+      .catch((error) => { if (!cancelled) { setOpenedDraft(null); setIsConsultationOpen(false); setActionMessage(error instanceof Error ? error.message : "Impossible de charger ce brouillon."); } });
+    return () => { cancelled = true; };
   }, [location.search]);
 
   // Nettoyage de la reconnaissance vocale au démontage pour libérer le micro
@@ -531,12 +537,15 @@ export default function DashboardMedecin() {
         message: `Un brouillon enregistré le ${formatDateTime(consultation.updatedAt || consultation.createdAt)} existe pour ${formatDoctorPatientName(selectedPatient)}. Voulez-vous continuer cette consultation ?`,
         confirmLabel: "Continuer le brouillon",
         onConfirm: () => { acceptedServerDraftsRef.current.add(restoreKey); setIsConsultationOpen(true); setConfirmation(null); setDraftDecisionVersion((version) => version + 1); },
-        onCancel: () => { declinedServerDraftsRef.current.add(restoreKey); setActionMessage("Brouillon conservé. Vous pourrez le reprendre depuis l’onglet Brouillons."); },
+        onCancel: () => { declinedServerDraftsRef.current.add(restoreKey); setIsConsultationOpen(false); setActionMessage("Brouillon conservé. Vous pourrez le reprendre depuis l’onglet Brouillons."); },
       });
       return;
     }
     if (declinedServerDraftsRef.current.has(restoreKey)) return;
+    if (restoredServerDraftRef.current === restoreKey) return;
+    if ((consultation.provider?.id || consultation.providerId) !== currentUser?.id) { setIsConsultationOpen(false); return; }
     restoredServerDraftRef.current = restoreKey;
+    rememberConsultationVersion(consultation.id, consultation);
     setClinicalForm((current) => ({
       ...current,
       chiefComplaint: consultation.chiefComplaint || current.chiefComplaint,
@@ -600,6 +609,9 @@ export default function DashboardMedecin() {
     try {
       setActionMessage("Ouverture sécurisée d’une nouvelle consultation…");
       const opened = await openConsultationForPatient(selectedPatient.id, consultationModule.chiefComplaint || clinicalForm.chiefComplaint);
+      rememberConsultationVersion(opened.id, opened);
+      restoredServerDraftRef.current = `aulia:server-draft:${opened.id}`;
+      acceptedServerDraftsRef.current.add(restoredServerDraftRef.current);
       await loadPatients();
       return opened.id;
     } catch (error) {
@@ -627,7 +639,9 @@ export default function DashboardMedecin() {
     }
     setActionMessage("Vérification sécurisée de la consultation de télésanté…");
     try {
-      rememberConsultationVersion(currentConsultationId, await updateConsultation(currentConsultationId, { encounterType: "TELEHEALTH", status: "IN_PROGRESS", expectedVersion: consultationVersionsRef.current[currentConsultationId] }));
+      const expectedVersion = consultationVersionsRef.current[currentConsultationId];
+      if (!canPersistDraft(currentConsultationId, restoredServerDraftRef.current, Boolean(confirmation)) || typeof expectedVersion !== 'number') throw new Error('Reprenez le brouillon avant de modifier son mode.');
+      rememberConsultationVersion(currentConsultationId, await updateConsultation(currentConsultationId, { encounterType: "TELEHEALTH", status: "IN_PROGRESS", expectedVersion }));
       setConsultationModule((current) => ({ ...current, consultationMode: value }));
       setTelehealthReady(true);
       setActionMessage(null);
@@ -640,7 +654,7 @@ export default function DashboardMedecin() {
   // Short-lived recovery copy only: it stays in the browser session and is
   // removed after a successful server save or clinical finalisation.
   useEffect(() => {
-    if (!consultationDraftKey || restoredDraftRef.current === consultationDraftKey) return;
+    if (!consultationDraftKey || restoredServerDraftRef.current !== `aulia:server-draft:${currentConsultationId}` || restoredDraftRef.current === consultationDraftKey) return;
     restoredDraftRef.current = consultationDraftKey;
     const rawDraft = window.sessionStorage.getItem(consultationDraftKey);
     if (!rawDraft) return;
@@ -662,16 +676,16 @@ export default function DashboardMedecin() {
     } catch {
       window.sessionStorage.removeItem(consultationDraftKey);
     }
-  }, [consultationDraftKey]);
+  }, [consultationDraftKey, draftDecisionVersion]);
 
   useEffect(() => {
-    if (!consultationDraftKey || !isConsultationOpen) return;
+    if (!consultationDraftKey || !isConsultationOpen || confirmation || restoredServerDraftRef.current !== `aulia:server-draft:${currentConsultationId}`) return;
     window.sessionStorage.setItem(consultationDraftKey, JSON.stringify({
       clinicalForm,
       consultationModule,
       capturedAt: new Date().toISOString(),
     }));
-  }, [consultationDraftKey, clinicalForm, consultationModule, isConsultationOpen]);
+  }, [consultationDraftKey, clinicalForm, consultationModule, isConsultationOpen, confirmation]);
 
   const applyVoiceToConsultationModule = (transcript: string) => {
     const fields = extractClinicalVoiceFields(transcript);
@@ -742,7 +756,7 @@ export default function DashboardMedecin() {
   const saveDraftConsultation = async (
     mode: "AUTO_DRAFT" | "IN_PROGRESS" = "AUTO_DRAFT",
   ) => {
-    if (isSavingConsultation) return;
+    if (isSavingConsultation || !canPersistDraft(currentConsultationId, restoredServerDraftRef.current, Boolean(confirmation || (requestedDraftId && !openedDraft)))) return;
     setIsSavingConsultation(true);
     setActionMessage(null);
     try {
@@ -780,8 +794,9 @@ export default function DashboardMedecin() {
         focusedExam: clinicalForm.focusedExam,
         description: examDescription,
       },
+      diagnosis: draftDiagnosis(clinicalForm.principalDiagnosis, clinicalForm.hypotheses, diagnosisDescription),
       treatmentPlan: {
-        notes: consignesNotes,
+        notes: clinicalForm.treatmentPlan || consignesNotes,
         description: consignesDescription,
         safetyConsignes: consultationModule.safetyConsignes,
         sickLeave: consultationModule.sickLeave,
@@ -835,13 +850,13 @@ export default function DashboardMedecin() {
   // session copy above remains a recovery fallback if the browser is killed
   // before the network request can finish.
   useEffect(() => {
-    if (!isConsultationPage || !selectedPatient || !isConsultationOpen) return;
+    if (!isConsultationPage || !selectedPatient || !isConsultationOpen || !canPersistDraft(currentConsultationId, restoredServerDraftRef.current, Boolean(confirmation || (requestedDraftId && !openedDraft)))) return;
     const saveOnHide = () => {
       if (document.visibilityState === "hidden") void saveDraftConsultation();
     };
     document.addEventListener("visibilitychange", saveOnHide);
     return () => document.removeEventListener("visibilitychange", saveOnHide);
-  }, [isConsultationPage, selectedPatient?.id, currentConsultationId, clinicalForm, consultationModule, isConsultationOpen]);
+  }, [isConsultationPage, selectedPatient?.id, currentConsultationId, clinicalForm, consultationModule, isConsultationOpen, confirmation, openedDraft]);
 
   const validateConsultation = async () => {
     if (isSavingConsultation) return;
@@ -879,11 +894,7 @@ export default function DashboardMedecin() {
         focusedExam: clinicalForm.focusedExam,
         description: examDescription,
       },
-      diagnosis: {
-        principal: clinicalForm.principalDiagnosis,
-        hypotheses: clinicalForm.hypotheses.split("\n").map((item) => item.trim()).filter(Boolean),
-        description: diagnosisDescription,
-      },
+      diagnosis: draftDiagnosis(clinicalForm.principalDiagnosis, clinicalForm.hypotheses, diagnosisDescription),
       treatmentPlan: {
         notes: clinicalForm.treatmentPlan,
         description: consignesDescription,
@@ -968,6 +979,8 @@ export default function DashboardMedecin() {
 
   const requestConsultationClose = () => {
     if (!isConsultationOpen) {
+      restoredServerDraftRef.current = null;
+      setDraftDecisionVersion((version) => version + 1);
       setIsConsultationOpen(true);
       return;
     }

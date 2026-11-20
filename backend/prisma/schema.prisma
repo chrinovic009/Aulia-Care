@@ -2108,6 +2108,7 @@ model Payment {
 }
 
 model Clinic {
+  pacsConfiguration             ClinicPacsConfiguration?
   id                            String                         @id @default(uuid())
   name                          String
   brandDisplayName              String?
@@ -2671,18 +2672,29 @@ model NotificationOutbox {
 }
 
 model ChatMessage {
-  id            String        @id @default(uuid())
-  clinicId      String
-  senderId      String
-  recipientId   String
-  recipientType String        @default("USER")
-  text          String
-  status        MessageStatus @default(SENT)
-  deliveredAt   DateTime?
-  readAt        DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  deletedAt     DateTime?
+  id                         String        @id @default(uuid())
+  clinicId                   String
+  senderId                   String
+  recipientId                String
+  recipientType              String        @default("USER")
+  text                       String
+  kind                       MessageKind   @default(TEXT)
+  /// Private local storage key; never exposed in an API response.
+  attachmentStorageKey       String?
+  attachmentOriginalName     String?
+  attachmentMimeType         String?
+  attachmentSizeBytes        Int?
+  audioDurationMs            Int?
+  /// Scalar historical reference: the messaging service rechecks the exam and tenant on every share/read.
+  imagingRequestId           String?
+  patientShareAuthorizedById String?
+  patientShareAuthorizedAt   DateTime?
+  status                     MessageStatus @default(SENT)
+  deliveredAt                DateTime?
+  readAt                     DateTime?
+  createdAt                  DateTime      @default(now())
+  updatedAt                  DateTime      @updatedAt
+  deletedAt                  DateTime?
 
   clinic    Clinic @relation(fields: [clinicId], references: [id], onDelete: Restrict)
   recipient User   @relation("ChatMessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
@@ -2690,6 +2702,7 @@ model ChatMessage {
 
   @@index([clinicId, senderId, recipientId, createdAt])
   @@index([clinicId, recipientId, status])
+  @@index([clinicId, imagingRequestId])
 }
 
 model AuditLog {
@@ -2836,6 +2849,15 @@ model Vaccination {
 
   @@index([patientId])
   @@index([vaccineName])
+}
+
+model ClinicPacsConfiguration {
+  clinicId           String   @id
+  clinic             Clinic   @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  enabled            Boolean  @default(false)
+  previewUrlTemplate String?
+  tokenCiphertext    String?
+  updatedAt          DateTime @updatedAt
 }
 
 model ClinicalCondition {
@@ -3540,6 +3562,13 @@ enum ClinicProvisioningStatus {
   LAYERS_CONFIGURED
   SUPER_ADMIN_CREATED
   ACTIVE
+}
+
+enum MessageKind {
+  TEXT
+  VOICE
+  PHOTO
+  IMAGING
 }
 
 enum MessageStatus {

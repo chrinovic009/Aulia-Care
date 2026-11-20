@@ -297,7 +297,9 @@ export const apiFetch = async <T = any>(
   ).toUpperCase();
 
   const requestHeaders = () => ({
-    "Content-Type": "application/json",
+    ...(typeof FormData !== "undefined" && options?.body instanceof FormData
+      ? {}
+      : { "Content-Type": "application/json" }),
     ...getAuthHeaders(),
     ...(options?.headers as Record<string, string>),
   });

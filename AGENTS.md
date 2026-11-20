@@ -21,3 +21,5 @@
 - Use requireTransition for mandatory state changes and projectStatus only for best-effort queues; publish persisted status, so valid inpatient payments are not confused with clinical progress.
 - Prisma's transaction adapter is pinned to 5.22.0 and guards transaction descriptors; require model/raw, batch/interactive, rollback and RLS regressions before upgrading, so extensions cannot detach operations from their transaction.
 - Request workflow updates require the Core marker under the patient lock; exempt only server-owned initialization and explicit maintenance, so accidental direct writes fail in PostgreSQL.
+- Message media stay in private clinic-local storage and are served only after participant and care-path checks; PACS previews use a configured rendered-image adapter or a constrained local directory, so clinics without PACS never get a simulated connection.
+- Imaging messages are limited to the requesting clinician, the study radiologist and the linked patient; patient delivery requires a verified report and an explicit audited share grant, while ordinary photos never masquerade as validated diagnostic imaging.

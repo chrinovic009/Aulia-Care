@@ -1,5 +1,6 @@
 import { PropsWithChildren, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { shouldDeferRealtimeRefresh } from "./realtime-refresh";
 
 type RealtimePayload = { model?: string };
 
@@ -25,8 +26,10 @@ const domainForModel = (model?: string) => {
 };
 
 const hasActiveClinicalEntry = () => {
-  const active = document.activeElement;
-  return active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement;
+  // Buttons and file pickers move focus away from fields. An open clinical
+  // modal must still never be remounted by a realtime notification.
+  const modalOpen = Boolean(document.querySelector('[role="dialog"][aria-modal="true"], [role="alertdialog"][aria-modal="true"]'));
+  return shouldDeferRealtimeRefresh(document.activeElement?.tagName, modalOpen);
 };
 
 /**

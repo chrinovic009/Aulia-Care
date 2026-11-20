@@ -1212,6 +1212,7 @@ export class UsersService {
       senderId: true,
       recipientId: true,
       text: true,
+      kind: true,
       createdAt: true,
       status: true,
     },
@@ -1242,7 +1243,12 @@ export class UsersService {
 
     if (!summary.lastMessageAt) {
       summary.lastMessageAt = message.createdAt;
-      summary.lastMessagePreview = message.text.slice(0, 120);
+      const mediaPreview = {
+        VOICE: 'Message vocal',
+        PHOTO: 'Photo',
+        IMAGING: 'Imagerie médicale',
+      } as const;
+      summary.lastMessagePreview = (message.text.trim() || mediaPreview[message.kind as keyof typeof mediaPreview] || 'Message').slice(0, 120);
     }
 
     if (

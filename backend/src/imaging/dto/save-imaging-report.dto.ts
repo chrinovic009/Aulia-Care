@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class SaveImagingReportDto {
   @IsString()
@@ -17,8 +17,4 @@ export class SaveImagingReportDto {
   @IsBoolean()
   @IsOptional()
   verified?: boolean;
-
-  @IsArray()
-  @IsOptional()
-  imagePaths?: string[];
 }

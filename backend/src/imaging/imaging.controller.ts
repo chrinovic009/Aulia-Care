@@ -1,15 +1,22 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, Res, StreamableFile, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { ImagingService } from './imaging.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CreateImagingCatalogueDto } from './dto/create-imaging-catalogue.dto';
 import { AmendImagingReportDto } from './dto/amend-imaging-report.dto';
+import { SaveImagingReportDto } from './dto/save-imaging-report.dto';
 import { AuthenticatedActor } from '../core/clinic-context.service';
+import { AuditRead } from '../audit/audit-read.decorator';
+import { PHOTO_MAX_BYTES, type MediaUpload } from '../messages/message-media.service';
 
 interface AuthenticatedRequest {
   user?: AuthenticatedActor;
 }
+
+const IMAGING_READ_ROLES = ['SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST'] as const;
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('imaging')
@@ -17,13 +24,13 @@ export class ImagingController {
   constructor(private readonly imagingService: ImagingService) {}
 
   @Get()
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')
+  @Roles(...IMAGING_READ_ROLES)
   findAll(@Request() req: AuthenticatedRequest) {
     return this.imagingService.findAll(req.user?.userId || req.user?.id);
   }
 
   @Get('catalogue')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')
+  @Roles(...IMAGING_READ_ROLES)
   findCatalogue(@Request() req: AuthenticatedRequest) {
     return this.imagingService.findCatalogue(req.user?.userId || req.user?.id);
   }
@@ -41,7 +48,7 @@ export class ImagingController {
   }
 
   @Get('dashboard/overview')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')
+  @Roles(...IMAGING_READ_ROLES)
   getDashboardOverview(@Query('period') period?: string, @Query('modality') modality?: string, @Query('service') service?: string, @Request() req?: AuthenticatedRequest) {
     return this.imagingService.getDashboardOverview(period, modality, service, req?.user?.userId || req?.user?.id);
   }
@@ -59,7 +66,7 @@ export class ImagingController {
   }
 
   @Get(':id')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'RECEPTIONIST', 'NURSE', 'PHYSICIAN', 'RADIOLOGIST')
+  @Roles(...IMAGING_READ_ROLES)
   findOne(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     return this.imagingService.findOne(id, req.user?.userId || req.user?.id);
   }
@@ -70,9 +77,31 @@ export class ImagingController {
     return this.imagingService.updateStatus(id, body.status, req.user?.userId || req.user?.id);
   }
 
+  @Post(':id/report/previews')
+  @Roles('RADIOLOGIST')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: PHOTO_MAX_BYTES, files: 1 } }))
+  addReportPreview(@Param('id') id: string, @UploadedFile() file: MediaUpload | undefined, @Request() req: AuthenticatedRequest) {
+    if (!file) throw new BadRequestException('Choisissez un aperçu JPEG, PNG ou WebP.');
+    return this.imagingService.addReportPreview(id, file, req.user?.userId || req.user?.id);
+  }
+
+  @Get(':id/report/previews/:index')
+  @Roles(...IMAGING_READ_ROLES)
+  @AuditRead('ImagingRequest', 'id')
+  async getReportPreview(@Param('id') id: string, @Param('index') index: string, @Res({ passthrough: true }) response: Response, @Request() req: AuthenticatedRequest) {
+    const preview = await this.imagingService.getReportPreview(id, index, req.user?.userId || req.user?.id);
+    const extension = preview.mimeType === 'image/jpeg' ? 'jpg' : preview.mimeType.split('/')[1];
+    response.setHeader('Content-Type', preview.mimeType);
+    response.setHeader('Content-Length', preview.size);
+    response.setHeader('Content-Disposition', `inline; filename="apercu-${Number(index) + 1}.${extension}"`);
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    return new StreamableFile(preview.stream);
+  }
+
   @Post(':id/report')
   @Roles('RADIOLOGIST')
-  saveReport(@Param('id') id: string, @Body() body: { findings: string; impression: string; recommendations?: string; verified?: boolean }, @Request() req: AuthenticatedRequest) {
+  saveReport(@Param('id') id: string, @Body() body: SaveImagingReportDto, @Request() req: AuthenticatedRequest) {
     return this.imagingService.saveReport(id, body, req.user?.userId);
   }
 
