@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ConflictException, NotFoundException } from '@nestjs/common';
 import { PatientWorkflowStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { currentRequestContext } from './request-context';
 import { decideWorkflowTransition } from './patient-workflow.policy';
 
 type WorkflowClient = PrismaService | Prisma.TransactionClient;
@@ -35,6 +36,9 @@ export class PatientWorkflowService {
     requested: PatientWorkflowStatus,
     clinicId: string | null | undefined,
   ): Promise<WorkflowTransitionResult> {
+    if (tx instanceof PrismaService && typeof (tx as PrismaService).$transaction === 'function') {
+      return tx.$transaction(client => this.transitionDetailed(client, patientId, requested, clinicId));
+    }
     if (!clinicId?.trim()) {
       throw new Error('Patient workflow transition requires an explicit clinicId.');
     }
@@ -54,41 +58,55 @@ export class PatientWorkflowService {
       this.logger.warn(
         `Workflow transition refused for patient ${patientId}: ${decision.status} -> ${requested}`,
       );
+      const context = currentRequestContext();
+      if (context?.clinicId && context.clinicId !== clinicId) throw new Error('Workflow audit clinic mismatch.');
       // Visible trace in the clinic audit log, not only in server logs.
       await tx.auditLog.create({
         data: {
           patientId,
+          actorId: context?.userId,
           action: 'REJECT',
           entity: 'PatientWorkflow',
           entityId: patientId,
           summary: `Changement de statut refusé : ${decision.status} -> ${requested}`,
-          metadata: { from: decision.status, requested, clinicId },
+          metadata: { from: decision.status, requested, clinicId, actorRole: context?.role ?? null, actorRoles: context?.roles ?? [], route: context?.route ?? null },
         },
       });
       return decision;
     }
     if (decision.outcome === 'unchanged') return decision;
 
+    await tx.$executeRaw(Prisma.sql`SELECT set_config('app.workflow_patient', ${patientId}, true)`);
     const update = await tx.patient.updateMany({
       where: { id: patientId, clinicId, deletedAt: null, workflowStatus: patient.workflowStatus },
       data: { workflowStatus: decision.status },
     });
+    await tx.$executeRaw(Prisma.sql`SELECT set_config('app.workflow_patient', '', true)`);
     if (update.count !== 1) throw new PatientWorkflowConflictError(patientId);
 
     return decision;
   }
 
-  /**
-   * Compatibility wrapper: returns the persisted status, or null only when the
-   * patient does not exist in this clinic.
-   */
-  async transition(
-    tx: WorkflowClient,
-    patientId: string,
-    requested: PatientWorkflowStatus,
-    clinicId: string | null | undefined,
-  ): Promise<PatientWorkflowStatus | null> {
+  /** Required workflow changes abort their containing operation on refusal. */
+  async requireTransition(tx: WorkflowClient, patientId: string, requested: PatientWorkflowStatus, clinicId: string | null | undefined) {
     const result = await this.transitionDetailed(tx, patientId, requested, clinicId);
-    return result.outcome === 'not_found' ? null : result.status;
+    if (result.outcome === 'not_found') throw new NotFoundException('Patient introuvable dans cet établissement.');
+    if (result.outcome === 'blocked') {
+      const context = currentRequestContext();
+      context?.rejectedWorkflowWrites?.push({
+        patientId, actorId: context.userId, action: 'REJECT', entity: 'PatientWorkflow', entityId: patientId,
+        summary: `Changement de statut refusé : ${result.status} -> ${requested}`,
+        metadata: { from: result.status, requested, clinicId, actorRole: context.role ?? null, actorRoles: [...(context.roles ?? [])], route: context.route ?? null },
+      });
+      throw new ConflictException('Changement de parcours refusé.');
+    }
+    return result.status;
+  }
+
+  /** Best-effort queue projection: payment/order success is not a workflow success. */
+  async projectStatus(tx: WorkflowClient, patientId: string, requested: PatientWorkflowStatus, clinicId: string | null | undefined) {
+    const result = await this.transitionDetailed(tx, patientId, requested, clinicId);
+    if (result.outcome === 'not_found') throw new NotFoundException('Patient introuvable dans cet établissement.');
+    return result.status;
   }
 }

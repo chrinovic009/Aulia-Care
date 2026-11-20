@@ -43,7 +43,7 @@ test('PostgreSQL : registre d’audit attribué, sans secrets, en ajout seul et 
     assert.equal(created.actorRole, 'PHYSICIAN');
     assert.equal(created.clinicId, clinic.id);
     assert.equal((created.data as { after: { lastName: string } }).after.lastName, `Audit ${suffix}`);
-    assert.deepEqual(created.context, { route: 'PATCH /patients/:id' });
+    assert.deepEqual(created.context, { route: 'PATCH /patients/:id', roles: [] });
 
     // 2. An update records only what changed, inside an interactive transaction too.
     await runWithRequestContext(context, async () => await prisma.$transaction((tx) =>

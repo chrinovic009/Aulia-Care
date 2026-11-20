@@ -2,9 +2,7 @@
  * Small, deterministic Core policies. Keeping them pure makes critical
  * operational rules testable without a database or a web server.
  */
-export const SYSTEM_SAFE_NURSE_PATIENT_CAPACITY = 5;
-/** Technical guardrail only; it is not a clinical staffing recommendation. */
-export const SYSTEM_MAX_NURSE_PATIENT_CAPACITY = 100;
+export { SYSTEM_SAFE_NURSE_PATIENT_CAPACITY, SYSTEM_MAX_NURSE_PATIENT_CAPACITY, resolveNursePatientCapacity } from '../hospitalizations/nurse-capacity.policy';
 
 export function isValidClockTime(value: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
@@ -25,29 +23,6 @@ export function isValidIanaTimezone(value: string): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * Resolves the nurse/patient capacity. An invalid stored value still falls
- * back to the safe default (scheduling must keep working), but it is reported
- * through `onInvalid` (a console warning by default) so the misconfiguration
- * is visible instead of silent.
- */
-export function resolveNursePatientCapacity(
-  unitOverride?: number | null,
-  clinicDefault?: number | null,
-  onInvalid: (reason: string) => void = (reason) => console.warn(`[operational-policy] ${reason}`),
-): number {
-  const configured = unitOverride ?? clinicDefault ?? SYSTEM_SAFE_NURSE_PATIENT_CAPACITY;
-  if (!Number.isInteger(configured) || configured <= 0) {
-    onInvalid(`Capacité infirmière invalide (${configured}) : valeur sûre ${SYSTEM_SAFE_NURSE_PATIENT_CAPACITY} appliquée.`);
-    return SYSTEM_SAFE_NURSE_PATIENT_CAPACITY;
-  }
-  if (configured > SYSTEM_MAX_NURSE_PATIENT_CAPACITY) {
-    onInvalid(`Capacité infirmière ${configured} plafonnée à ${SYSTEM_MAX_NURSE_PATIENT_CAPACITY}.`);
-    return SYSTEM_MAX_NURSE_PATIENT_CAPACITY;
-  }
-  return configured;
 }
 
 /** Parses an HH:MM clock with the same strict rule as `isValidClockTime`. */

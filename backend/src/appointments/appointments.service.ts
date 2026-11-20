@@ -97,7 +97,7 @@ export class AppointmentsService {
         'Le portail patient ne peut créer un rendez-vous que pour son propre dossier.',
       );
     }
-    return { id: user.id, clinicId: patient.clinicId, primaryRole: user.primaryRole };
+    return { id: user.id, clinicId: patient.clinicId, primaryRole: user.primaryRole, roles: [] };
   }
 
   private normalizeText(value?: string | null) {
@@ -160,7 +160,7 @@ export class AppointmentsService {
       : fallbackStatus;
     if (!nextStatus || nextStatus === patient.workflowStatus) return;
 
-    await this.patientWorkflow.transition(tx, patientId, nextStatus, clinicId);
+    await this.patientWorkflow.projectStatus(tx, patientId, nextStatus, clinicId);
   }
 
   private isAdministrativeDestination(
@@ -402,7 +402,7 @@ export class AppointmentsService {
         } satisfies Prisma.AppointmentUncheckedCreateInput,
         include: { patient: true, serviceUnit: { include: { department: true } } },
       });
-      const transitionedWorkflowStatus = await this.patientWorkflow.transition(
+      const transitionedWorkflowStatus = await this.patientWorkflow.requireTransition(
         tx,
         patient.id,
         workflowStatus,

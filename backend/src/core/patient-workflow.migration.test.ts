@@ -18,7 +18,7 @@ test('the database transition guard mirrors the Core state machine exactly', () 
   );
   for (const from of Object.values(PatientWorkflowStatus)) {
     const inCode = [...ALLOWED_WORKFLOW_TRANSITIONS[from]].filter((to) => to !== from).sort();
-    const others = Object.values(PatientWorkflowStatus).filter((to) => to !== from).sort();
-    assert.deepEqual(restricted.get(from) ?? others, inCode, `transitions from ${from}`);
+    assert.ok(restricted.has(from), `missing SQL branch ${from}`);
+    assert.deepEqual(restricted.get(from), inCode, `transitions from ${from}`);
   }
 });

@@ -29,7 +29,7 @@ test('workflow transitions cannot regress a hospitalized patient', async () => {
     },
   };
 
-  const result = await service.transition(
+  const result = await service.projectStatus(
     tx as any,
     'patient-a',
     PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
@@ -52,7 +52,7 @@ test('workflow transitions preserve consultation against regressive states', asy
 
   let updated = false;
 
-  const result = await service.transition(
+  const result = await service.projectStatus(
     {
       $executeRaw: async () => undefined, auditLog: { create: async () => ({}) },
       patient: {
@@ -90,7 +90,7 @@ test('a completed patient can start a new workflow', async () => {
 
   let updatedStatus: PatientWorkflowStatus | undefined;
 
-  const result = await service.transition(
+  const result = await service.projectStatus(
     {
       $executeRaw: async () => undefined, auditLog: { create: async () => ({}) },
       patient: {
@@ -133,7 +133,7 @@ test('workflow transitions require an explicit clinic id', async () => {
 
   await assert.rejects(
     () =>
-      service.transition(
+      service.projectStatus(
         {
           $executeRaw: async () => undefined, auditLog: { create: async () => ({}) },
           patient: {

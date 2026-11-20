@@ -31,7 +31,7 @@ export class PharmacyService {
       where: { patientId, clinicId, deletedAt: null, status: { not: 'CANCELLED' }, balanceDue: { gt: 0 } },
     });
     if (unpaid > 0) return;
-    await this.patientWorkflow.transitionDetailed(tx, patientId, PatientWorkflowStatus.TERMINE, clinicId);
+    await this.patientWorkflow.requireTransition(tx, patientId, PatientWorkflowStatus.TERMINE, clinicId);
   }
 
   private requireClinic(actorId?: string) {

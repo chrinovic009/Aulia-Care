@@ -174,6 +174,9 @@ export class PatientsService {
     currentUser?: AuthenticatedActor,
   ) {
     const actor = await this.requireOperationalActor(currentUser);
+    if (createPatientDto.workflowStatus !== undefined && createPatientDto.workflowStatus !== PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT) {
+      throw new BadRequestException('Le statut initial du patient est défini par la réception.');
+    }
     const { service, receptionist, ...patientData } = createPatientDto;
 
     if (service) {
@@ -203,6 +206,7 @@ export class PatientsService {
 
     const createPayload: Prisma.PatientCreateInput = {
       ...patientData,
+      workflowStatus: PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT,
       clinic: { connect: { id: actor.clinicId } },
       ...(service
         ? {
@@ -1191,9 +1195,10 @@ export class PatientsService {
           certifiedBy: { select: { id: true, displayName: true, firstName: true, lastName: true, specialty: true } },
         },
       });
+      await this.patientWorkflow.requireTransition(tx, patientId, PatientWorkflowStatus.TERMINE, physician.clinicId);
       await tx.patient.update({
         where: { id: patientId },
-        data: { status: 'DECEASED', workflowStatus: PatientWorkflowStatus.TERMINE },
+        data: { status: 'DECEASED' },
       });
       await tx.medicalHistory.create({
         data: {
@@ -1815,7 +1820,7 @@ export class PatientsService {
     });
 
 if (existingPatientInTransaction) {
-  await this.patientWorkflow.transition(
+  await this.patientWorkflow.projectStatus(
     prisma,
     patient.id,
     admissionData.workflowStatus,
@@ -3316,14 +3321,14 @@ if (isParamedicalVoucher) {
       // AC-P002:
       // la mutation elle-même reste strictement limitée
       // au tenant authentifié et à un patient non supprimé.
-      await this.patientWorkflow.transition(
+      const persistedWorkflowStatus = await this.patientWorkflow.projectStatus(
         tx,
         patientInTransaction.id,
         workflowStatus,
         recorder.clinicId,
       );
 
-      return consultation;
+      return { consultation, persistedWorkflowStatus };
     },
   );
 
@@ -3331,16 +3336,14 @@ if (isParamedicalVoucher) {
     'patient.updated',
     {
       id: patient.id,
-      workflowStatus: result
-        ? PatientWorkflowStatus.EN_CONSULTATION
-        : PatientWorkflowStatus.EN_ATTENTE_MEDECIN,
+      workflowStatus: result.persistedWorkflowStatus,
     },
   );
 
-  if (result) {
+  if (result.consultation) {
     this.notificationsGateway.notify(
       'consultation.created',
-      result,
+      result.consultation,
     );
   }
 

@@ -67,7 +67,7 @@ test('payment refuses a cashier from another clinic before opening a transaction
 test('payment never creates a hospitalization directly when the patient is marked for admission', async () => {
   const hospitalizationCreates: unknown[] = [];
   const patientWorkflow = {
-    transition: async () => ({}) as any,
+    projectStatus: async () => ({}) as any,
   };
 
   const service = new PaymentsService(
