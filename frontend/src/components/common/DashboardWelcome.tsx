@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
+import { type AuthUser, useAuth } from "../../context/AuthContext";
 
 type DashboardWelcomeProps = {
   eyebrow: string;
@@ -17,6 +17,115 @@ function greetingForHour(hour: number) {
   return "Bonsoir";
 }
 
+function normalizedLabel(value?: string | null) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("fr-FR");
+}
+
+function genderOf(user: AuthUser): "F" | "M" | null {
+  const gender = normalizedLabel(user.gender || user.Employee?.[0]?.gender);
+  if (["f", "femme", "feminin", "female"].includes(gender)) return "F";
+  if (["m", "homme", "masculin", "male"].includes(gender)) return "M";
+  return null;
+}
+
+function labProfession(user: AuthUser, gender: "F" | "M" | null) {
+  const rawProfession = user.Employee?.[0]?.position?.trim() || user.specialty?.trim();
+  const specialtyKey = normalizedLabel(rawProfession);
+  const specialtyTitles: Record<string, string> = {
+    biologiste: "biologiste",
+    "biologie medicale": "biologiste",
+    hematologue: "hématologue",
+    hematologie: "hématologue",
+    biochimiste: "biochimiste",
+    biochimie: "biochimiste",
+    microbiologiste: "microbiologiste",
+    microbiologie: "microbiologiste",
+    bacteriologiste: "bactériologiste",
+    bacteriologie: "bactériologiste",
+    parasitologiste: "parasitologiste",
+    parasitologie: "parasitologiste",
+    immunologiste: "immunologiste",
+    immunologie: "immunologiste",
+    virologue: "virologue",
+    virologie: "virologue",
+    cytologiste: "cytologiste",
+    cytologie: "cytologiste",
+    anatomopathologiste: "anatomopathologiste",
+    anatomopathologie: "anatomopathologiste",
+    laborantin: gender === "F" ? "technicienne de laboratoire" : "technicien de laboratoire",
+    laborantine: gender === "F" ? "technicienne de laboratoire" : "technicien de laboratoire",
+    "technicien de laboratoire": "technicien de laboratoire",
+    "technicienne de laboratoire": "technicienne de laboratoire",
+  };
+  const profession = specialtyTitles[specialtyKey];
+
+  if (profession) {
+    const article = /^[aeiouyàâäéèêëîïôöùûüÿh]/i.test(profession) ? "l’" : gender === "F" ? "la " : "le ";
+    return gender ? `${gender === "F" ? "Madame" : "Monsieur"} ${article}${profession}` : `Spécialiste : ${profession}`;
+  }
+
+  if (rawProfession && !/^[A-Z_]+$/.test(rawProfession)) {
+    return gender
+      ? `${gender === "F" ? "Madame" : "Monsieur"}, spécialiste en ${rawProfession}`
+      : `Spécialiste en ${rawProfession}`;
+  }
+
+  if (user.primaryRole === "LAB_MANAGER") return "Responsable du laboratoire";
+  if (gender) return `${gender === "F" ? "Madame" : "Monsieur"} ${gender === "F" ? "la technicienne" : "le technicien"} de laboratoire`;
+  return "Personnel du laboratoire";
+}
+
+function roleGreetingTitle(user: AuthUser) {
+  const gender = genderOf(user);
+  const female = gender === "F";
+  const maleHonorific = gender === "M" ? "Monsieur" : gender === "F" ? "Madame" : "";
+
+  switch (user.primaryRole) {
+    case "DEV":
+      return female ? "Madame la Développeuse" : gender === "M" ? "Monsieur le Développeur" : "Équipe de développement";
+    case "SUPER_ADMIN":
+      return female ? "Madame la Directrice générale" : gender === "M" ? "Monsieur le Directeur général" : "Direction générale";
+    case "ADMIN":
+      return female ? "Madame l’Administratrice" : gender === "M" ? "Monsieur l’Administrateur" : "Administrateur";
+    case "RECEPTIONIST":
+      return maleHonorific || "Madame ou Monsieur";
+    case "NURSE":
+      return female ? "Madame l’Infirmière" : gender === "M" ? "Monsieur l’Infirmier" : "Personnel infirmier";
+    case "PHYSICIAN":
+    case "MEDICAL_DIRECTOR":
+      return "Docteur";
+    case "LAB_TECHNICIAN":
+    case "LAB_MANAGER":
+      return labProfession(user, gender);
+    case "RADIOLOGIST":
+      return "Docteur radiologue";
+    case "SURGEON":
+      return female ? "Docteure chirurgienne" : gender === "M" ? "Docteur chirurgien" : "Docteur";
+    case "ANESTHESIOLOGIST":
+      return "Docteur anesthésiste";
+    case "MIDWIFE":
+      return "Sage-femme";
+    case "PARAMEDIC":
+      return female ? "Madame l’Ambulancière" : gender === "M" ? "Monsieur l’Ambulancier" : "Équipe paramédicale";
+    case "DISPATCHER":
+      return female ? "Madame la Régulatrice" : gender === "M" ? "Monsieur le Régulateur" : "Régulation";
+    case "PHARMACIST":
+    case "FINANCE":
+    case "CASHIER":
+      return maleHonorific || "Madame ou Monsieur";
+    case "PATIENT":
+      return female ? "Madame" : gender === "M" ? "Monsieur" : "à vous";
+    default: {
+      const exhaustiveRole: never = user.primaryRole;
+      return exhaustiveRole;
+    }
+  }
+}
+
 export default function DashboardWelcome({ eyebrow, description, actionLabel, to, onAction }: DashboardWelcomeProps) {
   const { currentUser } = useAuth();
   const [now, setNow] = useState(() => new Date());
@@ -26,8 +135,9 @@ export default function DashboardWelcome({ eyebrow, description, actionLabel, to
     return () => window.clearInterval(timer);
   }, []);
 
-  const firstName = currentUser?.firstName?.trim() || currentUser?.displayName?.trim().split(/\s+/)[0] || "";
-  const title = `${greetingForHour(now.getHours())}${firstName ? ` ${firstName}` : ""} !`;
+  const salutation = greetingForHour(now.getHours());
+  const roleTitle = currentUser ? roleGreetingTitle(currentUser) : "";
+  const title = `Hey, ${salutation.toLocaleLowerCase("fr-FR")}${roleTitle ? ` ${roleTitle}` : ""} !`;
   const actionClassName = "inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-aulia-navy px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-aulia-teal focus:outline-none focus:ring-2 focus:ring-aulia-teal focus:ring-offset-2 dark:bg-white dark:text-aulia-navy dark:hover:bg-aulia-mist";
   const action = to
     ? <Link to={to} className={actionClassName}>{actionLabel}<ArrowRight size={16} aria-hidden="true" /></Link>

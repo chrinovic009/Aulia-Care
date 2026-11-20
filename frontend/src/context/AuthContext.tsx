@@ -68,6 +68,8 @@ export interface AuthUser {
 
   Employee?: Array<{
     id: string;
+    gender?: string | null;
+    position?: string | null;
     serviceUnitId?: string;
     departmentId?: string;
     shifts?: Array<{
