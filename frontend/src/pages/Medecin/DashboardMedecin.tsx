@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { Mic, MicOff, Sparkles } from "lucide-react";
 import PageMeta from "../../components/common/PageMeta";
+import DashboardWelcome from "../../components/common/DashboardWelcome";
 import {
   DoctorPatient,
   fetchDoctorAssignedPatients,
@@ -1257,6 +1258,10 @@ export default function DashboardMedecin() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
       <PageMeta title="Dashboard medecin | Aulia Care" description="File medecin alimentee par PostgreSQL." />
+
+      <div className="mb-5">
+        <DashboardWelcome eyebrow="Aulia Care · Espace médical" description="Consultez votre file de patients, les consultations en cours et les tâches médicales à traiter." actionLabel="Voir mes patients" to="/doctor/patients" />
+      </div>
 
       <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isValidClockTime, isValidIanaTimezone, parseClockTime, resolveNursePatientCapacity } from './operational-policy';
+import { isValidClockTime, isValidIanaTimezone, parseClockTime } from './operational-policy';
+import { resolveNursePatientCapacity } from '../hospitalizations/nurse-capacity.policy';
 
 test('accepts UTC and refuses inverted fixed-offset zones', () => {
   assert.equal(isValidIanaTimezone('UTC'), true);

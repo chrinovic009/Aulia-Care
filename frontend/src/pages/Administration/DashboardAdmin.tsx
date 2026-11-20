@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bed, Banknote, FileText, Hospital, Stethoscope, UsersRound } from "lucide-react";
+import DashboardWelcome from "../../components/common/DashboardWelcome";
 import { apiFetch } from "../../config/api";
 import { AdminPageShell, DataTable, Panel, StatCard, StatusBadge, formatDate, formatMoney } from "./adminUi";
 
@@ -94,6 +95,7 @@ export default function DashboardAdmin() {
     <AdminPageShell
       title="Dashboard admin"
       subtitle="Vue d'ensemble operationnelle, financiere et clinique de la structure."
+      welcome={<DashboardWelcome eyebrow="Aulia Care · Administration clinique" description="Retrouvez les indicateurs de votre établissement et accédez rapidement aux outils de gestion." actionLabel="Gérer le personnel" to="/administration/personnel" />}
       actions={<button onClick={load} className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">{isLoading ? "Chargement" : "Actualiser"}</button>}
     >
       {error ? (

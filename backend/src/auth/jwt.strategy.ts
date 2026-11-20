@@ -39,6 +39,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         roles: { where: { active: true, role: { deletedAt: null } }, select: { role: { select: { slug: true } } } },
         mustChangePassword: true,
         clinicId: true,
+        patientPortalProfile: { select: { id: true, clinicId: true } },
         clinic: { select: { status: true, deletedAt: true } },
         serviceResponsabilites: {
           where: { actif: true },
@@ -88,6 +89,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     return {
       userId: user.id,
+      patientId: user.primaryRole === 'PATIENT' ? user.patientPortalProfile?.id ?? null : null,
+      patientClinicId: user.primaryRole === 'PATIENT' ? user.patientPortalProfile?.clinicId ?? null : null,
       sessionId: session.id,
       email: payload.email,
       username: payload.username,

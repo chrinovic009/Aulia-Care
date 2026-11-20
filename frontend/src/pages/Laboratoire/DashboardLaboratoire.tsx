@@ -1,6 +1,7 @@
 import { Component, ErrorInfo, ReactNode, useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
+import DashboardWelcome from "../../components/common/DashboardWelcome";
 import { apiFetch } from "../../config/api";
 import { useRealtime } from "../../context/RealtimeContext";
 
@@ -191,10 +192,14 @@ export default function DashboardLaboratoire() {
       <PageMeta title="Laboratoire | Aulia Care" description="Demandes d'examens et resultats en temps reel." />
       <PageBreadcrumb pageTitle="Laboratoire" />
 
+      <div className="mb-5">
+        <DashboardWelcome eyebrow="Aulia Care · Laboratoire" description="Visualisez les examens reçus, les résultats à valider et l’activité du laboratoire." actionLabel="Ouvrir les validations" to="/laboratoire/validations" />
+      </div>
+
       <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Examens laboratoire</h1>
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Examens laboratoire</h2>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Reception, execution et validation des resultats patients.</p>
           </div>
           <button onClick={() => refreshDashboard()} className="rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white">Actualiser</button>

@@ -15,20 +15,24 @@ export function AdminPageShell({
   title,
   subtitle,
   actions,
+  welcome,
   children,
 }: {
   title: string;
   subtitle: string;
   actions?: ReactNode;
+  welcome?: ReactNode;
   children: ReactNode;
 }) {
+  const TitleTag = welcome ? "h2" : "h1";
   return (
     <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 sm:p-6">
       <div className="mx-auto max-w-[1600px]">
+        {welcome ? <div className="mb-6">{welcome}</div> : null}
         <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-white/[0.03] lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Administration clinique</p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{title}</h1>
+            <TitleTag className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{title}</TitleTag>
             <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
           </div>
           {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}

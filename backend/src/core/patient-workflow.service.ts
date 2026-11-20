@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { currentRequestContext } from './request-context';
 import { decideWorkflowTransition } from './patient-workflow.policy';
 
-type WorkflowClient = PrismaService | Prisma.TransactionClient;
+type WorkflowTransaction = Prisma.TransactionClient;
 
 export type WorkflowTransitionResult =
   | { outcome: 'not_found' }
@@ -15,8 +15,8 @@ export type WorkflowTransitionResult =
 
 /** Raised when the row changed despite the advisory lock: a bug, never a normal case. */
 export class PatientWorkflowConflictError extends Error {
-  constructor(patientId: string) {
-    super(`Patient workflow changed concurrently despite the lock (patient ${patientId}).`);
+  constructor() {
+    super('Patient workflow changed concurrently despite the lock.');
     this.name = 'PatientWorkflowConflictError';
   }
 }
@@ -31,13 +31,13 @@ export class PatientWorkflowService {
    * persisted status, never the requested one.
    */
   async transitionDetailed(
-    tx: WorkflowClient,
+    tx: WorkflowTransaction,
     patientId: string,
     requested: PatientWorkflowStatus,
     clinicId: string | null | undefined,
   ): Promise<WorkflowTransitionResult> {
-    if (tx instanceof PrismaService && typeof (tx as PrismaService).$transaction === 'function') {
-      return tx.$transaction(client => this.transitionDetailed(client, patientId, requested, clinicId));
+    if (tx instanceof PrismaService) {
+      throw new Error('Patient workflow transition requires an active transaction client.');
     }
     if (!clinicId?.trim()) {
       throw new Error('Patient workflow transition requires an explicit clinicId.');
@@ -56,7 +56,7 @@ export class PatientWorkflowService {
     const decision = decideWorkflowTransition(patient.workflowStatus, requested);
     if (decision.outcome === 'blocked') {
       this.logger.warn(
-        `Workflow transition refused for patient ${patientId}: ${decision.status} -> ${requested}`,
+        `Workflow transition refused: ${decision.status} -> ${requested}`,
       );
       const context = currentRequestContext();
       if (context?.clinicId && context.clinicId !== clinicId) throw new Error('Workflow audit clinic mismatch.');
@@ -82,13 +82,13 @@ export class PatientWorkflowService {
       data: { workflowStatus: decision.status },
     });
     await tx.$executeRaw(Prisma.sql`SELECT set_config('app.workflow_patient', '', true)`);
-    if (update.count !== 1) throw new PatientWorkflowConflictError(patientId);
+    if (update.count !== 1) throw new PatientWorkflowConflictError();
 
     return decision;
   }
 
   /** Required workflow changes abort their containing operation on refusal. */
-  async requireTransition(tx: WorkflowClient, patientId: string, requested: PatientWorkflowStatus, clinicId: string | null | undefined) {
+  async requireTransition(tx: WorkflowTransaction, patientId: string, requested: PatientWorkflowStatus, clinicId: string | null | undefined) {
     const result = await this.transitionDetailed(tx, patientId, requested, clinicId);
     if (result.outcome === 'not_found') throw new NotFoundException('Patient introuvable dans cet établissement.');
     if (result.outcome === 'blocked') {
@@ -104,7 +104,7 @@ export class PatientWorkflowService {
   }
 
   /** Best-effort queue projection: payment/order success is not a workflow success. */
-  async projectStatus(tx: WorkflowClient, patientId: string, requested: PatientWorkflowStatus, clinicId: string | null | undefined) {
+  async projectStatus(tx: WorkflowTransaction, patientId: string, requested: PatientWorkflowStatus, clinicId: string | null | undefined) {
     const result = await this.transitionDetailed(tx, patientId, requested, clinicId);
     if (result.outcome === 'not_found') throw new NotFoundException('Patient introuvable dans cet établissement.');
     return result.status;

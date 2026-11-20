@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import DashboardWelcome from "../../components/common/DashboardWelcome";
 import {
   applyInvoiceDiscount,
   authorizePatientDischarge,
@@ -41,6 +42,7 @@ const DashboardCaissier: React.FC = () => {
   const [discountInvoiceId, setDiscountInvoiceId] = useState("");
   const [discountAmount, setDiscountAmount] = useState("");
   const [discountReason, setDiscountReason] = useState("");
+  const welcome = <DashboardWelcome eyebrow="Aulia Care · Caisse" description="Retrouvez les paiements en attente et les autorisations de sortie à vérifier." actionLabel="Ouvrir la facturation" to="/caissier/facturation" />;
 
   const load = async () => {
     try {
@@ -169,14 +171,16 @@ const DashboardCaissier: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center p-4 sm:p-6">
-        <div className="text-lg text-gray-600">Chargement des donnees...</div>
+      <div className="min-h-screen space-y-5 p-4 sm:p-6">
+        {welcome}
+        <div className="flex h-48 items-center justify-center text-lg text-gray-600">Chargement des donnees...</div>
       </div>
     );
   }
 
   return (
     <div className="p-4 sm:p-6">
+      <div className="mb-5">{welcome}</div>
       {error && <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-5">

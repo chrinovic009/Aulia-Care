@@ -36,31 +36,27 @@ function offsetAt(date: Date, timeZone: string): number {
   return Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second || 0) - date.getTime();
 }
 
-/** Converts a clinic wall-clock value to its UTC timestamp. A second pass
- * handles timezone offset changes around DST boundaries. */
+/** Converts a clinic wall-clock value to UTC and rejects missing or ambiguous times. */
 export function clinicWallClockToUtc(date: LocalClinicDate, hour: number, minute: number, timeZone: string): Date {
   const wallClock = Date.UTC(date.year, date.month - 1, date.day, hour, minute, 0);
-  let result = new Date(wallClock - offsetAt(new Date(wallClock), timeZone));
-  result = new Date(wallClock - offsetAt(result, timeZone));
-  const isExpectedWallClock = (candidate: Date) => {
+  const roughInstant = new Date(wallClock);
+  const offsets = new Set([
+    offsetAt(roughInstant, timeZone),
+    offsetAt(new Date(wallClock - 24 * 60 * 60_000), timeZone),
+    offsetAt(new Date(wallClock + 24 * 60 * 60_000), timeZone),
+  ]);
+  const candidates = [...offsets].map(offset => new Date(wallClock - offset)).filter(candidate => {
     const local = partsFor(candidate, timeZone, true);
     return local.year === date.year && local.month === date.month && local.day === date.day && local.hour === hour && local.minute === minute;
-  };
+  });
   // A spring-forward local time does not exist. Choosing another time would be
   // a silent clinical scheduling error.
-  if (!isExpectedWallClock(result)) {
+  if (candidates.length === 0) {
     throw new RangeError(`Heure locale inexistante : ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (${timeZone}).`);
   }
   // During the autumn transition a wall clock can map to two instants. We do
   // not guess which guard was intended; a human must configure an unambiguous
   // time or create an explicit Shift override.
-  for (const offsetMinutes of [30, 60, 90, 120]) {
-    for (const direction of [-1, 1]) {
-      const alternate = new Date(result.getTime() + direction * offsetMinutes * 60_000);
-      if (isExpectedWallClock(alternate)) {
-        throw new RangeError(`Heure locale ambiguë : ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (${timeZone}).`);
-      }
-    }
-  }
-  return result;
+  if (candidates.length > 1) throw new RangeError(`Heure locale ambiguë : ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (${timeZone}).`);
+  return candidates[0];
 }

@@ -12,6 +12,8 @@ export function requestContextStatement(client: Pick<Prisma.TransactionClient, '
     set_config('app.user_role', ${context.role ?? ''}, true),
     set_config('app.user_roles', ${JSON.stringify(context.roles ?? [])}, true),
     set_config('app.clinic_id', ${context.clinicId ?? ''}, true),
+    set_config('app.patient_id', ${context.patientId ?? ''}, true),
+    set_config('app.patient_clinic_id', ${context.patientClinicId ?? ''}, true),
     set_config('app.route', ${context.route ?? ''}, true),
     set_config('role', ${REQUEST_DATABASE_ROLE}, true)`;
 }

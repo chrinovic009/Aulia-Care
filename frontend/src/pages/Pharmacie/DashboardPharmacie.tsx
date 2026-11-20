@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import DashboardWelcome from "../../components/common/DashboardWelcome";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { apiFetch } from "../../config/api";
@@ -61,11 +62,15 @@ export default function DashboardPharmacie() {
       <PageMeta title="Pharmacie | Aulia Care" description="Gestion pharmacie basee sur PostgreSQL." />
       <PageBreadcrumb pageTitle="Pharmacie" />
 
+      <div className="mb-5">
+        <DashboardWelcome eyebrow="Aulia Care · Pharmacie" description="Suivez les ordonnances prêtes à délivrer et les niveaux de stock de la pharmacie." actionLabel="Voir les délivrances" to="/pharmacie/delivrance" />
+      </div>
+
       <section className="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase text-slate-500">Interface pharmacien</p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Ordonnances et stock</h1>
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">Ordonnances et stock</h2>
           </div>
           <button onClick={load} className="rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white">
             {isLoading ? "Chargement" : "Actualiser"}
