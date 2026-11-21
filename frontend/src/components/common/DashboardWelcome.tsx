@@ -137,7 +137,8 @@ export default function DashboardWelcome({ eyebrow, description, actionLabel, to
 
   const salutation = greetingForHour(now.getHours());
   const roleTitle = currentUser ? roleGreetingTitle(currentUser) : "";
-  const title = `Hey, ${salutation.toLocaleLowerCase("fr-FR")}${roleTitle ? ` ${roleTitle}` : ""} !`;
+  const firstName = currentUser?.firstName?.trim() || currentUser?.displayName?.trim().split(/\s+/)[0] || "";
+  const title = `Hey, ${salutation.toLocaleLowerCase("fr-FR")}${roleTitle ? ` ${roleTitle}` : ""}${firstName ? ` ${firstName}` : ""} !`;
   const actionClassName = "inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-aulia-navy px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-aulia-teal focus:outline-none focus:ring-2 focus:ring-aulia-teal focus:ring-offset-2 dark:bg-white dark:text-aulia-navy dark:hover:bg-aulia-mist";
   const action = to
     ? <Link to={to} className={actionClassName}>{actionLabel}<ArrowRight size={16} aria-hidden="true" /></Link>
