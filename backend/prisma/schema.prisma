@@ -2113,6 +2113,8 @@ model Payment {
 
 model Clinic {
   pacsConfiguration             ClinicPacsConfiguration?
+  hrPolicy                      HrPolicy?
+  replacementRequests           ReplacementRequest[]
   id                            String                         @id @default(uuid())
   name                          String
   brandDisplayName              String?
@@ -3298,6 +3300,8 @@ model Employee {
   leaveRequests         LeaveRequest[]
   payrolls              Payroll[]
   shifts                Shift[]
+  replacementsRequested ReplacementRequest[] @relation("ReplacementRequester")
+  replacementsCovered   ReplacementRequest[] @relation("ReplacementReplacer")
 
   @@index([userId])
   @@index([clinicId])
@@ -3313,6 +3317,10 @@ model EmployeeContract {
   currency   String?      @default("CDF")
   frequency  String?
   active     Boolean      @default(true)
+  /// Why this contract version exists (hiring, salary change, renewal…). A salary change closes the
+  /// previous version and opens a new one, so the salary history is kept.
+  reason      String?
+  createdById String?
   createdAt  DateTime     @default(now())
   employee   Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
@@ -3348,6 +3356,11 @@ model Attendance {
   departureReminderMinutes Int?
   departureDeferredCount   Int              @default(0)
   departureReason          String?
+  /// A justified lateness or absence is reported but never proposed as a payroll deduction.
+  justified                Boolean          @default(false)
+  note                     String?
+  /// Set when the administration records the entry (absence, correction), not the employee's own clock.
+  recordedById             String?
   createdAt                DateTime         @default(now())
   employee                 Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   shift                    Shift?           @relation(fields: [shiftId], references: [id])
@@ -3368,6 +3381,12 @@ model LeaveRequest {
   requestedAt DateTime    @default(now())
   decidedAt   DateTime?
   decidedById String?
+  /// Working days counted (Sundays excluded) and whether they are taken from the annual balance.
+  days           Decimal?    @db.Decimal(6, 1)
+  deductsBalance Boolean     @default(false)
+  decisionNote   String?
+  /// Colleague proposed by the employee to cover the absence.
+  replacementEmployeeId String?
   decidedBy   User?       @relation(fields: [decidedById], references: [id])
   employee    Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
@@ -3386,11 +3405,79 @@ model Payroll {
   status        PayrollStatus @default(DRAFT)
   processedAt   DateTime?
   processedById String?
+  /// Monthly salary in force when the payroll was computed (later salary changes never alter a paid payroll).
+  baseSalary         Decimal?      @db.Decimal(12, 2)
+  currency           String        @default("CDF")
+  /// Pay date of the month; an unpaid payroll past this date is late.
+  dueDate            DateTime?
+  /// Deductions Aulia proposes from lateness and absences of the month.
+  proposedDeductions Json?
+  /// Lines actually applied at payment (deductions, bonuses, advances): valid for this month only.
+  adjustments        Json?
+  paidAt             DateTime?
+  paidById           String?
+  paymentMethod      String?
+  paymentReference   String?
+  notes              String?
+  version            Int           @default(0)
+  updatedAt          DateTime      @default(now()) @updatedAt
   createdAt     DateTime      @default(now())
   employee      Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   processedBy   User?         @relation(fields: [processedById], references: [id])
 
+  @@unique([employeeId, periodStart])
   @@index([employeeId, status])
+}
+
+/// A colleague covering an employee's shift(s): accepted by the colleague, then approved by the administration.
+model ReplacementRequest {
+  id                   String    @id @default(uuid())
+  clinicId             String
+  requesterId          String
+  replacerId           String
+  startAt              DateTime
+  endAt                DateTime
+  reason               String?
+  /// PENDING_COLLEAGUE → PENDING_ADMIN → APPROVED, or DECLINED / REJECTED / CANCELLED.
+  status               String    @default("PENDING_COLLEAGUE")
+  colleagueNote        String?
+  colleagueRespondedAt DateTime?
+  decidedById          String?
+  decidedAt            DateTime?
+  decisionNote         String?
+  /// Shift created for the replacing colleague once approved.
+  shiftId              String?
+  leaveRequestId       String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @default(now()) @updatedAt
+  clinic               Clinic    @relation(fields: [clinicId], references: [id])
+  requester            Employee  @relation("ReplacementRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  replacer             Employee  @relation("ReplacementReplacer", fields: [replacerId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId, status])
+  @@index([replacerId, status])
+}
+
+/// Human-resources rules of an establishment (pay date, lateness tolerance, leave entitlement).
+model HrPolicy {
+  clinicId            String   @id
+  /// Day of the following month by which a month's pay is due.
+  payDay              Int      @default(5)
+  /// Minutes tolerated after the planned start before an arrival counts as late.
+  lateGraceMinutes    Int      @default(5)
+  /// Hours worked in a month, basis of the hourly rate used for lateness deductions.
+  monthlyWorkingHours Decimal  @default(195) @db.Decimal(6, 2)
+  /// Working days in a month, basis of the daily rate used for absence deductions.
+  workingDaysPerMonth Int      @default(26)
+  /// Paid leave acquired per complete month of service (RDC labour code: at least 1 working day).
+  leaveDaysPerMonth   Decimal  @default(1) @db.Decimal(4, 2)
+  /// One extra leave day per this many years of seniority.
+  seniorityBonusYears Int      @default(5)
+  /// Working days of the permanent day pattern (1 = Monday … 7 = Sunday).
+  workWeekDays        String   @default("1,2,3,4,5,6")
+  updatedById         String?
+  updatedAt           DateTime @default(now()) @updatedAt
+  clinic              Clinic   @relation(fields: [clinicId], references: [id])
 }
 
 /// == Audit et sécurité ==

@@ -1,18 +1,19 @@
 // Pages checked by ui-smoke.mjs, per demo account, and the rule applied to each.
-// `expect`: text that must appear (the page's own title), when it is stable.
+// `expect`: text that must appear (the page's own title), when it is stable. It is matched against
+// innerText, which applies CSS text-transform: avoid labels displayed in capitals.
 export const ROLE_PAGES = [
   { username: 'demo.reception', role: 'réception', pages: ['/reception', '/reception/admission', '/reception/patients', '/reception/rendez-vous', '/reception/hospitalisations', '/reception/abonnements', '/reception/historique'] },
   { username: 'demo.caisse', role: 'caisse', pages: ['/caissier', '/caissier/facturation', '/caissier/historique'] },
-  { username: 'demo.infirmier', role: 'infirmier', pages: ['/nurse', '/nurse/patients', '/nurse/rounds', '/nurse/hospitalized'] },
+  { username: 'demo.infirmier', role: 'infirmier', pages: ['/nurse', '/nurse/patients', '/nurse/rounds', '/nurse/hospitalized', { route: '/mon-espace-rh', expect: 'Mon espace RH' }] },
   { username: 'demo.medecin', role: 'médecin', pages: ['/doctor/', '/doctor/patients', '/doctor/consultations', '/doctor/drafts', '/doctor/exams', '/doctor/prescriptions', '/doctor/hospitalizations'] },
   { username: 'demo.labo', role: 'laboratoire', pages: ['/laboratoire', '/laboratoire/activite', '/laboratoire/validations', '/laboratoire/catalogue'] },
   { username: 'demo.radio', role: 'imagerie', pages: ['/radiologie', '/radiologie/file-attente', '/radiologie/rapports', '/radiologie/catalogue'] },
   { username: 'demo.pharmacie', role: 'pharmacie', pages: ['/pharmacie', '/pharmacie/delivrance', '/pharmacie/stock', '/pharmacie/securite'] },
   { username: 'demo.patient', role: 'patient', pages: ['/patient', '/dossier-medical', '/examens-resultats', '/traitements', '/rendez-vous', '/paiements'] },
   { username: 'demo.urgences', role: 'urgences', pages: ['/unites'] },
-  { username: 'demo.finance', role: 'finance', pages: ['/finance', '/finance/tresorerie', { route: '/finance/rapprochement-unites', expect: 'Rapprochement des examens' }] },
-  { username: 'demo.admin', role: 'administration', pages: ['/administration', '/administration/personnel', '/administration/unites-soins', '/administration/services', { route: '/administration/rapprochement-unites', expect: 'Rapprochement des examens' }] },
-  { username: 'demo.superadmin', role: 'super admin', pages: ['/admin'] },
+  { username: 'demo.finance', role: 'finance', pages: ['/finance', '/finance/tresorerie', { route: '/finance/rapprochement-unites', expect: 'Rapprochement des examens' }, { route: '/finance/rh', expect: 'Paie —' }] },
+  { username: 'demo.admin', role: 'administration', pages: ['/administration', '/administration/personnel', '/administration/unites-soins', '/administration/services', { route: '/administration/rapprochement-unites', expect: 'Rapprochement des examens' }, { route: '/administration/rh', expect: 'Congés et événements signalés' }] },
+  { username: 'demo.superadmin', role: 'super admin', pages: ['/admin', { route: '/admin/rh', expect: 'Ressources humaines' }] },
 ].map((entry) => ({ ...entry, pages: entry.pages.map((page) => (typeof page === 'string' ? { route: page } : page)) }));
 
 const normalize = (route) => (route.length > 1 ? route.replace(/\/+$/, '') : route);

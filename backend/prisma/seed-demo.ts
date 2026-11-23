@@ -230,6 +230,48 @@ const demoChecklist = [
 ];
 const dialysisSteps = ['ARRIVAL', 'PRE_WEIGHT', 'PRE_ASSESSMENT', 'ACCESS_CHECK', 'MACHINE_PREP', 'CONNECTION', 'START', 'MONITORING', 'END', 'DISCONNECTION', 'POST_ASSESSMENT', 'CLOSURE'];
 
+/** Fictitious HR data: contracts and salaries, two late arrivals (one over an hour), pending leave and a replacement. */
+async function seedHumanResources(tx: Prisma.TransactionClient) {
+  const salaries: Partial<Record<RoleSlug, number>> = {
+    [RoleSlug.PHYSICIAN]: 1800, [RoleSlug.SURGEON]: 2500, [RoleSlug.NURSE]: 650, [RoleSlug.MIDWIFE]: 700, [RoleSlug.FINANCE]: 1100,
+    [RoleSlug.CASHIER]: 450, [RoleSlug.RECEPTIONIST]: 400, [RoleSlug.LAB_MANAGER]: 1200, [RoleSlug.RADIOLOGIST]: 1600, [RoleSlug.PHARMACIST]: 1000,
+    [RoleSlug.PARAMEDIC]: 550,
+  };
+  await tx.hrPolicy.upsert({ where: { clinicId: CLINIC_ID }, update: {}, create: { clinicId: CLINIC_ID } });
+  const staff = accounts.filter((account) => attendanceRoles.has(account.role));
+  for (const [index, account] of staff.entries()) {
+    const id = `8b111111-1111-4111-8111-${String(index + 1).padStart(12, '0')}`;
+    await tx.employeeContract.upsert({
+      where: { id }, update: {},
+      create: { id, employeeId: account.employeeId, type: index % 4 === 3 ? 'TEMPORARY' : 'PERMANENT', startDate: new Date('2026-01-01T00:00:00.000Z'), endDate: index % 4 === 3 ? new Date(Date.now() + 20 * 86_400_000) : null, salary: salaries[account.role] ?? 600, currency: 'USD', frequency: 'MONTHLY', reason: 'Embauche (démonstration)' },
+    });
+  }
+  const employeeOf = (username: string) => accounts.find((account) => account.username === username)!.employeeId;
+  // Two late arrivals this month for the nurse: 3 h 46 min and 25 min (planned start 07:30, Lubumbashi).
+  const day = (daysAgo: number) => { const date = new Date(Date.now() - daysAgo * 86_400_000); date.setUTCHours(5, 30, 0, 0); return date; };
+  const late = [{ id: '8c111111-1111-4111-8111-000000000001', daysAgo: 2, minutes: 226 }, { id: '8c111111-1111-4111-8111-000000000002', daysAgo: 1, minutes: 25 }];
+  for (const entry of late) {
+    const plannedStartAt = day(entry.daysAgo);
+    await tx.attendance.upsert({
+      where: { id: entry.id }, update: {},
+      create: { id: entry.id, employeeId: employeeOf('demo.infirmier'), plannedStartAt, plannedEndAt: new Date(plannedStartAt.getTime() + 10 * 3_600_000), clockInAt: new Date(plannedStartAt.getTime() + entry.minutes * 60_000), clockOutAt: new Date(plannedStartAt.getTime() + 10 * 3_600_000), status: 'LATE', handoverState: 'COMPLETED' },
+    });
+  }
+  const isoIn = (days: number) => { const date = new Date(Date.now() + days * 86_400_000); date.setUTCHours(0, 0, 0, 0); return date; };
+  await tx.leaveRequest.upsert({
+    where: { id: '8d111111-1111-4111-8111-000000000001' }, update: {},
+    create: { id: '8d111111-1111-4111-8111-000000000001', employeeId: employeeOf('demo.infirmier'), leaveType: 'BEREAVEMENT', startDate: isoIn(3), endDate: isoIn(5), days: 3, deductsBalance: false, reason: 'Décès d’un proche (fictif)', status: 'PENDING', replacementEmployeeId: employeeOf('demo.sagefemme') },
+  });
+  await tx.leaveRequest.upsert({
+    where: { id: '8d111111-1111-4111-8111-000000000002' }, update: {},
+    create: { id: '8d111111-1111-4111-8111-000000000002', employeeId: employeeOf('demo.reception'), leaveType: 'ANNUAL', startDate: isoIn(14), endDate: isoIn(18), days: 4, deductsBalance: true, reason: null, status: 'PENDING' },
+  });
+  await tx.replacementRequest.upsert({
+    where: { id: '8e111111-1111-4111-8111-000000000001' }, update: {},
+    create: { id: '8e111111-1111-4111-8111-000000000001', clinicId: CLINIC_ID, requesterId: employeeOf('demo.infirmier'), replacerId: employeeOf('demo.sagefemme'), leaveRequestId: '8d111111-1111-4111-8111-000000000001', startAt: isoIn(3), endAt: new Date(isoIn(5).getTime() + 86_399_000), reason: 'Deuil — démonstration', status: 'PENDING_COLLEAGUE' },
+  });
+}
+
 async function seedCareUnits(tx: Prisma.TransactionClient) {
   const byUsername = (username: string) => accounts.find((account) => account.username === username)!.id;
   const units = [
@@ -738,8 +780,10 @@ async function main() {
     // Patient portal: the first fictitious patient signs in as demo.patient.
     await tx.patient.update({ where: { id: patientData[0].id }, data: { portalUserId: accounts.find((account) => account.username === 'demo.patient')!.id } });
     await seedCareUnits(tx);
+    await seedHumanResources(tx);
     }
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  // The full demo writes a few hundred rows: Prisma's 5 s default is too short on a loaded laptop.
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 120_000, maxWait: 20_000 });
 
   console.log(`Seed DEMO Core ${profile} terminé pour ${accounts.length} comptes et ${patientData.length} patients fictifs.`);
 }

@@ -19,7 +19,7 @@ import {
   PlusIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
-import { useAuth, hasRole } from "../context/AuthContext";
+import { useAuth, hasRole, getHomePath } from "../context/AuthContext";
 import { type AuliaLayer, usePlatformLayers } from "../context/PlatformLayersContext";
 import { apiFetch } from "../config/api";
 import SidebarWidget from "./SidebarWidget";
@@ -285,6 +285,7 @@ const financeNavItems: NavItem[] = [
   { icon: <FolderIcon />, name: "Trésorerie & opérations", path: "/finance/tresorerie" },
   { icon: <TaskIcon />, name: "Budgets & investissements", path: "/finance/budgets" },
   { icon: <DocsIcon />, name: "Rapprochement des unités", path: "/finance/rapprochement-unites" },
+  { icon: <UserCircleIcon />, name: "Ressources humaines & paie", path: "/finance/rh" },
   { icon: <ChatIcon />, name: "Messages", path: "/finance/messages" },
   { icon: <LockIcon />, name: "Profil finance", path: "/finance/profile" },
 ];
@@ -305,6 +306,7 @@ const radiologyNavItems: NavItem[] = [
 const administrationNavItems: NavItem[] = [
   { icon: <GridIcon />, name: "Dashboard admin", path: "/administration" },
   { icon: <UserCircleIcon />, name: "Personnel", path: "/administration/personnel" },
+  { icon: <CalenderIcon />, name: "Ressources humaines", path: "/administration/rh" },
   { icon: <TaskIcon />, name: "Unités de soins", path: "/administration/unites-soins" },
   { icon: <BoxCubeIcon />, name: "Services", path: "/administration/services" },
   { icon: <FolderIcon />, name: "Departements", path: "/administration/departements" },
@@ -345,6 +347,7 @@ const laboratoryNavItemsFactory = (isLabManager: boolean): NavItem[] => [
 const superAdminNavItems: NavItem[] = [
   { icon: <GridIcon />, name: "Dashboard DG", path: "/admin" },
   { icon: <ChatIcon />, name: "Messages administrateurs", path: "/admin/messages" },
+  { icon: <UserCircleIcon />, name: "Ressources humaines", path: "/admin/rh" },
   { icon: <DocsIcon />, name: "Identité de l'hôpital", path: "/admin/identite" },
   { icon: <LockIcon />, name: "Profil super admin", path: "/admin/profile" },
 ];
@@ -403,19 +406,21 @@ const AppSidebar: React.FC = () => {
       window.removeEventListener("storage", onBrandingStorage);
     };
   }, [currentUser?.id, currentUser?.clinicId, currentUser?.primaryRole]);
-  const isDirectorSection = location.pathname.startsWith("/medical-director");
-  const isReceptionSection = location.pathname.startsWith("/reception");
-  const isNurseSection = location.pathname.startsWith("/nurse");
-  const isDoctorSection = location.pathname.startsWith("/doctor");
-  const isCashierSection = location.pathname.startsWith("/caissier");
-  const isFinanceSection = location.pathname.startsWith("/finance");
-  const isRadiologySection = location.pathname.startsWith("/radiologie");
-  const isAdministrationSection = location.pathname.startsWith("/administration");
-  const isPharmacySection = location.pathname.startsWith("/pharmacie");
-  const isLaboratorySection = location.pathname.startsWith("/laboratoire");
-  const isSuperAdminSection = location.pathname.startsWith("/admin");
-  const isDeveloperSection = location.pathname.startsWith("/dev");
-  const isCareUnitsSection = location.pathname.startsWith("/unites");
+  // The personal HR space keeps the menu of the person's own workspace.
+  const sectionPath = location.pathname.startsWith("/mon-espace-rh") && currentUser ? getHomePath(currentUser) : location.pathname;
+  const isDirectorSection = sectionPath.startsWith("/medical-director");
+  const isReceptionSection = sectionPath.startsWith("/reception");
+  const isNurseSection = sectionPath.startsWith("/nurse");
+  const isDoctorSection = sectionPath.startsWith("/doctor");
+  const isCashierSection = sectionPath.startsWith("/caissier");
+  const isFinanceSection = sectionPath.startsWith("/finance");
+  const isRadiologySection = sectionPath.startsWith("/radiologie");
+  const isAdministrationSection = sectionPath.startsWith("/administration");
+  const isPharmacySection = sectionPath.startsWith("/pharmacie");
+  const isLaboratorySection = sectionPath.startsWith("/laboratoire");
+  const isSuperAdminSection = sectionPath.startsWith("/admin");
+  const isDeveloperSection = sectionPath.startsWith("/dev");
+  const isCareUnitsSection = sectionPath.startsWith("/unites");
   const activeNavItems = isDoctorSection
     ? doctorNavItems
     : isNurseSection
@@ -444,6 +449,7 @@ const AppSidebar: React.FC = () => {
   const extras:NavItem[]=[];
   if(hasRole(currentUser,"MEDICAL_DIRECTOR")) extras.push({icon:<DocsIcon/>,name:"Direction médicale",path:"/medical-director"});
   if(currentUser?.primaryRole==="PHYSICIAN") extras.push({icon:<ChatIcon/>,name:"Avis spécialisés",path:"/doctor/referrals"});
+  if(currentUser?.primaryRole && !["PATIENT","DEV"].includes(currentUser.primaryRole)) extras.push({icon:<CalenderIcon/>,name:"Mon espace RH",path:"/mon-espace-rh"});
   if(currentUser?.primaryRole==="ADMIN" || currentUser?.primaryRole==="SUPER_ADMIN") extras.push({icon:<UserCircleIcon/>,name:"Médecin directeur",path:currentUser.primaryRole==="ADMIN"?"/administration/medical-director":"/admin/medical-director"});
   const visibleNavItems = [...(isDirectorSection ? doctorNavItems : activeNavItems),...extras];
   const [lockedItem, setLockedItem] = useState<NavItem | null>(null);
