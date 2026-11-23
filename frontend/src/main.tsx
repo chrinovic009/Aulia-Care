@@ -14,6 +14,7 @@ import { ActionFeedbackProvider } from "./components/common/ActionFeedbackProvid
 import { PlatformLayersProvider } from "./context/PlatformLayersContext.tsx";
 import SessionLock from "./components/auth/SessionLock.tsx";
 import PasswordChangeGate from "./components/auth/PasswordChangeGate.tsx";
+import AnimaOrb from "./components/anima/AnimaOrb.tsx";
 
 installCsrfFetchInterceptor();
 
@@ -33,6 +34,7 @@ createRoot(document.getElementById("root")!).render(
                   <App />
                 </PasswordChangeGate>
                 <SessionLock />
+                <AnimaOrb />
               </AppWrapper>
             </ActionFeedbackProvider>
           </RealtimeProvider>
