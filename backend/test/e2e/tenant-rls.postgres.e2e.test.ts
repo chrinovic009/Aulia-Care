@@ -64,12 +64,34 @@ test('PostgreSQL RLS : un code qui oublie le filtre d’établissement ne voit e
     });
     assert.deepEqual(await asDoctorA(() => prisma.drugInteractionRule.findMany({ where: { id: ruleB.id } })), []);
 
+    // Every other table of an establishment is isolated too: catalogues, staff,
+    // a patient's child records and the lines of another establishment's invoice.
+    const [vitalB, invoiceB, staffB] = await Promise.all([
+      prisma.vitalSign.create({ data: { patientId: patientB.id, type: 'HEART_RATE', value: '80', unit: 'bpm' } }),
+      prisma.invoice.create({ data: { clinicId: clinicB.id, patientId: patientB.id, totalAmount: 10, balanceDue: 10 } }),
+      prisma.user.create({ data: { clinicId: clinicB.id, primaryRole: 'NURSE', email: `rls-b-${suffix}@e2e.local`, username: `rls-b-${suffix}`, displayName: 'RLS B', firstName: 'RLS', lastName: 'B', passwordHash: 'not-used' } }),
+    ]);
+    const lineB = await prisma.invoiceLine.create({ data: { invoiceId: invoiceB.id, label: 'Ligne B', quantity: 1, unitPrice: 10, totalAmount: 10 } });
+    assert.equal(await asDoctorA(() => prisma.vitalSign.findUnique({ where: { id: vitalB.id } })), null);
+    assert.equal(await asDoctorA(() => prisma.invoiceLine.findUnique({ where: { id: lineB.id } })), null);
+    assert.equal(await asDoctorA(() => prisma.user.findUnique({ where: { id: staffB.id } })), null);
+    assert.equal((await asDoctorA(() => prisma.user.findUnique({ where: { id: doctorA.id } })))?.id, doctorA.id);
+    await assert.rejects(() => asDoctorA(() => prisma.invoiceLine.create({ data: { invoiceId: invoiceB.id, label: 'Intrus', quantity: 1, unitPrice: 1, totalAmount: 1 } })));
+    // A request without establishment (and not the platform DEV) sees nothing.
+    const noClinic = <T>(work: () => Promise<T>) =>
+      runWithRequestContext({ userId: doctorA.id, clinicId: null, role: 'NURSE', route: 'TEST' }, async () => await work());
+    assert.equal(await noClinic(() => prisma.patient.count({ where: sameSuffix })), 0);
+    assert.equal(await noClinic(() => prisma.invoiceLine.count({ where: { id: lineB.id } })), 0);
+
     // Outside an authenticated request (login, background jobs), no filter applies.
     assert.equal(await prisma.patient.count({ where: sameSuffix }), 2);
   } finally {
     if (clinicIds.length) {
       const where = { clinicId: { in: clinicIds } };
       await prisma.drugInteractionRule.deleteMany({ where }).catch(() => undefined);
+      await prisma.invoiceLine.deleteMany({ where: { invoiceId: { in: (await prisma.invoice.findMany({ where, select: { id: true } })).map((row) => row.id) } } }).catch(() => undefined);
+      await prisma.invoice.deleteMany({ where }).catch(() => undefined);
+      await prisma.vitalSign.deleteMany({ where: { patient: where } }).catch(() => undefined);
       await prisma.patient.deleteMany({ where }).catch(() => undefined);
       await prisma.user.deleteMany({ where }).catch(() => undefined);
       await prisma.clinic.deleteMany({ where: { id: { in: clinicIds } } }).catch(() => undefined);

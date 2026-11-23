@@ -8,11 +8,11 @@ import {
 import { CareTaskStatus, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { SPECIALTY_STAGES, assertEventProfession, assertStageProgress, assertSpecialtyClosable, activeDialysisPrescription } from './domain/specialty-rules';
-import { PatientWorkflowService } from '../core/patient-workflow.service';
+import { PATHWAY_EVENT_TYPE, PATHWAY_LABELS, PatientWorkflowService } from '../core/patient-workflow.service';
 import { BedAssignmentService } from '../hospitalizations/bed-assignment.service';
 import { AuthenticatedActor, OperationalClinicActor } from '../core/clinic-context.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { cancelSubscriptionChargeForInvoice, chargeInvoiceToSubscription } from '../billing/subscription-coverage';
+import { assertExamReleased, cancelImagingExam, cancelLabExam, findImagingExam, findLabTest, openExam, recordImagingReport, recordLabResult } from './domain/exam-bridge';
 import { CareAccessService, Db } from './care-access.service';
 import {
   ENTERED_IN_ERROR_EVENT,
@@ -334,6 +334,44 @@ export class CareWorkflowService {
     });
   }
 
+  /**
+   * One answer to "where is the patient?", whichever circuit cares for them:
+   * the reception → consultation pathway status and every open stay in a care
+   * unit, with the last step of each. Open to the clinic's care staff.
+   */
+  patientLocation(patientId: string, actorInput?: AuthenticatedActor) {
+    return this.run(actorInput, async (tx, actor) => {
+      const patient = await tx.patient.findFirst({
+        where: { id: patientId, clinicId: actor.clinicId, deletedAt: null },
+        select: { id: true, firstName: true, lastName: true, workflowStatus: true },
+      });
+      if (!patient) throw new NotFoundException('Patient introuvable dans votre établissement.');
+      const [stays, lastPathwayStep] = await Promise.all([
+        tx.careEpisode.findMany({
+          where: { clinicId: actor.clinicId, patientId, status: { in: [...OPEN_EPISODE] } },
+          select: { id: true, status: true, stage: true, startedAt: true, careUnit: { select: { id: true, name: true, kind: true } } },
+          orderBy: { startedAt: 'desc' },
+          take: 20,
+        }),
+        tx.careEvent.findFirst({
+          where: { clinicId: actor.clinicId, patientId, type: PATHWAY_EVENT_TYPE },
+          select: { occurredAt: true, summary: true, author: userSummary },
+          orderBy: { occurredAt: 'desc' },
+        }),
+      ]);
+      const pathwayOpen = !['TERMINE', 'ANNULE'].includes(patient.workflowStatus);
+      return {
+        patient: { id: patient.id, firstName: patient.firstName, lastName: patient.lastName },
+        pathway: { status: patient.workflowStatus, label: PATHWAY_LABELS[patient.workflowStatus], open: pathwayOpen, lastStep: lastPathwayStep },
+        stays: stays.map((stay) => ({ episodeId: stay.id, status: stay.status, stage: stay.stage, since: stay.startedAt, unit: stay.careUnit })),
+        summary: [
+          ...(pathwayOpen ? [`Parcours : ${PATHWAY_LABELS[patient.workflowStatus]}`] : []),
+          ...stays.map((stay) => `${stay.careUnit.name} (${stay.status === 'ON_HOLD' ? 'en attente' : stay.status === 'PLANNED' ? 'prévu' : 'en cours'})`),
+        ].join(' · ') || 'Aucune prise en charge en cours',
+      };
+    });
+  }
+
   // ======================================================================= episodes
 
   openEpisode(dto: OpenEpisodeDto, actorInput?: AuthenticatedActor) {
@@ -525,8 +563,8 @@ export class CareWorkflowService {
       await this.lockPatient(tx, actor, dto.patientId);
       const draft = dto.draft ?? false;
       // An exam for the laboratory must be a catalogue exam: it carries the billed price.
-      const labTest = performer.kind === 'LABORATORY' ? await this.findLabTest(tx, actor, dto.code)
-        : performer.kind === 'IMAGING' ? await this.findImagingExam(tx, actor, dto.code) : null;
+      const labTest = performer.kind === 'LABORATORY' ? await findLabTest(tx, actor, dto.code)
+        : performer.kind === 'IMAGING' ? await findImagingExam(tx, actor, dto.code) : null;
       const request = await tx.serviceRequest.create({
         data: {
           clinicId: actor.clinicId,
@@ -554,7 +592,7 @@ export class CareWorkflowService {
       });
       if (!draft) {
         await this.dispatchRequest(tx, actor, request, performer.name);
-        if (labTest) await this.openExam(tx, actor, performer.kind, request);
+        if (labTest) await openExam(tx, actor, performer.kind, request);
       }
       return request;
     });
@@ -617,8 +655,8 @@ export class CareWorkflowService {
       let labCancellation: { invoiceCancelled: boolean } | null = null;
       if (dto.status === 'REVOKED' || dto.status === 'ENTERED_IN_ERROR') {
         labCancellation = performer.kind === 'IMAGING'
-          ? await this.cancelImagingExam(tx, actor, id, reason ?? null)
-          : await this.cancelLabExam(tx, id, reason ?? null);
+          ? await cancelImagingExam(tx, actor, id, reason ?? null)
+          : await cancelLabExam(tx, id, reason ?? null);
         for (const task of openTasks) {
           await tx.careTask.update({
             where: { id: task.id },
@@ -628,7 +666,7 @@ export class CareWorkflowService {
       }
       if (request.status === 'DRAFT' && dto.status === 'ACTIVE') {
         await this.dispatchRequest(tx, actor, request, performer.name);
-        await this.openExam(tx, actor, performer.kind, request);
+        await openExam(tx, actor, performer.kind, request);
       }
       await this.recordEvent(tx, actor, {
         careUnitId: dto.status === 'COMPLETED' ? request.performerUnitId : request.requesterUnitId,
@@ -1384,8 +1422,9 @@ export class CareWorkflowService {
         data: { status: 'COMPLETED', completedAt: new Date(), startedAt: task.startedAt ?? new Date(), version: { increment: 1 } },
       });
       this.conflictIfStale(updated.count);
-      const laboratory = unit.kind === 'LABORATORY' ? await this.recordLabResult(tx, actor, request.id, dto) : null;
-      const imaging = unit.kind === 'IMAGING' ? await this.recordImagingReport(tx, actor, request.id, dto) : null;
+      if (unit.kind === 'LABORATORY' || unit.kind === 'IMAGING') await assertExamReleased(tx, request.id);
+      const laboratory = unit.kind === 'LABORATORY' ? await recordLabResult(tx, actor, request.id, dto) : null;
+      const imaging = unit.kind === 'IMAGING' ? await recordImagingReport(tx, actor, request.id, dto) : null;
       const event = await this.recordEvent(tx, actor, {
         careUnitId: unit.id, patientId: task.patientId, episodeId: request.episodeId, requestId: request.id, taskId,
         type: 'RESULT_REPORTED',
@@ -1394,7 +1433,7 @@ export class CareWorkflowService {
           label: request.label, code: request.code, performerUnit: unit.name,
           observations: (dto.observations ?? []).map((item) => ({ ...item })),
           conclusion: dto.conclusion?.trim() || null,
-          laboratory: laboratory ? { ...laboratory, biologicalValidation: 'PENDING' } : null,
+          laboratory: laboratory ? { ...laboratory, validation: 'PENDING_SECOND_SIGNATURE' } : null,
           imaging: imaging ? { ...imaging, radiologistVerification: 'PENDING' } : null,
         } as Prisma.InputJsonValue,
       });
@@ -1456,7 +1495,7 @@ export class CareWorkflowService {
     });
   }
 
-  // ================================================================ imaging bridge
+  // ================================================================ exam catalogues (bridge: domain/exam-bridge.ts)
   /** Imaging catalogue the requesting units choose from (code, name, price). */
   imagingCatalogue(actorInput?: AuthenticatedActor) {
     return this.run(actorInput, async (tx, actor) =>
@@ -1468,90 +1507,6 @@ export class CareWorkflowService {
       }));
   }
 
-  private async findImagingExam(tx: Db, actor: OperationalClinicActor, code: string) {
-    const value = code.trim();
-    const exam = await tx.imagingCatalogue.findFirst({
-      where: { clinicId: actor.clinicId, active: true, deletedAt: null, OR: [{ id: value }, { code: { equals: value, mode: 'insensitive' } }] },
-    });
-    if (!exam) throw new BadRequestException(`L’examen « ${value} » n’est pas dans le catalogue d’imagerie : choisissez un examen du catalogue (il porte le tarif facturé).`);
-    if (Number(exam.price) <= 0) throw new BadRequestException(`Le tarif de l’examen « ${exam.name} » n’est pas renseigné dans le catalogue d’imagerie.`);
-    return exam;
-  }
-
-  private async openImagingExam(
-    tx: Db, actor: OperationalClinicActor,
-    request: { id: string; patientId: string; code: string; label: string; reason: string | null; priority: string; requesterId: string },
-    unitName: string,
-  ) {
-    const existing = await tx.imagingRequest.findFirst({ where: { serviceRequestId: request.id }, select: { id: true } });
-    if (existing) return existing;
-    const exam = await this.findImagingExam(tx, actor, request.code);
-    const price = Number(exam.price);
-    const imagingRequest = await tx.imagingRequest.create({
-      data: {
-        clinicId: actor.clinicId, patientId: request.patientId, serviceRequestId: request.id, consultationId: null,
-        requestedById: request.requesterId, imagingCatalogueId: exam.id, modality: exam.modality, bodyPart: exam.name,
-        urgency: request.priority === 'ROUTINE' ? 'ROUTINE' : 'URGENT', status: 'REQUESTED',
-        clinicalIndication: [request.reason, `Demande de l’unité ${unitName}`].filter(Boolean).join(' — '),
-      },
-    });
-    const invoice = await tx.invoice.create({
-      data: {
-        clinicId: actor.clinicId, patientId: request.patientId, issuedById: actor.id, type: 'RADIOLOGY', status: 'PENDING',
-        totalAmount: price, balanceDue: price,
-        remarks: `ImagingRequest:${imagingRequest.id} - Demande imagerie ${exam.name} (unité ${unitName})`,
-      },
-    });
-    await tx.invoiceLine.create({ data: { invoiceId: invoice.id, label: `Examen d'imagerie - ${exam.name}`, quantity: 1, unitPrice: price, totalAmount: price } });
-    await chargeInvoiceToSubscription(tx, request.patientId, actor.clinicId, invoice.id, `Examen d'imagerie - ${exam.name}`, price, null);
-    return imagingRequest;
-  }
-
-  private async cancelImagingExam(tx: Db, actor: OperationalClinicActor, serviceRequestId: string, reason: string | null) {
-    const imagingRequest = await tx.imagingRequest.findFirst({ where: { serviceRequestId }, select: { id: true, status: true } });
-    if (!imagingRequest || ['COMPLETED', 'VERIFIED', 'CANCELLED'].includes(imagingRequest.status)) return null;
-    await tx.imagingRequest.update({ where: { id: imagingRequest.id }, data: { status: 'CANCELLED', notes: reason ? `Annulée : ${reason}` : 'Annulée par l’unité demandeuse' } });
-    const invoice = await tx.invoice.findFirst({
-      where: { clinicId: actor.clinicId, type: 'RADIOLOGY', remarks: { startsWith: `ImagingRequest:${imagingRequest.id} ` } },
-      select: { id: true },
-    });
-    return { imagingRequestId: imagingRequest.id, invoiceCancelled: invoice ? await this.cancelExamInvoice(tx, invoice.id) : false };
-  }
-
-  /** The unit's report becomes the imaging report, to be verified by the radiologist in the imaging module. */
-  private async recordImagingReport(tx: Db, actor: OperationalClinicActor, serviceRequestId: string, dto: ReportTaskResultDto) {
-    const imagingRequest = await tx.imagingRequest.findFirst({ where: { serviceRequestId }, select: { id: true, report: { select: { id: true } } } });
-    if (!imagingRequest) return null;
-    if (imagingRequest.report) throw new ConflictException('Un compte rendu existe déjà pour cet examen : amendez-le dans le module Imagerie.');
-    const findings = [dto.summary.trim(), ...(dto.observations ?? []).map((obs) => `${obs.name} : ${obs.value}${obs.unit ? ` ${obs.unit}` : ''}${obs.flag && obs.flag !== 'NORMAL' ? ` (${obs.flag})` : ''}`)].join('\n');
-    const report = await tx.imagingReport.create({
-      data: { imagingRequestId: imagingRequest.id, interpretedById: actor.id, findings, impression: dto.conclusion?.trim() || dto.summary.trim(), verified: false },
-    });
-    await tx.imagingRequest.update({ where: { id: imagingRequest.id }, data: { status: 'COMPLETED', completedAt: new Date() } });
-    return { imagingRequestId: imagingRequest.id, imagingReportId: report.id };
-  }
-
-  /**
-   * Invoice of a cancelled exam: cancelled when nothing was paid; a company
-   * subscription charge not yet on a monthly statement is cancelled with it.
-   */
-  private async cancelExamInvoice(tx: Db, invoiceId: string) {
-    const invoice = await tx.invoice.findUnique({ where: { id: invoiceId }, select: { status: true, _count: { select: { payments: true } } } });
-    if (!invoice || invoice._count.payments > 0) return false;
-    if (invoice.status === 'COVERED' && !(await cancelSubscriptionChargeForInvoice(tx, invoiceId))) return false;
-    if (invoice.status !== 'PENDING' && invoice.status !== 'COVERED') return false;
-    await tx.invoice.update({ where: { id: invoiceId }, data: { status: 'CANCELLED', balanceDue: 0 } });
-    return true;
-  }
-
-  // ================================================================ laboratory bridge
-  /*
-   * An exam a care unit asks of a LABORATORY unit goes through the laboratory
-   * module like an exam ordered in consultation: a LabRequest (linked to the
-   * request, without consultation) and a LABORATORY invoice at the catalogue
-   * price, settled at the cashier. Care does not wait for the payment.
-   */
-
   /** Laboratory catalogue the requesting units choose from (code, name, price). */
   laboratoryCatalogue(actorInput?: AuthenticatedActor) {
     return this.run(actorInput, async (tx, actor) =>
@@ -1561,101 +1516,6 @@ export class CareWorkflowService {
         orderBy: { name: 'asc' },
         take: 2_000,
       }));
-  }
-
-  /** Exams asked of the laboratory or imaging go through their module and their billing. */
-  private async openExam(
-    tx: Db, actor: OperationalClinicActor, performerKind: string,
-    request: { id: string; patientId: string; code: string; label: string; reason: string | null; priority: string; requesterId: string; requesterUnitId: string | null },
-  ) {
-    if (performerKind !== 'LABORATORY' && performerKind !== 'IMAGING') return null;
-    const unitName = await this.requesterUnitName(tx, request.requesterUnitId);
-    return performerKind === 'LABORATORY' ? this.openLabExam(tx, actor, request, unitName) : this.openImagingExam(tx, actor, request, unitName);
-  }
-
-  private async requesterUnitName(tx: Db, unitId: string | null) {
-    if (!unitId) return 'hors unité';
-    return (await tx.careUnit.findUnique({ where: { id: unitId }, select: { name: true } }))?.name ?? 'hors unité';
-  }
-
-  private async findLabTest(tx: Db, actor: OperationalClinicActor, code: string) {
-    const value = code.trim();
-    const labTest = await tx.labTest.findFirst({
-      where: { clinicId: actor.clinicId, active: true, OR: [{ id: value }, { code: { equals: value, mode: 'insensitive' } }] },
-    });
-    if (!labTest) throw new BadRequestException(`L’examen « ${value} » n’est pas dans le catalogue du laboratoire : choisissez un examen du catalogue (il porte le tarif facturé).`);
-    if (labTest.price === null || Number(labTest.price) <= 0) throw new BadRequestException(`Le tarif de l’examen « ${labTest.name} » n’est pas renseigné dans le catalogue du laboratoire.`);
-    return labTest;
-  }
-
-  private async openLabExam(
-    tx: Db, actor: OperationalClinicActor,
-    request: { id: string; patientId: string; code: string; label: string; reason: string | null; priority: string; requesterId: string },
-    unitName: string,
-  ) {
-    const existing = await tx.labRequest.findFirst({ where: { serviceRequestId: request.id }, select: { id: true } });
-    if (existing) return existing;
-    const labTest = await this.findLabTest(tx, actor, request.code);
-    const price = Number(labTest.price);
-    const labRequest = await tx.labRequest.create({
-      data: {
-        clinicId: actor.clinicId, patientId: request.patientId, serviceRequestId: request.id, consultationId: null,
-        requestedById: request.requesterId, status: 'REQUESTED', specimenType: labTest.name,
-        priority: request.priority === 'ROUTINE' ? 'NORMAL' : 'URGENT',
-        notes: [`Demande de l’unité ${unitName}`, request.reason].filter(Boolean).join(' — '),
-      },
-    });
-    await tx.labRequestItem.create({
-      data: { labRequestId: labRequest.id, labTestId: labTest.id, status: 'REQUESTED', requestedAt: labRequest.requestedAt, specimenLabel: labTest.name, notes: request.reason },
-    });
-    const invoice = await tx.invoice.create({
-      data: {
-        clinicId: actor.clinicId, patientId: request.patientId, issuedById: actor.id, type: 'LABORATORY', status: 'PENDING',
-        totalAmount: price, balanceDue: price,
-        remarks: `LabRequest:${labRequest.id} - Demande laboratoire ${labRequest.id} - ${labTest.name} (unité ${unitName})`,
-      },
-    });
-    await tx.invoiceLine.create({ data: { invoiceId: invoice.id, label: `Examen laboratoire - ${labTest.name}`, quantity: 1, unitPrice: price, totalAmount: price } });
-    await tx.labRequest.update({ where: { id: labRequest.id }, data: { externalReference: invoice.id } });
-    // A subscribed patient's exam goes to the company's monthly statement, as in consultation.
-    await chargeInvoiceToSubscription(tx, request.patientId, actor.clinicId, invoice.id, `Examen laboratoire - ${labTest.name}`, price, null);
-    return labRequest;
-  }
-
-  /** A revoked request cancels its exam and, when nothing was paid yet, its invoice. */
-  private async cancelLabExam(tx: Db, serviceRequestId: string, reason: string | null) {
-    const labRequest = await tx.labRequest.findFirst({ where: { serviceRequestId }, select: { id: true, status: true, externalReference: true } });
-    if (!labRequest || ['AVAILABLE', 'SENT', 'COMPLETED', 'VERIFIED', 'CANCELLED'].includes(labRequest.status)) return null;
-    await tx.labRequest.update({ where: { id: labRequest.id }, data: { status: 'CANCELLED', notes: reason ? `Annulée : ${reason}` : 'Annulée par l’unité demandeuse' } });
-    await tx.labRequestItem.updateMany({ where: { labRequestId: labRequest.id, deletedAt: null }, data: { status: 'CANCELLED' } });
-    if (!labRequest.externalReference) return { labRequestId: labRequest.id, invoiceCancelled: false };
-    return { labRequestId: labRequest.id, invoiceCancelled: await this.cancelExamInvoice(tx, labRequest.externalReference) };
-  }
-
-  /** The unit's result becomes a technically validated laboratory result; biological validation stays with the laboratory. */
-  private async recordLabResult(tx: Db, actor: OperationalClinicActor, serviceRequestId: string, dto: ReportTaskResultDto) {
-    const labRequest = await tx.labRequest.findFirst({ where: { serviceRequestId }, include: { items: { where: { deletedAt: null }, include: { labTest: true } } } });
-    if (!labRequest) return null;
-    const item = labRequest.items[0];
-    const now = new Date();
-    const numeric = (value: string) => { const n = Number(value.replace(',', '.')); return /^-?\d+([.,]\d+)?$/.test(value.trim()) && Number.isFinite(n) ? n : null; };
-    const result = await tx.labResult.create({
-      data: {
-        labRequestId: labRequest.id, labRequestItemId: item?.id ?? null,
-        resultCode: item?.labTest.code ?? 'UNIT', resultName: item?.labTest.name ?? 'Résultat',
-        resultStatus: 'TECHNICAL_VALIDATED', resultValue: dto.summary.trim(), interpretation: dto.conclusion?.trim() || null,
-        reportedById: actor.id, reportedAt: now, technicalValidatedById: actor.id, technicalValidationAt: now,
-        parameters: {
-          create: (dto.observations ?? []).map((obs) => ({
-            parameterName: obs.name, valueText: obs.value, valueNumeric: numeric(obs.value), unit: obs.unit || null,
-            referenceRange: obs.referenceRange || null, interpretation: obs.flag || null, reportedById: actor.id, reportedAt: now,
-          })),
-        },
-      },
-    });
-    await tx.labRequest.update({ where: { id: labRequest.id }, data: { status: 'BIOLOGICAL_VALIDATION', performedAt: labRequest.performedAt ?? now } });
-    await tx.labRequestItem.updateMany({ where: { labRequestId: labRequest.id, deletedAt: null, status: { not: 'CANCELLED' } }, data: { status: 'BIOLOGICAL_VALIDATION', completedAt: now } });
-    return { labRequestId: labRequest.id, labResultId: result.id };
   }
 
   scheduleSurgery(careUnitId: string, dto: ScheduleSpecialtySurgeryDto, actorInput?: AuthenticatedActor) {

@@ -241,10 +241,26 @@ export class UsersService {
       .filter((row) => row.id !== actor.id && this.canApproveReset(actor.primaryRole, row.primaryRole))
       .map((row) => ({
         userId: row.id, name: row.displayName || `${row.firstName} ${row.lastName}`.trim(), username: row.username, primaryRole: row.primaryRole,
-        code: row.temporaryCodeCipher ? openAccessCode(row.temporaryCodeCipher) : null,
         reason: row.temporaryCodeReason ?? 'NEW_ACCOUNT', issuedAt: row.temporaryCodeIssuedAt, wrongAttempts: row.temporaryPasswordAttempts,
-      }))
-      .filter((row) => row.code);
+      }));
+  }
+
+  /**
+   * Shows one pending code to an administrator who may hand it over. Every
+   * reveal is recorded and shown to the holder at first sign-in, so a code
+   * read by someone else does not go unnoticed (second pair of eyes).
+   */
+  async revealAccessCode(userId: string, actorId?: string) {
+    const actor = await this.requireAdministrativeClinic(actorId);
+    const target = await this.prisma.user.findFirst({
+      where: { id: userId, clinicId: actor.clinicId, deletedAt: null, mustChangePassword: true, temporaryCodeCipher: { not: null } },
+      select: { id: true, username: true, primaryRole: true, temporaryCodeCipher: true },
+    });
+    if (!target || target.id === actor.id || !this.canApproveReset(actor.primaryRole, target.primaryRole)) throw new NotFoundException('Aucun code à remettre pour ce compte.');
+    const code = openAccessCode(target.temporaryCodeCipher!);
+    if (!code) throw new BadRequestException('Ce code ne peut plus être lu : générez-en un nouveau.');
+    await this.prisma.auditTrail.create({ data: { actorId: actor.id, entity: 'USER', entityId: target.id, action: 'UPDATE', after: { event: 'ACCESS_CODE_REVEALED', targetUserId: target.id } } });
+    return { userId: target.id, username: target.username, code };
   }
 
   /** Fields of an account that receives a new 6-digit code (valid until used). */

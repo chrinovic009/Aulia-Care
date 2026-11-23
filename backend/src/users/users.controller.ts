@@ -55,6 +55,12 @@ export class UsersController {
     return this.usersService.findMyWorkLocation(req.user?.userId);
   }
 
+  @Post('pending-access-codes/:userId/reveal')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  revealAccessCode(@Param('userId') userId: string, @Request() req: any) {
+    return this.usersService.revealAccessCode(userId, req.user?.userId);
+  }
+
   @Get('pending-access-codes')
   @Roles('SUPER_ADMIN', 'ADMIN')
   pendingAccessCodes(@Request() req: any) {

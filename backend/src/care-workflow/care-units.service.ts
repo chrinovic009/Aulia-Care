@@ -34,6 +34,10 @@ export class CareUnitsService {
     if (declared !== undefined && (!Array.isArray(declared) || closureRequirementsFromSettings(settings).length !== declared.length)) {
       throw new BadRequestException('closureRequirements doit être une liste de { eventType, label }.');
     }
+    const billingPolicy = (settings as { billingPolicy?: unknown }).billingPolicy;
+    if (billingPolicy !== undefined && billingPolicy !== 'BILL_AFTER' && billingPolicy !== 'PAY_FIRST') {
+      throw new BadRequestException('billingPolicy doit valoir BILL_AFTER (facturer après les soins) ou PAY_FIRST (paiement préalable).');
+    }
     const stages = (settings as { stages?: unknown }).stages;
     if (stages !== undefined && (!Array.isArray(stages) || stages.some((stage) => typeof stage !== 'string' || !stage.trim()))) {
       throw new BadRequestException('stages doit être une liste de libellés.');

@@ -449,7 +449,20 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    return {...user, roles:user.roles.map(item=>item.role.slug)};
+    // A person signing in with a 6-digit code learns who read that code.
+    const accessCodeReveals = user.mustChangePassword ? await this.accessCodeReveals(id) : [];
+    return {...user, roles:user.roles.map(item=>item.role.slug), accessCodeReveals};
+  }
+
+  private async accessCodeReveals(userId: string) {
+    const holder = await this.prisma.user.findUnique({ where: { id: userId }, select: { temporaryCodeIssuedAt: true } });
+    const rows = await this.prisma.auditTrail.findMany({
+      where: { entity: 'USER', entityId: userId, after: { path: ['event'], equals: 'ACCESS_CODE_REVEALED' }, ...(holder?.temporaryCodeIssuedAt ? { changedAt: { gte: holder.temporaryCodeIssuedAt } } : {}) },
+      select: { changedAt: true, actor: { select: { firstName: true, lastName: true, primaryRole: true } } },
+      orderBy: { changedAt: 'asc' },
+      take: 20,
+    });
+    return rows.map((row) => ({ at: row.changedAt.toISOString(), by: row.actor ? `${row.actor.firstName} ${row.actor.lastName}`.trim() : 'Administrateur', role: row.actor?.primaryRole ?? null }));
   }
 
   /** Exposes no secret: the client only needs to know whether a PIN challenge

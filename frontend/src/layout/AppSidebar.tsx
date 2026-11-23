@@ -284,6 +284,7 @@ const financeNavItems: NavItem[] = [
   { icon: <DollarLineIcon />, name: "Tableau de bord", path: "/finance" },
   { icon: <FolderIcon />, name: "Trésorerie & opérations", path: "/finance/tresorerie" },
   { icon: <TaskIcon />, name: "Budgets & investissements", path: "/finance/budgets" },
+  { icon: <DocsIcon />, name: "Rapprochement des unités", path: "/finance/rapprochement-unites" },
   { icon: <ChatIcon />, name: "Messages", path: "/finance/messages" },
   { icon: <LockIcon />, name: "Profil finance", path: "/finance/profile" },
 ];
@@ -310,6 +311,7 @@ const administrationNavItems: NavItem[] = [
   { icon: <CalenderIcon />, name: "Salles & lits", path: "/administration/salles" },
   { icon: <ChatIcon />, name: "Messages admin", path: "/administration/messages" },
   { icon: <DocsIcon />, name: "Rapports", path: "/administration/rapports" },
+  { icon: <DocsIcon />, name: "Rapprochement des unités", path: "/administration/rapprochement-unites" },
   { icon: <TaskIcon />, name: "Stock pharmacie", path: "/administration/stock" },
   { icon: <DocsIcon />, name: "Identité de l'hôpital", path: "/administration/identite" },
   { icon: <BoxCubeIcon />, name: "Montres Aulia", path: "/administration/montres", layers: ["CONNECTED"] },

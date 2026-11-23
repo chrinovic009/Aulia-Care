@@ -89,6 +89,7 @@ function UnitEditor({ unit, onSaved }: { unit: CareUnit; onSaved: () => void }) 
   const settings = unit.settings ?? {};
   const [name, setName] = useState(unit.name);
   const [locations, setLocations] = useState((settings.locations ?? []).join("\n"));
+  const [billingPolicy, setBillingPolicy] = useState(String(settings.billingPolicy ?? "BILL_AFTER"));
   const [scale, setScale] = useState<TriageLevel[]>(settings.triageScale ?? []);
   const validated = Boolean(settings.triageScaleValidated);
   const save = async (patch: Partial<UnitSettings> & { active?: boolean }) => {
@@ -96,7 +97,7 @@ function UnitEditor({ unit, onSaved }: { unit: CareUnit; onSaved: () => void }) 
     try {
       await adminUpdateUnit(unit.id, {
         name: name.trim(), ...(active !== undefined ? { active } : {}),
-        settings: { ...settings, locations: locations.split("\n").map((line) => line.trim()).filter(Boolean), ...(unit.kind === "EMERGENCY" ? { triageScale: scale } : {}), ...rest },
+        settings: { ...settings, billingPolicy, locations: locations.split("\n").map((line) => line.trim()).filter(Boolean), ...(unit.kind === "EMERGENCY" ? { triageScale: scale } : {}), ...rest },
       });
       onSaved();
     } catch { /* reported globally */ }
@@ -108,6 +109,12 @@ function UnitEditor({ unit, onSaved }: { unit: CareUnit; onSaved: () => void }) 
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Nom"><input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
           <Field label="Box, lits, salles (un par ligne)"><textarea className={inputClass} rows={5} value={locations} onChange={(e) => setLocations(e.target.value)} /></Field>
+          <Field label="Examens demandés par l’unité (laboratoire, imagerie)" hint="Facturer après les soins convient aux urgences ; le paiement préalable bloque l’examen tant que la caisse n’est pas réglée (sauf patient couvert par un abonnement).">
+            <select className={inputClass} value={billingPolicy} onChange={(e) => setBillingPolicy(e.target.value)}>
+              <option value="BILL_AFTER">Facturer après les soins (suivi par la finance)</option>
+              <option value="PAY_FIRST">Paiement préalable à la caisse</option>
+            </select>
+          </Field>
         </div>
         {unit.kind === "EMERGENCY" && (
           <div className="mt-4">

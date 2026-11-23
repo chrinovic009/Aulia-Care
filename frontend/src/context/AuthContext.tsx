@@ -47,6 +47,9 @@ export interface AuthUser {
   /** Account opened or reset by an administrator: the holder must choose their own password first. */
   mustChangePassword?: boolean;
 
+  /** Who read the pending 6-digit code before its holder signed in. */
+  accessCodeReveals?: Array<{ at: string; by: string; role?: string | null }>;
+
   /** Alias conservé pour compatibilité avec le code existant. */
   role?: RoleSlug;
 

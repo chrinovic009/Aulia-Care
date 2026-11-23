@@ -114,18 +114,19 @@ export type NursingCareTask = {
   access?: { canWrite: boolean; mode: string; reason: string };
 };
 
+// Critical bedside entries: kept on the device when the network is down, with the time they were made.
 export const updateNurseCareTask = async (
   taskId: string,
   payload: { status: "COMPLETED" | "MISSED" | "ESCALATED"; observation?: string; escalationReason?: string },
-) => apiFetch<NursingCareTask>(`/hospitalizations/nurse/care-tasks/${taskId}`, {
+) => sendOrQueue<NursingCareTask>("Soin infirmier", `/hospitalizations/nurse/care-tasks/${taskId}`, {
   method: "PATCH",
-  body: JSON.stringify(payload),
+  body: JSON.stringify({ ...payload, performedAt: new Date().toISOString() }),
 });
 
 export const recordNurseRound = async (hospitalizationId: string, payload: Record<string, unknown>) => {
-  return apiFetch(`/hospitalizations/${hospitalizationId}/nurse-rounds`, {
+  return sendOrQueue("Observation infirmière", `/hospitalizations/${hospitalizationId}/nurse-rounds`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, performedAt: new Date().toISOString() }),
   });
 };
 

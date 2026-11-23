@@ -82,6 +82,13 @@ export default function PasswordChangeGate({ children }: { children: ReactNode }
           Bonjour {currentUser.firstName || currentUser.displayName}. Vous êtes connecté avec le code à 6 chiffres remis par l’administrateur.
           Choisissez maintenant votre mot de passe : personne d’autre que vous ne doit le connaître.
         </p>
+        {Boolean(currentUser.accessCodeReveals?.length) && (
+          <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs leading-5 text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+            <p className="font-semibold">Votre code a été affiché par :</p>
+            <ul className="mt-1 list-disc pl-4">{currentUser.accessCodeReveals!.map((item, index) => <li key={index}>{item.by} — {new Date(item.at).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</li>)}</ul>
+            <p className="mt-1">Si vous ne reconnaissez pas une de ces personnes, prévenez la direction après avoir choisi votre mot de passe.</p>
+          </div>
+        )}
         <div className="mt-5"><ChangePasswordForm required onDone={markPasswordChanged} /></div>
         <button type="button" onClick={logout} className="mt-4 w-full text-center text-sm text-slate-500 underline">Se déconnecter</button>
       </section>

@@ -11,7 +11,11 @@ function vaultKey() {
   if (explicit) {
     const key = Buffer.from(explicit, 'base64');
     if (key.length === 32) return key;
+    throw new Error('AULIA_ACCESS_CODE_KEY doit contenir exactement 32 octets encodés en base64.');
   }
+  // In production the codes have their own key: rotating the session secret
+  // must not make them unreadable, and a leaked session secret must not reveal them.
+  if (process.env.NODE_ENV === 'production') throw new Error('AULIA_ACCESS_CODE_KEY est obligatoire en production (32 octets, base64).');
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error('JWT_SECRET (ou AULIA_ACCESS_CODE_KEY) est requis pour conserver les codes d’accès.');
   return createHash('sha256').update(`aulia-access-code:${secret}`).digest();

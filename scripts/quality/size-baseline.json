@@ -1,0 +1,10 @@
+{
+  "backend/src/care-workflow/care-workflow.service.ts": 1967,
+  "backend/src/consultations/consultations.service.ts": 2764,
+  "backend/src/laboratory/laboratory.service.ts": 2312,
+  "backend/src/patients/patients.service.ts": 3924,
+  "backend/src/users/users.service.ts": 1824,
+  "frontend/src/pages/Laboratoire/CatalogueLab.tsx": 2162,
+  "frontend/src/pages/Medecin/DashboardMedecin.tsx": 1744,
+  "frontend/src/pages/Medecin/PatientsMedecin.tsx": 1555
+}

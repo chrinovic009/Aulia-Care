@@ -17,6 +17,7 @@ import { AuthenticatedActor, ClinicContextService } from '../core/clinic-context
 import { NurseSchedulingService } from './nurse-scheduling.service';
 import { BedAssignmentService } from './bed-assignment.service';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
+import { resolveOfflineTime } from '../core/offline-time';
 
 interface NurseAssignmentAccessRecord {
   nurseId: string;
@@ -454,7 +455,8 @@ export class HospitalizationsService {
     if (dto.status === 'ESCALATED' && !(escalationReason || observation)) {
       throw new BadRequestException('Le motif de l’escalade est obligatoire.');
     }
-    const now = new Date();
+    // A care recorded offline keeps the time it was really done.
+    const now = resolveOfflineTime(dto.performedAt, 'du soin') ?? new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
       const careTask = await tx.nursingCareTask.update({
         where: { id: taskId },
@@ -506,6 +508,7 @@ export class HospitalizationsService {
     await this.auditAutomaticNurseRelay(hospitalization, userId, access, 'NURSE_ROUND_RECORDED');
 
     const action = body?.action || 'observation';
+    const performedAt = resolveOfflineTime(body?.performedAt, 'de l’observation') ?? new Date();
     const kind =
       action === 'done'
         ? 'NURSE_ROUND_DONE'
@@ -523,6 +526,7 @@ export class HospitalizationsService {
           problem: body?.problem || null,
           escalated: Boolean(body?.escalated),
           accessReason: access.reason,
+          performedAt: performedAt.toISOString(),
         }),
         createdById: userId || null,
       },
@@ -576,7 +580,7 @@ export class HospitalizationsService {
     const line = await this.prisma.prescriptionLine.findFirst({ where: { id: dto.prescriptionLineId, deletedAt: null, prescription: { patientId: hospitalization.patientId, clinicId: hospitalization.clinicId, status: { in: ['PRESCRIBED', 'PARTIALLY_DISPENSED', 'DISPENSED'] }, deletedAt: null } } });
     if (!line) throw new BadRequestException('Prescription active introuvable pour ce patient.');
     if (dto.status !== 'ADMINISTERED' && !dto.reason?.trim()) throw new BadRequestException('Un motif est obligatoire pour une dose refusée, suspendue ou manquée.');
-    const now = new Date();
+    const now = resolveOfflineTime(dto.administeredAt, 'd’administration') ?? new Date();
     return this.prisma.$transaction(async (tx) => {
       const administration = await tx.medicationAdministration.create({
         data: { hospitalizationId: id, prescriptionLineId: line.id, administeredById: userId, scheduledAt: now, administeredAt: dto.status === 'ADMINISTERED' ? now : null, status: dto.status, doseGiven: dto.doseGiven || null, reason: dto.reason || null, observation: dto.observation || null },

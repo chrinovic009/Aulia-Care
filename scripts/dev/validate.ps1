@@ -120,6 +120,8 @@ foreach ($step in ($Steps -split ',' | ForEach-Object { $_.Trim() } | Where-Obje
     'prisma'      { 'powershell -NoProfile -ExecutionPolicy Bypass -File scripts\dev\prisma-migration.ps1' }
     # Guided tour of the running demo (start it first with the 'demo' request).
     'tour'        { 'node scripts\dev\tour\tour.mjs' }
+    # UI smoke tests of every role on the running demo (start it first with the 'demo' request).
+    'ui'          { 'node scripts\dev\ui\ui-smoke.mjs' }
     default       { $null }
   }
   if (-not $command) { "$step : ETAPE INCONNUE" | Out-File -Append $summary -Encoding utf8; $failed++; continue }

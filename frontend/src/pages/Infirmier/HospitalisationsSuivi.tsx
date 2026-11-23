@@ -4,6 +4,7 @@ import PageMeta from "../../components/common/PageMeta";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { fetchNurseHospitalizations, recordNurseRound } from "../../api/nurse";
+import { isQueued } from "../../offline/offlineQueue";
 import { ClientPagination, useClientPagination } from "../../components/common/ClientPagination";
 
 type ClinicalState = "Stable" | "Surveillance" | "Critique" | "Isolement";
@@ -160,9 +161,13 @@ export default function HospitalisationsSuivi() {
   const submitObservation = async () => {
     if (!selected || !observationText) return;
     try {
-      await recordNurseRound(selected.id, { action: "observation", observation: observationText });
+      const sent = await recordNurseRound(selected.id, { action: "observation", observation: observationText });
       setObservationText("");
       setPanelMode("dossier");
+      if (isQueued(sent)) {
+        setError("Hors ligne : observation gardée sur l’appareil avec son heure réelle, envoyée automatiquement au retour du réseau.");
+        return;
+      }
       await loadHospitalizations();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible d'enregistrer l'observation.");

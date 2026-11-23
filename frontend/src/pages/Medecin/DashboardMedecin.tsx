@@ -895,7 +895,11 @@ export default function DashboardMedecin() {
         focusedExam: clinicalForm.focusedExam,
         description: examDescription,
       },
-      diagnosis: draftDiagnosis(clinicalForm.principalDiagnosis, clinicalForm.hypotheses, diagnosisDescription),
+      diagnosis: {
+        ...draftDiagnosis(clinicalForm.principalDiagnosis, clinicalForm.hypotheses, diagnosisDescription),
+        // Coded principal diagnosis chosen from the CIM-10 list (recorded server-side for statistics).
+        ...(consultationModule.structured?.orientation?.icdCode ? { icd10: { code: consultationModule.structured.orientation.icdCode } } : {}),
+      },
       treatmentPlan: {
         notes: clinicalForm.treatmentPlan,
         description: consignesDescription,

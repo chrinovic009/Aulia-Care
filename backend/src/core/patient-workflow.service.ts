@@ -7,6 +7,22 @@ import { decideWorkflowTransition } from './patient-workflow.policy';
 
 type WorkflowTransaction = Prisma.TransactionClient;
 
+/** Event written in the care engine's journal for every step of the reception → consultation pathway. */
+export const PATHWAY_EVENT_TYPE = 'PATHWAY_STATUS_CHANGED';
+export const PATHWAY_LABELS: Record<PatientWorkflowStatus, string> = {
+  EN_ATTENTE_DE_PAIEMENT: 'en attente de paiement',
+  EN_ATTENTE_VALIDATION_CAISSE: 'en attente de validation à la caisse',
+  EN_ATTENTE_INFIRMERIE: 'en attente à l’infirmerie',
+  EN_ATTENTE_MEDECIN: 'en attente du médecin',
+  EN_CONSULTATION: 'en consultation',
+  EN_LABORATOIRE: 'au laboratoire',
+  EN_RADIOLOGIE: 'en imagerie',
+  EN_PHARMACIE: 'à la pharmacie',
+  HOSPITALISE: 'hospitalisé',
+  TERMINE: 'parcours terminé',
+  ANNULE: 'parcours annulé',
+};
+
 export type WorkflowTransitionResult =
   | { outcome: 'not_found' }
   | { outcome: 'unchanged'; status: PatientWorkflowStatus }
@@ -36,7 +52,9 @@ export class PatientWorkflowService {
     requested: PatientWorkflowStatus,
     clinicId: string | null | undefined,
   ): Promise<WorkflowTransitionResult> {
-    if (tx instanceof PrismaService) {
+    // An interactive transaction client is a proxy over the same PrismaService instance,
+    // so `instanceof` alone matches it too: only the full client still exposes $transaction.
+    if (tx instanceof PrismaService && typeof (tx as { $transaction?: unknown }).$transaction === 'function') {
       throw new Error('Patient workflow transition requires an active transaction client.');
     }
     if (!clinicId?.trim()) {
@@ -83,8 +101,29 @@ export class PatientWorkflowService {
     });
     await tx.$executeRaw(Prisma.sql`SELECT set_config('app.workflow_patient', '', true)`);
     if (update.count !== 1) throw new PatientWorkflowConflictError();
+    await this.recordPathwayEvent(tx, clinicId, patientId, decision.previous, decision.status);
 
     return decision;
+  }
+
+  /**
+   * Single journey: each step of the reception → consultation pathway is also
+   * written, in the same transaction, in the care engine's insert-only journal
+   * (CareEvent). The patient's timeline then shows the pathway and the care
+   * units' events together, in order, with who did what.
+   */
+  private async recordPathwayEvent(tx: WorkflowTransaction, clinicId: string, patientId: string, from: PatientWorkflowStatus, to: PatientWorkflowStatus) {
+    const context = currentRequestContext();
+    const journal = (tx as { careEvent?: Prisma.TransactionClient['careEvent'] }).careEvent;
+    if (!context?.userId || typeof journal?.create !== 'function') return;
+    await journal.create({
+      data: {
+        clinicId, patientId, careUnitId: null, type: PATHWAY_EVENT_TYPE,
+        summary: `Parcours : ${PATHWAY_LABELS[from]} → ${PATHWAY_LABELS[to]}`,
+        payload: { from, to, route: context.route ?? null },
+        occurredAt: new Date(), authorId: context.userId, authorRole: context.role ?? 'UNKNOWN',
+      },
+    });
   }
 
   /** Required workflow changes abort their containing operation on refusal. */

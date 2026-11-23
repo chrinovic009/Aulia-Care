@@ -1,10 +1,12 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { EventEmitter } from 'events';
-import { RequestContext, currentRequestContext } from '../core/request-context';
+import { RequestContext, currentRequestContext, runWithRequestContext } from '../core/request-context';
 
 type TransactionFn = (arg: unknown, options?: unknown) => Promise<unknown>;
 export const REQUEST_DATABASE_ROLE = 'aulia_app';
+/** Application-facing facade of each client, kept outside the instance: Prisma's client is itself a proxy. */
+const FACADES = new WeakMap<object, PrismaService>();
 
 export function requestContextStatement(client: Pick<Prisma.TransactionClient, '$executeRaw'>, context: RequestContext) {
   return client.$executeRaw`SELECT
@@ -77,7 +79,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     };
     // Prisma extensions return a client proxy, not a mutated base instance.
     // Preserve Nest lifecycle methods through this facade without replacing lazy PrismaPromises.
-    return new Proxy(this, {
+    const facade = new Proxy(this, {
       get(target, key) {
         if (key === '$transaction') return contextual;
         if (key === 'onModuleInit' || key === 'onModuleDestroy') return Reflect.get(target, key).bind(target);
@@ -85,8 +87,42 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         return typeof value === 'function' ? value.bind(extended) : value;
       },
     });
+    FACADES.set(this, facade);
+    return facade;
   }
 
-  async onModuleInit() { await this.$connect(); }
+  async onModuleInit() {
+    await this.$connect();
+    await this.assertRequestScoping();
+  }
+
+  /**
+   * Start-up self-test of the tenant adapter. It relies on a Prisma 5.22
+   * internal detail, so instead of trusting it we prove, against the real
+   * database, that a query made during a request runs as the restricted role
+   * with the request's identity — for a single query, an array transaction and
+   * an interactive transaction. The API refuses to start otherwise, so an
+   * upgrade that silently breaks isolation can never reach production.
+   */
+  async assertRequestScoping() {
+    const client = FACADES.get(this) ?? this;
+    const probe: RequestContext = { userId: '00000000-0000-4000-8000-00000000c0de', role: 'SCOPE_SELFTEST', roles: [], clinicId: null, route: 'startup.self-test' };
+    type Row = { db_role: string; user_id: string };
+    const check = (rows: Row[] | undefined, kind: string) => {
+      const row = rows?.[0];
+      if (row?.db_role !== REQUEST_DATABASE_ROLE || row?.user_id !== probe.userId) {
+        throw new Error(`Isolation des établissements inactive (${kind}) : rôle=${row?.db_role ?? '?'}. Démarrage refusé — vérifier l'adaptateur Prisma avant toute mise à jour.`);
+      }
+    };
+    await runWithRequestContext(probe, async () => {
+      check(await client.$queryRaw<Row[]>`SELECT current_user::text AS db_role, current_setting('app.user_id', true) AS user_id`, 'requête simple');
+      const [batched] = await client.$transaction([client.$queryRaw<Row[]>`SELECT current_user::text AS db_role, current_setting('app.user_id', true) AS user_id`]);
+      check(batched, 'transaction groupée');
+      const interactive = await client.$transaction((tx) => tx.$queryRaw<Row[]>`SELECT current_user::text AS db_role, current_setting('app.user_id', true) AS user_id`);
+      check(interactive, 'transaction interactive');
+    });
+    const outside = await client.$queryRaw<Row[]>`SELECT current_user::text AS db_role, current_setting('app.user_id', true) AS user_id`;
+    if (outside?.[0]?.db_role === REQUEST_DATABASE_ROLE) throw new Error('Le rôle restreint a fui hors d’une requête authentifiée.');
+  }
   async onModuleDestroy() { await this.$disconnect(); }
 }
