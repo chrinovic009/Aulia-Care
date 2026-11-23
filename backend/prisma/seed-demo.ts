@@ -356,7 +356,8 @@ async function assertNoForeignData(tx: Prisma.TransactionClient) {
     tx.patient.findFirst({ where: { id: { notIn: patientData.map((patient) => patient.id) } }, select: { id: true } }),
     tx.department.findFirst({ where: { id: { notIn: departmentData.map((department) => department.id) } }, select: { id: true } }),
     tx.service.findFirst({ where: { id: { notIn: serviceData.map((service) => service.id) } }, select: { id: true } }),
-    tx.role.findFirst({ where: { id: { notIn: demoRoles.map((role) => roleIds[role]) } }, select: { id: true } }),
+    // Platform reference roles inserted by migrations (id 'aulia-…', e.g. MEDICAL_DIRECTOR) are not foreign data.
+    tx.role.findFirst({ where: { id: { notIn: demoRoles.map((role) => roleIds[role]) }, NOT: { id: { startsWith: 'aulia-' } } }, select: { id: true } }),
     tx.serviceUnit.findFirst({ where: { id: { notIn: serviceUnitData.map((unit) => unit.id) } }, select: { id: true } }),
     tx.appointment.findFirst({ where: { id: { notIn: appointments.map((record) => record.id) } }, select: { id: true } }),
     tx.consultation.findFirst({ where: { id: { notIn: consultations.map((record) => record.id) } }, select: { id: true } }),
@@ -385,13 +386,15 @@ async function assertNoForeignData(tx: Prisma.TransactionClient) {
     tx.hospitalization.findFirst({ where: { id: { not: '8a111111-1111-4111-8111-111111111111' } }, select: { id: true } }),
   ]);
 
-  if ([clinic, user, employee, patient, department, service, role, serviceUnit,
+  const found = { clinic, user, employee, patient, department, service, role, serviceUnit,
     appointment, consultation, visit, vital, invoice, payment, invoiceLine,
     labSection, labCategory, labTest, labRequest, labItem, labResult,
     imagingCatalogue, imagingMachine, imagingRequest, imagingReport,
     medicationSection, medicationCategory, medication, stockLot, salePrice,
-    prescription, prescriptionLine, hospitalization].some(Boolean)) {
-    throw new Error('Refus : des enregistrements étrangers à la démonstration sont présents dans cette base.');
+    prescription, prescriptionLine, hospitalization };
+  const foreign = Object.entries(found).filter(([, row]) => Boolean(row)).map(([name]) => name);
+  if (foreign.length) {
+    throw new Error(`Refus : des enregistrements étrangers à la démonstration sont présents dans cette base (${foreign.join(', ')}).`);
   }
 }
 

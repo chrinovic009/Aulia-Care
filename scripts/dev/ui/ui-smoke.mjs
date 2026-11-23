@@ -69,7 +69,10 @@ async function settle() {
       if (document.readyState !== 'complete') return true;
       const loader = document.querySelector('.aulia-page-loader');
       if (loader && !loader.classList.contains('aulia-page-loader--hidden')) return true;
-      return [...document.querySelectorAll('.animate-spin')].some((el) => el.getBoundingClientRect().width > 0) || !document.body?.innerText.trim();
+      const text = document.body?.innerText.trim() || '';
+      // The session check shows a full-page « Chargement sécurisé… » screen before the page itself.
+      if (!text || /^Chargement sécurisé/.test(text)) return true;
+      return [...document.querySelectorAll('.animate-spin')].some((el) => el.getBoundingClientRect().width > 0);
     })()`).catch(() => true);
     quiet = busy ? 0 : quiet + 1;
     await sleep(250);
@@ -77,7 +80,21 @@ async function settle() {
   await sleep(400);
 }
 async function go(route) { await cdp('Page.navigate', { url: BASE + route }); await sleep(300); await settle(); }
-const snapshot = () => js(`({ path: location.pathname, text: (document.body?.innerText || '').slice(0, 20000), heading: [...document.querySelectorAll('h1,h2,h3')].map((h) => h.innerText.trim()).find(Boolean) || '' })`);
+// Page title: an h1–h3 or role=heading, else the most prominent visible text (≥ 20 px), e.g. a greeting banner.
+const snapshot = () => js(`(() => {
+  const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  let heading = [...document.querySelectorAll('h1,h2,h3,[role="heading"]')].filter(visible).map((h) => h.innerText.trim()).find(Boolean) || '';
+  if (!heading) {
+    let best = null, size = 0;
+    for (const el of document.querySelectorAll('main *, #root *')) {
+      if (!visible(el) || el.children.length > 0) continue;
+      const text = (el.innerText || '').trim(); const px = parseFloat(getComputedStyle(el).fontSize);
+      if (text.length > 3 && px >= 20 && px > size) { best = text; size = px; }
+    }
+    heading = best || '';
+  }
+  return { path: location.pathname, text: (document.body?.innerText || '').slice(0, 20000), heading };
+})()`);
 
 async function login(username) {
   await cdp('Network.clearBrowserCookies');
@@ -110,7 +127,13 @@ for (const { username, role, pages } of ROLE_PAGES) {
   for (const item of pages) {
     events.exceptions.length = 0; events.serverErrors.length = 0;
     await go(item.route);
-    await record(role, item.route, evaluatePage(item, await snapshot(), events));
+    let check = evaluatePage(item, await snapshot(), events);
+    if (!check.ok && !events.exceptions.length && !events.serverErrors.length) {
+      // A slow page gets one more chance before being reported (errors are never retried away).
+      await sleep(3000); await settle();
+      check = evaluatePage(item, await snapshot(), events);
+    }
+    await record(role, item.route, check);
   }
 }
 
