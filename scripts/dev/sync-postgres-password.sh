@@ -7,3 +7,6 @@ set -e
 [ -n "$POSTGRES_PASSWORD" ] || { echo "POSTGRES_PASSWORD absent du conteneur"; exit 1; }
 printf "ALTER USER aulia PASSWORD :'pw';\\n" | psql -U aulia -d aulia_care -v ON_ERROR_STOP=1 -v pw="$POSTGRES_PASSWORD"
 echo "Mot de passe de la base realigne sur .env"
+# PowerShell appends a Windows line ending when piping: stop here so it is
+# never read as a command (": not found").
+exit 0

@@ -16,7 +16,16 @@ services:
       - aulia_postgres_data:/var/lib/postgresql/data
 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aulia -d aulia_care"]
+      # Ready AND the role password equals POSTGRES_PASSWORD. The data volume
+      # keeps the password it was created with; if the container is started
+      # with another value (e.g. a different --env-file), the password is
+      # realigned through the local socket before the backend connects.
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready -U aulia -d aulia_care -q &&
+          { PGPASSWORD="$$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U aulia -d aulia_care -tAqc 'select 1' >/dev/null 2>&1 ||
+          printf "ALTER USER aulia PASSWORD :'pw';\n" | psql -U aulia -d aulia_care -q -v ON_ERROR_STOP=1 -v pw="$$POSTGRES_PASSWORD"; }
       interval: 10s
       timeout: 5s
       retries: 5
