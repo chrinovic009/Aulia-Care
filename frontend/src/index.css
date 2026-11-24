@@ -472,12 +472,24 @@
   overflow: hidden;
   isolation: isolate;
   color: #0a1d3a;
-  background:
-    radial-gradient(circle at 50% 40%, rgba(13, 148, 136, 0.17), transparent 32rem),
-    linear-gradient(135deg, #ffffff 0%, #f3fbf9 54%, #e4f5f0 100%);
+  background: #ffffff;
   opacity: 1;
   visibility: visible;
   transition: opacity 260ms ease, visibility 260ms ease;
+}
+
+/* The animation is drawn on white: same white behind it in light mode, and a
+   white medallion on the dark background in dark mode. */
+.aulia-page-loader__gif {
+  width: clamp(9.5rem, 30vw, 11rem);
+  height: auto;
+  border-radius: 9999px;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.dark .aulia-page-loader__gif {
+  background: #ffffff;
+  box-shadow: 0 0 0 10px rgb(255 255 255 / .06), 0 24px 60px -20px rgb(0 0 0 / .55);
 }
 
 .aulia-page-loader--hidden {

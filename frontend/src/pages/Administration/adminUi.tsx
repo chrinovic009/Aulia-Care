@@ -116,8 +116,31 @@ export function DataTable({
 
   return (
     <div>
-      <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
-      <table className="w-full min-w-[720px] text-sm">
+      {/* Phones and small tablets: each row becomes a card (first column as
+          its title, other columns as labelled lines, unlabelled ones as actions). */}
+      <div className="space-y-3 md:hidden">
+        {rows.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">{empty}</p>
+        ) : paginatedRows.map((row, index) => (
+          <div key={index} className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+            <div className="min-w-0 text-sm font-semibold text-slate-900 dark:text-white">{row[0]}</div>
+            {row.length > 1 && (
+              <dl className="mt-3 space-y-2 border-t border-slate-100 pt-3 text-sm dark:border-slate-800">
+                {row.slice(1).map((cell, cellIndex) => headers[cellIndex + 1] ? (
+                  <div key={cellIndex} className="flex items-start justify-between gap-4">
+                    <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-slate-400">{headers[cellIndex + 1]}</dt>
+                    <dd className="min-w-0 text-right text-slate-700 dark:text-slate-200">{cell}</dd>
+                  </div>
+                ) : (
+                  <div key={cellIndex} className="flex justify-end pt-1">{cell}</div>
+                ))}
+              </dl>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto rounded-xl border border-slate-100 md:block dark:border-slate-800">
+      <table className="w-full min-w-[640px] text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
           <tr>{headers.map((header) => <th key={header} className="px-4 py-3 font-semibold">{header}</th>)}</tr>
         </thead>

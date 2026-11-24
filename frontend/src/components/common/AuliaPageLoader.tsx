@@ -1,7 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 
-const MINIMUM_TRANSITION_MS = 720;
+/* Aulia Care loading animation (the logo drawn, then its heartbeat):
+   - the first screen of a visit plays the full drawing once, then the
+     heartbeat loop;
+   - every later page change shows the heartbeat loop only, briefly. */
+const INTRO_SRC = "/images/loader/aulia-loader-intro.gif";
+const LOOP_SRC = "/images/loader/aulia-loader-loop.gif";
+const INTRO_MS = 2600; // 65 frames x 40 ms
+const ROUTE_MS = 720;
+const SEEN_KEY = "aulia:loader-intro-seen";
+
+const introAlreadySeen = () => {
+  try {
+    return window.sessionStorage.getItem(SEEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const markIntroSeen = () => {
+  try {
+    window.sessionStorage.setItem(SEEN_KEY, "1");
+  } catch {
+    // Private browsing: the drawing simply plays again next time.
+  }
+};
 
 /**
  * Branded route-transition surface. It is deliberately independent from data
@@ -11,14 +35,31 @@ export default function AuliaPageLoader() {
   const location = useLocation();
   const routeKey = `${location.pathname}${location.search}`;
   const [visible, setVisible] = useState(true);
+  const [playIntro, setPlayIntro] = useState(() => !introAlreadySeen());
   const previousRouteRef = useRef<string | null>(null);
+  const firstShowRef = useRef(true);
+
+  useEffect(() => {
+    const preload = new Image();
+    preload.src = LOOP_SRC;
+  }, []);
 
   useEffect(() => {
     const isNewRoute = previousRouteRef.current !== routeKey;
     previousRouteRef.current = routeKey;
     if (isNewRoute) setVisible(true);
-    const timeoutId = window.setTimeout(() => setVisible(false), MINIMUM_TRANSITION_MS);
+
+    const withIntro = firstShowRef.current && playIntro;
+    firstShowRef.current = false;
+    const timeoutId = window.setTimeout(() => {
+      setVisible(false);
+      if (withIntro) {
+        markIntroSeen();
+        setPlayIntro(false);
+      }
+    }, withIntro ? INTRO_MS : ROUTE_MS);
     return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeKey]);
 
   return (
@@ -28,24 +69,18 @@ export default function AuliaPageLoader() {
       aria-live="polite"
       aria-label="Chargement d’Aulia Care"
     >
-      <div className="aulia-page-loader__ambient aulia-page-loader__ambient--teal" />
-      <div className="aulia-page-loader__ambient aulia-page-loader__ambient--green" />
-      <div className="aulia-page-loader__content">
-        <div className="aulia-page-loader__mark" aria-hidden="true">
-          <span className="aulia-page-loader__ring aulia-page-loader__ring--outer" />
-          <span className="aulia-page-loader__ring aulia-page-loader__ring--inner" />
-          <span className="aulia-page-loader__pulse" />
-          <img src="/images/logo/icone.png" alt="" className="aulia-page-loader__logo" />
-        </div>
-        <div className="aulia-page-loader__identity">
-          <span className="aulia-page-loader__name">Aulia Care</span>
-          <span className="aulia-page-loader__tagline">La technologie au service du soin et de la vie.</span>
-        </div>
-        <svg className="aulia-page-loader__ecg" viewBox="0 0 250 36" aria-hidden="true">
-          <path d="M0 19h47l9-10 10 21 15-28 11 17h31l10-8 10 16 12-8h75" />
-        </svg>
-        <span className="sr-only">Préparation sécurisée de votre espace de soins.</span>
-      </div>
+      {visible && (
+        <img
+          src={playIntro ? INTRO_SRC : LOOP_SRC}
+          alt=""
+          aria-hidden="true"
+          width={176}
+          height={176}
+          decoding="async"
+          className="aulia-page-loader__gif"
+        />
+      )}
+      <span className="sr-only">Préparation sécurisée de votre espace de soins.</span>
     </div>
   );
 }
