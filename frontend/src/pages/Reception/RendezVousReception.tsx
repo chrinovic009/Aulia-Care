@@ -389,7 +389,14 @@ export default function RendezVousReception() {
               </div>
             </div>
 
-            <div className="hidden md:block overflow-x-auto">
+            {filteredRequests.length === 0 && (
+              <div className="mt-6 flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-6 py-12 text-center dark:border-slate-700 dark:bg-slate-900/40">
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Aucune demande de rendez-vous sur cette période</p>
+                <p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">Les nouvelles demandes des patients et des médecins apparaîtront ici dès leur enregistrement.</p>
+              </div>
+            )}
+
+            <div className={`${filteredRequests.length === 0 ? "hidden" : "hidden md:block"} overflow-x-auto`}>
               <table className="w-full min-w-[720px] border-collapse text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400">

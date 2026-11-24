@@ -100,3 +100,10 @@
   }
   .aulia-content-frame *, .aulia-nav-glyph, .menu-item-text { transition: none !important; transform: none !important; }
 }
+
+/* --- Off duty: the session reads but no longer writes ---------------------- */
+.aulia-readonly .aulia-content-frame button[type="submit"],
+.aulia-readonly .aulia-content-frame form button:not([type="button"]) {
+  opacity: .45; cursor: not-allowed; filter: grayscale(.4);
+}
+.aulia-offduty-banner { animation: aulia-rise .5s var(--aulia-ease) both; }

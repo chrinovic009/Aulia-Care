@@ -373,7 +373,7 @@ export class UsersService {
   /** Resolves the employee's effective rota at the moment of clock-in. The
    * returned window is stored on Attendance so reports do not change when a
    * manager later modifies the rotation. */
-  private async resolvePlannedShift(employee: { id: string; shiftPattern: string; rotationAnchorAt: Date | null; rotationDays: number; permanentShiftEndTime: string | null; clinicId: string | null }, now = new Date()) {
+  async resolvePlannedShift(employee: { id: string; shiftPattern: string; rotationAnchorAt: Date | null; rotationDays: number; permanentShiftEndTime: string | null; clinicId: string | null }, now = new Date()) {
     const explicit = await this.prisma.shift.findFirst({
       where: { employeeId: employee.id, startAt: { lte: now }, endAt: { gte: now } },
       select: { id: true, startAt: true, endAt: true }, orderBy: { startAt: 'desc' },

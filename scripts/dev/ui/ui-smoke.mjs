@@ -17,6 +17,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const out = path.join(root, '.validation', 'ui');
 fs.mkdirSync(path.join(out, 'failures'), { recursive: true });
 fs.mkdirSync(path.join(out, 'shots'), { recursive: true });
+// Design review: with .validation/ui-shots-all present, every page is captured on desktop and on a phone.
+const SHOOT_ALL = fs.existsSync(path.join(root, '.validation', 'ui-shots-all'));
+if (SHOOT_ALL) { fs.rmSync(path.join(out, 'review'), { recursive: true, force: true }); fs.mkdirSync(path.join(out, 'review'), { recursive: true }); }
 const BASE = process.env.AULIA_UI_BASE || 'http://localhost:5190';
 const credentials = fs.readFileSync(path.join(root, '.validation', 'demo', 'credentials.txt'), 'utf8');
 const PASSWORD = (credentials.match(/Mot de passe\s*:\s*(\S+)/) || [])[1];
@@ -136,6 +139,17 @@ for (const { username, role, pages } of ROLE_PAGES) {
       check = evaluatePage(item, await snapshot(), events);
     }
     await record(role, item.route, check);
+    if (SHOOT_ALL) {
+      const name = `${role}${item.route.replace(/[^a-z0-9]+/gi, '_')}`;
+      const desk = await cdp('Page.captureScreenshot', { format: 'jpeg', quality: 70, captureBeyondViewport: true, clip: { x: 0, y: 0, width: 1440, height: Math.min(3200, await js('document.documentElement.scrollHeight').catch(() => 900)), scale: 1 } }).catch(() => null);
+      if (desk) fs.writeFileSync(path.join(out, 'review', `${name}.desktop.jpg`), Buffer.from(desk.data, 'base64'));
+      await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+      await sleep(900);
+      const phone = await cdp('Page.captureScreenshot', { format: 'jpeg', quality: 70, captureBeyondViewport: true, clip: { x: 0, y: 0, width: 390, height: Math.min(3200, await js('document.documentElement.scrollHeight').catch(() => 844)), scale: 1 } }).catch(() => null);
+      if (phone) fs.writeFileSync(path.join(out, 'review', `${name}.phone.jpg`), Buffer.from(phone.data, 'base64'));
+      await cdp('Emulation.clearDeviceMetricsOverride');
+      await sleep(300);
+    }
     if (item.shot) {
       // Reference captures of key pages, to review the look (menu counters, animations at rest).
       const shot = await cdp('Page.captureScreenshot', { format: 'jpeg', quality: 75 }).catch(() => null);

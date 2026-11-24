@@ -1,3 +1,4 @@
+import { isWriteBlocked, OFF_DUTY_MESSAGE } from "../components/staff/offDuty";
 import { isBackgroundEndpoint } from "./backgroundEndpoints";
 /**
  * Centralized API configuration
@@ -295,6 +296,11 @@ export const apiFetch = async <T = any>(
   const method = (
     options?.method || "GET"
   ).toUpperCase();
+
+  // Off duty (departure validated): the session reads but never writes.
+  if (isWriteBlocked(endpoint, method)) {
+    throw new Error(OFF_DUTY_MESSAGE);
+  }
 
   const requestHeaders = () => ({
     ...(typeof FormData !== "undefined" && options?.body instanceof FormData

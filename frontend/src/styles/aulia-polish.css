@@ -1,0 +1,82 @@
+/* ==========================================================================
+   Aulia Care — visual polish shared by every page.
+   Air between blocks, columns that never spill out of their card, compact
+   two-column indicators on phones, calmer tables and empty states.
+   Page files keep their own layout; these rules only correct what every
+   page needs, so one change here lifts the whole application.
+   ========================================================================== */
+
+/* --- Columns never push a block out of the screen --------------------------
+   A grid item defaults to the width of its widest content (a table, a long
+   reference). That is what cut the right-hand panels on several pages. */
+.aulia-content-frame .grid > * { min-width: 0; }
+.aulia-content-frame :is(.flex-1, [class*="flex-1"]) { min-width: 0; }
+.aulia-content-frame :is(h1, h2, h3, h4, p, dd, dt) { overflow-wrap: break-word; }
+
+/* --- Air -------------------------------------------------------------------
+   Breathing room between the main blocks of a page and inside cards. */
+.aulia-content-frame :is(.rounded-2xl, .rounded-3xl).border { border-color: rgb(15 23 42 / .07); }
+.aulia-content-frame :is(.rounded-2xl, .rounded-3xl).border.bg-white,
+.aulia-content-frame :is(.rounded-2xl, .rounded-3xl).bg-white.border {
+  box-shadow: 0 1px 2px rgb(15 23 42 / .04), 0 12px 32px -24px rgb(10 29 58 / .28);
+}
+.dark .aulia-content-frame :is(.rounded-2xl, .rounded-3xl).border { border-color: rgb(255 255 255 / .08); }
+
+/* Indicator values: tabular figures so columns of numbers line up. */
+.aulia-content-frame :is(.text-2xl, .text-3xl, .text-xl).font-semibold,
+.aulia-content-frame :is(.text-2xl, .text-3xl, .text-xl).font-bold { font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+/* --- Tables ---------------------------------------------------------------- */
+.aulia-content-frame thead th {
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: rgb(71 85 105);
+}
+.aulia-content-frame tbody td { vertical-align: middle; }
+.aulia-content-frame tbody tr + tr td { border-top-color: rgb(15 23 42 / .05); }
+.dark .aulia-content-frame thead th { color: rgb(148 163 184); }
+
+/* Empty states read as a calm, centred note instead of a blank box. */
+.aulia-content-frame tr > td[colspan]:only-child:not(:has(table, form, button)) { padding-top: 1.75rem; padding-bottom: 1.75rem; text-align: center; color: rgb(100 116 139); }
+
+/* --- Phones ---------------------------------------------------------------- */
+@media (max-width: 639px) {
+  /* Rows of 4 to 7 indicators become two compact columns instead of a long
+     single column of oversized cards. Grids that hold forms, tables or
+     charts keep one column. */
+  .aulia-content-frame .grid:is(
+      [class*="xl:grid-cols-4"], [class*="xl:grid-cols-5"], [class*="xl:grid-cols-6"], [class*="xl:grid-cols-7"],
+      [class*="lg:grid-cols-4"], [class*="lg:grid-cols-5"], [class*="lg:grid-cols-6"],
+      [class*="md:grid-cols-4"], [class*="md:grid-cols-5"],
+      [class*="sm:grid-cols-3"], [class*="sm:grid-cols-4"], [class*="sm:grid-cols-5"]
+    ):not(:has(table, form, textarea, select, canvas, .apexcharts-canvas, ul, ol)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .625rem;
+  }
+  .aulia-content-frame .grid:is(
+      [class*="xl:grid-cols-4"], [class*="xl:grid-cols-5"], [class*="xl:grid-cols-6"], [class*="xl:grid-cols-7"],
+      [class*="lg:grid-cols-4"], [class*="lg:grid-cols-5"], [class*="lg:grid-cols-6"],
+      [class*="md:grid-cols-4"], [class*="md:grid-cols-5"],
+      [class*="sm:grid-cols-3"], [class*="sm:grid-cols-4"], [class*="sm:grid-cols-5"]
+    ):not(:has(table, form, textarea, select, canvas, .apexcharts-canvas, ul, ol)) > * {
+    padding: .875rem;
+  }
+  /* An odd last indicator spans the row so the grid ends cleanly. */
+  .aulia-content-frame .grid:is(
+      [class*="xl:grid-cols-5"], [class*="xl:grid-cols-7"], [class*="sm:grid-cols-3"], [class*="sm:grid-cols-5"], [class*="md:grid-cols-5"], [class*="lg:grid-cols-5"]
+    ):not(:has(table, form, textarea, select, canvas, .apexcharts-canvas, ul, ol)) > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  /* Table headings stay on one line; the table scrolls inside its card. */
+  .aulia-content-frame thead th { white-space: nowrap; }
+
+  /* Page action bars: buttons share the width instead of stacking ragged. */
+  .aulia-content-frame .flex.flex-wrap > button { flex: 1 1 auto; justify-content: center; }
+
+  /* Room under the last block for the ANIMA orb and the phone home bar. */
+  .aulia-content-frame { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
+
+  /* Large page headings scale down a step so they wrap on two lines max. */
+  .aulia-content-frame h1.text-3xl, .aulia-content-frame h1.text-4xl { font-size: 1.625rem; line-height: 1.2; }
+}

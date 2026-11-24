@@ -205,7 +205,7 @@ export default function DashboardLaboratoire() {
           <button onClick={() => refreshDashboard()} className="rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white">Actualiser</button>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-6">
+        <div className="mt-6 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
           <Metric label="Demandes reçues aujourd'hui" value={overview?.requestsToday ?? 0} />
           <Metric label="Examens réalisés aujourd'hui" value={overview?.examsToday ?? 0} />
           <Metric label="Résultats en attente" value={overview?.resultsPending ?? 0} tone="amber" />
@@ -217,7 +217,7 @@ export default function DashboardLaboratoire() {
 
       
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[420px_1fr]">
+      <div className="mt-6 grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <aside className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
           <div className="grid gap-3 md:grid-cols-[1fr_150px] xl:grid-cols-1">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Rechercher patient, examen, medecin..." className="rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
@@ -262,17 +262,7 @@ export default function DashboardLaboratoire() {
               </div>
             </div>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-3 lg:grid-cols-6">
-              {/* KPI cards driven by overview endpoint */}
-              <Metric label="Demandes reçues aujourd'hui" value={overview?.requestsToday ?? 0} />
-              <Metric label="Examens réalisés aujourd'hui" value={overview?.examsToday ?? 0} />
-              <Metric label="Résultats en attente" value={overview?.resultsPending ?? 0} tone="amber" />
-              <Metric label="Validés aujourd'hui" value={overview?.resultsValidatedToday ?? 0} tone="green" />
-              <Metric label="Examens en retard" value={overview?.overdue ?? 0} tone="red" />
-              <Metric label="Revenu du jour" value={overview?.revenueToday ?? 0} />
-            </div>
-
-            <div className="mt-6 grid gap-6 xl:grid-cols-3">
+            <div className="mt-6 grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
               <Panel title="Workflow temps réel">
                 {Object.keys(workflow).length === 0 ? (
                   <p className="text-sm text-slate-500">Aucune donnée de workflow disponible.</p>
@@ -334,7 +324,7 @@ export default function DashboardLaboratoire() {
               </Panel>
             </div>
 
-            <div className="mt-6 grid gap-6 xl:grid-cols-3">
+            <div className="mt-6 grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
               <Panel title="Performance du laboratoire">
                 {performance ? (
                   <div className="text-sm">
@@ -375,7 +365,7 @@ export default function DashboardLaboratoire() {
               </Panel>
             </div>
 
-            <div className="mt-6 grid gap-6 xl:grid-cols-3">
+            <div className="mt-6 grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
               <Panel title="Surveillance du stock">
                 {inventory.length === 0 ? (
                   <p className="text-sm text-slate-500">Aucun consommable disponible.</p>
@@ -444,11 +434,11 @@ function Metric({ label, value, tone = "default" }: { label: string; value: numb
     green: "text-emerald-700 dark:text-emerald-300",
     red: "text-red-700 dark:text-red-300",
   };
-  return <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950"><p className="text-xs text-slate-500">{label}</p><p className={`mt-2 text-2xl font-semibold ${colors[tone]}`}>{value}</p></div>;
+  return <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950"><p className="text-xs leading-4 text-slate-500">{label}</p><p className={`mt-2 text-2xl font-semibold ${colors[tone]}`}>{value}</p></div>;
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div className="mt-4 rounded-lg border border-slate-200 p-4 dark:border-slate-800"><h3 className="font-semibold text-slate-900 dark:text-white">{title}</h3><div className="mt-3 space-y-3">{children}</div></div>;
+  return <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"><h3 className="text-sm font-semibold text-slate-900 dark:text-white">{title}</h3><div className="mt-3 space-y-3">{children}</div></div>;
 }
 
 // Note: Input and Info helpers removed — dashboard is read-only supervision-only

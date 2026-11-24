@@ -365,7 +365,7 @@ const AppSidebar: React.FC = () => {
   const location = useLocation();
 
   const { currentUser } = useAuth();
-  const badges = useNavBadges(Boolean(currentUser?.clinicId && currentUser.primaryRole !== "DEV"));
+  const badges = useNavBadges(Boolean(currentUser?.clinicId && currentUser.primaryRole !== "DEV" && currentUser.primaryRole !== "PATIENT"));
   const { isEnabled, layers } = usePlatformLayers();
   // Before the installation configuration is available, never advertise an
   // optional layer as active. This mirrors the fail-closed route/API policy.

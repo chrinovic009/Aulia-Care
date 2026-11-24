@@ -572,7 +572,7 @@ export default function ReceptionPatients() {
           </div>
         </section>
 
-        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
           <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-slate-950">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -601,13 +601,13 @@ export default function ReceptionPatients() {
                       onClick={() => setSelectedPatientId(patient.id)}
                     >
                       <td className="px-4 py-4 font-medium text-slate-800 dark:text-white">{idx + 1}</td>
-                      <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{patient.name}</td>
-                      <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{patient.phone}</td>
+                      <td className="min-w-[11rem] px-4 py-4 font-medium text-slate-800 dark:text-slate-100">{patient.name}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-slate-600 dark:text-slate-300">{patient.phone || "—"}</td>
                       <td className="px-4 py-4">
-                        <span className={statusBadge(patient.workflowStatus || patient.status)}>{displayWorkflowStatus(patient.workflowStatus || patient.status)}</span>
+                        <span className={`${statusBadge(patient.workflowStatus || patient.status)} whitespace-nowrap`}>{displayWorkflowStatus(patient.workflowStatus || patient.status)}</span>
                       </td>
                       <td className="px-4 py-4">
-                        <span className={statusBadge(patient.insuranceInfo.company ? "Validée" : patient.insurance)}>{patient.insuranceInfo.company || "Sans abonnement"}</span>
+                        <span className={`${statusBadge(patient.insuranceInfo.company ? "Validée" : patient.insurance)} whitespace-nowrap`}>{patient.insuranceInfo.company || "Sans abonnement"}</span>
                       </td>
                     </tr>
                   ))}
