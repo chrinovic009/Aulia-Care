@@ -1,3 +1,4 @@
+import { formatDuration } from "../../api/hr";
 import { ActionButtons, ConfirmDeleteModal, ErrorModal, EditSectionModal, EditCategoryModal, EditTestModal, EditParameterModal, EditSampleTypeModal, EditSampleRequirementModal, EditConsumableModal, EditConsumableRequirementModal, EditStockModal, type ErrorModalState } from "./catalogueDialogs";
 import { BRAND_PRINT_FONT_CSS } from "../../config/brand";
 import { useEffect, useMemo, useState, useCallback } from "react";
@@ -24,7 +25,6 @@ import {
 } from "../../api/laboratory";
 import { ClipboardList, FlaskConical, Layers, Microscope, Package, Pencil } from "lucide-react";
 import { documentIdentityLine, documentLegalLine, documentLogoUrl, getClinicDocumentBranding } from "../../utils/clinicDocumentBranding";
-
 const NFS_PARAMETERS: Array<{ code: string; name: string; unit: string; reference: string }> = [
   { code: 'GB', name: 'Globules Blancs', reference: '4000-12000', unit: '10^3/µL' },
   { code: 'NEUT', name: 'Neutrophiles', reference: '50-70', unit: '%' },
@@ -1233,7 +1233,7 @@ const stockRows = useMemo(() => {
                       test.category?.name || "-",
                       test.resultType,
                       `${Number(test.price || "0").toLocaleString("fr-FR", { style: "currency", currency: "CDF" })}`,
-                      test.turnaroundTimeMinutes ? `${test.turnaroundTimeMinutes} min` : "-",
+                      test.turnaroundTimeMinutes ? formatDuration(test.turnaroundTimeMinutes) : "-",
                       test.active ? "Oui" : "Non",
                       isLabManager ? <div className="flex gap-2"><button onClick={() => toggleCatalogueItem('tests', test, test.name)} className="text-xs text-blue-700">{test.active ? "Désactiver" : "Activer"}</button><ActionButtons onEdit={() => handleEditTest(test)} onDelete={() => setDeleteTarget({ kind: 'tests', id: test.id, label: test.name })} /></div> : "—",
                     ])}
@@ -1671,7 +1671,7 @@ const stockRows = useMemo(() => {
                       requirement.labSampleType?.name || "-",
                       requirement.volumeRequired ? `${Number(requirement.volumeRequired).toLocaleString("fr-FR")} ${requirement.volumeUnit || "mL"}` : "-",
                       requirement.storageCondition || "-",
-                      requirement.maxAgeMinutes ? `${requirement.maxAgeMinutes} min` : "-",
+                      requirement.maxAgeMinutes ? formatDuration(requirement.maxAgeMinutes) : "-",
                       requirement.instructions || "-",
                       isLabManager ? <ActionButtons onEdit={() => handleEditSampleRequirement(requirement)} onDelete={() => setDeleteTarget({ kind: 'sample-requirements', id: requirement.id, label: `${requirement.labTest?.name || 'Exigence'}` })} /> : "—",
                     ])}

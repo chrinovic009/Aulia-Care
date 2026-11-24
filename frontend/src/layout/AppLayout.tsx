@@ -1,5 +1,5 @@
 import { SidebarProvider, useSidebar } from "../context/SidebarContext";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import AppHeader from "./AppHeader";
 import Backdrop from "./Backdrop";
 import AppSidebar from "./AppSidebar";
@@ -22,6 +22,7 @@ const PatientTelehealthOverlayForDiagnosticAgent: React.FC = () => {
 const LayoutContent: React.FC = () => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
   const { currentUser } = useAuth();
+  const location = useLocation();
   useSpeechNotifications(currentUser?.id);
   useEffect(() => { bindOfflineQueue(currentUser?.id ?? null); }, [currentUser?.id]);
 
@@ -41,7 +42,7 @@ const LayoutContent: React.FC = () => {
         <ShiftHandoverPrompt />
         {currentUser?.primaryRole === "PATIENT" && <PatientTelehealthOverlayForDiagnosticAgent />}
         <div className="aulia-content-frame mx-auto w-full min-w-0 max-w-[1600px] 3xl:px-8 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-          <RealtimePageBoundary><Outlet /></RealtimePageBoundary>
+          <RealtimePageBoundary><div key={location.pathname} className="aulia-page-enter"><Outlet /></div></RealtimePageBoundary>
         </div>
       </div>
     </div>

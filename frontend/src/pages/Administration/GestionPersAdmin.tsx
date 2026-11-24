@@ -1,3 +1,4 @@
+import { formatDuration } from "../../api/hr";
 import { BRAND_PRINT_FONT_CSS } from "../../config/brand";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -559,9 +560,9 @@ export default function GestionPersAdmin() {
           <StatCard label="Relèves en attente" value={attendanceSummary?.totals.openOverruns ?? 0} icon={<UserRound size={18} />} />
         </div>
         <div className="mt-5 grid gap-5 xl:grid-cols-3">
-          <AttendanceRanking title="Retards les plus importants" empty="Aucun retard enregistré." rows={attendanceSummary?.mostLate || []} value={(item) => `${item.lateMinutes} min de retard`} />
-          <AttendanceRanking title="Arrivées les plus anticipées" empty="Aucune arrivée anticipée enregistrée." rows={attendanceSummary?.earliest || []} value={(item) => `${item.earlyMinutes} min avant le shift`} />
-          <AttendanceRanking title="Dépassements de poste" empty="Aucun dépassement enregistré." rows={attendanceSummary?.longestWaiting || []} value={(item) => `${item.overrunMinutes} min après la sortie${item.deferrals ? ` · ${item.deferrals} rappel(s)` : ""}`} />
+          <AttendanceRanking title="Retards les plus importants" empty="Aucun retard enregistré." rows={attendanceSummary?.mostLate || []} value={(item) => `${formatDuration(item.lateMinutes)} de retard`} />
+          <AttendanceRanking title="Arrivées les plus anticipées" empty="Aucune arrivée anticipée enregistrée." rows={attendanceSummary?.earliest || []} value={(item) => `${formatDuration(item.earlyMinutes)} avant le poste`} />
+          <AttendanceRanking title="Dépassements de poste" empty="Aucun dépassement enregistré." rows={attendanceSummary?.longestWaiting || []} value={(item) => `${formatDuration(item.overrunMinutes)} après la fin du poste${item.deferrals ? ` · ${item.deferrals} rappel(s)` : ""}`} />
         </div>
       </Panel>
 

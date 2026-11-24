@@ -2114,6 +2114,7 @@ model Payment {
 model Clinic {
   pacsConfiguration             ClinicPacsConfiguration?
   hrPolicy                      HrPolicy?
+  dailyReports                  DailyReport[]
   replacementRequests           ReplacementRequest[]
   id                            String                         @id @default(uuid())
   name                          String
@@ -3456,6 +3457,22 @@ model ReplacementRequest {
 
   @@index([clinicId, status])
   @@index([replacerId, status])
+}
+
+/// Report of one service for one day, generated automatically each night and archived.
+model DailyReport {
+  id          String   @id @default(uuid())
+  clinicId    String
+  /// RECEPTION, CASHIER, NURSING, MEDICAL, LABORATORY, IMAGING, PHARMACY, FINANCE, HUMAN_RESOURCES, CARE_UNITS
+  service     String
+  /// Day in the clinic's time zone, "YYYY-MM-DD".
+  day         String
+  data        Json
+  generatedAt DateTime @default(now())
+  clinic      Clinic   @relation(fields: [clinicId], references: [id])
+
+  @@unique([clinicId, service, day])
+  @@index([clinicId, day])
 }
 
 /// Human-resources rules of an establishment (pay date, lateness tolerance, leave entitlement).

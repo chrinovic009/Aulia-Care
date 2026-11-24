@@ -1,0 +1,102 @@
+/* ==========================================================================
+   Aulia Care — motion layer.
+   Calm, medical motion applied to every page: pages and blocks rise in,
+   cards and buttons answer the pointer, dialogs open softly, the menu icons
+   react and its counters pop in. Nothing moves continuously at the bedside,
+   and everything is switched off when the system asks for less motion.
+   ========================================================================== */
+
+:root {
+  --aulia-ease: cubic-bezier(.22, 1, .36, 1);
+  --aulia-ease-soft: cubic-bezier(.4, 0, .2, 1);
+}
+
+@keyframes aulia-rise { from { opacity: 0; transform: translate3d(0, 14px, 0); } to { opacity: 1; transform: none; } }
+@keyframes aulia-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes aulia-pop { 0% { opacity: 0; transform: scale(.4); } 70% { transform: scale(1.15); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes aulia-ring { 0% { box-shadow: 0 0 0 0 rgb(var(--aulia-ring, 13 148 136) / .55); } 100% { box-shadow: 0 0 0 10px rgb(var(--aulia-ring, 13 148 136) / 0); } }
+@keyframes aulia-dialog { from { opacity: 0; transform: translate3d(0, 18px, 0) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes aulia-ecg { from { stroke-dashoffset: 340; } to { stroke-dashoffset: 0; } }
+@keyframes aulia-sweep { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* --- Pages: the content rises in at every navigation ---------------------- */
+.aulia-page-enter { animation: aulia-fade .35s var(--aulia-ease-soft) both; }
+.aulia-page-enter > section > *,
+.aulia-page-enter > div > section > *,
+.aulia-page-enter > div > *,
+.aulia-page-enter .grid > * {
+  animation: aulia-rise .5s var(--aulia-ease) both;
+}
+.aulia-page-enter .grid > *:nth-child(1), .aulia-page-enter > * > *:nth-child(1) { animation-delay: .02s; }
+.aulia-page-enter .grid > *:nth-child(2), .aulia-page-enter > * > *:nth-child(2) { animation-delay: .06s; }
+.aulia-page-enter .grid > *:nth-child(3), .aulia-page-enter > * > *:nth-child(3) { animation-delay: .1s; }
+.aulia-page-enter .grid > *:nth-child(4), .aulia-page-enter > * > *:nth-child(4) { animation-delay: .14s; }
+.aulia-page-enter .grid > *:nth-child(5), .aulia-page-enter > * > *:nth-child(5) { animation-delay: .18s; }
+.aulia-page-enter .grid > *:nth-child(6), .aulia-page-enter > * > *:nth-child(6) { animation-delay: .22s; }
+.aulia-page-enter .grid > *:nth-child(n+7), .aulia-page-enter > * > *:nth-child(n+7) { animation-delay: .26s; }
+
+/* Page titles: a short heartbeat line is drawn once under the main heading. */
+.aulia-page-enter h1 { position: relative; }
+.aulia-page-enter h1::after {
+  content: ""; display: block; width: 112px; height: 14px; margin-top: 6px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 112 14'%3E%3Cpath d='M0 7h34l5-6 6 12 5-9 3 3h59' fill='none' stroke='%230d9488' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") left center / contain no-repeat;
+  transform-origin: left center; animation: aulia-sweep .9s var(--aulia-ease) .15s both;
+}
+
+/* --- Blocks and cards answer the pointer ---------------------------------- */
+.aulia-content-frame .rounded-2xl.border,
+.aulia-content-frame .rounded-3xl.border,
+.aulia-content-frame .rounded-xl.border {
+  transition: transform .25s var(--aulia-ease), box-shadow .25s var(--aulia-ease), border-color .25s var(--aulia-ease);
+}
+.aulia-content-frame .grid > .rounded-2xl.border:hover,
+.aulia-content-frame .grid > .rounded-3xl.border:hover,
+.aulia-content-frame .grid > .rounded-xl.border:hover {
+  transform: translate3d(0, -3px, 0);
+  box-shadow: 0 14px 32px -18px rgb(15 23 42 / .35), 0 0 0 1px rgb(13 148 136 / .18);
+  border-color: rgb(13 148 136 / .35);
+}
+
+/* --- Actions --------------------------------------------------------------- */
+.aulia-content-frame button:not(:disabled),
+.aulia-content-frame a.rounded-xl, .aulia-content-frame a.rounded-lg {
+  transition: transform .18s var(--aulia-ease), box-shadow .2s var(--aulia-ease), background-color .2s var(--aulia-ease-soft), color .2s var(--aulia-ease-soft), opacity .2s;
+}
+.aulia-content-frame button:not(:disabled):hover { transform: translate3d(0, -1px, 0); }
+.aulia-content-frame button:not(:disabled):active { transform: scale(.97); transition-duration: .08s; }
+.aulia-content-frame input, .aulia-content-frame select, .aulia-content-frame textarea {
+  transition: border-color .2s var(--aulia-ease-soft), box-shadow .2s var(--aulia-ease-soft), background-color .2s;
+}
+.aulia-content-frame input:focus, .aulia-content-frame select:focus, .aulia-content-frame textarea:focus {
+  box-shadow: 0 0 0 4px rgb(13 148 136 / .14);
+}
+.aulia-content-frame tbody tr { transition: background-color .2s var(--aulia-ease-soft); }
+.aulia-content-frame tbody tr:hover { background-color: rgb(13 148 136 / .05); }
+.aulia-content-frame [role="tab"] { transition: color .2s, border-color .25s var(--aulia-ease), background-color .2s; }
+
+/* --- Dialogs open softly --------------------------------------------------- */
+[role="dialog"] { animation: aulia-fade .2s var(--aulia-ease-soft) both; }
+[role="dialog"] > div { animation: aulia-dialog .32s var(--aulia-ease) both; }
+
+/* --- Menu ------------------------------------------------------------------ */
+.aulia-nav-glyph {
+  transition: transform .3s var(--aulia-ease), box-shadow .3s var(--aulia-ease), filter .3s;
+}
+.menu-item:hover .aulia-nav-glyph { transform: translate3d(0, -1px, 0) scale(1.08) rotate(-4deg); box-shadow: 0 8px 18px -10px currentColor; }
+.menu-item-active .aulia-nav-glyph { box-shadow: 0 0 0 2px rgb(13 148 136 / .35), 0 10px 22px -12px rgb(13 148 136 / .9); transform: scale(1.04); }
+.menu-item-active::before {
+  content: ""; position: absolute; left: 0; top: 18%; bottom: 18%; width: 3px; border-radius: 999px;
+  background: linear-gradient(180deg, #14b8a6, #0f766e); transform-origin: center; animation: aulia-pop .35s var(--aulia-ease) both;
+}
+.aulia-nav-badge { animation: aulia-pop .45s var(--aulia-ease) both, aulia-ring 1.4s var(--aulia-ease-soft) .45s 2; }
+.aulia-nav-badge[data-tone="danger"] { --aulia-ring: 220 38 38; }
+.menu-item-text { transition: color .2s, transform .25s var(--aulia-ease); }
+.menu-item:hover .menu-item-text { transform: translate3d(2px, 0, 0); }
+
+/* --- Less motion when asked ------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  .aulia-page-enter, .aulia-page-enter *, [role="dialog"], [role="dialog"] > div, .aulia-nav-badge, .menu-item-active::before, .aulia-page-enter h1::after {
+    animation: none !important;
+  }
+  .aulia-content-frame *, .aulia-nav-glyph, .menu-item-text { transition: none !important; transform: none !important; }
+}

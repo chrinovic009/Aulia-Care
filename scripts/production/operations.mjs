@@ -55,7 +55,9 @@ export async function checkBackup(directory, maxAgeHours = 26) {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(join(directory, newest.name))) hash.update(chunk);
   if (hash.digest('hex').toLowerCase() !== checksum.toLowerCase()) return { ok: false, reason: 'checksum_mismatch' };
-  return { ok: ageHours >= 0 && ageHours <= maxAgeHours, reason: ageHours > maxAgeHours ? 'stale_backup' : ageHours < 0 ? 'clock_mismatch' : 'ok', ageHours };
+  // A few minutes of skew between the file system clock and Node's clock are not a mismatch (Windows).
+  const skew = -0.25;
+  return { ok: ageHours >= skew && ageHours <= maxAgeHours, reason: ageHours > maxAgeHours ? 'stale_backup' : ageHours < skew ? 'clock_mismatch' : 'ok', ageHours };
 }
 /**
  * Key custody: the server only needs the age PUBLIC key (recipient) to encrypt

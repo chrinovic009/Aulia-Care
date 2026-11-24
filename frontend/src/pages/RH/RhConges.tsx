@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { hrApi, type AdminLeave } from "../../api/hr";
+import { refreshNavBadges } from "../../layout/useNavBadges";
 import { Badge, Button, Card, dateTime, day, errorText, LEAVE_STATUS, Notice, REPLACEMENT_STATUS } from "./ui";
 
 type Replacements = Awaited<ReturnType<typeof hrApi.replacements>>;
@@ -31,12 +32,14 @@ export default function RhConges() {
       } else setError(message);
     }
     load();
+    refreshNavBadges();
   };
   const decideReplacement = async (id: string, decision: "APPROVE" | "REJECT") => {
     const note = decision === "REJECT" ? window.prompt("Raison du refus") : undefined;
     if (decision === "REJECT" && !note) return;
     try { await hrApi.decideReplacement(id, { decision, note: note ?? undefined }); setNotice(decision === "APPROVE" ? "Remplacement validé : le poste est ajouté au planning du collègue." : "Remplacement refusé."); } catch (reason) { setError(errorText(reason, "Décision impossible.")); }
     load();
+    refreshNavBadges();
   };
 
   return (

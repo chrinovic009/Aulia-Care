@@ -68,11 +68,11 @@ export default function GestionStockAdmin() {
             return [
               stock.medication?.name || (medication ? `${medication.name} ${medication.strength || ""}` : stock.medicationId),
               stock.batchNumber || "-",
-              stock.quantity,
+              low ? <span key="qty" className="font-bold text-red-600 dark:text-red-400">{stock.quantity}</span> : stock.quantity,
               `${criticalLevel}/${lowStockLevel}`,
               stock.purchasePrice ? formatMoney(stock.purchasePrice) : "-",
               formatDate(stock.expiryDate),
-              critical ? <StatusBadge key="status" label="Critique" tone="red" /> : low ? <StatusBadge key="status" label="Bas" tone="amber" /> : <StatusBadge key="status" label="Normal" tone="green" />,
+              critical ? <StatusBadge key="status" label="Critique" tone="red" /> : low ? <StatusBadge key="status" label="Sous le seuil" tone="red" /> : <StatusBadge key="status" label="Normal" tone="green" />,
             ];
           })}
         />

@@ -16,6 +16,7 @@ import { ROLE_PAGES, evaluatePage } from './ui-checks.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const out = path.join(root, '.validation', 'ui');
 fs.mkdirSync(path.join(out, 'failures'), { recursive: true });
+fs.mkdirSync(path.join(out, 'shots'), { recursive: true });
 const BASE = process.env.AULIA_UI_BASE || 'http://localhost:5190';
 const credentials = fs.readFileSync(path.join(root, '.validation', 'demo', 'credentials.txt'), 'utf8');
 const PASSWORD = (credentials.match(/Mot de passe\s*:\s*(\S+)/) || [])[1];
@@ -62,7 +63,8 @@ const js = async (expression) => {
 await cdp('Page.enable'); await cdp('Runtime.enable'); await cdp('Network.enable');
 
 async function settle() {
-  const deadline = Date.now() + 20000;
+  // The development server compiles a page on its first visit: allow it time on a busy laptop.
+  const deadline = Date.now() + 45000;
   let quiet = 0;
   while (Date.now() < deadline && quiet < 3) {
     const busy = await js(`(() => {
@@ -134,6 +136,11 @@ for (const { username, role, pages } of ROLE_PAGES) {
       check = evaluatePage(item, await snapshot(), events);
     }
     await record(role, item.route, check);
+    if (item.shot) {
+      // Reference captures of key pages, to review the look (menu counters, animations at rest).
+      const shot = await cdp('Page.captureScreenshot', { format: 'jpeg', quality: 75 }).catch(() => null);
+      if (shot) fs.writeFileSync(path.join(out, 'shots', `${role}${item.route.replace(/[^a-z0-9]+/gi, '_')}.jpg`), Buffer.from(shot.data, 'base64'));
+    }
   }
 }
 
@@ -148,8 +155,9 @@ await login('demo.infirmier');
 await go('/nurse/rounds');
 await cdp('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
 await js(`window.dispatchEvent(new Event('offline'))`);
-await sleep(1200);
-const offline = await snapshot();
+let offline = await snapshot();
+// The banner reacts to the browser's offline event; give a busy laptop a few seconds.
+for (let attempt = 0; attempt < 12 && !offline.text.includes('Hors ligne'); attempt++) { await sleep(500); offline = await snapshot(); }
 await cdp('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
 await record('infirmier', '/nurse/rounds (hors ligne)', { ok: offline.text.includes('Hors ligne'), problems: offline.text.includes('Hors ligne') ? [] : ['bandeau « Hors ligne » absent'] });
 

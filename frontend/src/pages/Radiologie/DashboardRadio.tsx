@@ -1,3 +1,4 @@
+import { formatDuration } from "../../api/hr";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PageMeta from "../../components/common/PageMeta";
 import DashboardWelcome from "../../components/common/DashboardWelcome";
@@ -131,13 +132,13 @@ export default function DashboardRadio() {
       },
       {
         label: "Temps d’attente moyen",
-        value: `${data.metrics.averageWaitMinutes} min`,
+        value: formatDuration(data.metrics.averageWaitMinutes),
         tone: "amber",
         description: "Depuis l’arrivée et la préparation",
       },
       {
         label: "Durée moyenne",
-        value: `${data.metrics.averageDurationMinutes} min`,
+        value: formatDuration(data.metrics.averageDurationMinutes),
         tone: "emerald",
         description: "Examen réalisé",
       },
@@ -418,7 +419,7 @@ export default function DashboardRadio() {
                         </span>
                       </div>
                       <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                        {alert.modality} · retard {alert.waitingMinutes} min
+                        {alert.modality} · retard {formatDuration(alert.waitingMinutes)}
                       </p>
                     </div>
                   ))

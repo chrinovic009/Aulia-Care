@@ -23,6 +23,8 @@ import { useAuth, hasRole, getHomePath } from "../context/AuthContext";
 import { type AuliaLayer, usePlatformLayers } from "../context/PlatformLayersContext";
 import { apiFetch } from "../config/api";
 import SidebarWidget from "./SidebarWidget";
+import { NavGlyph, isAlertTab } from "./NavGlyph";
+import { useNavBadges } from "./useNavBadges";
 import { Modal } from "../components/ui/modal";
 
 type NavItem = {
@@ -363,6 +365,7 @@ const AppSidebar: React.FC = () => {
   const location = useLocation();
 
   const { currentUser } = useAuth();
+  const badges = useNavBadges(Boolean(currentUser?.clinicId && currentUser.primaryRole !== "DEV"));
   const { isEnabled, layers } = usePlatformLayers();
   // Before the installation configuration is available, never advertise an
   // optional layer as active. This mirrors the fail-closed route/API policy.
@@ -579,19 +582,16 @@ const AppSidebar: React.FC = () => {
                   to={nav.path}
                   className={`menu-item group ${
                     isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"
-                  }`}
+                  } ${isAlertTab(nav.path, badges) ? "!text-red-600 dark:!text-red-400" : ""}`}
                 >
-                  <span
-                    className={`menu-item-icon-size ${
-                      isActive(nav.path)
-                        ? "menu-item-icon-active"
-                        : "menu-item-icon-inactive"
-                    }`}
-                  >
-                    {nav.icon}
-                  </span>
+                  <NavGlyph
+                    path={nav.path}
+                    badges={badges}
+                    compact={!isExpanded && !isHovered && !isMobileOpen}
+                    fallback={<span className={`menu-item-icon-size ${isActive(nav.path) ? "menu-item-icon-active" : "menu-item-icon-inactive"}`}>{nav.icon}</span>}
+                  />
                   {(isExpanded || isHovered || isMobileOpen) && (
-                    <span className="menu-item-text">{nav.name}</span>
+                    <span className={`menu-item-text ${isAlertTab(nav.path, badges) ? "font-semibold" : ""}`}>{nav.name}{isAlertTab(nav.path, badges) ? " · sous le seuil" : ""}</span>
                   )}
                 </Link>
               )

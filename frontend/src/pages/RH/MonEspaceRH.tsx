@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { hrApi, type Colleague, type MySpace } from "../../api/hr";
+import { refreshNavBadges } from "../../layout/useNavBadges";
 import { Badge, Button, Card, dateTime, day, errorText, Field, inputClass, LEAVE_STATUS, Modal, money, monthLabel, Notice, PAY_STATE, REPLACEMENT_STATUS, Stat } from "./ui";
 
 /**
@@ -19,7 +20,7 @@ export default function MonEspaceRH() {
   }, []);
   useEffect(() => { load(); hrApi.colleagues().then(setColleagues).catch(() => setColleagues([])); }, [load]);
   const act = async (work: () => Promise<unknown>, done: string) => {
-    try { setError(null); await work(); setNotice(done); load(); } catch (reason) { setError(errorText(reason, "Action impossible.")); }
+    try { setError(null); await work(); setNotice(done); load(); refreshNavBadges(); } catch (reason) { setError(errorText(reason, "Action impossible.")); }
   };
 
   return (
