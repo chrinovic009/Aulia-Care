@@ -86,4 +86,7 @@ export class HrPolicyDto {
   @IsNumber() leaveDaysPerMonth: number;
   @IsInt() seniorityBonusYears: number;
   @IsArray() @ArrayMaxSize(7) @IsInt({ each: true }) workWeekDays: number[];
+  /** Explicit approval of lateness/absence deductions; requires a written basis. */
+  @IsOptional() @IsBoolean() approveAttendanceDeductions?: boolean;
+  @IsOptional() @IsString() @MaxLength(1_000) deductionsLegalBasis?: string;
 }

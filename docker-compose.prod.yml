@@ -124,10 +124,12 @@ services:
       AULIA_ENABLE_CONNECTED_CARE: ${AULIA_ENABLE_CONNECTED_CARE:-true}
       MESSAGE_MEDIA_DIR: /var/lib/aulia-care/message-media
       IMAGING_PREVIEW_UPLOAD_DIR: /var/lib/aulia-care/imaging-previews
+      AULIA_AUDIT_SPOOL_DIR: /var/lib/aulia-care/audit-spool
 
     volumes:
       - message-media-prod-data:/var/lib/aulia-care/message-media
       - imaging-preview-prod-data:/var/lib/aulia-care/imaging-previews
+      - audit-spool-prod-data:/var/lib/aulia-care/audit-spool
       # A clinic with local PACS exports can additionally mount its preview
       # directory read-only and set PACS_PREVIEW_ROOT to that mount point.
 
@@ -336,6 +338,9 @@ volumes:
 
   imaging-preview-prod-data:
     name: aulia-care-prod-imaging-previews
+
+  audit-spool-prod-data:
+    name: aulia-care-prod-audit-spool
 
 
 # ==============================================================

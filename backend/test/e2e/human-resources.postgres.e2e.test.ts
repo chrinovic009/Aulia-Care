@@ -40,8 +40,16 @@ test('PostgreSQL RH : contrats, salaire modifiable, retards en heures, congés, 
     const colleague = await person('colleague', RoleSlug.NURSE);
 
     // Rules: pay due on the 5th, 5 min tolerance, 200 h / 25 days per month.
-    await policy.update({ payDay: 5, lateGraceMinutes: 5, monthlyWorkingHours: 200, workingDaysPerMonth: 25, leaveDaysPerMonth: 1, seniorityBonusYears: 5, workWeekDays: [1, 2, 3, 4, 5, 6] }, finance.actor);
+    await policy.update({ payDay: 5, lateGraceMinutes: 5, monthlyWorkingHours: 200, workingDaysPerMonth: 25, leaveDaysPerMonth: 1, seniorityBonusYears: 5, workWeekDays: [1, 2, 3, 4, 5, 6], approveAttendanceDeductions: true, deductionsLegalBasis: 'Règlement intérieur fictif de test, article 12' }, finance.actor);
     await assert.rejects(() => policy.update({ payDay: 5 }, nurse.actor), ForbiddenException);
+    // Lateness/absence deductions: approved with a written basis; changing a basis voids the approval.
+    const rulesBody = { payDay: 5, lateGraceMinutes: 5, monthlyWorkingHours: 200, workingDaysPerMonth: 25, leaveDaysPerMonth: 1, seniorityBonusYears: 5, workWeekDays: [1, 2, 3, 4, 5, 6] };
+    assert.equal((await policy.get(finance.actor)).attendanceDeductionsApproved, true);
+    assert.equal((await policy.update({ ...rulesBody, monthlyWorkingHours: 201 }, finance.actor)).attendanceDeductionsApproved, false);
+    await assert.rejects(() => policy.update({ ...rulesBody, approveAttendanceDeductions: true, deductionsLegalBasis: 'court' }, finance.actor), BadRequestException);
+    const reapproved = await policy.update({ ...rulesBody, approveAttendanceDeductions: true, deductionsLegalBasis: 'Règlement intérieur fictif de test, article 12' }, finance.actor);
+    assert.equal(reapproved.attendanceDeductionsApproved, true);
+    assert.equal(reapproved.deductionsApprovedBy, 'finance E2E');
 
     // Contract, then a salary change in the middle of October: history kept, October paid pro rata.
     await contracts.create(nurse.employee!.id, { type: 'PERMANENT', startDate: '2025-01-01', salary: 1000, currency: 'USD', reason: 'Embauche' }, admin.actor);

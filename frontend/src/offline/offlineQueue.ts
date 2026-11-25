@@ -111,7 +111,7 @@ export function flushQueue(): Promise<void> {
   flushing = (async () => {
     for (const entry of queuedEntries().filter((item) => item.status === "PENDING")) {
       try {
-        await apiFetch(entry.endpoint, { method: entry.method, body: entry.body ?? undefined, headers: { "Idempotency-Key": entry.id } }, 15_000, true);
+        await apiFetch(entry.endpoint, { method: entry.method, body: entry.body ?? undefined, headers: { "Idempotency-Key": entry.id, "X-Aulia-Offline-Replay": "1" } }, 15_000, true);
         writeAll(readAll().filter((item) => item.id !== entry.id));
       } catch (error) {
         if (isNetworkFailure(error)) break;

@@ -3,7 +3,9 @@ import { RoleSlug } from '@prisma/client';
 import { ClinicContextService } from '../core/clinic-context.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-const READERS: readonly RoleSlug[] = [RoleSlug.FINANCE, RoleSlug.ADMIN, RoleSlug.SUPER_ADMIN, RoleSlug.CASHIER];
+// Reconciliation is a finance control over the cashiers' work: finance and administration only.
+const READERS: readonly RoleSlug[] = [RoleSlug.FINANCE, RoleSlug.ADMIN, RoleSlug.SUPER_ADMIN];
+export const canReadUnitExamReconciliation = (role: RoleSlug | null | undefined) => Boolean(role && READERS.includes(role));
 const PERFORMED_LAB = new Set(['TECHNICAL_VALIDATION', 'BIOLOGICAL_VALIDATION', 'AVAILABLE', 'SENT', 'COMPLETED', 'VERIFIED']);
 const PERFORMED_IMAGING = new Set(['COMPLETED', 'VERIFIED']);
 const DAY = 86_400_000;
@@ -27,7 +29,7 @@ export class UnitExamReconciliationService {
 
   async report(days: number, actorInput?: { userId?: string }) {
     const actor = await this.clinicContext.requireOperationalActor(actorInput);
-    if (!actor.primaryRole || !READERS.includes(actor.primaryRole)) throw new ForbiddenException('Rapport réservé à la finance, à la caisse et à l’administration.');
+    if (!canReadUnitExamReconciliation(actor.primaryRole)) throw new ForbiddenException('Rapport réservé à la finance et à l’administration.');
     const since = new Date(Date.now() - Math.min(Math.max(days, 1), 366) * DAY);
     const [labs, imaging] = await Promise.all([
       this.prisma.labRequest.findMany({

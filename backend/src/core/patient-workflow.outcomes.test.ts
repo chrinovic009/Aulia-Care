@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PatientWorkflowStatus } from '@prisma/client';
 
+import { fakeTransaction } from './testing/fake-transaction';
 import { PatientWorkflowConflictError, PatientWorkflowService } from './patient-workflow.service';
 
 const fakeClient = (workflowStatus: PatientWorkflowStatus | null, count = 1) => {
@@ -9,7 +10,7 @@ const fakeClient = (workflowStatus: PatientWorkflowStatus | null, count = 1) => 
   return {
     calls,
     tx: {
-      $executeRaw: async () => undefined,
+      ...fakeTransaction(),
       auditLog: { create: async (input: { data: { summary: string } }) => { calls.audits.push(input.data.summary); return input.data; } },
       patient: {
         findFirst: async () => (workflowStatus ? { workflowStatus } : null),
@@ -46,4 +47,22 @@ test('strict transitions reject while a payment projection preserves hospitalize
   const core = new PatientWorkflowService();
   assert.equal(await core.projectStatus(tx, 'p', PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT, 'c'), 'HOSPITALISE');
   await assert.rejects(() => core.requireTransition(tx, 'p', PatientWorkflowStatus.EN_ATTENTE_DE_PAIEMENT, 'c'), /refusé/);
+});
+
+test('un client hors transaction est refusé, quelle que soit sa classe Prisma', async () => {
+  const tx = { ...fakeTransaction({ inTransaction: false }), patient: { findFirst: async () => ({ workflowStatus: PatientWorkflowStatus.EN_ATTENTE_MEDECIN }) } } as never;
+  await assert.rejects(() => new PatientWorkflowService().transitionDetailed(tx, 'p', PatientWorkflowStatus.EN_CONSULTATION, 'c'), /active transaction client/);
+});
+
+test('une étape appliquée par le système, sans utilisateur connecté, est quand même journalisée (auteur SYSTEM)', async () => {
+  const events: Array<{ data: { authorId: string | null; authorRole: string } }> = [];
+  const tx = {
+    ...fakeTransaction({ events }),
+    patient: { findFirst: async () => ({ workflowStatus: PatientWorkflowStatus.EN_ATTENTE_MEDECIN }), updateMany: async () => ({ count: 1 }) },
+  } as never;
+  const result = await new PatientWorkflowService().transitionDetailed(tx, 'p', PatientWorkflowStatus.EN_CONSULTATION, 'c');
+  assert.equal(result.outcome, 'applied');
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.data.authorId, null);
+  assert.equal(events[0]?.data.authorRole, 'SYSTEM');
 });

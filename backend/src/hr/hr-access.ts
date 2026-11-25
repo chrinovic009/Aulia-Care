@@ -66,6 +66,7 @@ export class HrAccess {
       monthlyWorkingHours: Number(policy.monthlyWorkingHours), workingDaysPerMonth: policy.workingDaysPerMonth,
       leaveDaysPerMonth: Number(policy.leaveDaysPerMonth), seniorityBonusYears: policy.seniorityBonusYears,
       workWeekDays: policy.workWeekDays.split(',').map(Number).filter((day) => day >= 1 && day <= 7),
+      attendanceDeductionsApproved: Boolean(policy.deductionsApprovedAt && policy.deductionsLegalBasis),
     };
   }
 

@@ -37,7 +37,8 @@ export type AttendanceRow = {
 };
 export type AttendanceReport = { month: string; rows: AttendanceRow[]; biggestLate: Array<LateEntry & { employee: string; employeeId: string }>; totals: { lateMinutes: number; lateDuration: string; lateCount: number; absentDays: number }; canEdit: boolean };
 
-export type HrPolicy = { payDay: number; lateGraceMinutes: number; monthlyWorkingHours: number; workingDaysPerMonth: number; leaveDaysPerMonth: number; seniorityBonusYears: number; workWeekDays: number[]; canEdit: boolean };
+export type HrPolicy = { payDay: number; lateGraceMinutes: number; monthlyWorkingHours: number; workingDaysPerMonth: number; leaveDaysPerMonth: number; seniorityBonusYears: number; workWeekDays: number[]; attendanceDeductionsApproved: boolean; deductionsLegalBasis: string | null; deductionsApprovedAt: string | null; deductionsApprovedBy: string | null; canEdit: boolean };
+export type HrPolicyInput = Omit<HrPolicy, "canEdit" | "attendanceDeductionsApproved" | "deductionsApprovedAt" | "deductionsApprovedBy"> & { approveAttendanceDeductions: boolean };
 
 export type MySpace = {
   employee: { id: string; name: string; position: string | null; hireDate: string | null };
@@ -63,7 +64,7 @@ export const hrApi = {
   cancelReplacement: (id: string) => post(`/hr/me/replacements/${id}/cancel`),
 
   policy: () => apiFetch<HrPolicy>("/hr/policy"),
-  savePolicy: (body: Omit<HrPolicy, "canEdit">) => apiFetch<HrPolicy>("/hr/policy", { method: "PUT", body: JSON.stringify(body) }),
+  savePolicy: (body: HrPolicyInput) => apiFetch<HrPolicy>("/hr/policy", { method: "PUT", body: JSON.stringify(body) }),
 
   employees: () => apiFetch<{ canEdit: boolean; employees: HrEmployee[] }>("/hr/employees"),
   contracts: (employeeId: string) => apiFetch<Contract[]>(`/hr/employees/${employeeId}/contracts`),

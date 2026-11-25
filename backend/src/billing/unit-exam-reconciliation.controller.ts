@@ -11,7 +11,7 @@ export class UnitExamReconciliationController {
 
   /** Exams requested by care units and their invoices: performed but unpaid, unpaid, missing invoice. */
   @Get('reconciliation')
-  @Roles('FINANCE', 'ADMIN', 'SUPER_ADMIN', 'CASHIER')
+  @Roles('FINANCE', 'ADMIN', 'SUPER_ADMIN')
   report(@Query('days') days: string | undefined, @Request() req: { user?: { userId?: string } }) {
     return this.reconciliation.report(Number(days) || 30, req.user);
   }

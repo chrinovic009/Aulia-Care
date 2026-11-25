@@ -16,7 +16,11 @@ export default function RhRegles() {
     <Field label={label} hint={hint}><input type="number" step={step} className={inputClass} disabled={!policy.canEdit} value={String(policy[key])} onChange={(e) => set({ [key]: Number(e.target.value) } as Partial<HrPolicy>)} /></Field>
   );
   const save = async () => {
-    try { const { canEdit: _canEdit, ...body } = policy; setPolicy(await hrApi.savePolicy(body)); setNotice("Règles enregistrées."); setError(null); } catch (reason) { setError(errorText(reason, "Enregistrement impossible.")); }
+    try {
+      const { canEdit: _canEdit, attendanceDeductionsApproved, deductionsApprovedAt: _at, deductionsApprovedBy: _by, ...rest } = policy;
+      setPolicy(await hrApi.savePolicy({ ...rest, approveAttendanceDeductions: attendanceDeductionsApproved }));
+      setNotice("Règles enregistrées."); setError(null);
+    } catch (reason) { setError(errorText(reason, "Enregistrement impossible.")); }
   };
   return (
     <Card title="Règles RH de l’établissement">
@@ -35,6 +39,21 @@ export default function RhRegles() {
           const on = policy.workWeekDays.includes(value);
           return <button key={label} type="button" disabled={!policy.canEdit} onClick={() => set({ workWeekDays: on ? policy.workWeekDays.filter((dayValue) => dayValue !== value) : [...policy.workWeekDays, value].sort() })} className={`rounded-lg px-3 py-1.5 text-sm ${on ? "bg-aulia-teal text-white" : "border border-slate-300 text-slate-600"}`}>{label}</button>;
         })}</div>
+      </div>
+      <div className="mt-6 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+        <label className="flex items-start gap-3 text-sm font-medium text-slate-700 dark:text-slate-200">
+          <input type="checkbox" className="mt-1" disabled={!policy.canEdit} checked={policy.attendanceDeductionsApproved} onChange={(e) => set({ attendanceDeductionsApproved: e.target.checked })} />
+          <span>Retenir les retards et absences non justifiées sur la paie</span>
+        </label>
+        <p className="mt-1 text-xs text-slate-500">Désactivé par défaut. Ces retenues ne s’appliquent qu’après approbation, avec leur base écrite. Modifier la tolérance ou les bases de calcul annule l’approbation.</p>
+        {policy.attendanceDeductionsApproved && (
+          <div className="mt-3">
+            <Field label="Base écrite des retenues" hint="Contrat, règlement intérieur ou avis juridique (au moins 10 caractères).">
+              <textarea className={inputClass} rows={2} disabled={!policy.canEdit} value={policy.deductionsLegalBasis ?? ""} onChange={(e) => set({ deductionsLegalBasis: e.target.value })} />
+            </Field>
+          </div>
+        )}
+        {policy.deductionsApprovedAt && <p className="mt-2 text-xs text-slate-500">Approuvé le {new Date(policy.deductionsApprovedAt).toLocaleString("fr-FR")}{policy.deductionsApprovedBy ? ` par ${policy.deductionsApprovedBy}` : ""}.</p>}
       </div>
       {error && <div className="mt-4"><Notice tone="error">{error}</Notice></div>}
       {notice && <div className="mt-4"><Notice tone="success">{notice}</Notice></div>}

@@ -23,10 +23,17 @@ export type HrRules = {
   leaveDaysPerMonth: number;
   seniorityBonusYears: number;
   workWeekDays: number[];
+  /**
+   * Lateness and absence deductions are only proposed after the establishment
+   * explicitly approved them with a written basis (contract, internal
+   * regulation, legal advice). Unpaid leave is unpaid by nature and always counted.
+   */
+  attendanceDeductionsApproved: boolean;
 };
 export const DEFAULT_HR_RULES: HrRules = {
   payDay: 5, lateGraceMinutes: 5, monthlyWorkingHours: 195, workingDaysPerMonth: 26,
   leaveDaysPerMonth: 1, seniorityBonusYears: 5, workWeekDays: [1, 2, 3, 4, 5, 6],
+  attendanceDeductionsApproved: false,
 };
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -109,14 +116,15 @@ export type PayrollLine = { kind: 'LATE' | 'ABSENCE' | 'UNPAID_LEAVE' | 'ADVANCE
 export function proposePayroll(input: {
   monthlySalary: number; daysInMonth: number; coveredDays: number;
   lateMinutes: number; absentDays: number; unpaidLeaveDays: number;
-  rules: Pick<HrRules, 'monthlyWorkingHours' | 'workingDaysPerMonth'>;
+  rules: Pick<HrRules, 'monthlyWorkingHours' | 'workingDaysPerMonth' | 'attendanceDeductionsApproved'>;
 }): { gross: number; lines: PayrollLine[]; net: number } {
   const gross = round2(input.monthlySalary * Math.min(1, Math.max(0, input.coveredDays / input.daysInMonth)));
   const hourly = input.rules.monthlyWorkingHours > 0 ? input.monthlySalary / input.rules.monthlyWorkingHours : 0;
   const daily = input.rules.workingDaysPerMonth > 0 ? input.monthlySalary / input.rules.workingDaysPerMonth : 0;
   const lines: PayrollLine[] = [];
-  if (input.lateMinutes > 0) lines.push({ kind: 'LATE', label: `Retards (${formatDuration(input.lateMinutes)})`, amount: -round2((hourly * input.lateMinutes) / 60) });
-  if (input.absentDays > 0) lines.push({ kind: 'ABSENCE', label: `Absences non justifiées (${input.absentDays} j)`, amount: -round2(daily * input.absentDays) });
+  const attendance = input.rules.attendanceDeductionsApproved;
+  if (attendance && input.lateMinutes > 0) lines.push({ kind: 'LATE', label: `Retards (${formatDuration(input.lateMinutes)})`, amount: -round2((hourly * input.lateMinutes) / 60) });
+  if (attendance && input.absentDays > 0) lines.push({ kind: 'ABSENCE', label: `Absences non justifiées (${input.absentDays} j)`, amount: -round2(daily * input.absentDays) });
   if (input.unpaidLeaveDays > 0) lines.push({ kind: 'UNPAID_LEAVE', label: `Congé sans solde (${input.unpaidLeaveDays} j)`, amount: -round2(daily * input.unpaidLeaveDays) });
   // Deductions never exceed the month's pay.
   let remaining = gross;

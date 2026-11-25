@@ -205,6 +205,7 @@ model User {
   drugInteractionRulesProposed  DrugInteractionRule[]        @relation("DrugInteractionRuleProposer")
   drugInteractionRulesValidated DrugInteractionRule[]        @relation("DrugInteractionRuleValidator")
   prescriptionSafetyOverrides   PrescriptionSafetyOverride[] @relation("PrescriptionSafetyOverridePrescriber")
+  hrPolicyDeductionApprovals HrPolicy[] @relation("HrPolicyDeductionsApprover")
   @@index([primaryRole])
   @@index([clinicId])
 }
@@ -1187,6 +1188,9 @@ model NursingCareTask {
   status             NursingCareTaskStatus @default(PENDING)
   completedAt        DateTime?
   completedById      String?
+  /// Server reception time of the completion; differs from completedAt for an offline replay.
+  completionReceivedAt      DateTime?
+  completionRecordedOffline Boolean @default(false)
   escalationReason   String?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
@@ -1208,6 +1212,10 @@ model MedicationAdministration {
   doseGiven          String?
   reason             String?
   observation        String?
+  /// True when administeredAt comes from the device clock of an offline replay.
+  recordedOffline    Boolean                        @default(false)
+  /// Server reception time; createdAt keeps the database insertion time.
+  receivedAt         DateTime?
   createdAt          DateTime                       @default(now())
   hospitalization    Hospitalization                @relation(fields: [hospitalizationId], references: [id])
   prescriptionLine   PrescriptionLine               @relation(fields: [prescriptionLineId], references: [id])
@@ -3492,6 +3500,11 @@ model HrPolicy {
   seniorityBonusYears Int      @default(5)
   /// Working days of the permanent day pattern (1 = Monday … 7 = Sunday).
   workWeekDays        String   @default("1,2,3,4,5,6")
+  /// Lateness/absence deductions apply only once approved with a written basis; a change of basis voids it.
+  deductionsApprovedAt   DateTime?
+  deductionsApprovedById String?
+  deductionsLegalBasis   String?
+  deductionsApprovedBy   User?    @relation("HrPolicyDeductionsApprover", fields: [deductionsApprovedById], references: [id])
   updatedById         String?
   updatedAt           DateTime @default(now()) @updatedAt
   clinic              Clinic   @relation(fields: [clinicId], references: [id])
@@ -4667,7 +4680,8 @@ model CareEvent {
   payload           Json?
   occurredAt        DateTime
   recordedAt        DateTime @default(now())
-  authorId          String
+  /// Null only for system-applied steps (authorRole = SYSTEM).
+  authorId          String?
   authorRole        String
   requiresValidation Boolean @default(false)
   validatesEventId  String?
@@ -4681,7 +4695,7 @@ model CareEvent {
   request       ServiceRequest? @relation(fields: [requestId], references: [id])
   task          CareTask?       @relation(fields: [taskId], references: [id])
   transfer      CareTransfer?   @relation(fields: [transferId], references: [id])
-  author        User            @relation("CareEventAuthor", fields: [authorId], references: [id])
+  author        User?           @relation("CareEventAuthor", fields: [authorId], references: [id])
   validates     CareEvent?      @relation("CareEventValidation", fields: [validatesEventId], references: [id])
   validations   CareEvent[]     @relation("CareEventValidation")
   corrects      CareEvent?      @relation("CareEventCorrection", fields: [correctsEventId], references: [id])

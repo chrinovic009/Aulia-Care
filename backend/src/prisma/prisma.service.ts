@@ -94,6 +94,21 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   async onModuleInit() {
     await this.$connect();
     await this.assertRequestScoping();
+    await this.assertTenantTablesProtected();
+  }
+
+  /**
+   * Start-up guard: every table carrying a clinicId or patientId must have
+   * forced Row-Level Security and a policy, unless it is explicitly exempted
+   * with a reason in "aulia_rls_exemption". A new table added without
+   * isolation therefore stops the API instead of silently leaking data.
+   */
+  async assertTenantTablesProtected() {
+    const client = FACADES.get(this) ?? this;
+    const rows = await client.$queryRaw<Array<{ table_name: string }>>`SELECT "table_name" FROM "aulia_unprotected_tenant_tables"()`;
+    if (rows.length) {
+      throw new Error(`Tables d'établissement sans isolation : ${rows.map((row) => row.table_name).join(', ')}. Démarrage refusé — ajouter une politique RLS ou une exemption motivée.`);
+    }
   }
 
   /**

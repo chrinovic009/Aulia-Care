@@ -21,7 +21,14 @@ export class HrPolicyService {
 
   async get(actorInput?: AuthenticatedActor) {
     const actor = await this.access.actor(actorInput, HR_ROLES.readers, 'Règles RH réservées à la finance et à l’administration.');
-    return { ...(await this.access.rules(actor.clinicId)), canEdit: this.access.hasRole(actor, HR_ROLES.policy) };
+    const approval = await this.prisma.hrPolicy.findUnique({ where: { clinicId: actor.clinicId }, select: { deductionsApprovedAt: true, deductionsLegalBasis: true, deductionsApprovedBy: { select: { firstName: true, lastName: true } } } });
+    return {
+      ...(await this.access.rules(actor.clinicId)),
+      deductionsLegalBasis: approval?.deductionsLegalBasis ?? null,
+      deductionsApprovedAt: approval?.deductionsApprovedAt ?? null,
+      deductionsApprovedBy: approval?.deductionsApprovedBy ? `${approval.deductionsApprovedBy.firstName ?? ''} ${approval.deductionsApprovedBy.lastName ?? ''}`.trim() : null,
+      canEdit: this.access.hasRole(actor, HR_ROLES.policy),
+    };
   }
 
   async update(input: Record<string, unknown>, actorInput?: AuthenticatedActor) {
@@ -38,8 +45,34 @@ export class HrPolicyService {
       workWeekDays: days.join(','),
       updatedById: actor.id,
     };
-    await this.prisma.hrPolicy.upsert({ where: { clinicId: actor.clinicId }, create: { clinicId: actor.clinicId, ...data }, update: data });
-    await this.access.audit(actor.id, 'HrPolicy', actor.clinicId, 'UPDATE', { event: 'HR_POLICY_UPDATED', ...data });
+    const previous = await this.prisma.hrPolicy.findUnique({ where: { clinicId: actor.clinicId } });
+    // Any change of a deduction basis voids an earlier approval: what was approved is no longer what applies.
+    const basesChanged = !previous
+      || previous.lateGraceMinutes !== data.lateGraceMinutes
+      || Number(previous.monthlyWorkingHours) !== data.monthlyWorkingHours
+      || previous.workingDaysPerMonth !== data.workingDaysPerMonth;
+    let approval: { deductionsApprovedAt: Date | null; deductionsApprovedById: string | null; deductionsLegalBasis: string | null };
+    if (input.approveAttendanceDeductions === true) {
+      const basis = typeof input.deductionsLegalBasis === 'string' ? input.deductionsLegalBasis.trim() : '';
+      if (basis.length < 10) throw new BadRequestException('Pour retenir les retards et absences, citez leur base écrite (contrat, règlement intérieur ou avis juridique).');
+      const unchanged = previous?.deductionsApprovedAt && previous.deductionsLegalBasis === basis && !basesChanged;
+      approval = unchanged
+        ? { deductionsApprovedAt: previous!.deductionsApprovedAt, deductionsApprovedById: previous!.deductionsApprovedById, deductionsLegalBasis: basis }
+        : { deductionsApprovedAt: new Date(), deductionsApprovedById: actor.id, deductionsLegalBasis: basis };
+    } else if (input.approveAttendanceDeductions === false || basesChanged) {
+      approval = { deductionsApprovedAt: null, deductionsApprovedById: null, deductionsLegalBasis: null };
+    } else {
+      approval = { deductionsApprovedAt: previous?.deductionsApprovedAt ?? null, deductionsApprovedById: previous?.deductionsApprovedById ?? null, deductionsLegalBasis: previous?.deductionsLegalBasis ?? null };
+    }
+    const saved = { ...data, ...approval };
+    await this.prisma.hrPolicy.upsert({ where: { clinicId: actor.clinicId }, create: { clinicId: actor.clinicId, ...saved }, update: saved });
+    await this.access.audit(actor.id, 'HrPolicy', actor.clinicId, 'UPDATE', {
+      event: 'HR_POLICY_UPDATED', ...data,
+      attendanceDeductionsApproved: Boolean(approval.deductionsApprovedAt),
+      deductionsApprovedById: approval.deductionsApprovedById,
+      deductionsLegalBasis: approval.deductionsLegalBasis,
+      approvalVoided: Boolean(previous?.deductionsApprovedAt) && !approval.deductionsApprovedAt,
+    });
     return this.get(actorInput);
   }
 }

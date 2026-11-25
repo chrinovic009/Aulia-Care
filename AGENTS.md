@@ -23,3 +23,11 @@
 - Request workflow updates require the Core marker under the patient lock; exempt only server-owned initialization and explicit maintenance, so accidental direct writes fail in PostgreSQL.
 - Message media stay in private clinic-local storage and are served only after participant and care-path checks; PACS previews use a configured rendered-image adapter or a constrained local directory, so clinics without PACS never get a simulated connection.
 - Imaging messages are limited to the requesting clinician, the study radiologist and the linked patient; patient delivery requires a verified report and an explicit audited share grant, while ordinary photos never masquerade as validated diagnostic imaging.
+
+- Portal patients never pass the generic establishment predicate; grant them only an explicit catalogue allowlist, their own rows and care-team accounts, so a new staff table is private by default.
+- Every table with clinicId or patientId needs forced RLS and a policy or a reasoned aulia_rls_exemption row; the API refuses to start otherwise, so forgotten tables cannot leak.
+- Online care entries use server time; only offline-queue replays keep device time, flagged with the server reception time, so connected clients cannot backdate care.
+- Access codes are sealed only with the dedicated key; the legacy JWT-derived key is read-only until resealed, so upgrades keep pending codes readable without tying them to session secrets.
+- Rejected-workflow audits that cannot reach PostgreSQL go to a private local spool with stable ids, replayed at boot and after writes and surfaced in readiness, so outages do not silently drop refusals.
+- Workflow transitions prove the open transaction in PostgreSQL, not via Prisma classes, and journal system steps with a SYSTEM author, so internals changes or jobs cannot skip the guard or the journal.
+- Lateness/absence payroll deductions stay off until approved with a written basis; changing a deduction basis voids the approval, so software never imposes unvalidated pay rules.

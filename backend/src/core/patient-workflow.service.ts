@@ -1,7 +1,6 @@
 import { Injectable, Logger, ConflictException, NotFoundException } from '@nestjs/common';
 import { PatientWorkflowStatus, Prisma } from '@prisma/client';
 
-import { PrismaService } from '../prisma/prisma.service';
 import { currentRequestContext } from './request-context';
 import { decideWorkflowTransition } from './patient-workflow.policy';
 
@@ -52,11 +51,7 @@ export class PatientWorkflowService {
     requested: PatientWorkflowStatus,
     clinicId: string | null | undefined,
   ): Promise<WorkflowTransitionResult> {
-    // An interactive transaction client is a proxy over the same PrismaService instance,
-    // so `instanceof` alone matches it too: only the full client still exposes $transaction.
-    if (tx instanceof PrismaService && typeof (tx as { $transaction?: unknown }).$transaction === 'function') {
-      throw new Error('Patient workflow transition requires an active transaction client.');
-    }
+    await this.assertInTransaction(tx);
     if (!clinicId?.trim()) {
       throw new Error('Patient workflow transition requires an explicit clinicId.');
     }
@@ -107,6 +102,20 @@ export class PatientWorkflowService {
   }
 
   /**
+   * Proves, in PostgreSQL itself, that the client runs inside a transaction:
+   * a transaction-local setting survives to the next statement only on the same
+   * open transaction. Independent of Prisma internals (proxy classes, extensions).
+   */
+  private async assertInTransaction(tx: WorkflowTransaction) {
+    const marker = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    await tx.$executeRaw(Prisma.sql`SELECT set_config('app.workflow_tx_probe', ${marker}, true)`);
+    const rows = await tx.$queryRaw<Array<{ probe: string | null }>>(Prisma.sql`SELECT current_setting('app.workflow_tx_probe', true) AS probe`);
+    if (rows[0]?.probe !== marker) {
+      throw new Error('Patient workflow transition requires an active transaction client.');
+    }
+  }
+
+  /**
    * Single journey: each step of the reception → consultation pathway is also
    * written, in the same transaction, in the care engine's insert-only journal
    * (CareEvent). The patient's timeline then shows the pathway and the care
@@ -114,14 +123,14 @@ export class PatientWorkflowService {
    */
   private async recordPathwayEvent(tx: WorkflowTransaction, clinicId: string, patientId: string, from: PatientWorkflowStatus, to: PatientWorkflowStatus) {
     const context = currentRequestContext();
-    const journal = (tx as { careEvent?: Prisma.TransactionClient['careEvent'] }).careEvent;
-    if (!context?.userId || typeof journal?.create !== 'function') return;
-    await journal.create({
+    // Every applied step is journaled, including system steps (jobs, webhooks):
+    // those carry no author and the SYSTEM role instead of being silently skipped.
+    await tx.careEvent.create({
       data: {
         clinicId, patientId, careUnitId: null, type: PATHWAY_EVENT_TYPE,
         summary: `Parcours : ${PATHWAY_LABELS[from]} → ${PATHWAY_LABELS[to]}`,
-        payload: { from, to, route: context.route ?? null },
-        occurredAt: new Date(), authorId: context.userId, authorRole: context.role ?? 'UNKNOWN',
+        payload: { from, to, route: context?.route ?? null },
+        occurredAt: new Date(), authorId: context?.userId ?? null, authorRole: context?.userId ? context.role ?? 'UNKNOWN' : 'SYSTEM',
       },
     });
   }

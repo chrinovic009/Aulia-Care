@@ -31,7 +31,7 @@ test('paid leave is acquired per complete month, with a seniority bonus', () => 
 });
 
 test('the proposed payroll deducts lateness, absences and unpaid leave, never below zero', () => {
-  const rules = { monthlyWorkingHours: 200, workingDaysPerMonth: 25 };
+  const rules = { monthlyWorkingHours: 200, workingDaysPerMonth: 25, attendanceDeductionsApproved: true };
   const proposal = proposePayroll({ monthlySalary: 1000, daysInMonth: 30, coveredDays: 30, lateMinutes: 226, absentDays: 2, unpaidLeaveDays: 1, rules });
   assert.equal(proposal.gross, 1000);
   assert.deepEqual(proposal.lines.map((line) => [line.kind, line.amount]), [['LATE', -18.83], ['ABSENCE', -80], ['UNPAID_LEAVE', -40]]);
@@ -67,4 +67,11 @@ test('lateness counts from the planned start once past the tolerance', () => {
   assert.equal(lateMinutes(start, new Date('2026-11-23T05:34:00Z'), 5), 0);
   assert.equal(lateMinutes(start, new Date('2026-11-23T09:16:00Z'), 5), 226);
   assert.equal(lateMinutes(null, new Date(), 5), 0);
+});
+
+test('sans approbation écrite de l’établissement, aucun retard ni absence n’est retenu sur la paie', () => {
+  const rules = { monthlyWorkingHours: 200, workingDaysPerMonth: 25, attendanceDeductionsApproved: false };
+  const proposal = proposePayroll({ monthlySalary: 1000, daysInMonth: 30, coveredDays: 30, lateMinutes: 226, absentDays: 2, unpaidLeaveDays: 1, rules });
+  assert.deepEqual(proposal.lines.map((line) => line.kind), ['UNPAID_LEAVE']);
+  assert.equal(proposal.net, 960);
 });

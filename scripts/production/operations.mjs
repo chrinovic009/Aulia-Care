@@ -119,6 +119,9 @@ export async function checkHealth(target) {
   try {
     const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(5000) });
     const result = await response.json();
+    // Audit refusals waiting on disk mean the database lost writes: alert even if ready.
+    const pendingAudits = Number(result?.checks?.pendingAudits ?? 0);
+    if (pendingAudits !== 0) return { ok: false, status: response.status, reason: 'audit_spool_pending', pendingAudits };
     return { ok: response.status === 200 && result.status === 'ready', status: response.status };
   } catch { return { ok: false, status: 0 }; }
 }
