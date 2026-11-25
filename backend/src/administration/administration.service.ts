@@ -14,7 +14,7 @@ export class AdministrationService {
   constructor(private readonly prisma: PrismaService) {}
 
   private readonly departmentTypes = new Set([
-    'RECEPTION', 'NURSING', 'MEDICAL', 'LABORATORY', 'RADIOLOGY', 'SURGERY', 'PHARMACY', 'BILLING', 'ADMINISTRATION',
+    'RECEPTION', 'NURSING', 'MEDICAL', 'LABORATORY', 'RADIOLOGY', 'SURGERY', 'DIALYSIS', 'PHARMACY', 'BILLING', 'ADMINISTRATION',
   ]);
 
   private async requireClinicAdministrator(userId?: string) {

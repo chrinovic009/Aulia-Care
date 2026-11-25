@@ -39,8 +39,8 @@ const institutionalDepartments = [
   { name: "Medecine Générale", code: "MED-GEN", type: "MEDICAL" },
   { name: "Medecine Interne", code: "MED-INT", type: "MEDICAL" },
   { name: "Gynécologie Obtétrique", code: "GYN-OBS", type: "MEDICAL" },
-  { name: "Infirmérie", code: "Inf", type: "MEDICAL" },
-  { name: "Chirurgie Générale", code: "CHI-GEN", type: "MEDICAL" },
+  { name: "Infirmerie", code: "INF", type: "NURSING" },
+  { name: "Chirurgie Générale", code: "CHI-GEN", type: "SURGERY" },
   { name: "Imagerie & Diagnostics", code: "IMA-DIAG", type: "RADIOLOGY" },
   { name: "Laboratoire Medical", code: "LAB-MED", type: "LABORATORY" },
   { name: "Pharmacie", code: "PHARMA", type: "PHARMACY" },
@@ -49,14 +49,21 @@ const institutionalDepartments = [
   { name: "Urgences & Soins Intensifs", code: "URG-SOINS", type: "MEDICAL" },
   { name: "Unité d'Hospitalisation", code: "HOSP", type: "MEDICAL" },
   { name: "Prevention & Vaccination", code: "PREV-VAC", type: "MEDICAL" },
-  { name: "Administration & Gestion", code: "ADMIN-GEST", type: "ADMINISTRATION" }
+  { name: "Administration & Gestion", code: "ADMIN-GEST", type: "ADMINISTRATION" },
+  { name: "Réception & Admissions", code: "RECEP-ADM", type: "RECEPTION" },
+  { name: "Caisse & Facturation", code: "CAISSE-FACT", type: "BILLING" },
+  { name: "Finance & Comptabilité", code: "FIN-COMP", type: "BILLING" },
+  { name: "Anesthésie & Réanimation", code: "ANES-REA", type: "SURGERY" },
+  { name: "Maternité & Néonatologie", code: "MAT-NEO", type: "MEDICAL" },
+  { name: "Transport sanitaire & régulation", code: "TRANSP-REG", type: "MEDICAL" },
+  { name: "Dialyse", code: "DIALYSE", type: "DIALYSIS" }
 ];
 
 const CUSTOM_DEPARTMENT = "__CUSTOM_DEPARTMENT__";
 const departmentTypes: Array<[string, string]> = [
   ["RECEPTION", "Réception"], ["NURSING", "Soins infirmiers"], ["MEDICAL", "Médical"],
   ["LABORATORY", "Laboratoire"], ["RADIOLOGY", "Radiologie / imagerie"], ["SURGERY", "Chirurgie"],
-  ["PHARMACY", "Pharmacie"], ["BILLING", "Facturation / caisse"], ["ADMINISTRATION", "Administration / gestion"],
+  ["DIALYSIS", "Dialyse"], ["PHARMACY", "Pharmacie"], ["BILLING", "Facturation / caisse"], ["ADMINISTRATION", "Administration / gestion"],
 ];
 
 // Helper global pour normaliser les chaînes de caractères (retire les accents, espaces, etc.)
@@ -123,7 +130,9 @@ export default function GestionDepartAdmin() {
     setIsLoading(true);
     try {
       const missing = institutionalDepartments.filter((item) =>
-        !departments.some((department) => normalize(department.name) === normalize(item.name))
+        !departments.some((department) =>
+          normalize(department.name) === normalize(item.name) || normalize(department.code) === normalize(item.code),
+        )
       );
 
       for (const dept of missing) {
@@ -250,7 +259,9 @@ export default function GestionDepartAdmin() {
   }), [departments]);
 
   const missingInstitutionalCount = institutionalDepartments.filter((item) =>
-    !departments.some((department) => normalize(department.name) === normalize(item.name)),
+    !departments.some((department) =>
+      normalize(department.name) === normalize(item.name) || normalize(department.code) === normalize(item.code),
+    ),
   ).length;
   const selectedUnitDepartment = departments.find((department) => department.id === unitForm.departmentId);
   const unitIsAdministrative = selectedUnitDepartment?.type === 'ADMINISTRATION'
@@ -380,9 +391,12 @@ export default function GestionDepartAdmin() {
               <label className="mb-1 block text-sm font-medium text-slate-700">Type</label>
               <select value={editForm.type} onChange={(event) => setEditForm((current) => ({ ...current, type: event.target.value }))} className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm">
                 <option value="MEDICAL">MEDICAL</option>
+                <option value="RECEPTION">RECEPTION</option>
                 <option value="SURGERY">SURGERY</option>
                 <option value="RADIOLOGY">RADIOLOGY</option>
                 <option value="LABORATORY">LABORATORY</option>
+                <option value="DIALYSIS">DIALYSE</option>
+                <option value="BILLING">BILLING</option>
                 <option value="PHARMACY">PHARMACY</option>
                 <option value="NURSING">NURSING</option>
                 <option value="ADMINISTRATION">ADMINISTRATION</option>
