@@ -31,3 +31,4 @@
 - Rejected-workflow audits that cannot reach PostgreSQL go to a private local spool with stable ids, replayed at boot and after writes and surfaced in readiness, so outages do not silently drop refusals.
 - Workflow transitions prove the open transaction in PostgreSQL, not via Prisma classes, and journal system steps with a SYSTEM author, so internals changes or jobs cannot skip the guard or the journal.
 - Lateness/absence payroll deductions stay off until approved with a written basis; changing a deduction basis voids the approval, so software never imposes unvalidated pay rules.
+- Identity tables use forced RLS with explicit internal login/session/refresh/maintenance contexts; await lazy Prisma queries inside runWithRequestContext and cover SELECT policies required by INSERT ... RETURNING, so authentication stays both isolated and functional.

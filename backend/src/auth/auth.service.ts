@@ -5,6 +5,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { runWithRequestContext } from '../core/request-context';
 import { UpdateUserDto } from '../users/dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
 
@@ -308,6 +309,22 @@ export class AuthService {
   }
 
   async refreshAccessToken(token?: string) {
+    try {
+      if (!token) throw new UnauthorizedException('Refresh token missing');
+      const payload = this.jwtService.verify(token, { secret: this.refreshTokenSecret });
+      if (payload.type !== 'refresh' || typeof payload.sub !== 'string') throw new UnauthorizedException('Invalid token type');
+      // The refresh endpoint is public, but its verified JWT subject provides
+      // a narrow owner context for the persisted session and token history.
+      return await runWithRequestContext(
+        { userId: payload.sub, role: 'AUTH_REFRESH', route: 'POST /auth/refresh' },
+        () => this.refreshAccessTokenScoped(token),
+      );
+    } catch {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+  }
+
+  private async refreshAccessTokenScoped(token?: string) {
     try {
       if (!token) {
         throw new UnauthorizedException('Refresh token missing');
