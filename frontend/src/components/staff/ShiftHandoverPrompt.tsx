@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { getWorkMode, setWorkMode, subscribeWorkMode, type WorkMode } from "./offDuty";
 import { apiFetch } from "../../config/api";
 import { useAuth } from "../../context/AuthContext";
 
@@ -41,7 +42,8 @@ const attendanceRoles = new Set([
  * avec sa propre session et ses propres identifiants.
  */
 export function ShiftHandoverPrompt() {
-  const { currentUser, logout } = useAuth();
+  const { currentUser } = useAuth();
+  const workMode = useSyncExternalStore(subscribeWorkMode, getWorkMode, getWorkMode);
 
   const [handover, setHandover] = useState<HandoverState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -57,11 +59,13 @@ export function ShiftHandoverPrompt() {
     }
 
     try {
-      const state = await apiFetch<HandoverState>(
-        "/users/me/shift-handover",
-      );
+      const [state, mode] = await Promise.all([
+        apiFetch<HandoverState>("/users/me/shift-handover"),
+        apiFetch<WorkMode>("/users/me/work-mode"),
+      ]);
 
       setHandover(state);
+      setWorkMode(mode);
     } catch {
       // Les erreurs de session/authentification sont gérées globalement.
       // Un échec temporaire ne doit pas déclencher de modal parasite.
@@ -115,7 +119,9 @@ export function ShiftHandoverPrompt() {
       });
 
       if (decision === "LEAVE") {
-        logout();
+        // The session is not closed: it switches to read-only until the next shift.
+        setReason("");
+        await refresh();
         return;
       }
 
@@ -127,7 +133,7 @@ export function ShiftHandoverPrompt() {
   };
 
   if (!handover?.due) {
-    return null;
+    return workMode.readOnly ? <OffDutyBanner mode={workMode} /> : null;
   }
 
   const end = handover.plannedEndAt
@@ -192,8 +198,9 @@ export function ShiftHandoverPrompt() {
           </button>
 
           <p className="text-center text-xs text-slate-500 dark:text-slate-400">
-            Vous serez déconnecté(e) de cette session. Votre remplaçant devra se
-            connecter avec son propre compte.
+            Votre session restera ouverte en lecture seule : vous pourrez
+            consulter, mais plus rien enregistrer jusqu’à votre prochain poste.
+            Votre remplaçant se connecte avec son propre compte.
           </p>
 
           <div className="grid grid-cols-3 gap-2">
@@ -211,6 +218,16 @@ export function ShiftHandoverPrompt() {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+/** Persistent notice of the off-duty read-only session. */
+function OffDutyBanner({ mode }: { mode: WorkMode }) {
+  const since = mode.since ? new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(mode.since)) : null;
+  return (
+    <div role="status" className="aulia-offduty-banner fixed inset-x-3 bottom-3 z-[100050] mx-auto flex max-w-3xl items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50/95 px-4 py-3 text-sm text-amber-900 shadow-xl backdrop-blur dark:border-amber-500/40 dark:bg-amber-950/90 dark:text-amber-100 sm:bottom-5">
+      <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-lg" aria-hidden="true">🔒</span>
+      <p><strong>Poste terminé{since ? ` à ${since}` : ""} — lecture seule.</strong> Vous pouvez consulter les dossiers et vos messages ; les enregistrements reprendront à votre prochain poste.</p>
     </div>
   );
 }

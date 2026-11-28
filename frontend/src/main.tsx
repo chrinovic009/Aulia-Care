@@ -1,6 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
+import "./styles/aulia-motion.css";
+import "./styles/aulia-polish.css";
 import "swiper/swiper-bundle.css";
 import "flatpickr/dist/flatpickr.css";
 import App from "./App.tsx";
@@ -14,6 +16,7 @@ import { ActionFeedbackProvider } from "./components/common/ActionFeedbackProvid
 import { PlatformLayersProvider } from "./context/PlatformLayersContext.tsx";
 import SessionLock from "./components/auth/SessionLock.tsx";
 import PasswordChangeGate from "./components/auth/PasswordChangeGate.tsx";
+import AnimaOrb from "./components/anima/AnimaOrb.tsx";
 
 installCsrfFetchInterceptor();
 
@@ -33,6 +36,7 @@ createRoot(document.getElementById("root")!).render(
                   <App />
                 </PasswordChangeGate>
                 <SessionLock />
+                <AnimaOrb />
               </AppWrapper>
             </ActionFeedbackProvider>
           </RealtimeProvider>

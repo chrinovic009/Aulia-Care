@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Activity, Banknote, FileText, Hospital, UsersRound } from "lucide-react";
 import { apiFetch } from "../../config/api";
+import RapportsQuotidiens from "./RapportsQuotidiens";
 import { AdminPageShell, DataTable, Panel, StatCard, formatMoney } from "./adminUi";
 
 type ReportPayload = {
@@ -22,7 +23,7 @@ type ReportPayload = {
   rooms?: Array<{ beds?: unknown[] }>;
 };
 
-export default function RapportAdmin() {
+function VueEnsemble() {
   const [payload, setPayload] = useState<ReportPayload>({});
   const [isLoading, setIsLoading] = useState(true);
 
@@ -179,5 +180,20 @@ export default function RapportAdmin() {
         </Panel>
       </div>
     </AdminPageShell>
+  );
+}
+
+/** Reports: the services' daily archived reports, and the overall view of the establishment. */
+export default function RapportAdmin() {
+  const [tab, setTab] = useState<"daily" | "overview">("daily");
+  return (
+    <div>
+      <div className="flex gap-1 px-4 pt-4 sm:px-6 print:hidden" role="tablist">
+        {([["daily", "Rapports quotidiens"], ["overview", "Vue d’ensemble"]] as const).map(([value, label]) => (
+          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`rounded-xl px-4 py-2 text-sm font-semibold ${tab === value ? "bg-aulia-navy text-white" : "text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>{label}</button>
+        ))}
+      </div>
+      {tab === "daily" ? <RapportsQuotidiens /> : <VueEnsemble />}
+    </div>
   );
 }

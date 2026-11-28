@@ -22,6 +22,9 @@ Si un appareil perd la connexion au serveur, par exemple une tablette en bout de
 |---|---|---|
 | Signes vitaux | Infirmier › Patients assignés | `measuredAt`, l'heure de la mesure (refusée si plus de 72 h ou dans le futur) |
 | Événements de soins des unités | Moteur de workflow (`occurredAt`) | heure de l'événement |
+| Soins infirmiers planifiés (fait, non fait, escalade) | Infirmier › Tournées | `performedAt`, l'heure du soin (72 h au plus) |
+| Observations infirmières | Infirmier › Tournées, Hospitalisations suivies | `performedAt` (72 h au plus) |
+| Administration d'un médicament prescrit (API) | `POST /hospitalizations/:id/medication-administrations` | `administeredAt` (72 h au plus) |
 
 Fonctionnement :
 

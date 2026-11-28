@@ -1,3 +1,4 @@
+import { OffDutyService } from './off-duty.service';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -10,7 +11,7 @@ import { Roles } from '../auth/roles.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService, private readonly offDuty: OffDutyService) {}
 
   @Get()
   @Roles('SUPER_ADMIN', 'ADMIN')
@@ -53,6 +54,12 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   workLocation(@Request() req: any) {
     return this.usersService.findMyWorkLocation(req.user?.userId);
+  }
+
+  @Post('pending-access-codes/:userId/reveal')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  revealAccessCode(@Param('userId') userId: string, @Request() req: any) {
+    return this.usersService.revealAccessCode(userId, req.user?.userId);
   }
 
   @Get('pending-access-codes')
@@ -118,7 +125,14 @@ export class UsersController {
   @Post('me/clock-in')
   @UseGuards(JwtAuthGuard)
   clockIn(@Request() req: any) {
-    return this.usersService.clockIn(req.user?.userId);
+    return this.offDuty.clockIn(req.user?.userId);
+  }
+
+  /** Off duty after a validated departure: the session reads but cannot write. */
+  @Get('me/work-mode')
+  @UseGuards(JwtAuthGuard)
+  workMode(@Request() req: { user?: { userId?: string } }) {
+    return this.offDuty.workMode(req.user?.userId);
   }
 
   @Post('me/clock-out')
@@ -135,8 +149,10 @@ export class UsersController {
 
   @Post('me/shift-handover/decision')
   @UseGuards(JwtAuthGuard)
-  decideShiftHandover(@Request() req: any, @Body() dto: ShiftHandoverDecisionDto) {
-    return this.usersService.decideShiftHandover(req.user?.userId, dto);
+  async decideShiftHandover(@Request() req: any, @Body() dto: ShiftHandoverDecisionDto) {
+    const result = await this.usersService.decideShiftHandover(req.user?.userId, dto);
+    this.offDuty.forget(req.user?.userId);
+    return result;
   }
 
   @Get('attendance/summary')

@@ -1,3 +1,4 @@
+import { formatDuration } from "../../api/hr";
 import { BRAND_PRINT_FONT_CSS } from "../../config/brand";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -211,6 +212,7 @@ export default function GestionPersAdmin() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [services, setServices] = useState<ServiceRecord[]>([]);
   const [departments, setDepartments] = useState<DepartmentRecord[]>([]);
+  const [departmentLoadError, setDepartmentLoadError] = useState<string | null>(null);
   const [hrReport, setHrReport] = useState<HrReport>({});
   const [attendanceSummary, setAttendanceSummary] = useState<AttendanceSummary | null>(null);
   const [clinicName, setClinicName] = useState("Aulia Care");
@@ -230,13 +232,27 @@ export default function GestionPersAdmin() {
   }>(null);
   const [responsibilityReplacement, setResponsibilityReplacement] = useState<null | { departmentId: string; userId: string; name: string }>(null);
 
+  const loadDepartments = async (): Promise<DepartmentRecord[]> => {
+    try {
+      const data = await apiFetch<DepartmentRecord[]>("/administration/departments");
+      if (!Array.isArray(data)) throw new Error("Réponse de départements invalide");
+      setDepartments(data);
+      setDepartmentLoadError(null);
+      return data;
+    } catch {
+      setDepartments([]);
+      setDepartmentLoadError("Impossible de charger les départements de cette clinique. Vérifiez votre session et les droits d’accès.");
+      return [];
+    }
+  };
+
   const load = async () => {
     setIsLoading(true);
     try {
       const [usersData, servicesData, departmentsData, hrData, branding, attendanceData] = await Promise.all([
         apiFetch<AdminUser[]>("/users").catch(() => []),
         apiFetch<ServiceRecord[]>("/services").catch(() => []),
-        apiFetch<DepartmentRecord[]>("/administration/departments").catch(() => []),
+        loadDepartments(),
         apiFetch<HrReport>("/administration/reports").catch(() => ({})),
         apiFetch<ClinicBranding>("/administration/clinic-branding").catch((): ClinicBranding => ({ name: "Aulia Care" })),
         apiFetch<AttendanceSummary>("/users/attendance/summary?days=30").catch(() => null),
@@ -302,9 +318,11 @@ export default function GestionPersAdmin() {
     setEditingUser(null);
     setFormError(null);
     setShowForm(true);
+    void loadDepartments();
   };
 
-  const openEdit = (user: AdminUser) => {
+  const openEdit = async (user: AdminUser) => {
+    const currentDepartments = await loadDepartments();
     const employee = user.Employee?.[0];
     const contract = employee?.contracts?.[0];
     const [emailLocal = "", suppliedDomain = "gmail.com"] = (user.email || "").split("@");
@@ -332,7 +350,7 @@ export default function GestionPersAdmin() {
       primaryRole: (user.primaryRole || "NURSE") as RoleSlug,
       specialty: SPECIALTY_ROLES.has(String(user.primaryRole)) ? user.specialty || "" : "",
       serviceId: user.staff?.[0]?.service?.id || "",
-      departmentId: departments.find((department) => department.name === employee?.department?.name)?.id || "",
+      departmentId: currentDepartments.find((department) => department.name === employee?.department?.name)?.id || "",
       isResponsible: Boolean((user.serviceResponsabilites && user.serviceResponsabilites.length) || (user as any).departmentResponsabilites?.length),
       status: user.status || "ACTIVE",
       salary: contract?.salary ? String(contract.salary) : "",
@@ -559,9 +577,9 @@ export default function GestionPersAdmin() {
           <StatCard label="Relèves en attente" value={attendanceSummary?.totals.openOverruns ?? 0} icon={<UserRound size={18} />} />
         </div>
         <div className="mt-5 grid gap-5 xl:grid-cols-3">
-          <AttendanceRanking title="Retards les plus importants" empty="Aucun retard enregistré." rows={attendanceSummary?.mostLate || []} value={(item) => `${item.lateMinutes} min de retard`} />
-          <AttendanceRanking title="Arrivées les plus anticipées" empty="Aucune arrivée anticipée enregistrée." rows={attendanceSummary?.earliest || []} value={(item) => `${item.earlyMinutes} min avant le shift`} />
-          <AttendanceRanking title="Dépassements de poste" empty="Aucun dépassement enregistré." rows={attendanceSummary?.longestWaiting || []} value={(item) => `${item.overrunMinutes} min après la sortie${item.deferrals ? ` · ${item.deferrals} rappel(s)` : ""}`} />
+          <AttendanceRanking title="Retards les plus importants" empty="Aucun retard enregistré." rows={attendanceSummary?.mostLate || []} value={(item) => `${formatDuration(item.lateMinutes)} de retard`} />
+          <AttendanceRanking title="Arrivées les plus anticipées" empty="Aucune arrivée anticipée enregistrée." rows={attendanceSummary?.earliest || []} value={(item) => `${formatDuration(item.earlyMinutes)} avant le poste`} />
+          <AttendanceRanking title="Dépassements de poste" empty="Aucun dépassement enregistré." rows={attendanceSummary?.longestWaiting || []} value={(item) => `${formatDuration(item.overrunMinutes)} après la fin du poste${item.deferrals ? ` · ${item.deferrals} rappel(s)` : ""}`} />
         </div>
       </Panel>
 
@@ -683,6 +701,7 @@ export default function GestionPersAdmin() {
         <EmployeeForm
           form={form}
           departments={departments}
+          departmentLoadError={departmentLoadError}
           isSaving={isSaving}
           editing={Boolean(editingUser)}
           onChange={updateForm}
@@ -837,6 +856,7 @@ function ConfirmActionModal({
 function EmployeeForm({
   form,
   departments,
+  departmentLoadError,
   isSaving,
   editing,
   onChange,
@@ -846,6 +866,7 @@ function EmployeeForm({
 }: {
   form: typeof emptyForm;
   departments: DepartmentRecord[];
+  departmentLoadError?: string | null;
   isSaving: boolean;
   editing: boolean;
   onChange: (patch: Partial<typeof emptyForm>) => void;
@@ -891,7 +912,10 @@ function EmployeeForm({
                 <span className="mt-1 block text-xs text-slate-500">Elle adapte la consultation du médecin. Généraliste : « Médecine générale ». Urgence, anesthésie, réanimation : affectez aussi le médecin à son unité (Administration › Unités de soins).</span>
               </label>
             ) : null}
-            <FormSelect label="Departement RH" value={form.departmentId} onChange={(departmentId) => onChange({ departmentId })} options={[["", "Aucun"], ...departments.map((department) => [department.id, department.name] as [string, string])]} />
+            <div>
+              <FormSelect label="Departement RH" value={form.departmentId} onChange={(departmentId) => onChange({ departmentId })} options={[["", departments.length ? "Aucun" : "Aucun département disponible"], ...departments.map((department) => [department.id, department.name] as [string, string])]} />
+              {departmentLoadError ? <p role="alert" className="mt-1 text-xs text-red-600">{departmentLoadError}</p> : departments.length === 0 ? <p className="mt-1 text-xs text-slate-500">Créez les départements dans Administration → Départements, puis rouvrez ce formulaire.</p> : null}
+            </div>
             <FormSelect label="Responsable du departement" value={form.isResponsible ? "YES" : "NO"} onChange={(value) => onChange({ isResponsible: value === "YES" })} options={[["NO", "Non"], ["YES", "Oui"]]} />
             <FormSelect label="Statut" value={form.status} onChange={(status) => onChange({ status: status as UserStatus })} options={[["ACTIVE", "Actif"], ["INACTIVE", "Inactif"], ["SUSPENDED", "Suspendu"]]} />
             <FormInput label="Salaire mensuel (CDF)" type="number" min="0" value={form.salary} onChange={(salary) => onChange({ salary })} />

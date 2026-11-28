@@ -3,6 +3,7 @@ import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
 import { useRealtime } from "../../context/RealtimeContext";
 import { fetchNurseRounds, NursingCareTask, recordNurseObservation, updateNurseCareTask } from "../../api/nurse";
+import { isQueued } from "../../offline/offlineQueue";
 
 type DisplayStatus = "À faire" | "Terminé" | "Manqué" | "Escaladé" | "En retard";
 type Action = "complete" | "observe" | "problem";
@@ -106,17 +107,24 @@ export default function Rounds() {
     if (!selected || !action || !note.trim()) { setError("Une observation clinique est obligatoire."); return; }
     try {
       setError(null);
+      let sent: unknown;
       if (action === "complete") {
-        await updateNurseCareTask(selected.id, { status: "COMPLETED", observation: note.trim() });
+        sent = await updateNurseCareTask(selected.id, { status: "COMPLETED", observation: note.trim() });
         setSuccess("Soin attesté et clôturé.");
       } else if (action === "problem") {
-        await updateNurseCareTask(selected.id, escalate ? { status: "ESCALATED", observation: note.trim(), escalationReason: note.trim() } : { status: "MISSED", observation: note.trim() });
+        sent = await updateNurseCareTask(selected.id, escalate ? { status: "ESCALATED", observation: note.trim(), escalationReason: note.trim() } : { status: "MISSED", observation: note.trim() });
         setSuccess(escalate ? "Problème escaladé au médecin responsable." : "Soin déclaré non réalisé avec motif.");
       } else {
-        await recordNurseObservation(selected.hospitalizationId, note.trim());
+        sent = await recordNurseObservation(selected.hospitalizationId, note.trim());
         setSuccess("Observation clinique enregistrée.");
       }
-      setAction(null); setNote(""); await load();
+      setAction(null); setNote("");
+      if (isQueued(sent)) {
+        // Offline: the entry waits on this device and is sent automatically, with its real time.
+        setSuccess("Hors ligne : saisie gardée sur l’appareil avec son heure réelle. Elle sera envoyée automatiquement au retour du réseau.");
+        return;
+      }
+      await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Action clinique impossible à enregistrer."); }
   };
 

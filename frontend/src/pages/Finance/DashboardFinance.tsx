@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
+import DashboardWelcome from "../../components/common/DashboardWelcome";
 import { ClientPagination, useClientPagination } from "../../components/common/ClientPagination";
 import { fetchFinanceDashboard, FinanceDashboard } from "../../api/finance";
 import { useRealtime } from "../../context/RealtimeContext";
@@ -41,7 +42,7 @@ export default function DashboardFinance() {
   return <main className="mx-auto w-full max-w-[1540px] space-y-5 px-3 pb-8 pt-2 sm:px-5 lg:px-7">
     <PageMeta title="Finance | Aulia Care" description="Pilotage financier hospitalier sécurisé" />
     <PageBreadcrumb pageTitle="Pilotage financier" />
-    <section className="overflow-hidden rounded-3xl border border-teal-800/20 bg-gradient-to-r from-slate-950 via-slate-900 to-teal-800 px-5 py-6 text-white shadow-lg sm:px-7"><p className="text-sm font-medium text-teal-200">Aulia Care · Direction financière</p><h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Tableau de bord exécutif</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-200">Données issues des écritures opérationnelles enregistrées. Toute valeur non rapprochée par la banque reste une estimation de trésorerie, jamais un solde bancaire certifié.</p></section>
+    <DashboardWelcome eyebrow="Aulia Care · Direction financière" description="Données issues des écritures opérationnelles enregistrées. Toute valeur non rapprochée par la banque reste une estimation de trésorerie, jamais un solde bancaire certifié." actionLabel="Consulter la trésorerie" to="/finance/tresorerie" />
     {error ? <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">{error}<button onClick={() => void load()} className="ml-3 rounded-lg bg-rose-700 px-3 py-1.5 font-semibold text-white">Réessayer</button></div> : null}
     {loading && !data ? <div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Chargement des écritures financières…</div> : null}
     {data ? <>

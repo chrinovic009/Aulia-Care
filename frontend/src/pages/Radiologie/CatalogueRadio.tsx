@@ -1,3 +1,4 @@
+import { formatDuration } from "../../api/hr";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
@@ -277,7 +278,7 @@ export default function CatalogueRadio() {
                   </td>
                   <td className="p-3">
                     {i.turnaroundTimeMinutes
-                      ? `${i.turnaroundTimeMinutes} min`
+                      ? formatDuration(i.turnaroundTimeMinutes)
                       : "—"}
                   </td>
                   <td className="p-3">

@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
 /**
  * A nurse may only close, declare missed, or escalate an already scheduled task.
@@ -17,4 +17,9 @@ export class UpdateNursingCareTaskDto {
   @IsString()
   @MaxLength(2_000)
   escalationReason?: string;
+
+  /** Real time of the care when it was recorded offline and sent later (72 h at most). */
+  @IsOptional()
+  @IsDateString()
+  performedAt?: string;
 }

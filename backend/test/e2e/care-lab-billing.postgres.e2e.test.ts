@@ -6,6 +6,7 @@ import { PrismaClient, RoleSlug } from '@prisma/client';
 import { CareAccessService } from '../../src/care-workflow/care-access.service';
 import { CareWorkflowService } from '../../src/care-workflow/care-workflow.service';
 import { CareUnitsService } from '../../src/care-workflow/care-units.service';
+import { UnitExamReconciliationService } from '../../src/billing/unit-exam-reconciliation.service';
 import { ClinicContextService } from '../../src/core/clinic-context.service';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -74,12 +75,14 @@ test('PostgreSQL : un examen demandé par une unité passe par le laboratoire et
       version: accepted.version, summary: 'Hyperleucocytose',
       observations: [{ name: 'Leucocytes', value: '14,2', unit: 'G/L', referenceRange: '4-10', flag: 'HIGH' }], conclusion: 'Syndrome inflammatoire',
     }, tech);
-    assert.equal((reported.payload as { laboratory?: { biologicalValidation?: string } }).laboratory?.biologicalValidation, 'PENDING');
+    assert.equal((reported.payload as { laboratory?: { validation?: string } }).laboratory?.validation, 'PENDING_SECOND_SIGNATURE');
     const result = await prisma.labResult.findFirstOrThrow({ where: { labRequestId: labRequest.id }, include: { parameters: true } });
-    assert.equal(result.resultStatus, 'TECHNICAL_VALIDATED');
+    // Second pair of eyes: the person who entered the result does not validate it.
+    assert.equal(result.resultStatus, 'PENDING');
+    assert.equal(result.technicalValidatedById, null);
     assert.equal(result.parameters[0]?.parameterName, 'Leucocytes');
     assert.equal(Number(result.parameters[0]?.valueNumeric), 14.2);
-    assert.equal((await prisma.labRequest.findUniqueOrThrow({ where: { id: labRequest.id } })).status, 'BIOLOGICAL_VALIDATION');
+    assert.equal((await prisma.labRequest.findUniqueOrThrow({ where: { id: labRequest.id } })).status, 'TECHNICAL_VALIDATION');
 
     // A request revoked before any payment cancels the exam and its invoice.
     const second = await engine.createRequest({
@@ -153,6 +156,25 @@ test('PostgreSQL : un examen demandé par une unité passe par le laboratoire et
     [triage] = await engine.unitProtocols(emergency.id, doc);
     assert.equal(triage.validation, null);
     assert.equal(((await prisma.careUnit.findUniqueOrThrow({ where: { id: emergency.id } })).settings as { triageScaleValidated?: boolean }).triageScaleValidated, false);
+
+    // Billing reconciliation: the exam performed above is still unpaid and is reported to finance.
+    const reconciliation = new UnitExamReconciliationService(prisma as never, new ClinicContextService(prisma as never));
+    const reconciliationReport = await reconciliation.report(30, { userId: admin.id });
+    const performed = reconciliationReport.lines.find((row) => row.examId === labRequest.id);
+    assert.equal(performed?.issue, 'PERFORMED_UNPAID');
+    assert.ok(reconciliationReport.totals.performedUnpaid >= 1);
+    await assert.rejects(() => reconciliation.report(30, doc), ForbiddenException);
+
+    // A unit set to pay first: the exam waits for the cashier and no result can be entered before.
+    await units.update(emergency.id, { settings: { billingPolicy: 'PAY_FIRST' } }, { userId: admin.id });
+    const paid = await engine.createRequest({
+      patientId: patient.id, episodeId: episode.id, requesterUnitId: emergency.id, performerUnitId: laboratory.id,
+      category: 'EXAMEN', code: 'NFS', label: 'NFS (paiement préalable)', priority: 'ROUTINE',
+    }, doc);
+    assert.equal((await prisma.labRequest.findUniqueOrThrow({ where: { serviceRequestId: paid.id } })).status, 'AWAITING_PAYMENT');
+    const paidTask = await prisma.careTask.findFirstOrThrow({ where: { requestId: paid.id } });
+    const paidAccepted = await engine.changeTaskStatus(paidTask.id, { version: paidTask.version, status: 'ACCEPTED' }, tech);
+    await assert.rejects(() => engine.reportTaskResult(paidTask.id, { version: paidAccepted.version, summary: 'Trop tôt' }, tech), ConflictException);
   } finally {
     if (clinicId) {
       await prisma.$executeRawUnsafe('ALTER TABLE "CareEvent" DISABLE TRIGGER "CareEvent_insert_only"');

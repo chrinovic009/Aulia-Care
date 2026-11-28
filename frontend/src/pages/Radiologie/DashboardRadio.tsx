@@ -1,5 +1,7 @@
+import { formatDuration } from "../../api/hr";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PageMeta from "../../components/common/PageMeta";
+import DashboardWelcome from "../../components/common/DashboardWelcome";
 import { apiFetch } from "../../config/api";
 
 type DashboardOverview = {
@@ -130,13 +132,13 @@ export default function DashboardRadio() {
       },
       {
         label: "Temps d’attente moyen",
-        value: `${data.metrics.averageWaitMinutes} min`,
+        value: formatDuration(data.metrics.averageWaitMinutes),
         tone: "amber",
         description: "Depuis l’arrivée et la préparation",
       },
       {
         label: "Durée moyenne",
-        value: `${data.metrics.averageDurationMinutes} min`,
+        value: formatDuration(data.metrics.averageDurationMinutes),
         tone: "emerald",
         description: "Examen réalisé",
       },
@@ -161,15 +163,19 @@ export default function DashboardRadio() {
         description="Tableau de bord RIS-PACS basé sur les données backend"
       />
 
+      <div className="mb-5">
+        <DashboardWelcome eyebrow="Aulia Care · Imagerie médicale" description="Suivez la file d’imagerie, les examens planifiés et les alertes du plateau technique." actionLabel="Ouvrir la file d’attente" to="/radiologie/file-attente" />
+      </div>
+
       <section className="rounded-2xl bg-slate-900 p-6 text-white shadow-lg">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.25em] text-slate-400">
               Aulia Care · Imagerie médicale
             </p>
-            <h1 className="mt-2 text-2xl font-semibold">
+            <h2 className="mt-2 text-2xl font-semibold">
               Dashboard Radiologie
-            </h1>
+            </h2>
             <p className="mt-2 text-sm text-slate-300">
               Vue en temps réel du flux des patients, des KPI et de l’état du
               parc d’équipements.
@@ -413,7 +419,7 @@ export default function DashboardRadio() {
                         </span>
                       </div>
                       <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                        {alert.modality} · retard {alert.waitingMinutes} min
+                        {alert.modality} · retard {formatDuration(alert.waitingMinutes)}
                       </p>
                     </div>
                   ))

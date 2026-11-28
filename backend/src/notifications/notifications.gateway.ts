@@ -18,6 +18,7 @@ import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlatformLayersService } from '../platform/layers/platform-layers.service';
 import { isOperationalRole } from '../core/tenant-roles';
+import { runWithRequestContext } from '../core/request-context';
 
 @WebSocketGateway({
   cors: {
@@ -72,28 +73,35 @@ export class NotificationsGateway implements OnGatewayInit, OnGatewayConnection,
         secret: this.configService.getOrThrow<string>('JWT_SECRET'),
       });
       if (!payload.sub || !payload.sid || payload.type === 'refresh') return client.disconnect(true);
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-        select: { id: true, email: true, status: true, deletedAt: true, clinicId: true, primaryRole: true },
-      });
+      const user = await runWithRequestContext(
+        { userId: payload.sub, role: 'AUTH_SESSION', route: 'websocket.connect' },
+        async () => await this.prisma.user.findUnique({
+          where: { id: payload.sub },
+          select: { id: true, email: true, status: true, deletedAt: true, clinicId: true, primaryRole: true },
+        }),
+      );
       if (!user || user.deletedAt || user.status !== 'ACTIVE') return client.disconnect(true);
       if (isOperationalRole(user.primaryRole) && !user.clinicId) return client.disconnect(true);
 
-      // A WebSocket upgrade bypasses Passport's HTTP guard. Apply the same
-      // persisted-session and PIN-lock checks as JwtStrategy before the socket
-      // is placed in any user, patient or clinic room.
-      const session = await this.prisma.session.findFirst({
-        where: {
-          id: payload.sid,
-          userId: user.id,
-          status: 'ACTIVE',
-          expiresAt: { gt: new Date() },
-          pinLockedAt: null,
+      await runWithRequestContext(
+        { userId: user.id, clinicId: user.clinicId, role: user.primaryRole, route: 'websocket.connect' },
+        async () => {
+          // A WebSocket upgrade bypasses Passport's HTTP guard. Apply the same
+          // persisted-session and PIN-lock checks as JwtStrategy.
+          const session = await this.prisma.session.findFirst({
+            where: {
+              id: payload.sid,
+              userId: user.id,
+              status: 'ACTIVE',
+              expiresAt: { gt: new Date() },
+              pinLockedAt: null,
+            },
+            select: { id: true },
+          });
+          if (!session) return client.disconnect(true);
+          await this.registerClient(client, user);
         },
-        select: { id: true },
-      });
-      if (!session) return client.disconnect(true);
-      await this.registerClient(client, user);
+      );
     } catch {
       client.disconnect(true);
     }

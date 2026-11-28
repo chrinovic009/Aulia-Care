@@ -96,7 +96,7 @@ test(
           },
         });
 
-      const [receptionist, cashier, nurse, physician, labManager, radiologist, pharmacist, finance] = await Promise.all([
+      const [receptionist, cashier, nurse, physician, labManager, radiologist, pharmacist, finance, labValidator] = await Promise.all([
         makeUser(RoleSlug.RECEPTIONIST, 'reception'),
         makeUser(RoleSlug.CASHIER, 'cashier'),
         makeUser(RoleSlug.NURSE, 'nurse'),
@@ -105,6 +105,7 @@ test(
         makeUser(RoleSlug.RADIOLOGIST, 'radiologist'),
         makeUser(RoleSlug.PHARMACIST, 'pharmacist'),
         makeUser(RoleSlug.FINANCE, 'finance'),
+        makeUser(RoleSlug.LAB_MANAGER, 'lab-validator'),
       ]);
 
       // Synthetic director policy only, not a clinical approval.
@@ -231,7 +232,7 @@ test(
       app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
       await app.init();
       const server = app.getHttpServer();
-      const [receptionCookies, cashierCookies, nurseCookies, physicianCookies, labCookies, radiologistCookies, pharmacistCookies, financeCookies] = await Promise.all([
+      const [receptionCookies, cashierCookies, nurseCookies, physicianCookies, labCookies, radiologistCookies, pharmacistCookies, financeCookies, labValidatorCookies] = await Promise.all([
         cookiesFor(auth, receptionist),
         cookiesFor(auth, cashier),
         cookiesFor(auth, nurse),
@@ -240,6 +241,7 @@ test(
         cookiesFor(auth, radiologist),
         cookiesFor(auth, pharmacist),
         cookiesFor(auth, finance),
+        cookiesFor(auth, labValidator),
       ]);
 
       const admission = await request(server)
@@ -288,6 +290,14 @@ test(
         .expect(200);
       await expectStatus('EN_ATTENTE_MEDECIN', 'arrivée au rendez-vous');
 
+      // Single journey: each pathway step is also in the care engine's journal, and one call says where the patient is.
+      const pathwaySteps = await prisma.careEvent.findMany({ where: { patientId, type: 'PATHWAY_STATUS_CHANGED' }, orderBy: { occurredAt: 'asc' } });
+      assert.ok(pathwaySteps.length >= 2, 'étapes du parcours inscrites dans le journal de soins');
+      assert.equal((pathwaySteps.at(-1)?.payload as { to?: string } | null)?.to, 'EN_ATTENTE_MEDECIN');
+      const location = await request(server).get(`/api/care-workflow/patients/${patientId}/location`).set('Cookie', receptionCookies).expect(200);
+      assert.equal(location.body.pathway.status, 'EN_ATTENTE_MEDECIN');
+      assert.match(location.body.summary, /en attente du médecin/);
+
       await request(server)
         .post(`/api/patients/${patientId}/vital-signs`)
         .set('Cookie', nurseCookies)
@@ -329,6 +339,11 @@ test(
         })
         .expect(201);
       await expectStatus('EN_LABORATOIRE', 'résultat labo');
+      // Second pair of eyes: the author cannot validate their own result; another biologist does.
+      const enteredResult = await prisma.labResult.findFirstOrThrow({ where: { labRequestId: labRequest.body.id }, orderBy: { reportedAt: 'desc' } });
+      assert.equal(enteredResult.resultStatus, 'PENDING');
+      await request(server).post(`/api/laboratory/validations/${enteredResult.id}/decision`).set('Cookie', labCookies).send({ decision: 'VALIDATE' }).expect(403);
+      await request(server).post(`/api/laboratory/validations/${enteredResult.id}/decision`).set('Cookie', labValidatorCookies).send({ decision: 'VALIDATE' }).expect(201);
 
       const imagingRequest = await request(server)
         .post(`/api/consultations/${consultationId}/imaging-requests`)
@@ -481,7 +496,7 @@ test(
       if (clinicId) {
         await prisma.consultationPolicy.deleteMany({where:{clinicId}}).catch(()=>undefined);
         const clinicScope = { clinicId };
-        await prisma.surgerySafetyChecklist.deleteMany({ where: { surgery: { patient: clinicScope } } }).catch(() => undefined);
+        await prisma.surgerySafetyChecklist.deleteMany({ where: { surgeryId: { in: (await prisma.surgery.findMany({ where: { patient: clinicScope }, select: { id: true } })).map((row) => row.id) } } }).catch(() => undefined);
         await prisma.surgery.deleteMany({ where: { patient: clinicScope } }).catch(() => undefined);
         await prisma.pharmacyDispense.deleteMany({ where: { clinicId } }).catch(() => undefined);
         await prisma.prescription.deleteMany({ where: { clinicId } }).catch(() => undefined);

@@ -1,0 +1,1 @@
+ALTER TYPE "DepartmentType" ADD VALUE 'DIALYSIS';

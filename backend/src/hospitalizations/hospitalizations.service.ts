@@ -17,6 +17,7 @@ import { AuthenticatedActor, ClinicContextService } from '../core/clinic-context
 import { NurseSchedulingService } from './nurse-scheduling.service';
 import { BedAssignmentService } from './bed-assignment.service';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
+import { resolveRecordedTime } from '../core/offline-time';
 
 interface NurseAssignmentAccessRecord {
   nurseId: string;
@@ -431,7 +432,7 @@ export class HospitalizationsService {
     });
   }
 
-  async updateNurseCareTask(taskId: string, dto: UpdateNursingCareTaskDto, userId?: string) {
+  async updateNurseCareTask(taskId: string, dto: UpdateNursingCareTaskDto, userId?: string, offlineReplay = false) {
     if (!userId) throw new ForbiddenException('Utilisateur authentifié requis.');
     const task = await this.prisma.nursingCareTask.findUnique({
       where: { id: taskId },
@@ -454,7 +455,9 @@ export class HospitalizationsService {
     if (dto.status === 'ESCALATED' && !(escalationReason || observation)) {
       throw new BadRequestException('Le motif de l’escalade est obligatoire.');
     }
-    const now = new Date();
+    // Server time online; an offline replay keeps the time it was really done, flagged.
+    const recorded = resolveRecordedTime(dto.performedAt, 'du soin', offlineReplay);
+    const now = recorded.performedAt;
     const updated = await this.prisma.$transaction(async (tx) => {
       const careTask = await tx.nursingCareTask.update({
         where: { id: taskId },
@@ -462,6 +465,8 @@ export class HospitalizationsService {
           status: dto.status,
           completedAt: dto.status === 'COMPLETED' ? now : null,
           completedById: dto.status === 'COMPLETED' ? userId : null,
+          completionReceivedAt: dto.status === 'COMPLETED' ? recorded.receivedAt : null,
+          completionRecordedOffline: dto.status === 'COMPLETED' && recorded.recordedOffline,
           escalationReason: dto.status === 'ESCALATED' ? escalationReason || observation || null : null,
         },
       });
@@ -476,6 +481,8 @@ export class HospitalizationsService {
             observation: observation || null,
             escalationReason: escalationReason || null,
             performedAt: now.toISOString(),
+            receivedAt: recorded.receivedAt.toISOString(),
+            recordedOffline: recorded.recordedOffline,
           }),
           createdById: userId,
         },
@@ -497,7 +504,7 @@ export class HospitalizationsService {
     return updated;
   }
 
-  async recordNurseRound(id: string, userId: string | undefined, body: any) {
+  async recordNurseRound(id: string, userId: string | undefined, body: any, offlineReplay = false) {
     const hospitalization = await this.findOneForActor(id, { userId });
     const access = await this.buildNurseAccess(hospitalization, userId);
     if (!access.canWrite) {
@@ -506,6 +513,8 @@ export class HospitalizationsService {
     await this.auditAutomaticNurseRelay(hospitalization, userId, access, 'NURSE_ROUND_RECORDED');
 
     const action = body?.action || 'observation';
+    const recorded = resolveRecordedTime(body?.performedAt, 'de l’observation', offlineReplay);
+    const performedAt = recorded.performedAt;
     const kind =
       action === 'done'
         ? 'NURSE_ROUND_DONE'
@@ -523,6 +532,9 @@ export class HospitalizationsService {
           problem: body?.problem || null,
           escalated: Boolean(body?.escalated),
           accessReason: access.reason,
+          performedAt: performedAt.toISOString(),
+          receivedAt: recorded.receivedAt.toISOString(),
+          recordedOffline: recorded.recordedOffline,
         }),
         createdById: userId || null,
       },
@@ -568,7 +580,7 @@ export class HospitalizationsService {
     });
   }
 
-  async recordMedicationAdministration(id: string, dto: RecordMedicationAdministrationDto, userId?: string) {
+  async recordMedicationAdministration(id: string, dto: RecordMedicationAdministrationDto, userId?: string, offlineReplay = false) {
     const hospitalization = await this.findOneForActor(id, { userId });
     const access = await this.buildNurseAccess(hospitalization, userId);
     if (!access.canWrite || !userId) throw new ForbiddenException('Administration non autorisée pour cette hospitalisation.');
@@ -576,13 +588,14 @@ export class HospitalizationsService {
     const line = await this.prisma.prescriptionLine.findFirst({ where: { id: dto.prescriptionLineId, deletedAt: null, prescription: { patientId: hospitalization.patientId, clinicId: hospitalization.clinicId, status: { in: ['PRESCRIBED', 'PARTIALLY_DISPENSED', 'DISPENSED'] }, deletedAt: null } } });
     if (!line) throw new BadRequestException('Prescription active introuvable pour ce patient.');
     if (dto.status !== 'ADMINISTERED' && !dto.reason?.trim()) throw new BadRequestException('Un motif est obligatoire pour une dose refusée, suspendue ou manquée.');
-    const now = new Date();
+    const recorded = resolveRecordedTime(dto.administeredAt, 'd’administration', offlineReplay);
+    const now = recorded.performedAt;
     return this.prisma.$transaction(async (tx) => {
       const administration = await tx.medicationAdministration.create({
-        data: { hospitalizationId: id, prescriptionLineId: line.id, administeredById: userId, scheduledAt: now, administeredAt: dto.status === 'ADMINISTERED' ? now : null, status: dto.status, doseGiven: dto.doseGiven || null, reason: dto.reason || null, observation: dto.observation || null },
+        data: { hospitalizationId: id, prescriptionLineId: line.id, administeredById: userId, scheduledAt: now, administeredAt: dto.status === 'ADMINISTERED' ? now : null, status: dto.status, doseGiven: dto.doseGiven || null, reason: dto.reason || null, observation: dto.observation || null, recordedOffline: recorded.recordedOffline, receivedAt: recorded.receivedAt },
       });
       await tx.medicalHistory.create({
-        data: { patientId: hospitalization.patientId, kind: 'MEDICATION_ADMINISTRATION', details: JSON.stringify({ administrationId: administration.id, hospitalizationId: id, prescriptionLineId: line.id, status: dto.status, reason: dto.reason || null }), createdById: userId },
+        data: { patientId: hospitalization.patientId, kind: 'MEDICATION_ADMINISTRATION', details: JSON.stringify({ administrationId: administration.id, hospitalizationId: id, prescriptionLineId: line.id, status: dto.status, reason: dto.reason || null, receivedAt: recorded.receivedAt.toISOString(), recordedOffline: recorded.recordedOffline }), createdById: userId },
       });
       return administration;
     });

@@ -5,6 +5,7 @@ import { recordAllergy } from "../../api/clinicalSafety";
 import { PatientAllergiesCard } from "../../components/clinical/PatientAllergiesCard";
 import { SPECIALTY_TEMPLATES, SpecialtyExam, type SpecialtyExamValue } from "./SpecialtyExam";
 import type { DoctorPatient } from "../../api/doctor";
+import { Icd10Picker } from "../../components/clinical/Icd10Picker";
 
 type Item = Record<string, string>;
 type Treatment = { medication: string; duration: string; impact: string };
@@ -1170,7 +1171,17 @@ export function ClinicalConsultationWorkspace({
             >
               {referralSlot}
               <Grid>
-                {Object.entries(value.orientation).map(([key, current]) => (
+                {Object.entries(value.orientation).map(([key, current]) => key === "icdCode" ? (
+                  <Icd10Picker
+                    key={key}
+                    label={orientationLabels[key]}
+                    code={current}
+                    display={value.orientation.diagnosisLabel}
+                    onChange={(picked) => patch("orientation", picked.code
+                      ? { icdCode: picked.code, diagnosisLabel: value.orientation.diagnosisLabel || picked.display }
+                      : { icdCode: "" })}
+                  />
+                ) : (
                   <Text
                     key={key}
                     label={orientationLabels[key] || key}
@@ -1345,7 +1356,7 @@ const examSuggestions: Record<number, string[]> = {
 };
 const orientationLabels: Record<string, string> = {
   diagnosisType: "Type de diagnostic",
-  icdCode: "Code CIM-10 / ICD-11",
+  icdCode: "Diagnostic principal (CIM-10)",
   snomedCode: "Code SNOMED CT",
   diagnosisLabel: "Libellé diagnostic",
   certainty: "Degré de certitude",

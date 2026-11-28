@@ -361,6 +361,19 @@ export default function GestionStockPharmacie() {
         </Panel>
       </div>
 
+      {metrics.low > 0 && (
+        <div className="rounded-2xl border border-red-300 bg-red-50 p-4 dark:border-red-500/40 dark:bg-red-500/10" role="alert">
+          <p className="font-semibold text-red-700 dark:text-red-300">{metrics.low} médicament(s) sous le seuil de réapprovisionnement</p>
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {medications.filter((item) => (stockByMedication.get(item.id) || 0) <= 10).map((item) => (
+              <li key={item.id} className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-red-700 ring-1 ring-red-200 dark:bg-red-950 dark:text-red-300 dark:ring-red-500/30">
+                {item.name}{item.strength ? ` ${item.strength}` : ""} · {stockByMedication.get(item.id) || 0}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <Panel title="Lots et disponibilités">
         <DataTable
           headers={["Section", "Catégorie", "Médicament", "Lot", "Quantité", "Prix CDF", "Expiration"]}
@@ -371,7 +384,9 @@ export default function GestionStockPharmacie() {
               lot.medication?.category?.name || '-',
               lot.medication ? `${lot.medication.name} ${lot.medication.strength || ''}` : lot.medicationId,
               lot.batchNumber || '-',
-              lot.quantity,
+              (stockByMedication.get(lot.medicationId) || 0) <= 10
+                ? <span key="qty" className="font-bold text-red-600 dark:text-red-400" title="Stock du médicament sous le seuil">{lot.quantity}</span>
+                : lot.quantity,
               lot.purchasePrice ? formatMoney(lot.purchasePrice) : '-',
               formatDate(lot.expiryDate),
             ];

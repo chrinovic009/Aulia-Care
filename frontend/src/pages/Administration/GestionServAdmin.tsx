@@ -133,7 +133,7 @@ export default function GestionServAdmin() {
         <StatCard icon={<UsersRound size={20} />} label="Responsables" value={metrics.responsables} tone="violet" />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_420px]">
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_400px]">
         <Panel title="Services existants" subtitle="Les services Réception et Caisse sont opérationnels internes et exclus de l’admission patient.">
           <DataTable
             headers={["Service", "Responsable", "Equipe", "Tarif actif", "Statut"]}

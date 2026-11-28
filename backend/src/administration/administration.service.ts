@@ -5,7 +5,8 @@ import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { UpdateClinicBrandingDto } from './dto/update-clinic-branding.dto';
 import { UpdateClinicOperationalPolicyDto } from './dto/update-clinic-operational-policy.dto';
 import { CreateRoomDto, UpdateRoomDto } from './dto/room.dto';
-import { isValidClockTime, isValidIanaTimezone, SYSTEM_MAX_NURSE_PATIENT_CAPACITY } from '../core/operational-policy';
+import { isValidClockTime, isValidIanaTimezone } from '../core/operational-policy';
+import { SYSTEM_MAX_NURSE_PATIENT_CAPACITY } from '../hospitalizations/nurse-capacity.policy';
 import { categoryForDepartmentType } from '../services/service-category.policy';
 
 @Injectable()
@@ -13,7 +14,7 @@ export class AdministrationService {
   constructor(private readonly prisma: PrismaService) {}
 
   private readonly departmentTypes = new Set([
-    'RECEPTION', 'NURSING', 'MEDICAL', 'LABORATORY', 'RADIOLOGY', 'SURGERY', 'PHARMACY', 'BILLING', 'ADMINISTRATION',
+    'RECEPTION', 'NURSING', 'MEDICAL', 'LABORATORY', 'RADIOLOGY', 'SURGERY', 'DIALYSIS', 'PHARMACY', 'BILLING', 'ADMINISTRATION',
   ]);
 
   private async requireClinicAdministrator(userId?: string) {

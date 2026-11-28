@@ -1,3 +1,4 @@
+import { formatDuration } from "../../api/hr";
 import { workflowStatusLabel } from "../../utils/workflowStatusLabel";
 import { useEffect, useMemo, useState } from "react";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
@@ -671,7 +672,7 @@ export default function ExamensMedecin() {
                               <option
                                 key={test.id}
                                 value={test.id}
-                              >{`${test.name} - ${Number(test.price || 0).toLocaleString("fr-FR")} CDF - ${test.turnaroundTimeMinutes || "-"} min`}</option>
+                              >{`${test.name} - ${Number(test.price || 0).toLocaleString("fr-FR")} CDF - ${test.turnaroundTimeMinutes ? formatDuration(test.turnaroundTimeMinutes) : "-"}`}</option>
                             ))}
                           </select>
                         </label>
@@ -736,7 +737,7 @@ export default function ExamensMedecin() {
                             Section: {test.section?.name || "-"} | Catégorie:{" "}
                             {test.category?.name || "-"} | Prix:{" "}
                             {Number(test.price || 0).toLocaleString("fr-FR")}{" "}
-                            CDF | Délai: {test.turnaroundTimeMinutes || "-"} min
+                            CDF | Délai: {test.turnaroundTimeMinutes ? formatDuration(test.turnaroundTimeMinutes) : "-"}
                           </div>
                         ))}
                       </div>

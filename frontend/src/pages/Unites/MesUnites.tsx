@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import PageMeta from "../../components/common/PageMeta";
+import DashboardWelcome from "../../components/common/DashboardWelcome";
 import { fetchMyUnits, KIND_LABELS, type CareUnit, type CareUnitRole } from "../../api/careWorkflow";
 import { Card, Empty } from "./ui";
 
@@ -15,10 +16,11 @@ export default function MesUnites() {
     <>
       <PageMeta title="Mes unités de soins | Aulia Care" description="Unités de soins auxquelles vous êtes affecté" />
       <div className="space-y-4 p-4">
-        <h1 className="text-2xl font-bold text-aulia-navy dark:text-white">Mes unités de soins</h1>
+        <DashboardWelcome eyebrow="Aulia Care · Unités de soins" description="Retrouvez vos unités et accédez rapidement aux espaces de travail qui vous sont attribués." actionLabel="Voir mes affectations" to="/unites#mes-unites" />
+        <h2 className="text-2xl font-bold text-aulia-navy dark:text-white">Mes unités de soins</h2>
         {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         {units && !units.length && <Empty>Vous n’êtes affecté à aucune unité. Demandez à l’administration de l’établissement de vous affecter (Administration › Unités de soins).</Empty>}
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div id="mes-unites" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {units?.map(({ careUnit, unitRole }) => (
             <Link key={careUnit.id} to={`/unites/${careUnit.id}`}>
               <Card className="h-full transition hover:border-aulia-teal">

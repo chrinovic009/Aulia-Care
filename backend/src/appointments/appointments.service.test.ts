@@ -7,6 +7,7 @@ import { AppointmentsService } from './appointments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ClinicContextService } from '../core/clinic-context.service';
+import { fakeTransaction } from '../core/testing/fake-transaction';
 import { PatientWorkflowService } from '../core/patient-workflow.service';
 
 test('appointment listing is restricted to the operational clinic', async () => {
@@ -122,7 +123,7 @@ test('appointment workflow recalculation handles cancellation and reassignment',
 
   await (service as any).syncPatientWorkflowFromAppointments(
     {
-      $executeRaw: async () => undefined,
+      ...fakeTransaction(),
 
       patient: {
         findFirst: async () => ({
@@ -155,7 +156,7 @@ test('appointment workflow recalculation handles cancellation and reassignment',
 
   await (service as any).syncPatientWorkflowFromAppointments(
     {
-      $executeRaw: async () => undefined,
+      ...fakeTransaction(),
 
       patient: {
         findFirst: async () => ({

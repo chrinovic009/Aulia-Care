@@ -12,6 +12,10 @@ import { validateEnvironment } from './config/environment.validation';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { CareWorkflowModule } from './care-workflow/care-workflow.module';
+import { TerminologyModule } from './terminology/terminology.module';
+import { HrModule } from './hr/hr.module';
+import { NavigationModule } from './navigation/navigation.module';
+import { ReportsModule } from './reports/reports.module';
 import { ClinicalSafetyModule } from './clinical-safety/clinical-safety.module';
 import { ReferenceModule } from './reference/reference.module';
 import { AuthModule } from './auth/auth.module';
@@ -52,6 +56,10 @@ const connectedCareModules = process.env.AULIA_ENABLE_CONNECTED_CARE === 'false'
 @Module({
   imports: [
     CareWorkflowModule,
+    TerminologyModule,
+    HrModule,
+    NavigationModule,
+    ReportsModule,
     ClinicalSafetyModule,
     ReferenceModule,
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnvironment('core') }),

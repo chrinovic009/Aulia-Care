@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   authorizeClinicalDischarge, acknowledgeTransfer, ageLabel, genderLabel, changeEpisodeStatus, changeRequestStatus, changeTaskStatus, correctCareEvent, createServiceRequest,
-  decideTransfer, fetchClinicUnits, fetchImagingCatalogue, fetchLaboratoryCatalogue, fetchEpisode, fetchUnitHistory, KIND_LABELS, mergeProvisionalPatient, patientName, personName,
+  decideTransfer, fetchClinicUnits, fetchImagingCatalogue, fetchLaboratoryCatalogue, fetchEpisode, fetchPatientLocation, fetchUnitHistory, KIND_LABELS, mergeProvisionalPatient, patientName, personName,
   PRIORITY_LABELS, recordCareEvent, reportTaskResult, REQUEST_STATUS_LABELS, searchCarePatients, sendTransfer, TASK_STATUS_LABELS, timeLabel,
   type CareEpisode, type CarePriority, type CareTask, type CareTransfer, type CareUnit, type CareUnitRole, type EpisodeDetail,
   type LabCatalogueItem, type PatientSummary, type ResultObservation, type ServiceRequest,
@@ -376,8 +376,14 @@ export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extr
   const [noteType, setNoteType] = useState("OBSERVATION");
   const [dialog, setDialog] = useState<null | "request" | "transfer" | "merge" | "close">(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [whereabouts, setWhereabouts] = useState<string | null>(null);
   const load = () => fetchEpisode(episodeId).then(setDetail).catch(() => setNotice("Le dossier n’a pas pu être chargé."));
   useEffect(() => { void load(); }, [episodeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // One answer to "where is the patient?", across the reception pathway and every care unit.
+  useEffect(() => {
+    if (!detail?.patientId) return;
+    fetchPatientLocation(detail.patientId).then((location) => setWhereabouts(location.summary)).catch(() => setWhereabouts(null));
+  }, [detail?.patientId, detail?.version]);
   const reload = () => { void load(); onChanged(); };
   const writable = canWrite(role) && detail && ["PLANNED", "IN_PROGRESS", "ON_HOLD"].includes(detail.status);
   const reviewed = useMemo(() => new Set((detail?.events ?? []).filter((event) => event.type === "RESULT_REVIEWED").map((event) => String(event.requestId ?? ""))), [detail]);
@@ -419,6 +425,7 @@ export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extr
             {detail.locationLabel && <Badge tone="teal">{detail.locationLabel}</Badge>}
             <span className="text-slate-500">{[genderLabel(detail.patient.gender), ageLabel(detail.patient)].filter(Boolean).join(" · ")} · arrivé {timeLabel(detail.startedAt ?? detail.createdAt)} · responsable {personName(detail.responsible)}</span>
           </div>
+          {whereabouts && <p className="rounded-lg border border-aulia-teal/20 bg-aulia-mist/60 px-3 py-2 text-sm text-aulia-navy dark:bg-slate-900 dark:text-slate-200"><strong>Où est le patient :</strong> {whereabouts}</p>}
           {detail.patient.identityStatus === "PROVISIONAL" && (
             <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
               Identité provisoire. Dès que la personne est identifiée, rattachez ce dossier à son dossier définitif (aucun second dossier n’est créé).
@@ -496,7 +503,7 @@ export function EpisodeDossier({ episodeId, unit, role, onClose, onChanged, extr
                                 )}
                                 {typeof event.payload?.conclusion === "string" && event.payload.conclusion && <p className="mt-1">Conclusion : {event.payload.conclusion}</p>}
                                 {Boolean(event.payload?.imaging) && <p className="mt-1 text-amber-700 dark:text-amber-300">Compte rendu enregistré dans le module Imagerie · vérification par le radiologue à faire.</p>}
-                                {Boolean(event.payload?.laboratory) && <p className="mt-1 text-amber-700 dark:text-amber-300">Validé techniquement par le laboratoire · validation biologique à faire dans le module Laboratoire.</p>}
+                                {Boolean(event.payload?.laboratory) && <p className="mt-1 text-amber-700 dark:text-amber-300">Résultat saisi par le laboratoire · à valider par une autre personne du laboratoire (module Laboratoire).</p>}
                                 <p className="mt-1 text-slate-500">{personName(event.author)} · {timeLabel(event.occurredAt)}</p>
                               </div>
                             );

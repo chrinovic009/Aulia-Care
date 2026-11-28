@@ -26,6 +26,7 @@ import { UpdateUserDto } from '../users/dto/update-user.dto';
 import { ChangePinDto } from './dto/change-pin.dto';
 import { ChangePasswordDto, RequestPasswordResetDto } from './dto/change-password.dto';
 import { VerifyPinDto } from './dto/verify-pin.dto';
+import { runWithRequestContext } from '../core/request-context';
 
 @Controller('auth')
 export class AuthController {
@@ -113,24 +114,27 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('login')
   async login(@Body() payload: LoginDto, @Res({ passthrough: true }) response: Response) {
-    const user = await this.authService.validateUser(
-      payload.identifier,
-      payload.password,
+    const user = await runWithRequestContext(
+      { userId: 'public-login', role: 'AUTH_LOGIN', route: 'POST /auth/login' },
+      () => this.authService.validateUser(payload.identifier, payload.password),
     );
 
     if (!user) {
       throw new UnauthorizedException('Identifiants invalides');
     }
 
-    const session = await this.authService.login({
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      displayName: user.displayName,
-      primaryRole: user.primaryRole || 'PATIENT',
-      status: user.status,
-      mustChangePassword: user.mustChangePassword,
-    });
+    const session = await runWithRequestContext(
+      { userId: user.id, clinicId: user.clinicId, role: user.primaryRole, route: 'POST /auth/login' },
+      () => this.authService.login({
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        displayName: user.displayName,
+        primaryRole: user.primaryRole || 'PATIENT',
+        status: user.status,
+        mustChangePassword: user.mustChangePassword,
+      }),
+    );
     this.setSessionCookies(response, session);
     return { user: session.user };
   }
@@ -141,7 +145,10 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('password-reset-requests')
   requestPasswordReset(@Body() body: RequestPasswordResetDto) {
-    return this.authService.requestPasswordReset(body.identifier);
+    return runWithRequestContext(
+      { userId: 'public-password-reset', role: 'AUTH_LOGIN', route: 'POST /auth/password-reset-requests' },
+      () => this.authService.requestPasswordReset(body.identifier),
+    );
   }
 
   // 🔓 PUBLIC - Renouvellement du token

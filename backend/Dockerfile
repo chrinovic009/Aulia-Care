@@ -133,6 +133,12 @@ WORKDIR /app/backend
 #
 # On n'exécute donc plus l'application en root.
 # ------------------------------------------------------------
+# Dossiers privés des volumes nommés (médias, aperçus, journal d'audit de secours) :
+# créés ici pour que Docker les initialise au propriétaire node, pas root.
+RUN mkdir -p /var/lib/aulia-care/message-media /var/lib/aulia-care/imaging-previews /var/lib/aulia-care/audit-spool \
+    && chown -R node:node /var/lib/aulia-care \
+    && chmod 700 /var/lib/aulia-care/audit-spool
+
 USER node
 
 EXPOSE 3000

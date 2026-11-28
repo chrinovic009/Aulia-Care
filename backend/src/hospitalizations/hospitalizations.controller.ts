@@ -9,6 +9,7 @@ import { RecordNurseRoundDto } from './dto/record-nurse-round.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { isOfflineReplay, OFFLINE_REPLAY_HEADER } from '../core/offline-time';
 import { AuditRead } from '../audit/audit-read.decorator';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -55,13 +56,13 @@ export class HospitalizationsController {
   @Patch('nurse/care-tasks/:taskId')
   @Roles('NURSE')
   updateNurseCareTask(@Param('taskId') taskId: string, @Body() body: UpdateNursingCareTaskDto, @Request() req: any) {
-    return this.hospitalizationsService.updateNurseCareTask(taskId, body, req.user?.userId);
+    return this.hospitalizationsService.updateNurseCareTask(taskId, body, req.user?.userId, isOfflineReplay(req.headers?.[OFFLINE_REPLAY_HEADER]));
   }
 
   @Post(':id/nurse-rounds')
   @Roles('ADMIN', 'NURSE')
   recordNurseRound(@Param('id') id: string, @Body() body: RecordNurseRoundDto, @Request() req: any) {
-    return this.hospitalizationsService.recordNurseRound(id, req.user?.userId, body);
+    return this.hospitalizationsService.recordNurseRound(id, req.user?.userId, body, isOfflineReplay(req.headers?.[OFFLINE_REPLAY_HEADER]));
   }
 
   @Post(':id/care-tasks')
@@ -73,7 +74,7 @@ export class HospitalizationsController {
   @Post(':id/medication-administrations')
   @Roles('NURSE')
   recordMedicationAdministration(@Param('id') id: string, @Body() body: RecordMedicationAdministrationDto, @Request() req: any) {
-    return this.hospitalizationsService.recordMedicationAdministration(id, body, req.user?.userId);
+    return this.hospitalizationsService.recordMedicationAdministration(id, body, req.user?.userId, isOfflineReplay(req.headers?.[OFFLINE_REPLAY_HEADER]));
   }
 
   @AuditRead('Hospitalization')

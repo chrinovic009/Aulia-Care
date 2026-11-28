@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import PageBreadcrumb from "../../components/common/PageBreadCrumb";
 import PageMeta from "../../components/common/PageMeta";
+import DashboardWelcome from "../../components/common/DashboardWelcome";
 import {
   fetchPatientsAwaitingVitals,
   formatPatientName,
@@ -76,15 +77,19 @@ export default function DashboardInfirmier() {
       />
       <PageBreadcrumb pageTitle="Dashboard soins infirmiers" />
 
+      <div className="mb-5">
+        <DashboardWelcome eyebrow="Aulia Care · Soins infirmiers" description="Retrouvez les patients à prendre en charge et leurs priorités de passage." actionLabel="Ouvrir la file infirmière" to="/nurse/patients" />
+      </div>
+
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
               File infirmier PostgreSQL
             </p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
               Patients a prelever
-            </h1>
+            </h2>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
               Seuls les patients `EN_ATTENTE_INFIRMERIE` ou avec priorite urgente sont affiches.
             </p>

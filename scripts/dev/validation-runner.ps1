@@ -10,7 +10,7 @@ $requests = Join-Path $root '.validation\requests'
 $results = Join-Path $root '.validation\results'
 New-Item -ItemType Directory -Force $requests, $results | Out-Null
 $validate = Join-Path $root 'scripts\dev\validate.ps1'
-$allowed = @('lint','typecheck','unit','integration','e2e','build','prisma','tour')
+$allowed = @('lint','typecheck','unit','integration','e2e','build','prisma','tour','ui')
 $demoScript = Join-Path $root 'scripts\dev\demo.ps1'
 # 'demo' / 'demo-stop' run alone: local servers for a manual browser test.
 

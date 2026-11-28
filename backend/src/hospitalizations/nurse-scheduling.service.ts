@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from '../core/public-user-select';
-import { parseClockTime, resolveNursePatientCapacity } from '../core/operational-policy';
+import { parseClockTime } from '../core/operational-policy';
+import { resolveNursePatientCapacity } from './nurse-capacity.policy';
 import { clinicDate, clinicDateFromSerial, clinicDaySerial, clinicMinuteOfDay, clinicWallClockToUtc } from '../core/clinic-time';
 
 type Coverage = 'DAY' | 'NIGHT';

@@ -23,6 +23,7 @@ export function categoryForDepartmentType(
       return ServiceCategory.CONSULTATION;
     case DepartmentType.NURSING:
     case DepartmentType.SURGERY:
+    case DepartmentType.DIALYSIS:
       return ServiceCategory.OTHER_CLINICAL;
     default: {
       const exhaustive: never = departmentType;

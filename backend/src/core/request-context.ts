@@ -8,6 +8,8 @@ import type { Prisma } from '@prisma/client';
  */
 export interface RequestContext {
   userId: string;
+  patientId?: string | null;
+  patientClinicId?: string | null;
   clinicId?: string | null;
   role?: string | null;
   roles?: readonly string[];

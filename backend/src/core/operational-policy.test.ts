@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isValidClockTime, isValidIanaTimezone, parseClockTime, resolveNursePatientCapacity, SYSTEM_MAX_NURSE_PATIENT_CAPACITY } from './operational-policy';
+import { isValidClockTime, isValidIanaTimezone, parseClockTime } from './operational-policy';
+import { resolveNursePatientCapacity, SYSTEM_MAX_NURSE_PATIENT_CAPACITY } from '../hospitalizations/nurse-capacity.policy';
 
 test('uses the clinic capacity when no unit override exists', () => {
   assert.equal(resolveNursePatientCapacity(null, 7), 7);

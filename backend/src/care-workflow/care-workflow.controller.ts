@@ -163,6 +163,13 @@ export class CareWorkflowController {
     return this.workflow.worklist(unitId, req.user);
   }
 
+  /** Where the patient is now: reception → consultation pathway and open care-unit stays, in one answer. */
+  @AuditRead('Patient', 'patientId')
+  @Get('patients/:patientId/location')
+  location(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: AuthedRequest) {
+    return this.workflow.patientLocation(patientId, req.user);
+  }
+
   @AuditRead('Patient', 'patientId')
   @Get('patients/:patientId/timeline')
   timeline(@Param('patientId', ParseUUIDPipe) patientId: string, @Request() req: AuthedRequest) {

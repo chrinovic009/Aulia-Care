@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { Socket } from 'node:net';
+import { pendingAuditCount } from '../core/audit-spool';
 import { URL } from 'node:url';
 
 @Injectable()
@@ -161,6 +162,9 @@ export class HealthService {
     ]);
 
     const ready = database && redis;
+    // Audit refusals kept on disk during a database outage: visible to monitoring.
+    let pendingAudits = 0;
+    try { pendingAudits = pendingAuditCount(); } catch { pendingAudits = -1; }
 
     return {
       status: ready ? 'ready' : 'not_ready',
@@ -168,6 +172,7 @@ export class HealthService {
       checks: {
         database,
         redis,
+        pendingAudits,
       },
       timestamp: new Date().toISOString(),
     };

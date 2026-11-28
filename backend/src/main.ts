@@ -8,9 +8,11 @@ import type { Express } from 'express';
 import helmet from 'helmet';
 
 import { AppModule } from './app.module';
+import { assertAccessCodeKeyConfigured } from './auth/access-code-vault';
 import { RedisIoAdapter } from './notifications/redis-io.adapter';
 
 async function bootstrap() {
+  assertAccessCodeKeyConfigured();
   const app = await NestFactory.create(AppModule);
 
   // In production the backend is reachable only through the Docker reverse

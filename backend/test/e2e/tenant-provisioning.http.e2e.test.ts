@@ -40,6 +40,11 @@ test('HTTP E2E: DEV -> clinic -> layers -> Super Admin -> Admin -> staff preserv
     const blocked = await request(server).get('/api/users').set('Cookie', cookies).expect(403);
     assert.equal(blocked.body.code, 'PASSWORD_CHANGE_REQUIRED');
     if (checkRefusals) {
+      // The holder sees who read the code before them.
+      const before = await request(server).get('/api/auth/me').set('Cookie', cookies).expect(200);
+      assert.ok(before.body.accessCodeReveals.length >= 1);
+    }
+    if (checkRefusals) {
       await request(server).post('/api/auth/change-password').set('Cookie', cookies).send({ currentPassword: 'wrong-password-1', newPassword: ownPassword }).expect(400);
       await request(server).post('/api/auth/change-password').set('Cookie', cookies).send({ currentPassword: code, newPassword: 'court1' }).expect(400);
     }
@@ -122,7 +127,11 @@ test('HTTP E2E: DEV -> clinic -> layers -> Super Admin -> Admin -> staff preserv
     const stored = await prisma.user.findUniqueOrThrow({ where: { id: nurse.id } });
     assert.ok(stored.temporaryCodeCipher && !stored.temporaryCodeCipher.includes(reset.body.generatedPassword));
     const codes = await request(server).get('/api/users/pending-access-codes').set('Cookie', adminCookies).expect(200);
-    assert.equal(codes.body.find((row: { userId: string }) => row.userId === nurse.id)?.code, reset.body.generatedPassword);
+    const listed = codes.body.find((row: { userId: string; code?: string }) => row.userId === nurse.id);
+    assert.ok(listed && !('code' in listed));
+    // Revealing a code is an individual, traced action, shown to the holder at sign-in.
+    const revealed = await request(server).post(`/api/users/pending-access-codes/${nurse.id}/reveal`).set('Cookie', adminCookies).send({}).expect(201);
+    assert.equal(revealed.body.code, reset.body.generatedPassword);
     await firstLogin(server, `nurse-${suffix}`, reset.body.generatedPassword, true);
     // Used: the code leaves the administrator's list and is erased.
     const after = await request(server).get('/api/users/pending-access-codes').set('Cookie', adminCookies).expect(200);

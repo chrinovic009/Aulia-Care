@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PatientWorkflowStatus } from '@prisma/client';
 
+import { fakeTransaction } from './testing/fake-transaction';
 import { PatientWorkflowService } from './patient-workflow.service';
 
 test('workflow transitions cannot regress a hospitalized patient', async () => {
@@ -10,7 +11,7 @@ test('workflow transitions cannot regress a hospitalized patient', async () => {
   const service = new PatientWorkflowService();
 
   const tx = {
-    $executeRaw: async () => undefined, auditLog: { create: async () => ({}) },
+    ...fakeTransaction(), auditLog: { create: async () => ({}) },
     patient: {
       findFirst: async () => ({
         workflowStatus: PatientWorkflowStatus.HOSPITALISE,
@@ -54,7 +55,7 @@ test('workflow transitions preserve consultation against regressive states', asy
 
   const result = await service.projectStatus(
     {
-      $executeRaw: async () => undefined, auditLog: { create: async () => ({}) },
+      ...fakeTransaction(), auditLog: { create: async () => ({}) },
       patient: {
         findFirst: async () => ({
           workflowStatus:
@@ -92,7 +93,7 @@ test('a completed patient can start a new workflow', async () => {
 
   const result = await service.projectStatus(
     {
-      $executeRaw: async () => undefined, auditLog: { create: async () => ({}) },
+      ...fakeTransaction(), auditLog: { create: async () => ({}) },
       patient: {
         findFirst: async () => ({
           workflowStatus:
@@ -135,7 +136,7 @@ test('workflow transitions require an explicit clinic id', async () => {
     () =>
       service.projectStatus(
         {
-          $executeRaw: async () => undefined, auditLog: { create: async () => ({}) },
+          ...fakeTransaction(), auditLog: { create: async () => ({}) },
           patient: {
             findFirst: async () => ({
               workflowStatus:

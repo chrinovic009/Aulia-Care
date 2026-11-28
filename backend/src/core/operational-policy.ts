@@ -2,8 +2,6 @@
  * Small, deterministic Core policies. Keeping them pure makes critical
  * operational rules testable without a database or a web server.
  */
-export { SYSTEM_SAFE_NURSE_PATIENT_CAPACITY, SYSTEM_MAX_NURSE_PATIENT_CAPACITY, resolveNursePatientCapacity } from '../hospitalizations/nurse-capacity.policy';
-
 export function isValidClockTime(value: string): boolean {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }

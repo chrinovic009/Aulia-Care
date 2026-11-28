@@ -4,6 +4,7 @@ import PageMeta from "../../components/common/PageMeta";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { fetchNurseHospitalizations, recordNurseRound } from "../../api/nurse";
+import { isQueued } from "../../offline/offlineQueue";
 import { ClientPagination, useClientPagination } from "../../components/common/ClientPagination";
 
 type ClinicalState = "Stable" | "Surveillance" | "Critique" | "Isolement";
@@ -160,9 +161,13 @@ export default function HospitalisationsSuivi() {
   const submitObservation = async () => {
     if (!selected || !observationText) return;
     try {
-      await recordNurseRound(selected.id, { action: "observation", observation: observationText });
+      const sent = await recordNurseRound(selected.id, { action: "observation", observation: observationText });
       setObservationText("");
       setPanelMode("dossier");
+      if (isQueued(sent)) {
+        setError("Hors ligne : observation gardée sur l’appareil avec son heure réelle, envoyée automatiquement au retour du réseau.");
+        return;
+      }
       await loadHospitalizations();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible d'enregistrer l'observation.");
@@ -251,7 +256,7 @@ export default function HospitalisationsSuivi() {
         </div>
       )}
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_420px]">
+      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
         <div>
           {isLoading ? (
             <div className="rounded-3xl border bg-white p-6 text-center text-slate-500">Chargement des hospitalisations...</div>
@@ -261,7 +266,7 @@ export default function HospitalisationsSuivi() {
                 <div className="rounded-2xl p-6 bg-white">Aucune hospitalisation trouvée.</div>
               ) : (
                 hospitalizationPagination.pageItems.map((h) => (
-                  <div key={h.id} className="rounded-2xl border bg-white p-4 flex flex-col gap-4 sm:flex-row sm:items-start">
+                  <div key={h.id} className="rounded-2xl border bg-white p-5 flex flex-col gap-4">
                     <div className="flex items-center gap-4">
                       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-lg font-semibold text-slate-800">{getInitials(h.patientName)}</div>
                       <div>
@@ -269,7 +274,7 @@ export default function HospitalisationsSuivi() {
                         <div className="text-xs text-slate-500">{h.service} · Chambre {h.room} · Lit {h.bed || '—'}</div>
                       </div>
                     </div>
-                    <div className="space-y-3 sm:flex-1">
+                    <div className="space-y-3">
                       <div className="grid gap-3 sm:grid-cols-3">
                         <div className="rounded-2xl bg-slate-50 p-3">
                           <p className="text-xs text-slate-500">Statut clinique</p>

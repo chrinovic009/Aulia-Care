@@ -5,6 +5,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { runWithRequestContext } from '../core/request-context';
 import { UpdateUserDto } from '../users/dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
 
@@ -309,6 +310,22 @@ export class AuthService {
 
   async refreshAccessToken(token?: string) {
     try {
+      if (!token) throw new UnauthorizedException('Refresh token missing');
+      const payload = this.jwtService.verify(token, { secret: this.refreshTokenSecret });
+      if (payload.type !== 'refresh' || typeof payload.sub !== 'string') throw new UnauthorizedException('Invalid token type');
+      // The refresh endpoint is public, but its verified JWT subject provides
+      // a narrow owner context for the persisted session and token history.
+      return await runWithRequestContext(
+        { userId: payload.sub, role: 'AUTH_REFRESH', route: 'POST /auth/refresh' },
+        () => this.refreshAccessTokenScoped(token),
+      );
+    } catch {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+  }
+
+  private async refreshAccessTokenScoped(token?: string) {
+    try {
       if (!token) {
         throw new UnauthorizedException('Refresh token missing');
       }
@@ -449,7 +466,20 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    return {...user, roles:user.roles.map(item=>item.role.slug)};
+    // A person signing in with a 6-digit code learns who read that code.
+    const accessCodeReveals = user.mustChangePassword ? await this.accessCodeReveals(id) : [];
+    return {...user, roles:user.roles.map(item=>item.role.slug), accessCodeReveals};
+  }
+
+  private async accessCodeReveals(userId: string) {
+    const holder = await this.prisma.user.findUnique({ where: { id: userId }, select: { temporaryCodeIssuedAt: true } });
+    const rows = await this.prisma.auditTrail.findMany({
+      where: { entity: 'USER', entityId: userId, after: { path: ['event'], equals: 'ACCESS_CODE_REVEALED' }, ...(holder?.temporaryCodeIssuedAt ? { changedAt: { gte: holder.temporaryCodeIssuedAt } } : {}) },
+      select: { changedAt: true, actor: { select: { firstName: true, lastName: true, primaryRole: true } } },
+      orderBy: { changedAt: 'asc' },
+      take: 20,
+    });
+    return rows.map((row) => ({ at: row.changedAt.toISOString(), by: row.actor ? `${row.actor.firstName} ${row.actor.lastName}`.trim() : 'Administrateur', role: row.actor?.primaryRole ?? null }));
   }
 
   /** Exposes no secret: the client only needs to know whether a PIN challenge

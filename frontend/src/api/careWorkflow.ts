@@ -73,6 +73,14 @@ export const fetchWorklist = (unitId: string) => apiFetch<Worklist>(`${base}/uni
 export const fetchUnitHistory = (unitId: string, days = 7) => apiFetch<CareEpisode[]>(`${base}/units/${unitId}/history?days=${days}`);
 export const fetchEpisode = (episodeId: string) => apiFetch<EpisodeDetail>(`${base}/episodes/${episodeId}`);
 export const fetchPatientTimeline = (patientId: string) => apiFetch<CareEvent[]>(`${base}/patients/${patientId}/timeline`);
+export type PatientLocation = {
+  patient: { id: string; firstName: string; lastName: string };
+  pathway: { status: string; label: string; open: boolean; lastStep: { occurredAt: string; summary: string } | null };
+  stays: Array<{ episodeId: string; status: string; stage: string | null; since: string | null; unit: { id: string; name: string; kind: string } }>;
+  summary: string;
+};
+/** Where the patient is now, across the reception → consultation pathway and the care units. */
+export const fetchPatientLocation = (patientId: string) => apiFetch<PatientLocation>(`${base}/patients/${patientId}/location`);
 /** Laboratory catalogue: an exam asked of a LABORATORY unit is chosen here (it carries the billed price). */
 export type LabCatalogueItem = { id: string; code: string; name: string; price: string | number | null };
 export const fetchLaboratoryCatalogue = () => apiFetch<LabCatalogueItem[]>(`${base}/catalogue/laboratory`);

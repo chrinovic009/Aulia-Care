@@ -5,6 +5,7 @@ import { ConsultationStatus, InvoiceType, ImagingRequestStatus, PatientWorkflowS
 import { assertPrescribable, evaluateForPatient, overrideRows } from '../clinical-safety/prescription-safety.check';
 import { PrismaService } from '../prisma/prisma.service';
 import { chargeInvoiceToSubscription } from '../billing/subscription-coverage';
+import { principalIcd10Code, recordConsultationDiagnosis } from '../terminology/consultation-diagnosis';
 import { PUBLIC_USER_SELECT } from '../core/public-user-select';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { CreateConsultationDto } from './dto/create-consultation.dto';
@@ -641,6 +642,12 @@ export class ConsultationsService {
         } as any,
         include: { patient: true, provider: { select: PUBLIC_USER_SELECT } },
       });
+
+      // Coded principal diagnosis (CIM-10), when the doctor chose it from the list.
+      const icd10Code = principalIcd10Code(dto.diagnosis);
+      if (icd10Code) {
+        await recordConsultationDiagnosis(tx, { consultationId: id, patientId: consultation.patientId, code: icd10Code, recordedById: actorId ?? null });
+      }
 
       let materialized: Array<{
         invoiceId: string;

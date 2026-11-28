@@ -1968,6 +1968,9 @@ export class LaboratoryService {
     }
 
     const decision = dto.decision;
+    if (decision === 'VALIDATE' && result.reportedById === actor.id && !(await this.technicianDirectReleaseEnabled(actor.clinicId))) {
+      throw new ForbiddenException('Un résultat est validé par une autre personne que celle qui l’a saisi. Si votre laboratoire n’a qu’un biologiste, activez la libération par une seule signature dans les paramètres du laboratoire.');
+    }
     let nextStatus = result.resultStatus;
     if (decision === 'VALIDATE') {
       nextStatus = 'BIOLOGICALLY_VALIDATED';
@@ -2087,7 +2090,9 @@ export class LaboratoryService {
       ? await this.prisma.user.findFirst({ where: { id: reportedById, clinicId: actor.clinicId, status: 'ACTIVE', deletedAt: null }, select: { primaryRole: true } })
       : null;
     const isManager = reporter?.primaryRole === 'LAB_MANAGER';
-    const canDirectSend = technicianDirectRelease || isManager;
+    // Second pair of eyes: a result is released by someone other than its author,
+    // unless the establishment explicitly chose single-signature release (one-biologist laboratory).
+    const canDirectSend = technicianDirectRelease;
     if (itemForResult?.assignedToId && itemForResult.assignedToId !== reportedById && !isManager) {
       throw new BadRequestException('Cette analyse a ete attribuee a un autre technicien. Vous pouvez la consulter mais pas enregistrer de resultat.');
     }

@@ -26,13 +26,15 @@
     "start:diagnostic-agent": "npm run start:diagnostic-agent -w @aulia-care/backend",
     "start:connected-care": "npm run start:connected-care -w @aulia-care/backend",
 
-    "lint": "npm run lint --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present && node scripts/quality/any-ratchet.mjs",
+    "quality:update": "node scripts/quality/any-ratchet.mjs --update",
 
     "typecheck": "npm run typecheck --workspaces --if-present",
 
     "test": "npm run test --workspaces --if-present",
 
-    "test:unit": "npm run test:unit --workspaces --if-present",
+    "test:unit": "npm run test:unit --workspaces --if-present && node --test scripts/quality/any-ratchet.test.mjs scripts/dev/ui/ui-checks.test.mjs scripts/production/operations.test.mjs",
+    "test:ui": "node scripts/dev/ui/ui-smoke.mjs",
     "test:integration": "npm run test:integration -w @aulia-care/backend",
     "test:e2e": "npm run test:e2e -w @aulia-care/backend",
 
